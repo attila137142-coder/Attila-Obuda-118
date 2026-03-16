@@ -197,7 +197,82 @@ color:'red'
 });
 
 function toggleMenu(){
+let userMarker;
+let stopMarkers = [];
 
+function locateUser() {
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(pos => {
+
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+
+      map.setView([lat, lon], 15);
+
+      if (userMarker) map.removeLayer(userMarker);
+      userMarker = L.marker([lat, lon]).addTo(map)
+        .bindPopup("Te itt vagy").openPopup();
+
+      loadNearbyStops(lat, lon);
+
+    });
+  }
+}
+
+function loadNearbyStops(lat, lon) {
+
+  // régi markerek törlése
+  stopMarkers.forEach(m => map.removeLayer(m));
+  stopMarkers = [];
+
+  fetch("stops.txt")
+    .then(res => res.text())
+    .then(data => {
+
+      const lines = data.split("\n");
+
+      lines.slice(1).forEach(line => {
+
+        const cols = line.split(",");
+
+        const stopName = cols[2];
+        const stopLat = parseFloat(cols[4]);
+        const stopLon = parseFloat(cols[5]);
+
+        if (!stopLat || !stopLon) return;
+
+        const dist = getDistance(lat, lon, stopLat, stopLon);
+
+        if (dist <= 1000) {
+
+          const marker = L.marker([stopLat, stopLon])
+            .addTo(map)
+            .bindPopup(
+              "<b>" + stopName + "</b><br>" +
+              "Távolság: " + Math.round(dist) + " m"
+            );
+
+          stopMarkers.push(marker);
+        }
+
+      });
+
+    });
+}
+
+function getDistance(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2-lat1) * Math.PI/180;
+  const dLon = (lon2-lon1) * Math.PI/180;
+
+  const a =
+    Math.sin(dLat/2) * Math.sin(dLat/2) +
+    Math.cos(lat1*Math.PI/180) *
+    Math.cos(lat2*Math.PI/180) *
+    Math.sin(dLon/2) * Math.sin(dLon/2);
+
+  return R * (2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
+}
 var panel=document.getElementById("menuPanel");
 
 if(panel.style.display==="none"){
