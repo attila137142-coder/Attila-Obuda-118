@@ -6,77 +6,172 @@
 
 <style>
 body {
-  background:black;
-  color:#00ff00;
-  font-family:Arial;
-  margin:0;
+  font-family: Arial;
+  margin: 0;
+  background: #111;
+  color: white;
 }
 
-#panel {
-  padding:10px;
+.container {
+  padding: 10px;
 }
 
-.stop {
-  padding:8px;
-  border-bottom:1px solid #333;
+.header {
+  font-size: 22px;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: none;
 }
 
 button {
-  background:black;
-  color:#0f0;
-  border:1px solid #0f0;
-  padding:6px;
-  margin:3px;
-  cursor:pointer;
+  padding: 8px 12px;
+  margin: 3px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
 }
 
-.active {
-  background:#0f0;
-  color:black;
+.stop {
+  padding: 10px;
+  margin: 5px 0;
+  border-radius: 12px;
+  background: #222;
+}
+
+.green .stop { background: #063; }
+.red .stop { background: #500; }
+
+.small {
+  font-size: 12px;
+  opacity: 0.8;
 }
 </style>
 </head>
 
 <body>
 
-<div id="panel">
+<div id="app" class="container">
 
-<h3>🚏 Közeli megállók</h3>
+  <div class="header">🚍 Attila Közlekedés PRO</div>
 
-<div>
-<button onclick="setRadius(1)" id="b1">1 km</button>
-<button onclick="setRadius(1.5)" id="b15">1.5 km</button>
-<button onclick="setRadius(2)" id="b2">2 km</button>
-</div>
+  <input id="search" placeholder="Megálló / GTFS keresés..." oninput="render()">
 
-<br>
+  <div>
+    <button onclick="getLocation()">📍 Saját hely</button>
+    <button onclick="setMode('normal')">Normál</button>
+    <button onclick="setMode('green')">Zöld</button>
+    <button onclick="setMode('red')">Piros</button>
+  </div>
 
-<div id="stops">Helymeghatározás...</div>
+  <div id="status" class="small">Nincs helyadat</div>
+
+  <div id="list"></div>
 
 </div>
 
 <script>
 
-let radius = 1;
+// ===== DEMO ADATOK (később GTFS)
+const stops = [
+  {name: "Békásmegyer HÉV-állomás", gtfs: "H5-001", lat: 47.598, lon: 19.055},
+  {name: "Kasza utca", gtfs: "BKK-2345", lat: 47.597, lon: 19.058},
+  {name: "Pünkösdfürdő", gtfs: "H5-002", lat: 47.601, lon: 19.050}
+];
 
-function setRadius(r){
-  radius = r;
+let userLat = null;
+let userLon = null;
+let mode = "normal";
 
-  document.querySelectorAll("button").forEach(b=>b.classList.remove("active"));
-
-  if(r==1) document.getElementById("b1").classList.add("active");
-  if(r==1.5) document.getElementById("b15").classList.add("active");
-  if(r==2) document.getElementById("b2").classList.add("active");
-
-  updateStops(lastLat, lastLon);
+// ===== HELYZET
+function getLocation() {
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+    document.getElementById("status").innerText = "Helyzet OK";
+    render();
+  });
 }
 
-let lastLat = 47.5;
-let lastLon = 19.05;
+// ===== TÁVOLSÁG
+function distance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1)*Math.PI/180;
+  const Δλ = (lon2-lon1)*Math.PI/180;
 
-// MINTA ADAT (ez később lesz GTFS)
-let stopsData = [
-{name:"Flórián tér",lat:47.5415,lon:19.0418},
-{name:"Békásmegyer H",lat:47.5985,lon:19.0552},
-{name:"Szentendre H",lat:47.6667,lon:19.0756},
-{name:"Batthyány tér",lat:47
+  const a = Math.sin(Δφ/2)**2 +
+    Math.cos(φ1)*Math.cos(φ2) *
+    Math.sin(Δλ/2)**2;
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return Math.round(R * c);
+}
+
+// ===== KÉSÉS FORMÁTUM
+function formatDelay(sec) {
+  const sign = sec >= 0 ? "+" : "-";
+  sec = Math.abs(sec);
+  const m = Math.floor(sec/60);
+  const s = sec % 60;
+  return sign + m + ":" + String(s).padStart(2,"0");
+}
+
+// ===== MÓD
+function setMode(m) {
+  mode = m;
+  document.getElementById("app").className = "container " + m;
+}
+
+// ===== RENDER
+function render() {
+  const list = document.getElementById("list");
+  const search = document.getElementById("search").value.toLowerCase();
+
+  list.innerHTML = "";
+
+  stops
+    .filter(s =>
+      s.name.toLowerCase().includes(search) ||
+      s.gtfs.toLowerCase().includes(search)
+    )
+    .forEach(s => {
+
+      let distText = "Nincs helyadat";
+      if(userLat){
+        const d = distance(userLat, userLon, s.lat, s.lon);
+        const road = Math.round(d * 1.3);
+        distText = `Légvonal: ${d} m | Út: ~${road} m`;
+      }
+
+      const delay = formatDelay(Math.floor(Math.random()*300 - 150));
+
+      const div = document.createElement("div");
+      div.className = "stop";
+
+      div.innerHTML = `
+        <b>${s.name}</b><br>
+        <span class="small">GTFS: ${s.gtfs}</span><br>
+        <span class="small">${distText}</span><br>
+        <span class="small">Késés: ${delay}</span>
+      `;
+
+      list.appendChild(div);
+    });
+}
+
+// ===== INDÍTÁS
+render();
+
+</script>
+
+</body>
+</html>
