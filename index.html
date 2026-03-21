@@ -2,39 +2,20 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés PRO</title>
+<title>Attila Közlekedés</title>
 
 <style>
 body {
   font-family: Arial;
-  margin: 0;
   background: #111;
   color: white;
-}
-
-.container {
   padding: 10px;
-}
-
-.header {
-  font-size: 22px;
-  font-weight: bold;
-  margin-bottom: 10px;
-}
-
-input {
-  width: 100%;
-  padding: 10px;
-  font-size: 16px;
-  margin-bottom: 10px;
-  border-radius: 10px;
-  border: none;
 }
 
 button {
-  padding: 8px 12px;
-  margin: 3px;
-  border-radius: 10px;
+  padding: 6px 10px;
+  margin: 4px;
+  border-radius: 6px;
   border: none;
   cursor: pointer;
 }
@@ -42,155 +23,73 @@ button {
 .stop {
   padding: 10px;
   margin: 5px 0;
-  border-radius: 12px;
+  border-radius: 8px;
   background: #222;
 }
 
-.green .stop { background: #063; }
-.red .stop { background: #500; }
+/* módok */
+.green .stop { background: #0a3; }
+.red .stop { background: #a00; }
 
-.small {
-  font-size: 12px;
-  opacity: 0.8;
+.matrix {
+  background: black;
+  color: #FFD700;
+  font-family: monospace;
 }
 </style>
 </head>
 
 <body>
 
-<div id="app" class="container">
+<h2>🚏 Közeli megállók</h2>
 
-  <div class="header">🚍 Attila Közlekedés PRO</div>
+<!-- mód kapcsoló -->
+<button onclick="setMode('normal')">Normál</button>
+<button onclick="setMode('green')">Zöld</button>
+<button onclick="setMode('red')">Piros</button>
+<button onclick="setMode('matrix')">MÁTRIX</button>
 
-  <input id="search" placeholder="Megálló / GTFS keresés..." oninput="render()">
-
-  <div>
-    <button onclick="getLocation()">📍 Saját hely</button>
-    <button onclick="setMode('normal')">Normál</button>
-    <button onclick="setMode('green')">Zöld</button>
-    <button onclick="setMode('red')">Piros</button>
-  </div>
-
-  <div id="status" class="small">Nincs helyadat</div>
-
-  <div id="list"></div>
-
-</div>
+<!-- lista -->
+<div id="list"></div>
 
 <script>
-
-// ===== DEMO ADATOK (később GTFS)
-const stops = [
-  {name: "Békásmegyer HÉV-állomás", gtfs: "H5-001", lat: 47.598, lon: 19.055},
-  {name: "Nád  utca", gtfs: "BKK-F00457", lat: 47.594072, lon: 19.048469},
-  {name: "Pünkösdfürdő", gtfs: "H5-002", lat: 47.601, lon: 19.050}
-  
-
-];
-
-let userLat = null;
-let userLon = null;
 let mode = "normal";
 
-// ===== HELYZET
-function getLocation() {
-  navigator.geolocation.getCurrentPosition(pos => {
-    userLat = pos.coords.latitude;
-    userLon = pos.coords.longitude;
-    document.getElementById("status").innerText = "Helyzet OK";
-    render();
+const stops = [
+  {name:"Békásmegyer HÉV", dist:300},
+  {name:"Pünkösdfürdő", dist:800},
+  {name:"Csillaghegy", dist:1200},
+  {name:"Rómaifürdő", dist:1800},
+  {name:"Aquincum", dist:2200}
+];
+
+function render(){
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+
+  document.body.className = "";
+  if(mode==="green") document.body.classList.add("green");
+  if(mode==="red") document.body.classList.add("red");
+  if(mode==="matrix") document.body.classList.add("matrix");
+
+  stops.forEach(s=>{
+    const d = document.createElement("div");
+    d.className = "stop";
+    d.innerHTML = `
+      <b>${s.name}</b><br>
+      Távolság: ${s.dist} m
+    `;
+    list.appendChild(d);
   });
 }
 
-// ===== TÁVOLSÁG
-function distance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3;
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1)*Math.PI/180;
-  const Δλ = (lon2-lon1)*Math.PI/180;
-
-  const a = Math.sin(Δφ/2)**2 +
-    Math.cos(φ1)*Math.cos(φ2) *
-    Math.sin(Δλ/2)**2;
-
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return Math.round(R * c);
-}
-
-// ===== KÉSÉS FORMÁTUM
-function formatDelay(sec) {
-  const sign = sec >= 0 ? "+" : "-";
-  sec = Math.abs(sec);
-  const m = Math.floor(sec/60);
-  const s = sec % 60;
-  return sign + m + ":" + String(s).padStart(2,"0");
-}
-
-// ===== MÓD
-function setMode(m) {
+function setMode(m){
   mode = m;
-  document.getElementById("app").className = "container " + m;
+  render();
 }
 
-// ===== RENDER
-function render() {
-  const list = document.getElementById("list");
-  const search = document.getElementById("search").value.toLowerCase();
-
-  list.innerHTML = "";
-
-  stops
-    .filter(s =>
-      s.name.toLowerCase().includes(search) ||
-      s.gtfs.toLowerCase().includes(search)
-    )
-    .forEach(s => {
-
-      let distText = "Nincs helyadat";
-      if(userLat){
-        const d = distance(userLat, userLon, s.lat, s.lon);
-        const road = Math.round(d * 1.3);
-        distText = `Légvonal: ${d} m | Út: ~${road} m`;
-      }
-
-      const delay = formatDelay(Math.floor(Math.random()*300 - 150));
-
-      const div = document.createElement("div");
-      div.className = "stop";
-
-      div.innerHTML = `
-        <b>${s.name}</b><br>
-        <span class="small">GTFS: ${s.gtfs}</span><br>
-        <span class="small">${distText}</span><br>
-        <span class="small">Késés: ${delay}</span>
-      `;
-
-      list.appendChild(div);
-    });
-}
-
-// ===== INDÍTÁS
 render();
-
 </script>
-// Saját hely lekérés
 
-
-function getLocation(){
-  if(navigator.geolocation){
-    navigator.geolocation.getCurrentPosition(pos=>{
-      userLat = pos.coords.latitude;
-      userLon = pos.coords.longitude;
-
-      document.getElementById("status").innerHTML =
-        "📍 Saját hely aktív";
-      
-    }, ()=>{
-      alert("Nem sikerült a helyadat!");
-    });
-  }
-}
-</script>
 </body>
 </html>
