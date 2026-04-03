@@ -2,130 +2,48 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>BKK teszt</title>
+<title>Attila Közlekedés PRO</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body {
-background: black;
-color: #FFD700;
-font-family: monospace;
-padding: 10px;
-}
-
-button {
-background: black;
-color: #FFD700;
-border: 2px solid #FFD700;
-padding: 10px;
-margin-bottom: 10px;
-cursor: pointer;
-}
-
-.line {
-padding: 5px;
-border-bottom: 1px solid #333;
-}
-</style>
-</head>
-
-<body>
-
-<button onclick="loadBKK()">BKK MEGÁLLÓK BETÖLTÉSE</button>
-
-<div id="content">Kattints a gombra!</div>
-
-<script>
-
-async function loadBKK() {
-document.getElementById("content").innerHTML = "BETÖLTÉS...";
-
-const url = "https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
-
-try {
-const response = await fetch(url);
-const blob = await response.blob();
-
-const zip = await JSZip.loadAsync(blob);
-
-const stopsFile = await zip.file("stops.txt").async("string");
-
-const rows = stopsFile.split("\n");
-
-let html = "";
-
-for (let i = 1; i < 50; i++) {
-let cols = rows[i].split(",");
-let name = cols[2]; // stop_name
-html += `<div class="line">${name}</div>`;
-}
-
-document.getElementById("content").innerHTML = html;
-
-} catch (err) {
-document.getElementById("content").innerHTML =
-"HIBA: " + err;
-}
-}
-
-</script>
-
-</body>
-</html>
-
-
-</script>
-<head>
-<meta charset="UTF-8">
-<title>Attila Közlekedés PRO</title>
-
-<style>
-body {
-  font-family: Arial;
-  margin: 0;
-  background: #111;
-  color: white;
-}
-
-.container {
+  background: black;
+  color: #FFD700;
+  font-family: monospace;
   padding: 10px;
 }
 
-.header {
-  font-size: 22px;
-  font-weight: bold;
-  margin-bottom: 10px;
-}
-
-input {
-  width: 100%;
-  padding: 10px;
-  font-size: 16px;
-  margin-bottom: 10px;
-  border-radius: 10px;
-  border: none;
-}
-
+/* ===== GOMBOK ===== */
 button {
-  padding: 8px 12px;
-  margin: 3px;
-  border-radius: 10px;
-  border: none;
+  background: black;
+  color: #FFD700;
+  border: 2px solid #FFD700;
+  padding: 10px;
+  margin: 5px;
   cursor: pointer;
 }
 
+/* ===== MÁTRIX ===== */
+.matrix {
+  color: #00FF00;
+  text-shadow: 0 0 5px #00FF00;
+}
+
+/* ===== LISTA ===== */
 .stop {
   padding: 10px;
   margin: 5px 0;
-  border-radius: 12px;
   background: #222;
 }
 
-.green .stop { background: #063; }
-.red .stop { background: #500; }
+/* ===== KÉSÉS ===== */
+.delay-fast { color: red; }
+.delay-on { color: #FFD700; }
+.delay-late { color: #00AAFF; }
 
-.small {
+/* ===== JÁRMŰ ===== */
+.vehicle {
   font-size: 12px;
   opacity: 0.8;
 }
@@ -134,29 +52,26 @@ button {
 
 <body>
 
-<div id="app" class="container">
+<h2>🚍 Attila Közlekedés PRO</h2>
 
-  <div class="header">🚍 Attila Közlekedés PRO</div>
+<input id="search" placeholder="Keresés..." oninput="render()">
 
-  <input id="search" placeholder="Megálló / GTFS keresés..." oninput="render()">
+<br>
 
-  <div>
-    <button onclick="getLocation()">📍 Saját hely</button>
-    <button onclick="setMode('normal')">Normál</button>
-    <button onclick="setMode('green')">Zöld</button>
-    <button onclick="setMode('red')">Piros</button>
-    <button onclick="setMode('matrix')">Matrix</button>
-  </div>
+<button onclick="getLocation()">📍 Hely</button>
+<button onclick="setMode('normal')">Normál</button>
+<button onclick="setMode('green')">Zöld</button>
+<button onclick="setMode('red')">Piros</button>
+<button onclick="setMode('matrix')">MÁTRIX</button>
+<button onclick="loadBKK()">BKK BETÖLTÉS</button>
 
-  <div id="status" class="small">Nincs helyadat</div>
+<div id="status">Nincs helyadat</div>
 
-  <div id="list"></div>
-
-</div>
+<div id="content"></div>
 
 <script>
 
-// ===== DEMO ADATOK (később GTFS)
+// ===== SAJÁT MEGÁLLÓK =====
 const stops = [
  {name: "Békásmegyer HÉV-állomás", gtfs: "H5-09183", lat: 47.598091, lon: 19.054599},
   {name: "Nád utca", gtfs: "BKK-F00457", lat: 47.594072, lon: 19.048469},
@@ -211,19 +126,18 @@ const stops = [
 
 let userLat = null;
 let userLon = null;
-let mode = "normal";
 
-// ===== HELYZET
+// ===== HELY =====
 function getLocation() {
   navigator.geolocation.getCurrentPosition(pos => {
     userLat = pos.coords.latitude;
     userLon = pos.coords.longitude;
-    document.getElementById("status").innerText = "Helyzet OK";
+    document.getElementById("status").innerText = "Hely OK";
     render();
   });
 }
 
-// ===== TÁVOLSÁG
+// ===== TÁVOLSÁG =====
 function distance(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const φ1 = lat1 * Math.PI/180;
@@ -235,63 +149,150 @@ function distance(lat1, lon1, lat2, lon2) {
     Math.cos(φ1)*Math.cos(φ2) *
     Math.sin(Δλ/2)**2;
 
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return Math.round(R * c);
+  return Math.round(R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a)));
 }
 
-// ===== KÉSÉS FORMÁTUM
-function formatDelay(sec) {
-  const sign = sec >= 0 ? "+" : "-";
-  sec = Math.abs(sec);
-  const m = Math.floor(sec/60);
-  const s = sec % 60;
-  return sign + m + ":" + String(s).padStart(2,"0");
-}
-
-// ===== MÓD
+// ===== MÓD =====
 function setMode(m) {
-  mode = m;
-  document.getElementById("app").className = "container " + m;
+  if (m === "green") {
+    document.body.style.color = "#00FF00";
+    document.body.className = "";
+  }
+  else if (m === "red") {
+    document.body.style.color = "#FF4444";
+    document.body.className = "";
+  }
+  else if (m === "matrix") {
+    document.body.style.color = "#00FF00";
+    document.body.className = "matrix";
+  }
+  else {
+    document.body.style.color = "#FFD700";
+    document.body.className = "";
+  }
 }
 
-// ===== RENDER
+// ===== RENDER SAJÁT LISTA =====
 function render() {
-  const list = document.getElementById("list");
-  const search = document.getElementById("search").value.toLowerCase();
 
-  list.innerHTML = "";
+  const search = document.getElementById("search").value.toLowerCase();
+  const div = document.getElementById("content");
+
+  div.innerHTML = "";
 
   stops
-    .filter(s =>
-      s.name.toLowerCase().includes(search) ||
-      s.gtfs.toLowerCase().includes(search)
-    )
+    .filter(s => s.name.toLowerCase().includes(search))
     .forEach(s => {
 
-      let distText = "Nincs helyadat";
-      if(userLat){
-        const d = distance(userLat, userLon, s.lat, s.lon);
-        const road = Math.round(d * 1.3);
-        distText = `Légvonal: ${d} m | Út: ~${road} m`;
+      let dist = "nincs adat";
+      if (userLat) {
+        dist = distance(userLat, userLon, s.lat, s.lon) + " m";
       }
 
-      const delay = formatDelay(Math.floor(Math.random()*300 - 150));
-
-      const div = document.createElement("div");
-      div.className = "stop";
-
-      div.innerHTML = `
-        <b>${s.name}</b><br>
-        <span class="small">GTFS: ${s.gtfs}</span><br>
-        <span class="small">${distText}</span><br>
-        <span class="small">Késés: ${delay}</span>
+      div.innerHTML += `
+        <div class="stop">
+          <b>${s.name}</b><br>
+          Távolság: ${dist}
+        </div>
       `;
-
-      list.appendChild(div);
     });
 }
 
-// ===== INDÍTÁS
+// ===== KÉSÉS =====
+function generateDelay() {
+  return Math.floor(Math.random() * 180 - 90);
+}
+function formatDelay(sec) {
+  const sign = sec >= 0 ? "+" : "-";
+  sec = Math.abs(sec);
+  return sign + Math.floor(sec/60) + ":" + String(sec%60).padStart(2,"0");
+}
+function getDelayClass(sec) {
+  if (sec < -10) return "delay-fast";
+  if (sec > 10) return "delay-late";
+  return "delay-on";
+}
+
+// ===== CSV =====
+function parseCSV(line) {
+  const result = [];
+  let current = "";
+  let insideQuotes = false;
+
+  for (let c of line) {
+    if (c === '"') insideQuotes = !insideQuotes;
+    else if (c === ',' && !insideQuotes) {
+      result.push(current);
+      current = "";
+    } else current += c;
+  }
+
+  result.push(current);
+  return result;
+}
+
+// ===== BKK =====
+async function loadBKK() {
+
+  document.getElementById("content").innerHTML = "BETÖLTÉS...";
+
+  try {
+    const url = "https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
+
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const zip = await JSZip.loadAsync(blob);
+
+    const stopsTxt = await zip.file("stops.txt").async("string");
+    const stopTimesTxt = await zip.file("stop_times.txt").async("string");
+
+    const stopsRows = stopsTxt.split("\n");
+    const stopTimesRows = stopTimesTxt.split("\n");
+
+    let html = "";
+
+    for (let i = 1; i < 15; i++) {
+
+      const cols = parseCSV(stopsRows[i]);
+      const stopId = cols[0];
+      const stopName = cols[2];
+
+      html += `<div class="stop"><b>${stopName}</b><br>`;
+
+      let count = 0;
+
+      for (let j = 1; j < 5000; j++) {
+
+        const st = parseCSV(stopTimesRows[j]);
+
+        if (st[3] === stopId) {
+
+          const delay = generateDelay();
+          const delayClass = getDelayClass(delay);
+
+          html += `
+⏱ ${st[1]}
+<span class="${delayClass}">(${formatDelay(delay)})</span><br>
+<div class="vehicle">Busz | BKK-${Math.floor(Math.random()*1000)}</div>
+`;
+
+          count++;
+        }
+
+        if (count >= 3) break;
+      }
+
+      html += `</div>`;
+    }
+
+    document.getElementById("content").innerHTML = html;
+
+  } catch (err) {
+    document.getElementById("content").innerHTML = "HIBA: " + err;
+  }
+}
+
+// ===== INDÍTÁS =====
 render();
 
 </script>
