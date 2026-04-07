@@ -1,223 +1,64 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Attila közlekedés</title>
+<meta charset="utf-8">
+<title>Mini Navigáció</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body { font-family: Arial; padding: 20px; }
-button { margin: 5px; padding: 10px; }
-#result { margin-top: 10px; font-weight: bold; }
-.kek { color: blue; }
-.piros { color: red; }
+#map { height: 500px; }
 </style>
-
 </head>
+
 <body>
 
-<h2>🚍 Attila közlekedés</h2>
+<h2>📍 Mini Navigáció</h2>
+<button onclick="calc()">Távolság számítás</button>
 
-<input id="search" placeholder="Megálló neve">
-<button onclick="searchStop()">Keresés</button>
-
-<br><br>
-
-<input id="from" placeholder="Honnan">
-<input id="to" placeholder="Hová">
-<button onclick="calc()">Távolság</button>
-
-<br><br>
-
-<button onclick="setMode('kek')">KÉK</button>
-<button onclick="setMode('piros')">PIROS</button>
-
-<div id="result">Eredmény...</div>
+<div id="map"></div>
+<p id="result">Eredmény: </p>
 
 <script>
 
-let mode = "normal";
+let map = L.map('map').setView([47.55, 19.045], 13);
 
-function setMode(m){
-  mode = m;
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+.addTo(map);
+
+let start = null;
+let end = null;
+
+map.on('click', function(e) {
+
+if (!start) {
+start = e.latlng;
+L.marker(start).addTo(map).bindPopup("Start").openPopup();
+} else {
+end = e.latlng;
+L.marker(end).addTo(map).bindPopup("Cél").openPopup();
 }
 
-let stops = [
-  {name:"Békásmegyer", lat:47.598, lon:19.055},
-  {name:"Batthyány tér", lat:47.507, lon:19.039},
-  {name:"Flórián tér", lat:47.541, lon:19.045},
-  {name:"Szentendre", lat:47.668, lon:19.075}
-];
-// ===== MINI MENETREND (minta, bővíthető) =====
-const timetable = {
-  "Békásmegyer HÉV-állomás": [
-    { line: "H5", to: "Szentendre", base: "00:00", interval: 10 },
-    { line: "H5", to: "Batthyány tér", base: "00:05", interval: 10 }
-  ],
-  "Flórián tér": [
-    { line: "1", to: "Kelenföld", base: "00:02", interval: 7 },
-    { line: "1", to: "Bécsi út", base: "00:05", interval: 7 }
-  ],
-  "Batthyány tér (villamos)": [
-    { line: "19", to: "Kelenföld", base: "00:03", interval: 8 }
-  ]
-};
-function searchStop(){
-  let input = document.getElementById("search").value.toLowerCase();
-  let found = stops.find(s => s.name.toLowerCase().includes(input));
+});
 
-  if(found){
-    show(found.name);
-  } else {
-    show("Nincs találat");
-  }
+function calc() {
+
+if (!start || !end) {
+alert("Kattints 2 pontot!");
+return;
 }
 
-function calc(){
-  let from = document.getElementById("from").value.toLowerCase();
-  let to = document.getElementById("to").value.toLowerCase();
+let dx = start.lat - end.lat;
+let dy = start.lng - end.lng;
 
-  let a = stops.find(s => s.name.toLowerCase().includes(from));
-  let b = stops.find(s => s.name.toLowerCase().includes(to));
-
-  if(a && b){
-    let d = distance(a.lat,a.lon,b.lat,b.lon);
-    show("Távolság: " + (d*1000).toFixed(0) + " m");
-  } else {
-    show("Hibás megálló");
-  }
-}
-
-function distance(lat1, lon1, lat2, lon2){
-  let R = 6371;
-  let dLat = (lat2-lat1) * Math.PI/180;
-  let dLon = (lon2-lon1) * Math.PI/180;
-
-  let a = Math.sin(dLat/2)**2 +
-          Math.cos(lat1*Math.PI/180) *
-          Math.cos(lat2*Math.PI/180) *
-          Math.sin(dLon/2)**2;
-
-  let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R * c;
-}
-
-function show(text){
-  let el = document.getElementById("result");
-  el.className = mode;
-  el.innerHTML = text;
-}
-let mode = "normal";
-
-function setMode(m) {
-  mode = m;
-  document.getElementById("status").innerText = "Mód: " + m;
-}
-
-function getColorStyle() {
-  if (mode === "keses") return "color: blue;";
-  if (mode === "sietes") return "color: red;";
-  if (mode === "zold") return "color: green;";
-  if (mode === "sarga") return "color: orange;";
-  if (mode === "matrix") return "background: black; color: lime; padding:4px;";
-  return "color: black;";
-}
-function getNextDepartures(stopName) {
-  const now = new Date();
-  const minutesNow = now.getHours() * 60 + now.getMinutes();
-  const seconds = now.getSeconds();
-
-  let results = [];
-
-  if (!timetable[stopName]) return [];
-
-  timetable[stopName].forEach(route => {
-    let [h, m] = route.base.split(":").map(Number);
-    let baseMinutes = h * 60 + m;
-
-    let diff = (minutesNow - baseMinutes) % route.interval;
-    if (diff < 0) diff += route.interval;
-
-    let nextMin = route.interval - diff;
-
-    results.push({
-      line: route.line,
-      to: route.to,
-      min: nextMin,
-      sec: 60 - seconds
-    });
-  });
-
-  return results;
-}function showDepartures() {
-  const stopInput = document.getElementById("from").value;
-
-  const stop = stops.find(s =>
-    s.name.toLowerCase().includes(stopInput.toLowerCase())
-  );
-
-  if (!stop) {
-    document.getElementById("result").innerText = "Nincs megálló!";
-    return;
-  }
-
-  const deps = getNextDepartures(stop.name);
-
-  if (deps.length === 0) {
-    document.getElementById("result").innerText = "Nincs adat!";
-    return;
-  }
-
-  let html = "<b>" + stop.name + "</b><br>";
-
-  deps.forEach(d => {
-    html +=
-      "<div style='" + getColorStyle() + "'>" +
-      d.line + " → " + d.to +
-      " | " + d.min + " perc " + d.sec + " mp" +
-      "</div>";
-  });
-
-  document.getElementById("result").innerHTML = html;
-}
-<button onclick="showDepartures()">Indulások</button>
-setInterval(() => {
-  showDepartures();
-}, 1000);
-
-function calcAirDistance(lat1, lon1, lat2, lon2) {
-  let R = 6371e3; // méter
-  let φ1 = lat1 * Math.PI/180;
-  let φ2 = lat2 * Math.PI/180;
-  let Δφ = (lat2-lat1) * Math.PI/180;
-  let Δλ = (lon2-lon1) * Math.PI/180;
-
-  let a = Math.sin(Δφ/2) * Math.sin(Δφ/2) +
-          Math.cos(φ1) * Math.cos(φ2) *
-          Math.sin(Δλ/2) * Math.sin(Δλ/2);
-
-  let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-  return R * c; // méter
-}
-let km = (data.routes[0].distance / 1000).toFixed(2);
-
-// ✈️ légvonal
-let air = calcAirDistance(start.lat, start.lon, end.lat, end.lon);
-
-// 🌲 gyalogos (külön API hívás)
-let footUrl = `https://router.project-osrm.org/route/v1/foot/${start.lon},${start.lat};${end.lon},${end.lat}?overview=false`;
-let footRes = await fetch(footUrl);
-let footData = await footRes.json();
-let footKm = (footData.routes[0].distance / 1000).toFixed(2);
+let dist = Math.sqrt(dx*dx + dy*dy) * 111;
 
 document.getElementById("result").innerHTML =
-  `
-  🧭 ${start.name} → ${end.name}<br><br>
+"Távolság: " + dist.toFixed(2) + " km";
 
-  ✈️ Légvonal: ${air.toFixed(0)} m<br>
-  🌲 Erdei (gyalog): ${footKm} km<br>
-  🚗 Közúti: ${km} km
-  `;
+}
+
 </script>
 
 </body>
