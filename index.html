@@ -1,183 +1,248 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
+
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
 <title>Attila Közlekedés</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
+
 body{
 margin:0;
 font-family:Arial;
-display:flex;
 }
 
 #map{
-width:70%;
 height:100vh;
+width:100%;
 }
 
-#panel{
-width:30%;
-background:#f4f4f4;
+.title{
+
+position:absolute;
+top:15px;
+left:70px;
+
+z-index:1000;
+
+background:white;
+padding:10px 16px;
+
+border-radius:8px;
+
+font-size:22px;
+font-weight:bold;
+
+box-shadow:0 3px 10px rgba(0,0,0,0.3);
+
+}
+
+.panel{
+
+position:absolute;
+
+top:70px;
+left:10px;
+
+width:260px;
+
+background:white;
+
+z-index:1000;
+
 padding:10px;
-overflow:auto;
+
+border-radius:8px;
+
+box-shadow:0 3px 10px rgba(0,0,0,0.3);
+
+font-size:14px;
+
+}
+
+.panel h3{
+
+margin-top:5px;
+
 }
 
 button{
+
 width:100%;
-padding:10px;
 margin-top:5px;
-font-size:16px;
+
+padding:6px;
+
+font-size:14px;
+
 }
 
-table{
-width:100%;
-border-collapse:collapse;
-margin-top:10px;
+.leaflet-control-zoom a{
+
+width:50px;
+height:50px;
+line-height:50px;
+
+font-size:26px;
+
 }
 
-td{
-border:1px solid #ccc;
-padding:5px;
-}
-
-.bigNumber{
-font-size:20px;
-font-weight:bold;
-color:#c00;
-}
-
-#map5000{
-height:250px;
-margin-top:10px;
-}
 </style>
 
 </head>
 
 <body>
 
-<div id="map"></div>
+<div class="title">
+Attila Közlekedés – Diszpécser térkép
+</div>
 
-<div id="panel">
+<div class="panel">
 
-<h2>Attila Közlekedés</h2>
+<h3>Térkép</h3>
 
-<button onclick="startNav()">Navigáció indítása</button>
+<button onclick="streetLayer.addTo(map); map.removeLayer(topoLayer)">
+Utcatérkép
+</button>
 
-<button onclick="showStops()">Megállók 1 km-en belül</button>
+<button onclick="topoLayer.addTo(map); map.removeLayer(streetLayer)">
+Topográfia
+</button>
 
-<button onclick="showVehicles()">Járművek</button>
+<hr>
 
-<h3>Távolság adatok</h3>
+<h3>Pozíció</h3>
 
-<table>
+<button onclick="locateMe()">
+Saját pozíció
+</button>
 
-<tr>
-<td>Összes távolság</td>
-<td id="total">0 km</td>
-</tr>
+<hr>
 
-<tr>
-<td>Következő pont</td>
-<td id="next">0 km</td>
-</tr>
+<h3>Kisvasutak</h3>
 
-<tr>
-<td>Megtett</td>
-<td id="done">0 km</td>
-</tr>
+<button onclick="showChildrenRailway()">
+Gyermekvasút
+</button>
 
-<tr>
-<td>Megtett %</td>
-<td id="donep">0%</td>
-</tr>
+<button onclick="showKiralyret()">
+Királyréti kisvasút
+</button>
 
-<tr>
-<td>Hátralévő</td>
-<td id="left">0 km</td>
-</tr>
+<button onclick="showSzob()">
+Szob–Nagybörzsöny
+</button>
 
-<tr>
-<td>Hátralévő %</td>
-<td id="leftp">0%</td>
-</tr>
+<hr>
 
-</table>
+<h3>Diszpécser</h3>
 
-<h3>Sebesség</h3>
+<div id="vehicleData">
 
-<div class="bigNumber" id="speed">0 km/h</div>
-<div id="speedms">0 m/s</div>
-
-<h3>5000 léptékű térkép</h3>
-
-<div id="map5000"></div>
+nincs kiválasztva
 
 </div>
+
+</div>
+
+<div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-var map = L.map('map').setView([47.5,19.05],12);
+var map = L.map('map').setView([47.55,19.03],13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-maxZoom:19
-}).addTo(map);
+var streetLayer = L.tileLayer(
 
-var mapSmall = L.map('map5000').setView([47.5,19.05],16);
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-maxZoom:19
-}).addTo(mapSmall);
+{
+maxZoom:19,
+attribution:'© OpenStreetMap'
+}
 
-var userMarker;
+).addTo(map);
 
-function startNav(){
+var topoLayer = L.tileLayer(
 
-navigator.geolocation.watchPosition(function(pos){
+'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+
+{
+maxZoom:17,
+attribution:'© OpenTopoMap'
+}
+
+);
+
+function locateMe(){
+
+navigator.geolocation.getCurrentPosition(function(pos){
 
 var lat = pos.coords.latitude;
 var lon = pos.coords.longitude;
 
-var speed = pos.coords.speed || 0;
+L.marker([lat,lon]).addTo(map)
 
-var kmh = speed * 3.6;
-var ms = speed;
+.bindPopup("Az Ön pozíciója")
 
-document.getElementById("speed").innerHTML = kmh.toFixed(1)+" km/h";
-document.getElementById("speedms").innerHTML = ms.toFixed(1)+" m/s";
-
-if(!userMarker){
-
-userMarker = L.marker([lat,lon]).addTo(map);
-
-}else{
-
-userMarker.setLatLng([lat,lon]);
-
-}
+.openPopup();
 
 map.setView([lat,lon],15);
-
-mapSmall.setView([lat,lon],16);
 
 });
 
 }
 
-function showStops(){
+function showChildrenRailway(){
 
-alert("Megállók keresése 1 km-en belül – ide jön majd a GTFS adat.");
+var line = [
+
+[47.548,18.958],
+[47.556,18.965],
+[47.565,18.973]
+
+];
+
+L.polyline(line,{color:'green'}).addTo(map)
+
+.bindPopup("Budapesti Gyermekvasút");
 
 }
 
-function showVehicles(){
+function showKiralyret(){
 
-alert("BKV / MÁV / Volán járműkövetés – ide jön majd a GTFS realtime.");
+var line = [
+
+[47.930,19.020],
+[47.940,19.030],
+[47.955,19.045]
+
+];
+
+L.polyline(line,{color:'brown'}).addTo(map)
+
+.bindPopup("Királyréti Erdei Vasút");
+
+}
+
+function showSzob(){
+
+var line = [
+
+[47.820,18.870],
+[47.830,18.880],
+[47.840,18.890]
+
+];
+
+L.polyline(line,{color:'black'}).addTo(map)
+
+.bindPopup("Szob–Nagybörzsöny kisvasút");
 
 }
 
