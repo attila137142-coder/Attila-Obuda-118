@@ -1,113 +1,299 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Attila közlekedés</title>
+<meta charset="utf-8">
+<title>BKK teszt</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body { font-family: Arial; padding: 20px; }
-button { margin: 5px; padding: 10px; }
-#result { margin-top: 10px; font-weight: bold; }
-.kek { color: blue; }
-.piros { color: red; }
-</style>
+body {
+background: black;
+color: #FFD700;
+font-family: monospace;
+padding: 10px;
+}
 
+button {
+background: black;
+color: #FFD700;
+border: 2px solid #FFD700;
+padding: 10px;
+margin-bottom: 10px;
+cursor: pointer;
+}
+
+.line {
+padding: 5px;
+border-bottom: 1px solid #333;
+}
+</style>
 </head>
+
 <body>
 
-<h2>🚍 Attila közlekedés</h2>
+<button onclick="loadBKK()">BKK MEGÁLLÓK BETÖLTÉSE</button>
 
-<input id="search" placeholder="Megálló neve">
-<button onclick="searchStop()">Keresés</button>
-
-<br><br>
-
-<input id="from" placeholder="Honnan">
-<input id="to" placeholder="Hová">
-<button onclick="calc()">Távolság</button>
-
-<br><br>
-
-<button onclick="setMode('kek')">KÉK</button>
-<button onclick="setMode('piros')">PIROS</button>
-
-<div id="result">Eredmény...</div>
+<div id="content">Kattints a gombra!</div>
 
 <script>
 
-let mode = "normal";
+async function loadBKK() {
+document.getElementById("content").innerHTML = "BETÖLTÉS...";
 
-function setMode(m){
-mode = m;
+const url = "https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
+
+try {
+const response = await fetch(url);
+const blob = await response.blob();
+
+const zip = await JSZip.loadAsync(blob);
+
+const stopsFile = await zip.file("stops.txt").async("string");
+
+const rows = stopsFile.split("\n");
+
+let html = "";
+
+for (let i = 1; i < 50; i++) {
+let cols = rows[i].split(",");
+let name = cols[2]; // stop_name
+html += `<div class="line">${name}</div>`;
 }
 
-let stops = [
-{name:"Békásmegyer", lat:47.598, lon:19.055},
-{name:"Batthyány tér", lat:47.507, lon:19.039},
-{name:"Flórián tér", lat:47.541, lon:19.045},
-{name:"Szentendre", lat:47.668, lon:19.075}
+document.getElementById("content").innerHTML = html;
+
+} catch (err) {
+document.getElementById("content").innerHTML =
+"HIBA: " + err;
+}
+}
+
+</script>
+
+</body>
+</html>
+
+
+</script>
+<head>
+<meta charset="UTF-8">
+<title>Attila Közlekedés PRO</title>
+
+<style>
+body {
+  font-family: Arial;
+  margin: 0;
+  background: #111;
+  color: white;
+}
+
+.container {
+  padding: 10px;
+}
+
+.header {
+  font-size: 22px;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: none;
+}
+
+button {
+  padding: 8px 12px;
+  margin: 3px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+}
+
+.stop {
+  padding: 10px;
+  margin: 5px 0;
+  border-radius: 12px;
+  background: #222;
+}
+
+.green .stop { background: #063; }
+.red .stop { background: #500; }
+
+.small {
+  font-size: 12px;
+  opacity: 0.8;
+}
+</style>
+</head>
+
+<body>
+
+<div id="app" class="container">
+
+  <div class="header">🚍 Attila Közlekedés PRO</div>
+
+  <input id="search" placeholder="Megálló / GTFS keresés..." oninput="render()">
+
+  <div>
+    <button onclick="getLocation()">📍 Saját hely</button>
+    <button onclick="setMode('normal')">Normál</button>
+    <button onclick="setMode('green')">Zöld</button>
+    <button onclick="setMode('red')">Piros</button>
+    <button onclick="setMode('matrix')">Matrix</button>
+  </div>
+
+  <div id="status" class="small">Nincs helyadat</div>
+
+  <div id="list"></div>
+
+</div>
+
+<script>
+
+// ===== DEMO ADATOK (később GTFS)
+const stops = [
+ {name: "Békásmegyer HÉV-állomás", gtfs: "H5-09183", lat: 47.598091, lon: 19.054599},
+  {name: "Nád utca", gtfs: "BKK-F00457", lat: 47.594072, lon: 19.048469},
+  {name: "Gulácsy Lajos utca", gtfs: "BKK-00438", lat: 47.602562, lon: 19.048229},
+ {name: "Florián tér", gtfs: "BKK-F00611", lat: 47.542896, lon: 19.042252},
+{name: "Florián tér", gtfs: "BKK-F00613", lat: 47.541664, lon: 19.040084},
+{name: "Batthyány tér (villamos)", gtfs: "BKK-F00057", lat: 47.506002, lon: 19.039456},
+{name: "Verecke lépcsö", gtfs: "BKK-F00265", lat: 47.529117, lon: 19.003624},
+{name: "Csobánka tér-243 vá", gtfs: "BKK-F044192", lat: 47.597795, lon: 19.053787},
+{name: "Csobánka tér-160 vá", gtfs: "BKK-008939", lat: 47.598425, lon: 19.054240},
+{name: "Szentendre, HÉV végállomás", gtfs: "H5-09142221", lat: 47.661038, lon: 19.075607},
+{name: "Örs Vezér tér-85-85E", gtfs: "BKK-008030", lat: 47.501742, lon: 19.135604},
+{name: "Kocka utca (kifelé)", gtfs: "BKK-1831", lat: 47.484915, lon: 19.155466},
+{name: "Kocka utca (befelé)", gtfs: "BKK-1832", lat: 47.484708, lon: 19.155969},
+{name: "Újhegyi sétány (befelé)", gtfs: "BKK-F01842", lat: 47.470813, lon: 19.16451},
+{name: "Gőzmozdony utca (kifelé)", gtfs: "BKK-008863", lat: 47.470028, lon: 19.157173},
+{name: "Bojtár utca (kifelé)", gtfs: "VOLÁN-773493-1-BKK-F00520", lat: 47.560099, lon: 19.024711},
+{name: "Bojtár utca (befelé)", gtfs: "VOLÁN-773493-2-BKK-F00521", lat: 47.559047, lon: 19.042921},
+{name: "Szentendre, Autóbusz-állomás", gtfs: "VOLÁN-778806-99", lat: 47.660403, lon: 19.075408},
+{name: "Szentendre, Skanzen (1)", gtfs: "VOLÁN-778840-1", lat: 47.691135, lon: 19.046955},
+{name: "Szentendre, Skanzen (2)", gtfs: "VOLÁN-778840-2", lat: 47.691273, lon: 19.045667},
+{name: "Tahitótfalu, hídfő 1", gtfs: "VOLÁN-779053-1", lat: 47.751712, lon: 19.078215},
+{name: "Tahitótfalu, hídfő 2", gtfs: "VOLÁN-779053-2", lat: 47.751648, lon: 19.078091},
+{name: "Szentendre, Dömör-kapu", gtfs: "VOLÁN-778803", lat: 47.694900, lon: 19.000210},
+{name: "Vác, Autóbusz-állomás", gtfs: "VOLÁN-779365_99", lat: 47.781930, lon: 19.129643},
+{name: "Kóspallag, templom", gtfs: "VOLÁN-778190", lat: 47.877850, lon: 18.932580},
+{name: "Kisinóci turistaház", gtfs: "VOLAN-778186", lat: 47.890600, lon: 18.927580},
+{name: "Királyrét", gtfs: "VOLAN-779017", lat: 47.895040, lon: 18.977687},
+{name: "Szob, Vasútállomás", gtfs: "VOLAN-779011", lat: 47.821319, lon: 18.862602},
+{name: "Nagybörzsöny, községháza", gtfs: "VOLAN-778310", lat: 47.936030, lon: 18.827710},
+{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-1", lat: 48.015915, lon: 18.888468},
+{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-2", lat: 48.015710, lon: 18.888021},
+{name: "Pilisborosjenő, buszforduló", gtfs: "VOLAN-778532", lat: 47.609100, lon: 18.989680},
+{name: "Dobogókő, hegytető", gtfs: "VOLAN-778561", lat: 47.719118, lon: 18.897577},
+{name: "Vámosmikola, községháza", gtfs: "VOLAN-779478", lat: 47.978190, lon: 18.785890},
+{name: "Dunapataj, iskola", gtfs: "VOLAN-325369", lat: 46.644280, lon: 19.000233},
+{name: "Szelidi-tó, autóbusz-forduló", gtfs: "VOLAN-325374", lat: 46.625050, lon: 19.046159},
+{name: "Pomáz, HÉV állomás", gtfs: "HEV5-09134", lat: 47.642749, lon: 19.032657},
+{name: "Pomáz, autóbusz-állomás", gtfs: "VOLAN-778618", lat: 47.642749, lon: 19.032657},
+{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-1-BKK-009170", lat: 47.645570, lon: 19.027226},
+{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-2-BKK-009171", lat: 47.645554, lon: 19.027001},
+{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-1", lat: 46.789883, lon: 17.181239},
+{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-2", lat: 46.790057, lon: 17.182311},
+{name: "Héviz, Autobusz állomás", gtfs: "VOLAN-561337", lat: 46.792964, lon: 17.192426},
+{name: "Keszhely,Vasut-és  Autobusz állomás", gtfs: "VOLAN-561442", lat: 46.757976, lon: 17.246480},
+{name: "Magas taxi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.92842, lon: 18.92997},
+{name: "Nagyhideghegyi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.936111, lon: 18.921944},
+{name: "Csoványos, (hegycsucs,Börzsöny,kiláto)", gtfs: "ERDÖ", lat: 47.94908, lon: 18.9483},
+{name: "Lakás, (Dino lak)", gtfs: "UTCA", lat: 47.594304, lon: 19.048770},
+
 ];
 
-function searchStop(){
-let input = document.getElementById("search").value.toLowerCase();
-let found = stops.find(s => s.name.toLowerCase().includes(input));
-
-if(found){
-show(found.name);
-} else {
-show("Nincs találat");
-}
-}
-
-function calc(){
-let from = document.getElementById("from").value.toLowerCase();
-let to = document.getElementById("to").value.toLowerCase();
-
-let a = stops.find(s => s.name.toLowerCase().includes(from));
-let b = stops.find(s => s.name.toLowerCase().includes(to));
-
-if(a && b){
-let d = distance(a.lat,a.lon,b.lat,b.lon);
-show("Távolság: " + (d*1000).toFixed(0) + " m");
-} else {
-show("Hibás megálló");
-}
-}
-
-function distance(lat1, lon1, lat2, lon2){
-let R = 6371;
-let dLat = (lat2-lat1) * Math.PI/180;
-let dLon = (lon2-lon1) * Math.PI/180;
-
-let a = Math.sin(dLat/2)**2 +
-Math.cos(lat1*Math.PI/180) *
-Math.cos(lat2*Math.PI/180) *
-Math.sin(dLon/2)**2;
-
-let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-return R * c;
-}
-
-function show(text){
-let el = document.getElementById("result");
-el.className = mode;
-el.innerHTML = text;
-}
+let userLat = null;
+let userLon = null;
 let mode = "normal";
 
-function setMode(m) {
-mode = m;
-document.getElementById("status").innerText = "Mód: " + m;
+// ===== HELYZET
+function getLocation() {
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+    document.getElementById("status").innerText = "Helyzet OK";
+    render();
+  });
 }
 
-function getColorStyle() {
-if (mode === "keses") return "color: blue;";
-if (mode === "sietes") return "color: red;";
-if (mode === "zold") return "color: green;";
-if (mode === "sarga") return "color: orange;";
-if (mode === "matrix") return "background: black; color: lime; padding:4px;";
-return "color: black;";
+// ===== TÁVOLSÁG
+function distance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1)*Math.PI/180;
+  const Δλ = (lon2-lon1)*Math.PI/180;
+
+  const a = Math.sin(Δφ/2)**2 +
+    Math.cos(φ1)*Math.cos(φ2) *
+    Math.sin(Δλ/2)**2;
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return Math.round(R * c);
 }
+
+// ===== KÉSÉS FORMÁTUM
+function formatDelay(sec) {
+  const sign = sec >= 0 ? "+" : "-";
+  sec = Math.abs(sec);
+  const m = Math.floor(sec/60);
+  const s = sec % 60;
+  return sign + m + ":" + String(s).padStart(2,"0");
+}
+
+// ===== MÓD
+function setMode(m) {
+  mode = m;
+  document.getElementById("app").className = "container " + m;
+}
+
+// ===== RENDER
+function render() {
+  const list = document.getElementById("list");
+  const search = document.getElementById("search").value.toLowerCase();
+
+  list.innerHTML = "";
+
+  stops
+    .filter(s =>
+      s.name.toLowerCase().includes(search) ||
+      s.gtfs.toLowerCase().includes(search)
+    )
+    .forEach(s => {
+
+      let distText = "Nincs helyadat";
+      if(userLat){
+        const d = distance(userLat, userLon, s.lat, s.lon);
+        const road = Math.round(d * 1.3);
+        distText = `Légvonal: ${d} m | Út: ~${road} m`;
+      }
+
+      const delay = formatDelay(Math.floor(Math.random()*300 - 150));
+
+      const div = document.createElement("div");
+      div.className = "stop";
+
+      div.innerHTML = `
+        <b>${s.name}</b><br>
+        <span class="small">GTFS: ${s.gtfs}</span><br>
+        <span class="small">${distText}</span><br>
+        <span class="small">Késés: ${delay}</span>
+      `;
+
+      list.appendChild(div);
+    });
+}
+
+// ===== INDÍTÁS
+render();
+
 </script>
 
 </body>
