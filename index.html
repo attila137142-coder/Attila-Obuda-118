@@ -1,170 +1,149 @@
 <!DOCTYPE html>
-<html>
+<html lang="hu">
 <head>
 <meta charset="utf-8">
-<title>Attila KĂ¶zlekedĂ©s â€“ DiszpĂ©cser tĂ©rkĂ©p</title>
-
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GTFS Map PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-
-html,body{
-margin:0;
-padding:0;
-height:100%;
-font-family:Arial;
+html, body {
+    margin: 0;
+    height: 100%;
 }
 
-#map{
-height:100%;
-width:100%;
+#map {
+    position: absolute;
+    top: 0;
+    left: 300px;
+    right: 0;
+    bottom: 0;
 }
 
-#menuButton{
-position:absolute;
-top:15px;
-left:15px;
-z-index:1000;
-background:white;
-padding:10px;
-border-radius:6px;
-cursor:pointer;
-font-size:20px;
+#sidebar {
+    position: absolute;
+    width: 300px;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    background: #222;
+    color: white;
+    overflow-y: auto;
+    padding: 10px;
 }
 
-#menuPanel{
-
-position:absolute;
-top:60px;
-left:15px;
-width:260px;
-background:white;
-border-radius:10px;
-padding:15px;
-z-index:1000;
-box-shadow:0 3px 10px rgba(0,0,0,0.4);
-
+button {
+    width: 100%;
+    margin-bottom: 5px;
+    padding: 10px;
+    background: #444;
+    color: white;
+    border: none;
+    cursor: pointer;
 }
 
-.menuButton{
-
-width:100%;
-padding:10px;
-margin-top:8px;
-border:none;
-background:#e6e6e6;
-border-radius:8px;
-cursor:pointer;
-
+button:hover {
+    background: #666;
 }
 
+.stop-item {
+    padding: 5px;
+    border-bottom: 1px solid #444;
+    cursor: pointer;
+}
+
+.stop-item:hover {
+    background: #555;
+}
 </style>
-
 </head>
 
 <body>
 
-<div id="map"></div>
+<div id="sidebar">
+    <h3>Közeli megállók</h3>
 
-<div id="menuButton" onclick="toggleMenu()">â°</div>
+    <button onclick="setLayer('osm')">Térkép</button>
+    <button onclick="setLayer('sat')">Műhold</button>
 
-<div id="menuPanel">
-
-<h2>Attila KĂ¶zlekedĂ©s<br>DiszpĂ©cser tĂ©rkĂ©p</h2>
-
-<b>TĂ©rkĂ©pek</b>
-
-<button class="menuButton" onclick="setStreet()">Utcai tĂ©rkĂ©p</button>
-<button class="menuButton" onclick="setTopo()">TopogrĂˇfia</button>
-<button class="menuButton" onclick="setRail()">VasĂşti tĂ©rkĂ©p</button>
-<button class="menuButton" onclick="setSatellite()">MĹ±hold</button>
-<button class="menuButton" onclick="setCycle()">KerĂ©kpĂˇr</button>
-
-<br><br>
-
-<b>PozĂ­ciĂł</b>
-
-<button class="menuButton" onclick="locate()">SajĂˇt pozĂ­ciĂł</button>
-
+    <div id="stopsList"></div>
 </div>
+
+<div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
+// TÉRKÉP
+var map = L.map('map').setView([47.4979, 19.0402], 13);
 
-var map = L.map('map').setView([47.5,19.04],11);
+// LAYEREK
+var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-var street = L.tileLayer(
-'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-{maxZoom:19}
-);
+var sat = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
 
-var topo = L.tileLayer(
-'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-{maxZoom:17}
-);
+function setLayer(type) {
+    map.removeLayer(osm);
+    map.removeLayer(sat);
 
-var rail = L.tileLayer(
-'https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
-{maxZoom:19}
-);
-
-var satellite = L.tileLayer(
-'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
-{maxZoom:19}
-);
-
-var cycle = L.tileLayer(
-'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
-{maxZoom:20}
-);
-
-street.addTo(map);
-
-function clearLayers(){
-
-map.removeLayer(street);
-map.removeLayer(topo);
-map.removeLayer(rail);
-map.removeLayer(satellite);
-map.removeLayer(cycle);
-
+    if (type === 'osm') map.addLayer(osm);
+    if (type === 'sat') map.addLayer(sat);
 }
 
-function setStreet(){
-clearLayers();
-street.addTo(map);
-}
+// MARKER GROUP
+var markers = L.layerGroup().addTo(map);
 
-function setTopo(){
-clearLayers();
-topo.addTo(map);
-}
+// GTFS BETÖLTÉS
+fetch('stops.txt')
+.then(res => res.text())
+.then(data => {
+    let lines = data.split('\n');
 
-function setRail(){
-clearLayers();
-rail.addTo(map);
-}
+    let stopsList = document.getElementById("stopsList");
 
-function setSatellite(){
-clearLayers();
-satellite.addTo(map);
-}
+    for (let i = 1; i < lines.length; i++) {
+        let cols = lines[i].split(',');
 
-function setCycle(){
-clearLayers();
-cycle.addTo(map);
-}
+        if (cols.length < 5) continue;
+
+        let name = cols[2];
+        let lat = parseFloat(cols[3]);
+        let lon = parseFloat(cols[4]);
+
+        if (!lat || !lon) continue;
+
+        // MARKER
+        let marker = L.marker([lat, lon])
+            .addTo(markers)
+            .bindPopup(name);
+
+        // LISTA
+        let div = document.createElement("div");
+        div.className = "stop-item";
+        div.innerText = name;
+
+        div.onclick = () => {
+            map.setView([lat, lon], 16);
+            marker.openPopup();
+        };
+
+        stopsList.appendChild(div);
+    }
+})
+.catch(err => {
+    alert("Nem sikerült betölteni a stops.txt fájlt!");
+    console.error(err);
+});
+</script>
+
+</body>
+
 
 function locate(){
-
 map.locate({
 setView:true,
 maxZoom:15
 });
-
 }
 
 map.on('locationfound',function(e){
@@ -172,7 +151,7 @@ map.on('locationfound',function(e){
 var radius = e.accuracy;
 
 L.marker(e.latlng).addTo(map)
-.bindPopup("SajĂˇt pozĂ­ciĂł").openPopup();
+.bindPopup("Saját pozíció").openPopup();
 
 L.circle(e.latlng,{
 radius:radius
@@ -181,15 +160,8 @@ radius:radius
 });
 
 function toggleMenu(){
-
 var menu=document.getElementById("menuPanel");
-
-if(menu.style.display==="none"){
-menu.style.display="block";
-}else{
-menu.style.display="none";
-}
-
+menu.style.display = (menu.style.display==="none") ? "block" : "none";
 }
 
 </script>
