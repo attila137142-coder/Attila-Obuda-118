@@ -1,93 +1,62 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html>
 <head>
-
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Attila KĂ¶zlekedĂ©s â€“ DiszpĂ©cser tĂ©rkĂ©p</title>
 
-<title>Attila Közlekedés</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
 
-body{
+html,body{
 margin:0;
+padding:0;
+height:100%;
 font-family:Arial;
 }
 
 #map{
-height:100vh;
+height:100%;
 width:100%;
 }
 
-.title{
-
+#menuButton{
 position:absolute;
 top:15px;
-left:70px;
-
+left:15px;
 z-index:1000;
-
 background:white;
-padding:10px 16px;
-
-border-radius:8px;
-
-font-size:22px;
-font-weight:bold;
-
-box-shadow:0 3px 10px rgba(0,0,0,0.3);
-
+padding:10px;
+border-radius:6px;
+cursor:pointer;
+font-size:20px;
 }
 
-.panel{
+#menuPanel{
 
 position:absolute;
-
-top:70px;
-left:10px;
-
+top:60px;
+left:15px;
 width:260px;
-
 background:white;
-
+border-radius:10px;
+padding:15px;
 z-index:1000;
-
-padding:10px;
-
-border-radius:8px;
-
-box-shadow:0 3px 10px rgba(0,0,0,0.3);
-
-font-size:14px;
+box-shadow:0 3px 10px rgba(0,0,0,0.4);
 
 }
 
-.panel h3{
-
-margin-top:5px;
-
-}
-
-button{
+.menuButton{
 
 width:100%;
-margin-top:5px;
-
-padding:6px;
-
-font-size:14px;
-
-}
-
-.leaflet-control-zoom a{
-
-width:50px;
-height:50px;
-line-height:50px;
-
-font-size:26px;
+padding:10px;
+margin-top:8px;
+border:none;
+background:#e6e6e6;
+border-radius:8px;
+cursor:pointer;
 
 }
 
@@ -97,152 +66,129 @@ font-size:26px;
 
 <body>
 
-<div class="title">
-Attila Közlekedés – Diszpécser térkép
-</div>
-
-<div class="panel">
-
-<h3>Térkép</h3>
-
-<button onclick="streetLayer.addTo(map); map.removeLayer(topoLayer)">
-Utcatérkép
-</button>
-
-<button onclick="topoLayer.addTo(map); map.removeLayer(streetLayer)">
-Topográfia
-</button>
-
-<hr>
-
-<h3>Pozíció</h3>
-
-<button onclick="locateMe()">
-Saját pozíció
-</button>
-
-<hr>
-
-<h3>Kisvasutak</h3>
-
-<button onclick="showChildrenRailway()">
-Gyermekvasút
-</button>
-
-<button onclick="showKiralyret()">
-Királyréti kisvasút
-</button>
-
-<button onclick="showSzob()">
-Szob–Nagybörzsöny
-</button>
-
-<hr>
-
-<h3>Diszpécser</h3>
-
-<div id="vehicleData">
-
-nincs kiválasztva
-
-</div>
-
-</div>
-
 <div id="map"></div>
+
+<div id="menuButton" onclick="toggleMenu()">â°</div>
+
+<div id="menuPanel">
+
+<h2>Attila KĂ¶zlekedĂ©s<br>DiszpĂ©cser tĂ©rkĂ©p</h2>
+
+<b>TĂ©rkĂ©pek</b>
+
+<button class="menuButton" onclick="setStreet()">Utcai tĂ©rkĂ©p</button>
+<button class="menuButton" onclick="setTopo()">TopogrĂˇfia</button>
+<button class="menuButton" onclick="setRail()">VasĂşti tĂ©rkĂ©p</button>
+<button class="menuButton" onclick="setSatellite()">MĹ±hold</button>
+<button class="menuButton" onclick="setCycle()">KerĂ©kpĂˇr</button>
+
+<br><br>
+
+<b>PozĂ­ciĂł</b>
+
+<button class="menuButton" onclick="locate()">SajĂˇt pozĂ­ciĂł</button>
+
+</div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-var map = L.map('map').setView([47.55,19.03],13);
+var map = L.map('map').setView([47.5,19.04],11);
 
-var streetLayer = L.tileLayer(
-
+var street = L.tileLayer(
 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-
-{
-maxZoom:19,
-attribution:'© OpenStreetMap'
-}
-
-).addTo(map);
-
-var topoLayer = L.tileLayer(
-
-'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
-
-{
-maxZoom:17,
-attribution:'© OpenTopoMap'
-}
-
+{maxZoom:19}
 );
 
-function locateMe(){
+var topo = L.tileLayer(
+'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+{maxZoom:17}
+);
 
-navigator.geolocation.getCurrentPosition(function(pos){
+var rail = L.tileLayer(
+'https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
+{maxZoom:19}
+);
 
-var lat = pos.coords.latitude;
-var lon = pos.coords.longitude;
+var satellite = L.tileLayer(
+'https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png',
+{maxZoom:19}
+);
 
-L.marker([lat,lon]).addTo(map)
+var cycle = L.tileLayer(
+'https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png',
+{maxZoom:20}
+);
 
-.bindPopup("Az Ön pozíciója")
+street.addTo(map);
 
-.openPopup();
+function clearLayers(){
 
-map.setView([lat,lon],15);
+map.removeLayer(street);
+map.removeLayer(topo);
+map.removeLayer(rail);
+map.removeLayer(satellite);
+map.removeLayer(cycle);
 
+}
+
+function setStreet(){
+clearLayers();
+street.addTo(map);
+}
+
+function setTopo(){
+clearLayers();
+topo.addTo(map);
+}
+
+function setRail(){
+clearLayers();
+rail.addTo(map);
+}
+
+function setSatellite(){
+clearLayers();
+satellite.addTo(map);
+}
+
+function setCycle(){
+clearLayers();
+cycle.addTo(map);
+}
+
+function locate(){
+
+map.locate({
+setView:true,
+maxZoom:15
 });
 
 }
 
-function showChildrenRailway(){
+map.on('locationfound',function(e){
 
-var line = [
+var radius = e.accuracy;
 
-[47.548,18.958],
-[47.556,18.965],
-[47.565,18.973]
+L.marker(e.latlng).addTo(map)
+.bindPopup("SajĂˇt pozĂ­ciĂł").openPopup();
 
-];
+L.circle(e.latlng,{
+radius:radius
+}).addTo(map);
 
-L.polyline(line,{color:'green'}).addTo(map)
+});
 
-.bindPopup("Budapesti Gyermekvasút");
+function toggleMenu(){
 
+var menu=document.getElementById("menuPanel");
+
+if(menu.style.display==="none"){
+menu.style.display="block";
+}else{
+menu.style.display="none";
 }
-
-function showKiralyret(){
-
-var line = [
-
-[47.930,19.020],
-[47.940,19.030],
-[47.955,19.045]
-
-];
-
-L.polyline(line,{color:'brown'}).addTo(map)
-
-.bindPopup("Királyréti Erdei Vasút");
-
-}
-
-function showSzob(){
-
-var line = [
-
-[47.820,18.870],
-[47.830,18.880],
-[47.840,18.890]
-
-];
-
-L.polyline(line,{color:'black'}).addTo(map)
-
-.bindPopup("Szob–Nagybörzsöny kisvasút");
 
 }
 
@@ -250,3 +196,6 @@ L.polyline(line,{color:'black'}).addTo(map)
 
 </body>
 </html>
+
+
+
