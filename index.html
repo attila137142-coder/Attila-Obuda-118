@@ -1,78 +1,118 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html>
 <head>
-<meta charset="utf-8">
-<title>Attila Közlekedés PRO</title>
+<meta charset="utf-8" />
+<title>Transit Map</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-html, body {
-margin: 0;
-height: 100%;
-font-family: Arial;
-}
-
-/* SIDEBAR */
+body { margin:0; display:flex; }
+#map { height:100vh; width:75%; }
 #sidebar {
-position: absolute;
-left: 0;
-top: 0;
-bottom: 0;
-width: 300px;
-background: #1e1e1e;
-color: white;
-overflow-y: auto;
-padding: 10px;
-z-index: 1000;
+  width:25%;
+  height:100vh;
+  overflow:auto;
+  background:#f4f4f4;
+  padding:10px;
 }
-
-/* MAP */
-#map {
-position: absolute;
-left: 300px;
-top: 0;
-right: 0;
-bottom: 0;
-}
-
-/* UI */
-button {
-width: 100%;
-padding: 10px;
-margin-bottom: 5px;
-background: #333;
-color: white;
-border: none;
-cursor: pointer;
-}
-
-button:hover {
-background: #555;
-}
-
 .stop {
-padding: 5px;
-border-bottom: 1px solid #444;
-cursor: pointer;
+  padding:5px;
+  cursor:pointer;
+  border-bottom:1px solid #ccc;
 }
+.stop:hover { background:#ddd; }
 
-.stop:hover {
-background: #444;
+.controls {
+  position:absolute;
+  top:10px;
+  left:10px;
+  z-index:1000;
+  background:white;
+  padding:10px;
 }
 </style>
 </head>
 
 <body>
 
+<div id="map"></div>
+
 <div id="sidebar">
-<h3>🚆 Attila Közlekedés</h3>
-
-<button onclick="locateMe()">📍 Hol vagyok</button>
-<button onclick="toggleRail()">🚆 Vasút</button>
-
-<h4>Megállók</h4>
+<h3>🚏 Megállók</h3>
 <div id="stopList"></div>
 </div>
 
-<div id="map"></div>
+<div class="controls">
+<button onclick="setLayer('osm')">Normál</button>
+<button onclick="setLayer('sat')">Műhold</button>
+<button onclick="locateMe()">📍 Hol vagyok</button>
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+// MAP
+var map = L.map('map').setView([47.4979, 19.0402], 13);
+
+// LAYERS
+var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+var sat = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+
+osm.addTo(map);
+
+function setLayer(type){
+  map.eachLayer(layer => map.removeLayer(layer));
+  if(type === "osm") osm.addTo(map);
+  if(type === "sat") sat.addTo(map);
+}
+
+// LAYERS GROUP
+var stopLayer = L.layerGroup().addTo(map);
+var vehicleLayer = L.layerGroup().addTo(map);
+
+var stopList = document.getElementById("stopList");
+
+// 📍 HOL VAGYOK
+function locateMe(){
+  map.locate({setView:true, maxZoom:16});
+
+  map.on('locationfound', function(e){
+    L.marker(e.latlng)
+      .addTo(map)
+      .bindPopup("Itt vagy")
+      .openPopup();
+  });
+}
+
+// 🚏 GTFS STOP BETÖLTÉS
+async function loadGTFSStops() {
+  try {
+    const response = await fetch("gtfs/stops.txt");
+    const text = await response.text();
+
+    const lines = text.split("\n");
+    const headers = lines[0].split(",");
+
+    const nameIndex = headers.indexOf("stop_name");
+    const latIndex = headers.indexOf("stop_lat");
+    const lonIndex = headers.indexOf("stop_lon");
+
+    lines.slice(1).forEach(line => {
+      const cols = line.split(",");
+
+      const name = cols[nameIndex];
+      const lat = parseFloat(cols[latIndex]);
+      const lon = parseFloat(cols[lonIndex]);
+
+      if (!isNaN(lat) && !isNaN(lon)) {
+
+        let marker = L.marker([lat, lon])
+        .addTo(stopLayer)
+        .bindPopup(name);
+
+        let div = document.createElement("div");
+        div.className = "stop";
+        div.innerText = name;
+
+        div.onclick =
