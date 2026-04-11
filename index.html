@@ -1,36 +1,161 @@
 <!DOCTYPE html>
-<html>
+<html lang="hu">
 <head>
-<meta charset="utf-8">
+<meta charset="UTF-8">
 <title>Attila Közlekedés</title>
 
-<meta name="viewport" content="width=device-width, initial-scale=1">
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
 <style>
-html,body{margin:0;height:100%;font-family:Arial;}
-#map{height:100%;width:100%;}
-#panel{
-position:absolute;
-top:10px;
-left:10px;
-width:260px;
-background:white;
-padding:10px;
-z-index:1000;
-border-radius:10px;
-box-shadow:0 3px 10px rgba(0,0,0,0.3);
+body {
+  background: black;
+  color: yellow;
+  font-family: Arial;
+  text-align: center;
 }
-button{width:100%;margin-top:5px;padding:8px;}
+
+/* Címek */
+h1 { font-size: 32px; }
+h2 { font-size: 22px; }
+
+/* Műszerfal */
+#kmh {
+  font-size: 60px;
+  font-family: monospace;
+  color: #00ff00;
+  text-shadow: 0 0 10px #00ff00;
+}
+
+#ms { font-size: 20px; }
+
+#coords, #alt, #cim {
+  margin-top: 10px;
+  font-size: 16px;
+  color: cyan;
+}
+
+/* Doboz */
+section {
+  margin: 30px;
+  padding: 20px;
+  border: 2px solid yellow;
+  border-radius: 10px;
+}
+
+/* Térkép */
+#map {
+  height: 500px;
+  margin-top: 20px;
+}
+
+/* Betű nagyítás térképen */
+.leaflet-container {
+  font-size: 18px;
+}
 </style>
+
 </head>
 
 <body>
 
-<div id="map"></div>
+<h1>🚌 Attila Közlekedés</h1>
 
-<div id="panel">
-<h3>Attila Közlekedés</h3>
+<section>
+  <h2>📡 Műszerfal</h2>
+  <div id="kmh">0 km/h</div>
+  <div id="ms">0 m/s</div>
 
-<button onclick="setStreet()">
+  <div id="coords">-</div>
+  <div id="alt">-</div>
+  <div id="cim">Cím betöltése...</div>
+</section>
+
+<section>
+  <h2>🗺️ Térkép</h2>
+  <div id="map"></div>
+</section>
+
+<!-- Leaflet -->
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+// 🌍 TÉRKÉP
+var map = L.map('map').setView([47.4979, 19.0402], 15);
+
+// Alap térkép
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 19,
+  opacity: 0.5
+}).addTo(map);
+
+// Erdei
+L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+  maxZoom: 17
+}).addTo(map);
+
+// Vasút
+L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png', {
+  maxZoom: 19
+}).addTo(map);
+
+// Marker
+let marker = L.circleMarker([47.4979, 19.0402], {
+  radius: 8,
+  color: 'red'
+}).addTo(map);
+
+
+// 📍 CÍM
+function cimKeres(lat, lon) {
+  fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
+    .then(res => res.json())
+    .then(data => {
+      document.getElementById("cim").innerText = data.display_name;
+    });
+}
+
+
+// 🚀 HELYZET + SEBESSÉG
+let utolsoCim = 0;
+
+navigator.geolocation.watchPosition(function(pos) {
+
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
+  const alt = pos.coords.altitude;
+  const speed = pos.coords.speed;
+
+  // Pozíció
+  document.getElementById("coords").innerText =
+    lat.toFixed(5) + ", " + lon.toFixed(5);
+
+  document.getElementById("alt").innerText =
+    (alt ? alt.toFixed(0) : "N/A") + " m";
+
+  // Marker mozgatás
+  marker.setLatLng([lat, lon]);
+  map.setView([lat, lon]);
+
+  // Sebesség
+  if (speed !== null) {
+    let kmh = speed * 3.6;
+
+    document.getElementById("kmh").innerText =
+      kmh.toFixed(1) + " km/h";
+
+    document.getElementById("ms").innerText =
+      speed.toFixed(2) + " m/s";
+  }
+
+  // Cím (10 mp)
+  if (Date.now() - utolsoCim > 10000) {
+    cimKeres(lat, lon);
+    utolsoCim = Date.now();
+  }
+
+});
+</script>
+
+</body>
+</html>
