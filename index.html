@@ -2,38 +2,31 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés FULL</title>
+<title>Attila Közlekedés FIX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body {background:black;color:yellow;text-align:center;font-family:Arial;}
-h1{font-size:32px;}
 #kmh{font-size:100px;color:#0f0;text-shadow:0 0 20px #0f0;}
 #ms{font-size:30px;}
 #coords,#alt,#cim,#tav,#utvonal,#megallo{font-size:22px;color:cyan;margin:10px;}
-
 section{border:2px solid yellow;margin:20px;padding:20px;border-radius:15px;}
-
 #map{height:800px;}
-
-button{padding:10px;font-size:18px;margin:5px;}
-input{padding:10px;font-size:18px;}
+button,input{padding:10px;font-size:18px;margin:5px;}
 </style>
 </head>
 
 <body>
 
-<h1>🚌 Attila Közlekedés FULL</h1>
+<h1>🚌 Attila Közlekedés</h1>
 
 <section>
 <div id="kmh">0 km/h</div>
 <div id="ms">0 m/s</div>
-
-<div id="coords">-</div>
+<div id="coords">GPS betöltés...</div>
 <div id="alt">-</div>
 <div id="cim">-</div>
-
 <div id="tav">Távolság: -</div>
 <div id="utvonal">Útvonal: -</div>
 <div id="megallo">Megálló: -</div>
@@ -46,10 +39,10 @@ input{padding:10px;font-size:18px;}
 
 <section>
 <button onclick="setLayer('osm')">Alap</button>
-<button onclick="setLayer('topo')">Erdei</button>
+<button onclick="setLayer('topo')">Topo</button>
+<button onclick="setLayer('turista')">Turista</button>
 <button onclick="setLayer('rail')">Vasút</button>
 <button onclick="setLayer('sat')">Műhold</button>
-<button onclick="setLayer('turista')">Turista</button>
 </section>
 
 <div id="map"></div>
@@ -61,20 +54,26 @@ input{padding:10px;font-size:18px;}
 // 🌍 MAP
 var map=L.map('map').setView([47.49,19.04],15);
 
-// rétegek
-var layers={
- osm:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
- topo:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'),
- rail:L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png'),
- sat:L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png'),
- turista:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:0.9})
-};
+// alap
+var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
 
-layers.osm.addTo(map);
+// külön rétegek
+var topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+var turista=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:0.7});
+var rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png');
+var sat=L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png');
+
+osm.addTo(map);
 
 function setLayer(name){
- for(let l in layers){map.removeLayer(layers[l]);}
- layers[name].addTo(map);
+  map.eachLayer(l=>map.removeLayer(l));
+
+  osm.addTo(map); // mindig legyen alaptérkép
+
+  if(name==="topo") topo.addTo(map);
+  if(name==="turista") turista.addTo(map);
+  if(name==="rail") rail.addTo(map);
+  if(name==="sat") sat.addTo(map);
 }
 
 // marker
@@ -120,6 +119,8 @@ function keres(){
 
        document.getElementById("tav").innerText=
        "Légvonal: "+tav.toFixed(0)+" m ("+(tav/1000).toFixed(2)+" km)";
+     } else {
+       document.getElementById("tav").innerText="Nincs GPS adat";
      }
 
      utvonal();
@@ -129,7 +130,7 @@ function keres(){
 
 // 🧭 útvonal
 function utvonal(){
- if(!aktualisPoz||!cel)return;
+ if(!aktualisPoz||!cel) return;
 
  fetch(`https://router.project-osrm.org/route/v1/foot/${aktualisPoz[1]},${aktualisPoz[0]};${cel[1]},${cel[0]}?overview=full&geometries=geojson`)
  .then(r=>r.json())
@@ -140,13 +141,13 @@ function utvonal(){
    document.getElementById("utvonal").innerText=
    "Útvonal: "+(route.distance/1000).toFixed(2)+" km";
 
-   if(routeLayer)map.removeLayer(routeLayer);
+   if(routeLayer) map.removeLayer(routeLayer);
 
    routeLayer=L.geoJSON(route.geometry).addTo(map);
  });
 }
 
-// 🚏 megálló kattintás
+// 🚏 kattintás
 map.on('click',function(e){
 
  let lat=e.latlng.lat;
@@ -157,14 +158,16 @@ map.on('click',function(e){
  .then(d=>{
    if(d.display_name){
      document.getElementById("megallo").innerText=
-     "Megálló/közeli hely: "+d.display_name;
+     "Közeli hely: "+d.display_name;
    }
  });
 
 });
 
-// 🚀 GPS
-navigator.geolocation.watchPosition(function(pos){
+// 🚀 GPS + HIBA KEZELÉS
+navigator.geolocation.watchPosition(
+
+function(pos){
 
  let lat=pos.coords.latitude;
  let lon=pos.coords.longitude;
@@ -202,9 +205,16 @@ navigator.geolocation.watchPosition(function(pos){
 
  cimKeres(lat,lon);
 
-},{
- enableHighAccuracy:true
-});
+},
+
+function(err){
+ document.getElementById("coords").innerText=
+ "GPS HIBA: engedélyezd vagy használj telefont";
+},
+
+{enableHighAccuracy:true}
+
+);
 
 </script>
 
