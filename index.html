@@ -2,176 +2,210 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés</title>
+<title>Attila Közlekedés FULL</title>
 
-<!-- Leaflet -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body {
-  background: black;
-  color: yellow;
-  font-family: Arial;
-  text-align: center;
-}
+body {background:black;color:yellow;text-align:center;font-family:Arial;}
+h1{font-size:32px;}
+#kmh{font-size:100px;color:#0f0;text-shadow:0 0 20px #0f0;}
+#ms{font-size:30px;}
+#coords,#alt,#cim,#tav,#utvonal,#megallo{font-size:22px;color:cyan;margin:10px;}
 
-/* Címek */
-h1 { font-size: 32px; }
-h2 { font-size: 22px; }
+section{border:2px solid yellow;margin:20px;padding:20px;border-radius:15px;}
 
-/* Műszerfal */
-#kmh {
-  font-size: 120px;
-  font-family: monospace;
-  color: #00ff00;
-  text-shadow: 0 0 20px #00ff00;
-}
+#map{height:800px;}
 
-#ms { font-size: 40px; }
-
-#coords, #alt, #cim {
-  margin-top: 20px;
-  font-size: 32px;
-  color: cyan;
-}
-
-/* Doboz */
-section {
-  margin: 60px;
-  padding: 40px;
-  border: 2px solid yellow;
-  border-radius: 20px;
-}
-
-/* Térkép */
-#map {
-  height: 2000px;
-  margin-top: 160px;
-}
-
-/* Betű nagyítás térképen */
-.leaflet-container {
-  font-size: 72px;
-}
+button{padding:10px;font-size:18px;margin:5px;}
+input{padding:10px;font-size:18px;}
 </style>
-
 </head>
 
 <body>
 
-<h1>🚌 Attila Közlekedés</h1>
+<h1>🚌 Attila Közlekedés FULL</h1>
 
 <section>
-  <h2>📡 Műszerfal</h2>
-  <div id="kmh">0 km/h</div>
-  <div id="ms">0 m/s</div>
+<div id="kmh">0 km/h</div>
+<div id="ms">0 m/s</div>
 
-  <div id="coords">-</div>
-  <div id="alt">-</div>
-  <div id="cim">Cím betöltése...</div>
+<div id="coords">-</div>
+<div id="alt">-</div>
+<div id="cim">-</div>
+
+<div id="tav">Távolság: -</div>
+<div id="utvonal">Útvonal: -</div>
+<div id="megallo">Megálló: -</div>
 </section>
 
 <section>
-  <h2>🗺️ Térkép</h2>
-  <div id="map"></div>
+<input id="kereso" placeholder="Hely keresése">
+<button onclick="keres()">Keresés</button>
 </section>
 
-<!-- Leaflet -->
+<section>
+<button onclick="setLayer('osm')">Alap</button>
+<button onclick="setLayer('topo')">Erdei</button>
+<button onclick="setLayer('rail')">Vasút</button>
+<button onclick="setLayer('sat')">Műhold</button>
+<button onclick="setLayer('turista')">Turista</button>
+</section>
+
+<div id="map"></div>
+
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-// 🌍 TÉRKÉP
-var map = L.map('map').setView([47.4979, 19.0402], 15);
 
-// Alap térkép
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19,
-  opacity: 0.5
-}).addTo(map);
+// 🌍 MAP
+var map=L.map('map').setView([47.49,19.04],15);
 
-// Erdei
-L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-  maxZoom: 17
-}).addTo(map);
+// rétegek
+var layers={
+ osm:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
+ topo:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'),
+ rail:L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png'),
+ sat:L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png'),
+ turista:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:0.9})
+};
 
-// Vasút
-L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png', {
-  maxZoom: 19
-}).addTo(map);
+layers.osm.addTo(map);
 
-// Marker
-let marker = L.circleMarker([47.4979, 19.0402], {
-  radius: 8,
-  color: 'red'
-}).addTo(map);
-
-
-// 📍 CÍM
-function cimKeres(lat, lon) {
-  fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
-    .then(res => res.json())
-    .then(data => {
-      document.getElementById("cim").innerText = data.display_name;
-    });
+function setLayer(name){
+ for(let l in layers){map.removeLayer(layers[l]);}
+ layers[name].addTo(map);
 }
 
+// marker
+let marker=L.circleMarker([47.49,19.04],{radius:8,color:'red'}).addTo(map);
 
-// 🚀 HELYZET + SEBESSÉG
-let utolsoCim = 0;
+// változók
+let aktualisPoz=null;
+let elozoPoz=null;
+let elozoIdo=null;
+let cel=null;
+let routeLayer=null;
 
-navigator.geolocation.watchPosition(function(pos) {
+// 📍 cím
+function cimKeres(lat,lon){
+ fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
+ .then(r=>r.json())
+ .then(d=>{
+   if(d.display_name){
+     document.getElementById("cim").innerText=d.display_name;
+   }
+ });
+}
 
-  const lat = pos.coords.latitude;
-  const lon = pos.coords.longitude;
-  const alt = pos.coords.altitude;
-  const speed = pos.coords.speed;
+// 🔎 kereső
+function keres(){
+ let q=document.getElementById("kereso").value;
 
-  // Pozíció
-  document.getElementById("coords").innerText =
-    lat.toFixed(5) + ", " + lon.toFixed(5);
+ fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`)
+ .then(r=>r.json())
+ .then(d=>{
+   if(d.length>0){
 
-  document.getElementById("alt").innerText =
-    (alt ? alt.toFixed(0) : "N/A") + " m";
+     let lat=parseFloat(d[0].lat);
+     let lon=parseFloat(d[0].lon);
 
-  // Marker mozgatás
-  marker.setLatLng([lat, lon]);
-  map.setView([lat, lon]);
+     cel=[lat,lon];
 
-  // Sebesség
-  if (speed !== null) {
-    let kmh = speed * 3.6;
+     map.setView(cel,15);
+     L.marker(cel).addTo(map);
 
-    document.getElementById("kmh").innerText =
-      kmh.toFixed(1) + " km/h";
+     if(aktualisPoz){
+       let tav=map.distance(aktualisPoz,cel);
 
-    document.getElementById("ms").innerText =
-      speed.toFixed(2) + " m/s";
-  }
+       document.getElementById("tav").innerText=
+       "Légvonal: "+tav.toFixed(0)+" m ("+(tav/1000).toFixed(2)+" km)";
+     }
 
-  // Cím (10 mp)
-  if (Date.now() - utolsoCim > 10000) {
-    cimKeres(lat, lon);
-    utolsoCim = Date.now();
-  }
+     utvonal();
+   }
+ });
+}
+
+// 🧭 útvonal
+function utvonal(){
+ if(!aktualisPoz||!cel)return;
+
+ fetch(`https://router.project-osrm.org/route/v1/foot/${aktualisPoz[1]},${aktualisPoz[0]};${cel[1]},${cel[0]}?overview=full&geometries=geojson`)
+ .then(r=>r.json())
+ .then(d=>{
+
+   let route=d.routes[0];
+
+   document.getElementById("utvonal").innerText=
+   "Útvonal: "+(route.distance/1000).toFixed(2)+" km";
+
+   if(routeLayer)map.removeLayer(routeLayer);
+
+   routeLayer=L.geoJSON(route.geometry).addTo(map);
+ });
+}
+
+// 🚏 megálló kattintás
+map.on('click',function(e){
+
+ let lat=e.latlng.lat;
+ let lon=e.latlng.lng;
+
+ fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
+ .then(r=>r.json())
+ .then(d=>{
+   if(d.display_name){
+     document.getElementById("megallo").innerText=
+     "Megálló/közeli hely: "+d.display_name;
+   }
+ });
 
 });
-let pontok = [];
 
-map.on('click', function(e) {
-  pontok.push(e.latlng);
+// 🚀 GPS
+navigator.geolocation.watchPosition(function(pos){
 
-  if (pontok.length === 2) {
+ let lat=pos.coords.latitude;
+ let lon=pos.coords.longitude;
+ let alt=pos.coords.altitude;
+ let acc=pos.coords.accuracy;
 
-    let p1 = pontok[0];
-    let p2 = pontok[1];
+ aktualisPoz=[lat,lon];
 
-    let tav = map.distance(p1, p2);
+ document.getElementById("coords").innerText=
+ lat.toFixed(5)+","+lon.toFixed(5)+" (±"+acc.toFixed(0)+"m)";
 
-    alert("Távolság: " + tav.toFixed(0) + " méter");
+ document.getElementById("alt").innerText=
+ (alt?alt.toFixed(0):"N/A")+" m";
 
-    pontok = []; // reset
-  }
+ marker.setLatLng([lat,lon]);
+ map.setView([lat,lon]);
+
+ let most=Date.now();
+
+ if(elozoPoz){
+   let tav=map.distance(elozoPoz,[lat,lon]);
+   let ido=(most-elozoIdo)/1000;
+
+   if(tav>2 && ido>0){
+     let ms=tav/ido;
+     let kmh=ms*3.6;
+
+     document.getElementById("kmh").innerText=kmh.toFixed(1)+" km/h";
+     document.getElementById("ms").innerText=ms.toFixed(2)+" m/s";
+   }
+ }
+
+ elozoPoz=[lat,lon];
+ elozoIdo=most;
+
+ cimKeres(lat,lon);
+
+},{
+ enableHighAccuracy:true
 });
+
 </script>
 
 </body>
