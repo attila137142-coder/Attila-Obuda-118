@@ -1,134 +1,17 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>Attila Közlekedés PRO</title>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
-<style>
-body {
-  font-family: Arial;
-  margin: 0;
-  background: #111;
-  color: white;
-}
-
-.container { padding: 10px; }
-
-.header {
-  font-size: 22px;
-  font-weight: bold;
-  margin-bottom: 10px;
-}
-
-input {
-  width: 100%;
-  padding: 10px;
-  font-size: 16px;
-  margin-bottom: 10px;
-  border-radius: 10px;
-  border: none;
-}
-
-button {
-  padding: 8px 12px;
-  margin: 3px;
-  border-radius: 10px;
-  border: none;
-  cursor: pointer;
-}
-
-.stop {
-  padding: 10px;
-  margin: 5px 0;
-  border-radius: 12px;
-  background: #222;
-}
-
-.green .stop { background: #063; }
-.red .stop { background: #500; }
-
-.small {
-  font-size: 12px;
-  opacity: 0.8;
-}
-</style>
-
-</head>
-
-<body>
-
-<div class="container">
-
-<h2>🚍 Attila Közlekedés PRO</h2>
-
-<button onclick="loadBKK()">📥 BKK betöltés</button>
-
-<input id="search" placeholder="Megálló / GTFS keresés..." oninput="render()">
-
-<button onclick="getLocation()">📍 Saját hely</button>
-
-<div id="status">Nincs helyadat</div>
-
-<div id="list"></div>
-
-</div>
-
 <script>
-
-// ===== BKK GTFS BETÖLTÉS
-async function loadBKK() {
-  document.getElementById("status").innerText = "GTFS betöltés...";
-
-  const url = "https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
-
-  try {
-    const response = await fetch(url);
-    const blob = await response.blob();
-
-    const zip = await JSZip.loadAsync(blob);
-    const stopsFile = await zip.file("stops.txt").async("string");
-
-    const rows = stopsFile.split("\n");
-
-    stops = [];
-
-    for (let i = 1; i < rows.length; i++) {
-      let cols = rows[i].split(",");
-      stops.push({
-        name: cols[2],
-        gtfs: cols[0],
-        lat: parseFloat(cols[4]),
-        lon: parseFloat(cols[5])
-      });
-    }
-
-    document.getElementById("status").innerText = "GTFS betöltve!";
-    render();
-
-  } catch (err) {
-    document.getElementById("status").innerText = "HIBA: " + err;
-  }
-}
-
-// ===== ADAT
-let stops = [];
 
 let userLat = null;
 let userLon = null;
 
-// ===== HELYZET
-function getLocation() {
-  navigator.geolocation.getCurrentPosition(pos => {
-    userLat = pos.coords.latitude;
-    userLon = pos.coords.longitude;
-    document.getElementById("status").innerText = "Helyzet OK";
-    render();
-  });
-}
+// AUTO HELYINDÍTÁS
+navigator.geolocation.getCurrentPosition(pos => {
+  userLat = pos.coords.latitude;
+  userLon = pos.coords.longitude;
+  document.getElementById("status").innerText = "Helyzet OK";
+  render();
+});
 
-// ===== TÁVOLSÁG
+// TÁVOLSÁG
 function distance(lat1, lon1, lat2, lon2) {
   const R = 6371e3;
   const φ1 = lat1 * Math.PI/180;
@@ -144,7 +27,7 @@ function distance(lat1, lon1, lat2, lon2) {
   return Math.round(R * c);
 }
 
-// ===== RENDER
+// RENDER
 function render() {
   const list = document.getElementById("list");
   const search = document.getElementById("search").value.toLowerCase();
@@ -153,17 +36,22 @@ function render() {
 
   stops
     .filter(s =>
-      s.name?.toLowerCase().includes(search) ||
-      s.gtfs?.toLowerCase().includes(search)
+      s.name.toLowerCase().includes(search) ||
+      s.gtfs.toLowerCase().includes(search)
     )
-    .slice(0,50)
+    .sort((a,b)=>{
+      if(!userLat) return 0;
+      return distance(userLat,userLon,a.lat,a.lon) - distance(userLat,userLon,b.lat,b.lon);
+    })
     .forEach(s => {
 
       let distText = "Nincs helyadat";
+
       if(userLat){
         const d = distance(userLat, userLon, s.lat, s.lon);
         const road = Math.round(d * 1.3);
-        distText = `Légvonal: ${d} m | Út: ~${road} m`;
+
+        distText = `📏 Légvonal: ${d} m | 🛣 Út: ~${road} m`;
       }
 
       const div = document.createElement("div");
@@ -179,7 +67,6 @@ function render() {
     });
 }
 
-</script>
+render();
 
-</body>
-</html>
+</script>
