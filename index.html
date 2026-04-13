@@ -2,187 +2,184 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés MASTER</title>
+<title>Attila Közlekedés PRO</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body{background:black;color:yellow;text-align:center;font-family:Arial;}
-#kmh{font-size:90px;color:#0f0;text-shadow:0 0 20px #0f0;}
-#ms{font-size:25px;}
-#coords,#alt,#cim,#tav,#megallo,#menetrend,#helyek{font-size:18px;color:cyan;margin:8px;}
-#map{height:800px;}
-button,input{padding:8px;margin:5px;font-size:16px;}
-section{border:2px solid yellow;margin:15px;padding:15px;}
+body {
+  font-family: Arial;
+  margin: 0;
+  background: #111;
+  color: white;
+}
+
+.container { padding: 10px; }
+
+.header {
+  font-size: 22px;
+  font-weight: bold;
+  margin-bottom: 10px;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  margin-bottom: 10px;
+  border-radius: 10px;
+  border: none;
+}
+
+button {
+  padding: 8px 12px;
+  margin: 3px;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+}
+
+.stop {
+  padding: 10px;
+  margin: 5px 0;
+  border-radius: 12px;
+  background: #222;
+}
+
+.green .stop { background: #063; }
+.red .stop { background: #500; }
+
+.small {
+  font-size: 12px;
+  opacity: 0.8;
+}
 </style>
+
 </head>
 
 <body>
 
-<h1>🚌 Attila Közlekedés MASTER</h1>
+<div class="container">
 
-<section>
-<div id="kmh">0 km/h</div>
-<div id="ms">0 m/s</div>
-<div id="coords">GPS...</div>
-<div id="alt">-</div>
-<div id="cim">-</div>
-<div id="tav">Távolság: -</div>
-<div id="megallo">Megálló: -</div>
-<div id="menetrend">Menetrend: -</div>
-<div id="helyek">Közeli helyek: -</div>
-</section>
+<h2>🚍 Attila Közlekedés PRO</h2>
 
-<section>
-<input id="kereso" placeholder="Keresés">
-<button onclick="keres()">Keresés</button>
-</section>
+<button onclick="loadBKK()">📥 BKK betöltés</button>
 
-<section>
-<button onclick="setLayer('osm')">Alap</button>
-<button onclick="setLayer('topo')">Topo</button>
-<button onclick="setLayer('turista')">Turista</button>
-<button onclick="setLayer('rail')">Vasút</button>
-<button onclick="setLayer('jelzes')">Turista utak</button>
-</section>
+<input id="search" placeholder="Megálló / GTFS keresés..." oninput="render()">
 
-<div id="map"></div>
+<button onclick="getLocation()">📍 Saját hely</button>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<div id="status">Nincs helyadat</div>
+
+<div id="list"></div>
+
+</div>
 
 <script>
 
-// MAP
-var map=L.map('map').setView([47.49,19.04],13);
+// ===== BKK GTFS BETÖLTÉS
+async function loadBKK() {
+  document.getElementById("status").innerText = "GTFS betöltés...";
 
-var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-var topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
-var turista=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:0.6});
-var rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/{z}/{x}/{y}.png');
-var jelzes=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
+  const url = "https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
 
-osm.addTo(map);
+  try {
+    const response = await fetch(url);
+    const blob = await response.blob();
 
-function setLayer(n){
- map.eachLayer(l=>map.removeLayer(l));
- osm.addTo(map);
+    const zip = await JSZip.loadAsync(blob);
+    const stopsFile = await zip.file("stops.txt").async("string");
 
- if(n==="topo") topo.addTo(map);
- if(n==="turista") turista.addTo(map);
- if(n==="rail") rail.addTo(map);
- if(n==="jelzes") jelzes.addTo(map);
-}
+    const rows = stopsFile.split("\n");
 
-let marker=L.circleMarker([47.49,19.04],{radius:8,color:'red'}).addTo(map);
+    stops = [];
 
-let aktualisPoz=null;
-
-// GPS
-navigator.geolocation.watchPosition(function(pos){
-
- let lat=pos.coords.latitude;
- let lon=pos.coords.longitude;
-
- aktualisPoz=[lat,lon];
-
- marker.setLatLng([lat,lon]);
- map.setView([lat,lon]);
-
- document.getElementById("coords").innerText=
- lat.toFixed(5)+","+lon.toFixed(5);
-
- helyekKeres(lat,lon);
- megalloKeres(lat,lon);
-
-});
-
-// kereső
-function keres(){
- let q=document.getElementById("kereso").value;
-
- fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`)
- .then(r=>r.json())
- .then(d=>{
-  if(d.length){
-    let lat=d[0].lat;
-    let lon=d[0].lon;
-
-    map.setView([lat,lon],15);
-
-    if(aktualisPoz){
-      let t=map.distance(aktualisPoz,[lat,lon]);
-      document.getElementById("tav").innerText=
-      "Távolság: "+(t/1000).toFixed(2)+" km";
+    for (let i = 1; i < rows.length; i++) {
+      let cols = rows[i].split(",");
+      stops.push({
+        name: cols[2],
+        gtfs: cols[0],
+        lat: parseFloat(cols[4]),
+        lon: parseFloat(cols[5])
+      });
     }
+
+    document.getElementById("status").innerText = "GTFS betöltve!";
+    render();
+
+  } catch (err) {
+    document.getElementById("status").innerText = "HIBA: " + err;
   }
- });
 }
 
-// közeli helyek
-function helyekKeres(lat,lon){
+// ===== ADAT
+let stops = [];
 
- fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:500,${lat},${lon});out;`)
- .then(r=>r.json())
- .then(d=>{
-  let lista="";
-  d.elements.slice(0,5).forEach(e=>{
-    let t=map.distance([lat,lon],[e.lat,e.lon]);
-    lista+=`<div>${e.tags.name||"hely"} - ${(t/1000).toFixed(2)} km</div>`;
+let userLat = null;
+let userLon = null;
+
+// ===== HELYZET
+function getLocation() {
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+    document.getElementById("status").innerText = "Helyzet OK";
+    render();
   });
-  document.getElementById("helyek").innerHTML=lista;
- });
 }
 
-// megálló
-function megalloKeres(lat,lon){
+// ===== TÁVOLSÁG
+function distance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1)*Math.PI/180;
+  const Δλ = (lon2-lon1)*Math.PI/180;
 
- fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:300,${lat},${lon})["highway"="bus_stop"];out;`)
- .then(r=>r.json())
- .then(d=>{
-  if(d.elements.length){
-    let nev=d.elements[0].tags.name||"Megálló";
-    document.getElementById("megallo").innerText="Megálló: "+nev;
-    menetrend();
-  }
- });
+  const a = Math.sin(Δφ/2)**2 +
+    Math.cos(φ1)*Math.cos(φ2) *
+    Math.sin(Δλ/2)**2;
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return Math.round(R * c);
 }
 
-// menetrend (demo)
-function menetrend(){
- let now=new Date();
- let lista="";
+// ===== RENDER
+function render() {
+  const list = document.getElementById("list");
+  const search = document.getElementById("search").value.toLowerCase();
 
- for(let i=1;i<=5;i++){
-  let p=i*5;
-  let ido=new Date(now.getTime()+p*60000);
-  let kes=Math.floor(Math.random()*3)-1;
+  list.innerHTML = "";
 
-  let sz="white";
-  if(kes>0) sz="blue";
-  if(kes<0) sz="red";
+  stops
+    .filter(s =>
+      s.name?.toLowerCase().includes(search) ||
+      s.gtfs?.toLowerCase().includes(search)
+    )
+    .slice(0,50)
+    .forEach(s => {
 
-  lista+=`<div style="color:${sz}">
-  Járat ${i} → ${ido.getHours()}:${String(ido.getMinutes()).padStart(2,'0')}
-  (${kes}p)
-  </div>`;
- }
+      let distText = "Nincs helyadat";
+      if(userLat){
+        const d = distance(userLat, userLon, s.lat, s.lon);
+        const road = Math.round(d * 1.3);
+        distText = `Légvonal: ${d} m | Út: ~${road} m`;
+      }
 
- document.getElementById("menetrend").innerHTML=lista;
+      const div = document.createElement("div");
+      div.className = "stop";
+
+      div.innerHTML = `
+        <b>${s.name}</b><br>
+        <span class="small">GTFS: ${s.gtfs}</span><br>
+        <span class="small">${distText}</span>
+      `;
+
+      list.appendChild(div);
+    });
 }
-
-setInterval(()=>{ if(aktualisPoz) megalloKeres(aktualisPoz[0],aktualisPoz[1]); },15000);
-
-// erdei vasutak
-[
- ["Gyermekvasút",47.55,18.98],
- ["Királyrét",47.92,19.01],
- ["Szob",47.82,18.86],
- ["Nagybörzsöny",47.94,18.83],
- ["Kemence",48.01,18.90]
-].forEach(v=>{
- L.marker([v[1],v[2]]).addTo(map).bindPopup("🚂 "+v[0]);
-});
 
 </script>
+
 </body>
 </html>
