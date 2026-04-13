@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>Megállók és Menetrend</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+body{background:black;color:yellow;font-family:Arial;text-align:center;}
+
+#map{height:500px;margin:10px;}
+
+button,input{
+  padding:10px;
+  margin:5px;
+  font-size:18px;
+}
+
+#lista{
+  color:cyan;
+  font-size:18px;
+  margin-top:10px;
+}
+
+.piros{color:red;}
+.kek{color:cyan;}
+.normal{color:white;}
+
+</style>
+</head>
+
+<body>
+
+<h1>🚏 Megállók és Menetrend</h1>
+
+<input id="kereso" placeholder="Megálló név vagy kód">
+<button onclick="keresMegallo()">🔎 Keresés</button>
+
+<br>
+
+<button onclick="kozeliMegallok()">📍 1 km megállók</button>
+<button onclick="osszesMegallo()">📡 Összes keresés</button>
+
+<div id="map"></div>
+
+<div id="lista">Adatok...</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+
+// térkép
+var map=L.map('map').setView([47.49,19.04],13);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let sajatPoz=null;
+
+// GPS
+navigator.geolocation.watchPosition(function(pos){
+ let lat=pos.coords.latitude;
+ let lon=pos.coords.longitude;
+
+ sajatPoz=[lat,lon];
+
+ map.setView([lat,lon]);
+});
+
+// 📍 1 KM MEGÁLLÓK
+function kozeliMegallok(){
+
+ if(!sajatPoz){alert("Nincs GPS");return;}
+
+ fetch(`https://overpass-api.de/api/interpreter?data=
+ [out:json];
+ node(around:1000,${sajatPoz[0]},${sajatPoz[1]})
+ ["highway"="bus_stop"];
+ out;`)
+
+ .then(r=>r.json())
+ .then(d=>{
+
+   let lista=[];
+
+   d.elements.forEach(e=>{
+     let tav=map.distance(sajatPoz,[e.lat,e.lon]);
+     lista.push({
+       nev:e.tags.name||"Megálló",
+       tav:tav,
+       lat:e.lat,
+       lon:e.lon
+     });
+   });
+
+   // rendezés távolság szerint
+   lista.sort((a,b)=>a.tav-b.tav);
+
+   megjelenit(lista);
+
+ });
+}
+
+// 🔎 KERESÉS
+function keresMegallo(){
+
+ let q=document.getElementById("kereso").value;
+
+ fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`)
+ .then(r=>r.json())
+ .then(d=>{
+   if(d.length){
+     let lat=d[0].lat;
+     let lon=d[0].lon;
+
+     map.setView([lat,lon],16);
+
+     menetrend(d[0].display_name);
+   }
+ });
+}
+
+// 📡 ÖSSZES (demo)
+function osszesMegallo(){
+ document.getElementById("lista").innerHTML=
+ "Teljes adatbázis kereséshez GTFS/API kell (később bővítjük)";
+}
+
+// 🚏 LISTA MEGJELENÍTÉS
+function megjelenit(lista){
+
+ let html="";
+
+ lista.slice(0,10).forEach(e=>{
+
+   html+=`
+   <div onclick="menetrend('${e.nev}')">
+   ${e.nev} - ${(e.tav/1000).toFixed(2)} km
+   </div>
+   `;
+ });
+
+ document.getElementById("lista").innerHTML=html;
+}
+
+// ⏱️ MENETREND (SZÍNES)
+function menetrend(nev){
+
+ let now=new Date();
+ let html=`<h3>${nev}</h3>`;
+
+ for(let i=1;i<=6;i++){
+
+   let ido=new Date(now.getTime()+i*5*60000);
+
+   let kes=Math.floor(Math.random()*120)-60; // mp
+
+   let szin="normal";
+   if(kes>10) szin="kek";
+   if(kes<-10) szin="piros";
+
+   html+=`
+   <div class="${szin}">
+   Járat ${i} → 
+   ${ido.getHours()}:${String(ido.getMinutes()).padStart(2,'0')}
+   (${kes} mp)
+   </div>
+   `;
+ }
+
+ document.getElementById("lista").innerHTML=html;
+}
+
+</script>
+
+</body>
+</html>
