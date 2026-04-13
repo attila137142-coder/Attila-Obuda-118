@@ -1,152 +1,46 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>Attila Közlekedés LIVE</title>
-
-<style>
-body{
-  background:black;
-  color:white;
-  font-family:Arial;
-  padding:10px;
-}
-
-h1{
-  font-size:28px;
-}
-
-button{
-  padding:10px;
-  margin:5px;
-  border-radius:10px;
-  border:none;
-  cursor:pointer;
-}
-
-.stop{
-  background:#222;
-  margin:10px 0;
-  padding:10px;
-  border-radius:10px;
-}
-
-.red{color:#ff5555;}
-.blue{color:#55aaff;}
-.green{color:#55ff55;}
-
-.small{font-size:13px;}
-</style>
-</head>
-
-<body>
-
-<h1>🚌 Attila Közlekedés LIVE</h1>
-
-<button onclick="getLocation()">📍 Saját hely</button>
-<div id="status">Helyzet: nincs</div>
-
-<div id="stops"></div>
-
 <script>
 
-let lat=null, lon=null;
+// VALÓDI MENETREND (Menetrend API - proxy)
+async function loadTimes(stopName){
 
-// HELY
-function getLocation(){
- navigator.geolocation.getCurrentPosition(pos=>{
-   lat=pos.coords.latitude;
-   lon=pos.coords.longitude;
-   document.getElementById("status").innerText="Helyzet OK";
-   loadStops();
- });
-}
+ const el=document.getElementById("times-"+stopName);
 
-// TÁVOLSÁG
-function dist(a,b,c,d){
- const R=6371e3;
- const p1=a*Math.PI/180,p2=c*Math.PI/180;
- const dp=(c-a)*Math.PI/180;
- const dl=(d-b)*Math.PI/180;
+ try{
 
- const x=Math.sin(dp/2)**2+
- Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+   const url=`https://transport.opendata.ch/v1/stationboard?station=${encodeURIComponent(stopName)}&limit=5`;
 
- return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
-}
+   const res=await fetch(url);
+   const data=await res.json();
 
-// MEGÁLLÓK (OpenStreetMap)
-async function loadStops(){
+   let html="";
 
- const url=`https://overpass-api.de/api/interpreter?data=
- [out:json];
- node(around:1000,${lat},${lon})["highway"="bus_stop"];
- out;`;
+   data.stationboard.forEach(j=>{
 
- const res=await fetch(url);
- const data=await res.json();
+     const dep=new Date(j.stop.departure);
+     const now=new Date();
 
- renderStops(data.elements.slice(0,10));
-}
+     let diff=Math.floor((dep-now)/1000);
 
-// RENDER
-async function renderStops(list){
+     let color="white";
+     if(diff<0) color="red";
+     if(diff>300) color="blue";
 
- const container=document.getElementById("stops");
- container.innerHTML="";
+     let m=Math.floor(Math.abs(diff)/60);
+     let s=Math.abs(diff)%60;
 
- for(const s of list){
+     html+=`
+     <div class="${color}">
+       ${j.number} → ${j.to}<br>
+       ⏱ ${diff>=0?"+":"-"}${m}:${String(s).padStart(2,"0")}
+     </div>`;
+   });
 
-  const d=dist(lat,lon,s.lat,s.lon);
+   el.innerHTML=html;
 
-  const div=document.createElement("div");
-  div.className="stop";
-
-  div.innerHTML=`
-    <b>${s.tags.name || "Megálló"}</b><br>
-    <span class="small">Távolság: ${d} m</span>
-    <div id="times-${s.id}">⏳ töltés...</div>
-  `;
-
-  container.appendChild(div);
-
-  loadTimes(s.id);
- }
-}
-
-// MENETREND (Transit API - DEMO)
-async function loadTimes(id){
-
- const el=document.getElementById("times-"+id);
-
- let html="";
-
- for(let i=1;i<=5;i++){
-
-   let delay=Math.floor(Math.random()*300-150);
-
-   let color="green";
-   if(delay>30) color="blue";
-   if(delay<-30) color="red";
-
-   let m=Math.floor(Math.abs(delay)/60);
-   let s=Math.abs(delay)%60;
-
-   html+=`
-   <div class="${color}">
-     Járat ${i} → ${delay>=0?"+":"-"}${m}:${String(s).padStart(2,"0")}
-   </div>`;
+ }catch(e){
+   el.innerHTML="Hiba menetrendnél";
  }
 
- el.innerHTML=html;
 }
-
-// AUTO FRISSÍTÉS
-setInterval(()=>{
- if(lat) loadStops();
-},15000);
 
 </script>
-
-</body>
-</html>
