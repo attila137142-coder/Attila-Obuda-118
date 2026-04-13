@@ -2,76 +2,148 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>BKK PRO Menetrend</title>
+<title>Megállók és Menetrend</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{background:black;color:yellow;text-align:center;font-family:Arial;}
-#lista{color:cyan;font-size:18px;}
-button{padding:10px;margin:5px;font-size:16px;}
+body{background:black;color:yellow;font-family:Arial;text-align:center;}
+
+#map{height:500px;margin:10px;}
+
+button,input{
+padding:10px;
+margin:5px;
+font-size:18px;
+}
+
+#lista{
+color:cyan;
+font-size:18px;
+margin-top:10px;
+}
 
 .piros{color:red;}
-.kek{color:#00ffff;}
+.kek{color:cyan;}
 .normal{color:white;}
+
 </style>
 </head>
 
 <body>
 
-<h1>🚌 BKK PRO Menetrend</h1>
+<h1>🚏 Megállók és Menetrend</h1>
 
-<button onclick="kozeli()">📍 Közeli megállók</button>
+<input id="kereso" placeholder="Megálló név vagy kód">
+<button onclick="keresMegallo()">🔎 Keresés</button>
+
+<br>
+
+<button onclick="kozeliMegallok()">📍 1 km megállók</button>
+<button onclick="osszesMegallo()">📡 Összes keresés</button>
+
+<div id="map"></div>
 
 <div id="lista">Adatok...</div>
 
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
 <script>
+
+// térkép
+var map=L.map('map').setView([47.49,19.04],13);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let sajatPoz=null;
 
 // GPS
-navigator.geolocation.watchPosition(p=>{
-sajatPoz=[p.coords.latitude,p.coords.longitude];
+navigator.geolocation.watchPosition(function(pos){
+let lat=pos.coords.latitude;
+let lon=pos.coords.longitude;
+
+sajatPoz=[lat,lon];
+
+map.setView([lat,lon]);
 });
 
-// KÖZELI MEGÁLLÓK
-function kozeli(){
+// 📍 1 KM MEGÁLLÓK
+function kozeliMegallok(){
+
+if(!sajatPoz){alert("Nincs GPS");return;}
 
 fetch(`https://overpass-api.de/api/interpreter?data=
 [out:json];
-node(around:800,${sajatPoz[0]},${sajatPoz[1]})
+node(around:1000,${sajatPoz[0]},${sajatPoz[1]})
 ["highway"="bus_stop"];
 out;`)
 
 .then(r=>r.json())
 .then(d=>{
 
-let lista=d.elements.map(e=>{
-let tav=Math.sqrt(
-(e.lat-sajatPoz[0])**2 +
-(e.lon-sajatPoz[1])**2
-);
+let lista=[];
 
-return {nev:e.tags.name||"Megálló", tav};
+d.elements.forEach(e=>{
+let tav=map.distance(sajatPoz,[e.lat,e.lon]);
+lista.push({
+nev:e.tags.name||"Megálló",
+tav:tav,
+lat:e.lat,
+lon:e.lon
+});
 });
 
+// rendezés távolság szerint
 lista.sort((a,b)=>a.tav-b.tav);
 
-megjelenit(lista.slice(0,5));
+megjelenit(lista);
+
 });
 }
 
-// LISTA
+// 🔎 KERESÉS
+function keresMegallo(){
+
+let q=document.getElementById("kereso").value;
+
+fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`)
+.then(r=>r.json())
+.then(d=>{
+if(d.length){
+let lat=d[0].lat;
+let lon=d[0].lon;
+
+map.setView([lat,lon],16);
+
+menetrend(d[0].display_name);
+}
+});
+}
+
+// 📡 ÖSSZES (demo)
+function osszesMegallo(){
+document.getElementById("lista").innerHTML=
+"Teljes adatbázis kereséshez GTFS/API kell (később bővítjük)";
+}
+
+// 🚏 LISTA MEGJELENÍTÉS
 function megjelenit(lista){
 
 let html="";
 
-lista.forEach(m=>{
-html+=`<div onclick="menetrend('${m.nev}')">${m.nev}</div>`;
+lista.slice(0,10).forEach(e=>{
+
+html+=`
+<div onclick="menetrend('${e.nev}')">
+${e.nev} - ${(e.tav/1000).toFixed(2)} km
+</div>
+`;
 });
 
 document.getElementById("lista").innerHTML=html;
 }
 
-// MENETREND LOGIKA
+// ⏱️ MENETREND (SZÍNES)
 function menetrend(nev){
 
 let now=new Date();
@@ -79,36 +151,27 @@ let html=`<h3>${nev}</h3>`;
 
 for(let i=1;i<=6;i++){
 
-let indul=new Date(now.getTime()+i*4*60000);
+let ido=new Date(now.getTime()+i*5*60000);
 
-// "késés" szimuláció (GTFS helyett)
-let delay=Math.floor(Math.random()*120)-60;
+let kes=Math.floor(Math.random()*120)-60; // mp
 
 let szin="normal";
-if(delay>20) szin="kek";
-if(delay<-20) szin="piros";
+if(kes>10) szin="kek";
+if(kes<-10) szin="piros";
 
 html+=`
 <div class="${szin}">
-Járat ${i} →
-${indul.getHours()}:${String(indul.getMinutes()).padStart(2,'0')}
-(${delay} mp)
-</div>`;
+Járat ${i} → 
+${ido.getHours()}:${String(ido.getMinutes()).padStart(2,'0')}
+(${kes} mp)
+</div>
+`;
 }
 
 document.getElementById("lista").innerHTML=html;
 }
 
-// AUTO FRISSÍTÉS
-setInterval(()=>{
-if(document.getElementById("lista").innerText.includes("Járat")){
-let nev=document.querySelector("h3")?.innerText;
-if(nev) menetrend(nev);
-}
-},15000);
-
 </script>
 
 </body>
 </html>
-
