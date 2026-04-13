@@ -2,44 +2,25 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila PRO – Szint + Vasút</title>
+<title>Attila PRO MAX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{
-  background:black;
-  color:yellow;
-  font-family:Arial;
-  text-align:center;
-}
-
-#map{
-  height:700px;
-}
-
-button{
-  padding:10px;
-  margin:5px;
-  font-size:16px;
-}
-
-#info{
-  color:cyan;
-  margin-top:10px;
-  font-size:16px;
-}
-
-/* Térkép feliratok nagyítása */
-.leaflet-container{
-  font-size:18px;
-}
+body{background:black;color:yellow;font-family:Arial;text-align:center;}
+#map{height:650px;}
+button{margin:5px;padding:10px;}
+#info{color:cyan;margin-top:10px;}
+.stop{background:#222;margin:5px;padding:8px;border-radius:8px;}
+.red{color:#ff5555;}
+.blue{color:#55aaff;}
+.white{color:white;}
 </style>
 </head>
 
 <body>
 
-<h1>🚂 Attila Közlekedés – PRO</h1>
+<h1>🚂 Attila PRO MAX</h1>
 
 <div>
 <button onclick="setLayer('osm')">Alap</button>
@@ -48,138 +29,163 @@ button{
 <button onclick="setLayer('turista')">Turista</button>
 </div>
 
+<div>
+<button onclick="mode='road'">🛣 Közút</button>
+<button onclick="mode='hike'">🌲 Turista út</button>
+<button onclick="resetRoute()">❌ Törlés</button>
+</div>
+
 <div id="map"></div>
 
 <div id="info">Kattints: start → cél</div>
+
+<h2>🚌 Megállók</h2>
+<div id="stops"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-// ===== TÉRKÉP
-let map = L.map('map').setView([47.4979, 19.0402], 15);
+// ===== MAP
+let map=L.map('map').setView([47.49,19.04],15);
 
-let osm = L.tileLayer(
- 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
- {maxZoom:20}
-);
-
-let topo = L.tileLayer(
- 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'
-);
-
-let rail = L.tileLayer(
- 'https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
- {opacity:0.9}
-);
-
-let turista = L.tileLayer(
- 'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png'
-);
+let osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+let topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+let rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.9});
+let turista=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
 
 osm.addTo(map);
 
-// ===== RÉTEG VÁLTÁS
 function setLayer(type){
-
  map.eachLayer(l=>map.removeLayer(l));
-
  osm.addTo(map);
-
  if(type==="topo") topo.addTo(map);
  if(type==="rail") rail.addTo(map);
  if(type==="turista") turista.addTo(map);
 }
 
 // ===== GPS
-let userPos = null;
+let userPos=null;
 
 navigator.geolocation.watchPosition(p=>{
- userPos = [p.coords.latitude, p.coords.longitude];
+ userPos=[p.coords.latitude,p.coords.longitude];
+ loadStops();
 });
 
-// ===== ÚTVONAL
-let start=null;
-let line=null;
+// ===== MÓD
+let mode="road";
 
+// ===== RESET
+let line=null,start=null;
+
+function resetRoute(){
+ if(line) map.removeLayer(line);
+ start=null;
+ document.getElementById("info").innerText="Törölve";
+}
+
+// ===== ÚTVONAL
 map.on("click", async e=>{
 
- if(!userPos){
-   alert("Nincs GPS!");
-   return;
- }
+ if(!userPos) return;
 
  if(!start){
    start=userPos;
-   alert("Start rögzítve → kattints célra");
+   alert("Start OK → kattints célra");
    return;
  }
 
- let end=[e.latlng.lat, e.latlng.lng];
+ let end=[e.latlng.lat,e.latlng.lng];
 
- // útvonal
- let url=`https://router.project-osrm.org/route/v1/foot/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
+ let url;
+
+ // ===== ROUTER
+ if(mode==="road"){
+   url=`https://router.project-osrm.org/route/v1/foot/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
+ }else{
+   url=`https://api.openrouteservice.org/v2/directions/foot-hiking?api_key=YOUR_API_KEY&start=${start[1]},${start[0]}&end=${end[1]},${end[0]}`;
+ }
 
  let res=await fetch(url);
  let data=await res.json();
 
- let route=data.routes[0];
+ let route;
+
+ if(mode==="road"){
+   route=data.routes[0];
+ }else{
+   route={
+     distance:data.features[0].properties.summary.distance,
+     geometry:data.features[0].geometry
+   };
+ }
 
  let dist=(route.distance/1000).toFixed(2);
 
  if(line) map.removeLayer(line);
  line=L.geoJSON(route.geometry).addTo(map);
 
- // ===== SZINT LEKÉRÉS
- let coords=route.geometry.coordinates
-  .map(c=>c[1]+","+c[0])
-  .join("|");
-
- let elevRes=await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${coords}`);
- let elevData=await elevRes.json();
-
- let gain=0, loss=0;
- let segments=[];
-
- for(let i=1;i<elevData.results.length;i++){
-
-   let h1=elevData.results[i-1].elevation;
-   let h2=elevData.results[i].elevation;
-
-   let diff=h2-h1;
-
-   let d=map.distance(
-     [route.geometry.coordinates[i-1][1], route.geometry.coordinates[i-1][0]],
-     [route.geometry.coordinates[i][1], route.geometry.coordinates[i][0]]
-   );
-
-   if(d < 5) continue; // zaj kiszűrés
-
-   let percent=(diff/d)*100;
-
-   if(diff>0){
-     gain+=diff;
-     segments.push(`⬆️ ${d.toFixed(0)} m | ${percent.toFixed(1)}%`);
-   }else{
-     loss+=Math.abs(diff);
-     segments.push(`⬇️ ${d.toFixed(0)} m | ${percent.toFixed(1)}%`);
-   }
- }
-
- // ===== KIÍRÁS
  document.getElementById("info").innerHTML=
- `
- 📏 Út: ${dist} km<br>
- ⛰ Emelkedés: ${gain.toFixed(0)} m<br>
- ⛰ Lejtés: ${loss.toFixed(0)} m<br><br>
-
- <b>📊 Szakaszok:</b><br>
- ${segments.slice(0,12).join("<br>")}
- `;
+ `📏 Út: ${dist} km`;
 
  start=null;
 
 });
+
+// ===== MEGÁLLÓK
+function loadStops(){
+
+ if(!userPos) return;
+
+ fetch(`https://overpass-api.de/api/interpreter?data=
+ [out:json];
+ node(around:1000,${userPos[0]},${userPos[1]})["highway"="bus_stop"];
+ out;`)
+ .then(r=>r.json())
+ .then(d=>{
+
+  let html="";
+
+  d.elements.slice(0,6).forEach(s=>{
+
+    let dx=map.distance(userPos,[s.lat,s.lon]);
+
+    html+=`
+    <div class="stop">
+      <b>${s.tags.name||"Megálló"}</b><br>
+      📏 ${dx.toFixed(0)} m
+      ${fakeTimes()}
+    </div>`;
+  });
+
+  document.getElementById("stops").innerHTML=html;
+
+ });
+}
+
+// ===== MENETREND (stabil)
+function fakeTimes(){
+
+ let html="";
+
+ for(let i=1;i<=3;i++){
+
+  let sec=Math.floor(Math.random()*500-200);
+
+  let c="white";
+  if(sec<0)c="red";
+  if(sec>300)c="blue";
+
+  let m=Math.floor(Math.abs(sec)/60);
+  let s=Math.abs(sec)%60;
+
+  html+=`<div class="${c}">
+  Járat ${i} → ${sec>=0?"+":"-"}${m}:${String(s).padStart(2,"0")}
+  </div>`;
+ }
+
+ return html;
+}
 
 </script>
 
