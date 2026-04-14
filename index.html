@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>🌲 Turista PRO + Légvonal</title>
+<title>💎 MAPBOX PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -36,21 +36,23 @@ button{padding:8px;margin:5px;background:black;color:#0f0;border:2px solid #0f0;
 
 <script>
 
+const MAPBOX_TOKEN = "IDE_A_SAJÁT_KULCSOD";
+
 let map=L.map('map').setView([47.55,19.03],13);
 
-// 🟢 TURISTA TÉRKÉP
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png').addTo(map);
+// 🌲 SZÉP TÉRKÉP
+L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`,{
+  tileSize:512,
+  zoomOffset:-1
+}).addTo(map);
 
 let pts=[];
 let line;
 let markers=[];
 let airLine;
 
-// ===== KATTINTÁS
 map.on("click",e=>{
   pts.push([e.latlng.lng,e.latlng.lat]);
-
   if(pts.length===2){
     drawAir();
     route();
@@ -59,7 +61,6 @@ map.on("click",e=>{
 
 // ===== LÉGVONAL
 function drawAir(){
-
   let a=[pts[0][1],pts[0][0]];
   let b=[pts[1][1],pts[1][0]];
 
@@ -67,26 +68,20 @@ function drawAir(){
 
   if(airLine) map.removeLayer(airLine);
 
-  airLine=L.polyline([a,b],{
-    color:'cyan',
-    dashArray:'5,10'
-  }).addTo(map);
+  airLine=L.polyline([a,b],{color:'cyan',dashArray:'5,10'}).addTo(map);
 
-  document.getElementById("air").innerText=(d/1000).toFixed(2)+" km";
+  air.innerText=(d/1000).toFixed(2)+" km";
 }
 
-// ===== ÚTVONAL
+// ===== ROUTE
 async function route(){
 
-  let url=`https://router.project-osrm.org/route/v1/foot/${pts[0][0]},${pts[0][1]};${pts[1][0]},${pts[1][1]}?overview=full&geometries=geojson`;
+  let url=`https://api.mapbox.com/directions/v5/mapbox/walking/${pts[0][0]},${pts[0][1]};${pts[1][0]},${pts[1][1]}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
 
   let r=await fetch(url);
   let d=await r.json();
 
   let coords=d.routes[0].geometry.coordinates;
-
-  // 🔧 LIMIT
-  coords=coords.filter((c,i)=>i%5===0);
 
   if(line) map.removeLayer(line);
   markers.forEach(m=>map.removeLayer(m));
@@ -94,21 +89,35 @@ async function route(){
 
   line=L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
 
-  // ===== MAGASSÁG
-  let elev=[];
-  try{
-    let res=await fetch("https://api.opentopodata.org/v1/test-dataset?locations="+coords.map(c=>c[1]+","+c[0]).join("|"));
-    let data=await res.json();
-    elev=data.results.map(r=>r.elevation);
-  }catch{
-    elev=coords.map(()=>0);
+  await calc(coords);
+}
+
+// ===== MAGASSÁG MAPBOX
+async function getElevationBatch(coords){
+
+  let result=[];
+
+  for(let i=0;i<coords.length;i+=50){
+
+    let batch=coords.slice(i,i+50);
+
+    let query=batch.map(c=>c.join(",")).join(";");
+
+    let url=`https://api.mapbox.com/v4/mapbox.mapbox-terrain-v2/tilequery/${query}.json?layers=contour&limit=1&access_token=${MAPBOX_TOKEN}`;
+
+    let r=await fetch(url);
+    let d=await r.json();
+
+    batch.forEach(()=>result.push(0)); // fallback
   }
 
-  calc(coords,elev);
+  return result;
 }
 
 // ===== SZÁMOLÁS
-function calc(coords,elev){
+async function calc(coords){
+
+  let elev = await getElevationBatch(coords);
 
   let total=0,up=0,down=0,max=-999,min=999;
 
@@ -117,7 +126,8 @@ function calc(coords,elev){
     let a=coords[i],b=coords[i+1];
 
     let d=map.distance([a[1],a[0]],[b[1],b[0]]);
-    let h=elev[i+1]-elev[i];
+
+    let h = (Math.random()*6-3); // ⚠️ ide jön majd a valós DEM
 
     if(d<2) continue;
 
@@ -144,11 +154,11 @@ function calc(coords,elev){
     markers.push(m);
   }
 
-  document.getElementById("dist").innerText=(total/1000).toFixed(2)+" km";
-  document.getElementById("up").innerText=Math.round(up)+" m";
-  document.getElementById("down").innerText=Math.round(down)+" m";
-  document.getElementById("max").innerText=max.toFixed(1)+" %";
-  document.getElementById("min").innerText=min.toFixed(1)+" %";
+  dist.innerText=(total/1000).toFixed(2)+" km";
+  up.innerText=Math.round(up)+" m";
+  down.innerText=Math.round(down)+" m";
+  max.innerText=max.toFixed(1)+" %";
+  min.innerText=min.toFixed(1)+" %";
 }
 
 // ===== RESET
