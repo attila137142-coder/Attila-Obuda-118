@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>🌲 Turista PRO FIX</title>
+<title>🌲 Turista PRO + Légvonal</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -20,10 +20,12 @@ button{padding:8px;margin:5px;background:black;color:#0f0;border:2px solid #0f0;
 <div id="panel">
 <button onclick="reset()">🧹 Törlés</button><br>
 
-📏 Hossz: <span id="dist">-</span><br>
+📏 Út: <span id="dist">-</span><br>
+📏 Légvonal: <span id="air">-</span><br>
+
 ⬆️ Emelkedés: <span id="up">-</span><br>
 ⬇️ Lejtés: <span id="down">-</span><br>
-📊 Átlag: <span id="avg">-</span><br>
+
 ⚠️ MAX: <span id="max">-</span><br>
 ⚠️ MIN: <span id="min">-</span>
 </div>
@@ -34,25 +36,46 @@ button{padding:8px;margin:5px;background:black;color:#0f0;border:2px solid #0f0;
 
 <script>
 
-let map = L.map('map').setView([47.55,19.03],13);
+let map=L.map('map').setView([47.55,19.03],13);
 
-// ✅ VALÓDI TURISTA TÉRKÉP
-let base = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-let hiking = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
-
-base.addTo(map);
-hiking.addTo(map);
+// 🟢 TURISTA TÉRKÉP
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png').addTo(map);
 
 let pts=[];
 let line;
 let markers=[];
+let airLine;
 
-map.on("click", e=>{
+// ===== KATTINTÁS
+map.on("click",e=>{
   pts.push([e.latlng.lng,e.latlng.lat]);
-  if(pts.length===2) route();
+
+  if(pts.length===2){
+    drawAir();
+    route();
+  }
 });
 
-// ===== ROUTE
+// ===== LÉGVONAL
+function drawAir(){
+
+  let a=[pts[0][1],pts[0][0]];
+  let b=[pts[1][1],pts[1][0]];
+
+  let d=map.distance(a,b);
+
+  if(airLine) map.removeLayer(airLine);
+
+  airLine=L.polyline([a,b],{
+    color:'cyan',
+    dashArray:'5,10'
+  }).addTo(map);
+
+  document.getElementById("air").innerText=(d/1000).toFixed(2)+" km";
+}
+
+// ===== ÚTVONAL
 async function route(){
 
   let url=`https://router.project-osrm.org/route/v1/foot/${pts[0][0]},${pts[0][1]};${pts[1][0]},${pts[1][1]}?overview=full&geometries=geojson`;
@@ -62,8 +85,8 @@ async function route(){
 
   let coords=d.routes[0].geometry.coordinates;
 
-  // 🔧 LIMITÁLÁS (EZ A KULCS!)
-  coords = coords.filter((c,i)=> i%5===0);
+  // 🔧 LIMIT
+  coords=coords.filter((c,i)=>i%5===0);
 
   if(line) map.removeLayer(line);
   markers.forEach(m=>map.removeLayer(m));
@@ -71,27 +94,20 @@ async function route(){
 
   line=L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
 
-  // ===== ELEVATION
+  // ===== MAGASSÁG
   let elev=[];
-
   try{
-    let urlElev="https://api.opentopodata.org/v1/test-dataset?locations="+
-      coords.map(c=>c[1]+","+c[0]).join("|");
-
-    let res=await fetch(urlElev);
+    let res=await fetch("https://api.opentopodata.org/v1/test-dataset?locations="+coords.map(c=>c[1]+","+c[0]).join("|"));
     let data=await res.json();
-
     elev=data.results.map(r=>r.elevation);
-
-  }catch(e){
-    console.log("Elevation hiba");
-    elev = coords.map(()=>0);
+  }catch{
+    elev=coords.map(()=>0);
   }
 
   calc(coords,elev);
 }
 
-// ===== CALC
+// ===== SZÁMOLÁS
 function calc(coords,elev){
 
   let total=0,up=0,down=0,max=-999,min=999;
@@ -105,7 +121,7 @@ function calc(coords,elev){
 
     if(d<2) continue;
 
-    let slope = d>0 ? (h/d)*100 : 0;
+    let slope=(h/d)*100;
 
     total+=d;
 
@@ -119,7 +135,9 @@ function calc(coords,elev){
 
     let m=L.marker(mid,{
       icon:L.divIcon({
-        html:`<div class="box">${slope.toFixed(1)}%<br>${Math.round(d)}m</div>`
+        html:`<div class="box">
+        ${slope.toFixed(1)}%<br>${Math.round(d)}m
+        </div>`
       })
     }).addTo(map);
 
@@ -129,7 +147,6 @@ function calc(coords,elev){
   document.getElementById("dist").innerText=(total/1000).toFixed(2)+" km";
   document.getElementById("up").innerText=Math.round(up)+" m";
   document.getElementById("down").innerText=Math.round(down)+" m";
-  document.getElementById("avg").innerText=(total>0?((up-down)/total*100).toFixed(1):0)+" %";
   document.getElementById("max").innerText=max.toFixed(1)+" %";
   document.getElementById("min").innerText=min.toFixed(1)+" %";
 }
@@ -138,6 +155,7 @@ function calc(coords,elev){
 function reset(){
   pts=[];
   if(line) map.removeLayer(line);
+  if(airLine) map.removeLayer(airLine);
   markers.forEach(m=>map.removeLayer(m));
   markers=[];
 }
