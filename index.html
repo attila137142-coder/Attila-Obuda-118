@@ -2,26 +2,14 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🌲 Erdei meredekség mérő</title>
+<title>🌲 PRO Meredekség térkép</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body {
-  margin:0;
-  background:black;
-  color:#0f0;
-  font-family:Arial;
-}
-
-#map {
-  height:90vh;
-}
-
-#panel {
-  padding:10px;
-  background:#111;
-}
+body {margin:0;background:black;color:#0f0;font-family:Arial;}
+#map {height:90vh;}
+#panel {padding:10px;background:#111;}
 
 button {
   padding:10px;
@@ -32,9 +20,12 @@ button {
   border-radius:10px;
 }
 
-.info {
-  font-size:14px;
-  margin-top:5px;
+.label {
+  background:black;
+  color:#0f0;
+  padding:3px;
+  font-size:12px;
+  border:1px solid #0f0;
 }
 </style>
 </head>
@@ -42,8 +33,8 @@ button {
 <body>
 
 <div id="panel">
-  <button onclick="reset()">🧹 Törlés</button>
-  <div id="info">Kattints a térképre útvonalhoz</div>
+<button onclick="reset()">🧹 Törlés</button>
+<div id="info">Kattints a térképre</div>
 </div>
 
 <div id="map"></div>
@@ -52,85 +43,102 @@ button {
 
 <script>
 
-// MAP
 let map = L.map('map').setView([47.6,19.0],13);
 
 L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png').addTo(map);
 L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png').addTo(map);
 
-// ADATOK
 let points = [];
-let line = L.polyline([],{color:'lime'}).addTo(map);
+let line = L.polyline([], {color:'lime'}).addTo(map);
+let labels = [];
 
-// KATTINTÁS
 map.on('click', async function(e){
 
   points.push(e.latlng);
   line.addLatLng(e.latlng);
 
   if(points.length > 1){
-    await calculate();
+    await calculateSegment(points.length-2, points.length-1);
+    calculateSummary();
   }
 
 });
 
-// SZÁMOLÁS
-async function calculate(){
+// ===== SZAKASZ SZÁMOLÁS
+async function calculateSegment(i1,i2){
 
-  let totalDist = 0;
-  let totalUp = 0;
-  let totalDown = 0;
+  let p1 = points[i1];
+  let p2 = points[i2];
 
-  for(let i=1;i<points.length;i++){
+  let dist = map.distance(p1,p2);
 
-    let p1 = points[i-1];
-    let p2 = points[i];
+  let h1 = await getHeight(p1);
+  let h2 = await getHeight(p2);
 
-    let dist = map.distance(p1,p2);
-    totalDist += dist;
+  let diff = h2 - h1;
 
-    // MAGASSÁG API
-    let h1 = await getHeight(p1);
-    let h2 = await getHeight(p2);
+  let slope = (diff / dist) * 100;
 
-    let diff = h2 - h1;
+  let mid = [
+    (p1.lat + p2.lat)/2,
+    (p1.lng + p2.lng)/2
+  ];
 
-    if(diff > 0) totalUp += diff;
-    else totalDown += Math.abs(diff);
+  let label = L.marker(mid, {
+    icon: L.divIcon({
+      className: 'label',
+      html: `
+        <b>${slope.toFixed(1)}%</b><br>
+        ${dist.toFixed(0)} m
+      `
+    })
+  }).addTo(map);
 
-  }
+  labels.push({
+    marker: label,
+    slope: slope
+  });
 
-  let slope = (totalUp / totalDist) * 100;
+}
+
+// ===== ÖSSZESÍTÉS
+function calculateSummary(){
+
+  let max = -999;
+  let min = 999;
+
+  labels.forEach(l=>{
+    if(l.slope > max) max = l.slope;
+    if(l.slope < min) min = l.slope;
+  });
 
   document.getElementById("info").innerHTML = `
-    📏 Hossz: ${(totalDist/1000).toFixed(2)} km<br>
-    ⛰️ Emelkedés: ${totalUp.toFixed(0)} m<br>
-    ⛰️ Lejtés: ${totalDown.toFixed(0)} m<br>
-    📊 Átlag meredekség: ${slope.toFixed(1)} %
+    📊 MAX meredekség: ${max.toFixed(1)} %<br>
+    📊 MIN meredekség: ${min.toFixed(1)} %
   `;
 }
 
-// MAGASSÁG LEKÉRÉS
+// ===== MAGASSÁG
 async function getHeight(p){
-
   try{
     let res = await fetch(
       `https://api.open-elevation.com/api/v1/lookup?locations=${p.lat},${p.lng}`
     );
-
-    let data = await res.json();
-    return data.results[0].elevation;
-
+    let d = await res.json();
+    return d.results[0].elevation;
   }catch{
     return 0;
   }
-
 }
 
-// TÖRLÉS
+// ===== RESET
 function reset(){
   points = [];
   line.setLatLngs([]);
+
+  labels.forEach(l=>map.removeLayer(l.marker));
+  labels = [];
+
   document.getElementById("info").innerText = "Törölve!";
 }
 
