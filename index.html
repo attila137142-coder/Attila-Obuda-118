@@ -2,165 +2,22 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>💎 VALÓDI DEM PRO</title>
-
+<title>TESZT</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
-<style>
-body{margin:0;background:black;color:#0f0;font-family:Arial;}
-#map{height:75vh;}
-#panel{padding:10px;}
-button{padding:8px;margin:5px;background:black;color:#0f0;border:2px solid #0f0;}
-.box{background:black;color:yellow;border:1px solid yellow;padding:3px;font-size:11px;}
-</style>
 </head>
 
 <body>
 
-<div id="panel">
-<button onclick="reset()">🧹 Törlés</button><br>
-
-📏 Út: <span id="dist">-</span><br>
-📏 Légvonal: <span id="air">-</span><br>
-
-⬆️ Emelkedés: <span id="up">-</span><br>
-⬇️ Lejtés: <span id="down">-</span><br>
-
-⚠️ MAX: <span id="max">-</span><br>
-⚠️ MIN: <span id="min">-</span>
-</div>
-
-<div id="map"></div>
+<div id="map" style="height:500px;"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-const MAPBOX_TOKEN = "IDE_A_SAJÁT_KULCSOD";
+var map = L.map('map').setView([47.5,19.04],13);
 
-let map=L.map('map').setView([47.55,19.03],13);
-
-L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`,{
-  tileSize:512,
-  zoomOffset:-1
-}).addTo(map);
-
-let pts=[];
-let line;
-let markers=[];
-let airLine;
-
-map.on("click",e=>{
-  pts.push([e.latlng.lng,e.latlng.lat]);
-  if(pts.length===2){
-    drawAir();
-    route();
-  }
-});
-
-// ===== LÉGVONAL
-function drawAir(){
-  let a=[pts[0][1],pts[0][0]];
-  let b=[pts[1][1],pts[1][0]];
-  let d=map.distance(a,b);
-
-  if(airLine) map.removeLayer(airLine);
-
-  airLine=L.polyline([a,b],{color:'cyan',dashArray:'5,10'}).addTo(map);
-
-  air.innerText=(d/1000).toFixed(2)+" km";
-}
-
-// ===== ROUTE
-async function route(){
-
-  let url=`https://api.mapbox.com/directions/v5/mapbox/walking/${pts[0][0]},${pts[0][1]};${pts[1][0]},${pts[1][1]}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
-
-  let r=await fetch(url);
-  let d=await r.json();
-
-  let coords=d.routes[0].geometry.coordinates;
-
-  // 🔧 limit
-  coords=coords.filter((c,i)=>i%5===0);
-
-  if(line) map.removeLayer(line);
-  markers.forEach(m=>map.removeLayer(m));
-  markers=[];
-
-  line=L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
-
-  await calc(coords);
-}
-
-// ===== DEM API
-async function getElevation(coords){
-
-  let locations = coords.map(c=>c[1]+","+c[0]).join("|");
-
-  let res = await fetch(
-    "https://api.open-elevation.com/api/v1/lookup?locations="+locations
-  );
-
-  let data = await res.json();
-
-  return data.results.map(r=>r.elevation);
-}
-
-// ===== SZÁMOLÁS
-async function calc(coords){
-
-  let elev = await getElevation(coords);
-
-  let total=0,up=0,down=0,max=-999,min=999;
-
-  for(let i=0;i<coords.length-1;i++){
-
-    let a=coords[i],b=coords[i+1];
-
-    let d=map.distance([a[1],a[0]],[b[1],b[0]]);
-    let h=elev[i+1]-elev[i];
-
-    if(d<2) continue;
-
-    let slope=(h/d)*100;
-
-    total+=d;
-
-    if(h>0) up+=h;
-    else down+=Math.abs(h);
-
-    if(slope>max) max=slope;
-    if(slope<min) min=slope;
-
-    let mid=[(a[1]+b[1])/2,(a[0]+b[0])/2];
-
-    let m=L.marker(mid,{
-      icon:L.divIcon({
-        html:`<div class="box">
-        ${slope.toFixed(1)}%<br>${Math.round(d)}m
-        </div>`
-      })
-    }).addTo(map);
-
-    markers.push(m);
-  }
-
-  dist.innerText=(total/1000).toFixed(2)+" km";
-  up.innerText=Math.round(up)+" m";
-  down.innerText=Math.round(down)+" m";
-  max.innerText=max.toFixed(1)+" %";
-  min.innerText=min.toFixed(1)+" %";
-}
-
-// ===== RESET
-function reset(){
-  pts=[];
-  if(line) map.removeLayer(line);
-  if(airLine) map.removeLayer(airLine);
-  markers.forEach(m=>map.removeLayer(m));
-  markers=[];
-}
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+.addTo(map);
 
 </script>
 
