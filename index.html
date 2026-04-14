@@ -2,32 +2,29 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚌 Attila Közlekedés PRO STABIL</title>
+<title>🌲 FULL TURISTA PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{background:black;color:yellow;font-family:Arial;text-align:center;}
-#map{height:70vh;margin-top:10px;}
-#kmh{font-size:60px;color:#0f0;}
-#coords,#tav,#slope{color:cyan;margin:5px;}
-button,input{padding:8px;margin:5px;}
-.box{background:black;color:yellow;border:1px solid yellow;font-size:10px;}
+body{background:black;color:#0f0;font-family:Arial;text-align:center;}
+#map{height:75vh;}
+#info{margin:10px;color:cyan;}
+button{padding:8px;margin:5px;background:black;color:#0f0;border:1px solid #0f0;}
+.box{background:black;color:yellow;font-size:10px;border:1px solid yellow;}
 </style>
 </head>
 
 <body>
 
-<h2>🚌 Attila Közlekedés PRO</h2>
+<h2>🌲 FULL TURISTA PRO</h2>
 
-<div id="kmh">0 km/h</div>
-<div id="coords">GPS...</div>
-<div id="tav">Távolság: -</div>
-<div id="slope">Meredekség: -</div>
+<div id="info">
+Távolság: -<br>
+Meredekség: -
+</div>
 
-<input id="search" placeholder="Keresés">
-<button onclick="keres()">Keres</button>
-<button onclick="reset()">Törlés</button>
+<button onclick="reset()">🧹 Törlés</button>
 
 <div id="map"></div>
 
@@ -35,87 +32,40 @@ button,input{padding:8px;margin:5px;}
 
 <script>
 
-// ===== TÉRKÉP (STABIL)
-var map=L.map('map').setView([47.5,19.04],13);
+// ===== MAP
+let map=L.map('map').setView([47.6,19.0],13);
 
-var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-var topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
-var turistaut=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
+// alap
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-osm.addTo(map);
+// turista utak (valódi jelzések)
+L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',{
+ opacity:0.7
+}).addTo(map);
 
-function setLayer(l){
- map.eachLayer(x=>map.removeLayer(x));
- osm.addTo(map);
- if(l==="topo") topo.addTo(map);
- if(l==="turista") turistaut.addTo(map);
-}
-
-// ===== GPS
-let lastPos=null,lastTime=null;
-
-navigator.geolocation.watchPosition(pos=>{
-
- let lat=pos.coords.latitude;
- let lon=pos.coords.longitude;
-
- document.getElementById("coords").innerText=
- lat.toFixed(5)+","+lon.toFixed(5);
-
- if(lastPos){
-   let d=map.distance(lastPos,[lat,lon]);
-   let t=(Date.now()-lastTime)/1000;
-   let speed=d/t*3.6;
-   document.getElementById("kmh").innerText=speed.toFixed(1)+" km/h";
- }
-
- lastPos=[lat,lon];
- lastTime=Date.now();
-
-});
-
-// ===== KERESŐ
-function keres(){
- let q=document.getElementById("search").value;
-
- fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`)
- .then(r=>r.json())
- .then(d=>{
-   if(d.length){
-     let lat=d[0].lat;
-     let lon=d[0].lon;
-     map.setView([lat,lon],15);
-
-     if(lastPos){
-       let t=map.distance(lastPos,[lat,lon]);
-       document.getElementById("tav").innerText=
-       "Légvonal: "+(t/1000).toFixed(2)+" km";
-     }
-   }
- });
-}
-
-// ===== ÚTVONAL + MEREDekség
 let pts=[],line,markers=[];
 
+// ===== KATTINTÁS
 map.on("click",e=>{
  pts.push([e.latlng.lat,e.latlng.lng]);
 
  if(pts.length===2){
-   route();
+   turistaRoute();
  }
 });
 
-async function route(){
+// ===== TURISTA ROUTE (GraphHopper DEMO)
+async function turistaRoute(){
 
- let url=`https://router.project-osrm.org/route/v1/foot/${pts[0][1]},${pts[0][0]};${pts[1][1]},${pts[1][0]}?overview=full&geometries=geojson`;
+ let url=`https://graphhopper.com/api/1/route?point=${pts[0][0]},${pts[0][1]}&point=${pts[1][0]},${pts[1][1]}&profile=foot&points_encoded=false`;
 
+ try{
  let r=await fetch(url);
  let d=await r.json();
 
- let coords=d.routes[0].geometry.coordinates;
+ let coords=d.paths[0].points.coordinates;
 
- coords=coords.filter((c,i)=>i%10===0);
+ coords=coords.filter((c,i)=>i%8===0);
 
  if(line) map.removeLayer(line);
  markers.forEach(m=>map.removeLayer(m));
@@ -124,23 +74,21 @@ async function route(){
  line=L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
 
  calc(coords);
+
+ }catch(e){
+   alert("❌ Routing hiba (GraphHopper limit)");
+ }
 }
 
 // ===== DEM
 async function getElevation(coords){
 
- try{
  let loc=coords.map(c=>c[1]+","+c[0]).join("|");
 
  let r=await fetch("https://api.open-elevation.com/api/v1/lookup?locations="+loc);
  let d=await r.json();
 
  return d.results.map(x=>x.elevation||0);
-
- }catch{
-   alert("DEM hiba!");
-   return coords.map(()=>0);
- }
 }
 
 // ===== SZÁMOLÁS
@@ -157,7 +105,7 @@ async function calc(coords){
   let d=map.distance([a[1],a[0]],[b[1],b[0]]);
   let h=elev[i+1]-elev[i];
 
-  if(d<2) continue;
+  if(d<3) continue;
 
   let slope=(h/d)*100;
 
@@ -170,17 +118,15 @@ async function calc(coords){
 
   let m=L.marker(mid,{
     icon:L.divIcon({
-      html:`<div class="box">${slope.toFixed(1)}%</div>`
+      html:`<div class="box">${slope.toFixed(1)}%<br>${Math.round(d)}m</div>`
     })
   }).addTo(map);
 
   markers.push(m);
  }
 
- document.getElementById("tav").innerText=
- "Út: "+(total/1000).toFixed(2)+" km";
-
- document.getElementById("slope").innerText=
+ document.getElementById("info").innerHTML=
+ "Távolság: "+(total/1000).toFixed(2)+" km<br>"+
  "MAX: "+max.toFixed(1)+"% | MIN: "+min.toFixed(1)+"%";
 }
 
