@@ -2,63 +2,31 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>🚀 Attila Ultra PRO</title>
+<title>🌲 Turista PRO FIX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{
-  margin:0;
-  background:black;
-  color:#0f0;
-  font-family:Arial;
-}
-
-#map{height:70vh;}
-
-#panel{
-  padding:10px;
-}
-
-button{
-  padding:8px;
-  margin:5px;
-  background:black;
-  color:#0f0;
-  border:2px solid #0f0;
-}
-
-.box{
-  background:black;
-  color:yellow;
-  border:1px solid yellow;
-  padding:3px;
-  font-size:11px;
-}
-
-canvas{
-  width:100%;
-  height:150px;
-  background:#111;
-}
+body{margin:0;background:black;color:#0f0;font-family:Arial;}
+#map{height:75vh;}
+#panel{padding:10px;}
+button{padding:8px;margin:5px;background:black;color:#0f0;border:2px solid #0f0;}
+.box{background:black;color:yellow;border:1px solid yellow;padding:3px;font-size:11px;}
 </style>
 </head>
 
 <body>
 
 <div id="panel">
-<button onclick="reset()">🧹 Törlés</button>
+<button onclick="reset()">🧹 Törlés</button><br>
 
-<div>📏 Hossz: <span id="dist">-</span></div>
-<div>⬆️ Emelkedés: <span id="up">-</span></div>
-<div>⬇️ Lejtés: <span id="down">-</span></div>
-<div>📊 Átlag: <span id="avg">-</span></div>
-<div>⚠️ MAX: <span id="max">-</span></div>
-<div>⚠️ MIN: <span id="min">-</span></div>
-
+📏 Hossz: <span id="dist">-</span><br>
+⬆️ Emelkedés: <span id="up">-</span><br>
+⬇️ Lejtés: <span id="down">-</span><br>
+📊 Átlag: <span id="avg">-</span><br>
+⚠️ MAX: <span id="max">-</span><br>
+⚠️ MIN: <span id="min">-</span>
 </div>
-
-<canvas id="chart"></canvas>
 
 <div id="map"></div>
 
@@ -68,7 +36,12 @@ canvas{
 
 let map = L.map('map').setView([47.55,19.03],13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+// ✅ VALÓDI TURISTA TÉRKÉP
+let base = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+let hiking = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
+
+base.addTo(map);
+hiking.addTo(map);
 
 let pts=[];
 let line;
@@ -89,19 +62,33 @@ async function route(){
 
   let coords=d.routes[0].geometry.coordinates;
 
+  // 🔧 LIMITÁLÁS (EZ A KULCS!)
+  coords = coords.filter((c,i)=> i%5===0);
+
   if(line) map.removeLayer(line);
   markers.forEach(m=>map.removeLayer(m));
   markers=[];
 
   line=L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
 
-  let elevRes=await fetch("https://api.opentopodata.org/v1/test-dataset?locations="+coords.map(c=>c[1]+","+c[0]).join("|"));
-  let elevData=await elevRes.json();
-  let elev=elevData.results.map(r=>r.elevation);
+  // ===== ELEVATION
+  let elev=[];
+
+  try{
+    let urlElev="https://api.opentopodata.org/v1/test-dataset?locations="+
+      coords.map(c=>c[1]+","+c[0]).join("|");
+
+    let res=await fetch(urlElev);
+    let data=await res.json();
+
+    elev=data.results.map(r=>r.elevation);
+
+  }catch(e){
+    console.log("Elevation hiba");
+    elev = coords.map(()=>0);
+  }
 
   calc(coords,elev);
-  drawChart(elev);
-  loadStops(coords);
 }
 
 // ===== CALC
@@ -118,10 +105,12 @@ function calc(coords,elev){
 
     if(d<2) continue;
 
-    let slope=(h/d)*100;
+    let slope = d>0 ? (h/d)*100 : 0;
 
     total+=d;
-    if(h>0) up+=h; else down+=Math.abs(h);
+
+    if(h>0) up+=h;
+    else down+=Math.abs(h);
 
     if(slope>max) max=slope;
     if(slope<min) min=slope;
@@ -137,56 +126,12 @@ function calc(coords,elev){
     markers.push(m);
   }
 
-  dist.innerText=(total/1000).toFixed(2)+" km";
-  up.innerText=Math.round(up)+" m";
-  down.innerText=Math.round(down)+" m";
-  avg.innerText=((up-down)/total*100).toFixed(1)+" %";
-  max.innerText=max.toFixed(1)+" %";
-  min.innerText=min.toFixed(1)+" %";
-}
-
-// ===== CHART
-function drawChart(elev){
-
-  let c=document.getElementById("chart");
-  let ctx=c.getContext("2d");
-
-  ctx.clearRect(0,0,c.width,c.height);
-
-  let max=Math.max(...elev);
-  let min=Math.min(...elev);
-
-  for(let i=0;i<elev.length-1;i++){
-
-    let x1=i*(c.width/elev.length);
-    let y1=c.height-(elev[i]-min)/(max-min)*c.height;
-
-    let x2=(i+1)*(c.width/elev.length);
-    let y2=c.height-(elev[i+1]-min)/(max-min)*c.height;
-
-    ctx.beginPath();
-    ctx.moveTo(x1,y1);
-    ctx.lineTo(x2,y2);
-    ctx.strokeStyle="lime";
-    ctx.stroke();
-  }
-}
-
-// ===== MEGÁLLÓK
-async function loadStops(coords){
-
-  let mid=coords[Math.floor(coords.length/2)];
-
-  let url=`https://overpass-api.de/api/interpreter?data=[out:json];node(around:500,${mid[1]},${mid[0]})["highway"="bus_stop"];out;`;
-
-  let r=await fetch(url);
-  let d=await r.json();
-
-  d.elements.forEach(s=>{
-    L.marker([s.lat,s.lon])
-      .addTo(map)
-      .bindPopup("🚌 "+(s.tags.name||"Megálló"));
-  });
+  document.getElementById("dist").innerText=(total/1000).toFixed(2)+" km";
+  document.getElementById("up").innerText=Math.round(up)+" m";
+  document.getElementById("down").innerText=Math.round(down)+" m";
+  document.getElementById("avg").innerText=(total>0?((up-down)/total*100).toFixed(1):0)+" %";
+  document.getElementById("max").innerText=max.toFixed(1)+" %";
+  document.getElementById("min").innerText=min.toFixed(1)+" %";
 }
 
 // ===== RESET
@@ -195,7 +140,6 @@ function reset(){
   if(line) map.removeLayer(line);
   markers.forEach(m=>map.removeLayer(m));
   markers=[];
-  document.getElementById("chart").getContext("2d").clearRect(0,0,1000,200);
 }
 
 </script>
