@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>🌲 Turista PRO</title>
+<title>🚀 Attila Ultra PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -14,20 +14,18 @@ body{
   font-family:Arial;
 }
 
-#map{height:85vh;}
+#map{height:70vh;}
 
 #panel{
   padding:10px;
-  font-size:18px;
 }
 
 button{
-  padding:10px;
+  padding:8px;
   margin:5px;
   background:black;
   color:#0f0;
   border:2px solid #0f0;
-  cursor:pointer;
 }
 
 .box{
@@ -37,21 +35,30 @@ button{
   padding:3px;
   font-size:11px;
 }
+
+canvas{
+  width:100%;
+  height:150px;
+  background:#111;
+}
 </style>
 </head>
 
 <body>
 
 <div id="panel">
-<button onclick="reset()">🧹 Törlés</button><br>
+<button onclick="reset()">🧹 Törlés</button>
 
-📏 Hossz: <span id="dist">-</span><br>
-⬆️ Emelkedés: <span id="up">-</span><br>
-⬇️ Lejtés: <span id="down">-</span><br>
-📊 Átlag: <span id="avg">-</span><br>
-⚠️ MAX: <span id="max">-</span><br>
-⚠️ MIN: <span id="min">-</span>
+<div>📏 Hossz: <span id="dist">-</span></div>
+<div>⬆️ Emelkedés: <span id="up">-</span></div>
+<div>⬇️ Lejtés: <span id="down">-</span></div>
+<div>📊 Átlag: <span id="avg">-</span></div>
+<div>⚠️ MAX: <span id="max">-</span></div>
+<div>⚠️ MIN: <span id="min">-</span></div>
+
 </div>
+
+<canvas id="chart"></canvas>
 
 <div id="map"></div>
 
@@ -63,103 +70,132 @@ let map = L.map('map').setView([47.55,19.03],13);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let points=[];
+let pts=[];
 let line;
 let markers=[];
 
-map.on("click", async e=>{
-  points.push([e.latlng.lng,e.latlng.lat]);
-
-  if(points.length===2){
-    calcRoute();
-  }
+map.on("click", e=>{
+  pts.push([e.latlng.lng,e.latlng.lat]);
+  if(pts.length===2) route();
 });
 
-// ===== ROUTE =====
-async function calcRoute(){
+// ===== ROUTE
+async function route(){
 
-  let url = `https://router.project-osrm.org/route/v1/foot/${points[0][0]},${points[0][1]};${points[1][0]},${points[1][1]}?overview=full&geometries=geojson`;
+  let url=`https://router.project-osrm.org/route/v1/foot/${pts[0][0]},${pts[0][1]};${pts[1][0]},${pts[1][1]}?overview=full&geometries=geojson`;
 
-  let res = await fetch(url);
-  let data = await res.json();
+  let r=await fetch(url);
+  let d=await r.json();
 
-  let coords = data.routes[0].geometry.coordinates;
+  let coords=d.routes[0].geometry.coordinates;
 
   if(line) map.removeLayer(line);
   markers.forEach(m=>map.removeLayer(m));
   markers=[];
 
-  line = L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
+  line=L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
 
-  // ===== ELEVATION =====
-  let elevRes = await fetch("https://api.opentopodata.org/v1/test-dataset?locations="+
-    coords.map(c=>c[1]+","+c[0]).join("|"));
+  let elevRes=await fetch("https://api.opentopodata.org/v1/test-dataset?locations="+coords.map(c=>c[1]+","+c[0]).join("|"));
+  let elevData=await elevRes.json();
+  let elev=elevData.results.map(r=>r.elevation);
 
-  let elevData = await elevRes.json();
-
-  let elev = elevData.results.map(r=>r.elevation);
-
-  calcSlope(coords,elev);
+  calc(coords,elev);
+  drawChart(elev);
+  loadStops(coords);
 }
 
-// ===== SLOPE =====
-function calcSlope(coords,elev){
+// ===== CALC
+function calc(coords,elev){
 
-  let total=0, up=0, down=0;
-  let max=-999, min=999;
+  let total=0,up=0,down=0,max=-999,min=999;
 
   for(let i=0;i<coords.length-1;i++){
 
-    let a = coords[i];
-    let b = coords[i+1];
+    let a=coords[i],b=coords[i+1];
 
-    let d = map.distance([a[1],a[0]],[b[1],b[0]]);
-    let h = elev[i+1]-elev[i];
+    let d=map.distance([a[1],a[0]],[b[1],b[0]]);
+    let h=elev[i+1]-elev[i];
 
     if(d<2) continue;
 
-    let slope = (h/d)*100;
+    let slope=(h/d)*100;
 
     total+=d;
-
-    if(h>0) up+=h;
-    else down+=Math.abs(h);
+    if(h>0) up+=h; else down+=Math.abs(h);
 
     if(slope>max) max=slope;
     if(slope<min) min=slope;
 
-    // ===== TÉRKÉP DOBOZ =====
-    let mid = [
-      (a[1]+b[1])/2,
-      (a[0]+b[0])/2
-    ];
+    let mid=[(a[1]+b[1])/2,(a[0]+b[0])/2];
 
-    let m = L.marker(mid,{
+    let m=L.marker(mid,{
       icon:L.divIcon({
-        className:"",
-        html:`<div class="box">
-        ${slope.toFixed(1)}%<br>${Math.round(d)}m
-        </div>`
+        html:`<div class="box">${slope.toFixed(1)}%<br>${Math.round(d)}m</div>`
       })
     }).addTo(map);
 
     markers.push(m);
   }
 
-  document.getElementById("dist").innerText=(total/1000).toFixed(2)+" km";
-  document.getElementById("up").innerText=Math.round(up)+" m";
-  document.getElementById("down").innerText=Math.round(down)+" m";
-  document.getElementById("avg").innerText=((up-down)/total*100).toFixed(1)+" %";
-  document.getElementById("max").innerText=max.toFixed(1)+" %";
-  document.getElementById("min").innerText=min.toFixed(1)+" %";
+  dist.innerText=(total/1000).toFixed(2)+" km";
+  up.innerText=Math.round(up)+" m";
+  down.innerText=Math.round(down)+" m";
+  avg.innerText=((up-down)/total*100).toFixed(1)+" %";
+  max.innerText=max.toFixed(1)+" %";
+  min.innerText=min.toFixed(1)+" %";
 }
 
-// ===== RESET =====
+// ===== CHART
+function drawChart(elev){
+
+  let c=document.getElementById("chart");
+  let ctx=c.getContext("2d");
+
+  ctx.clearRect(0,0,c.width,c.height);
+
+  let max=Math.max(...elev);
+  let min=Math.min(...elev);
+
+  for(let i=0;i<elev.length-1;i++){
+
+    let x1=i*(c.width/elev.length);
+    let y1=c.height-(elev[i]-min)/(max-min)*c.height;
+
+    let x2=(i+1)*(c.width/elev.length);
+    let y2=c.height-(elev[i+1]-min)/(max-min)*c.height;
+
+    ctx.beginPath();
+    ctx.moveTo(x1,y1);
+    ctx.lineTo(x2,y2);
+    ctx.strokeStyle="lime";
+    ctx.stroke();
+  }
+}
+
+// ===== MEGÁLLÓK
+async function loadStops(coords){
+
+  let mid=coords[Math.floor(coords.length/2)];
+
+  let url=`https://overpass-api.de/api/interpreter?data=[out:json];node(around:500,${mid[1]},${mid[0]})["highway"="bus_stop"];out;`;
+
+  let r=await fetch(url);
+  let d=await r.json();
+
+  d.elements.forEach(s=>{
+    L.marker([s.lat,s.lon])
+      .addTo(map)
+      .bindPopup("🚌 "+(s.tags.name||"Megálló"));
+  });
+}
+
+// ===== RESET
 function reset(){
-  points=[];
+  pts=[];
   if(line) map.removeLayer(line);
   markers.forEach(m=>map.removeLayer(m));
   markers=[];
+  document.getElementById("chart").getContext("2d").clearRect(0,0,1000,200);
 }
 
 </script>
