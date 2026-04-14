@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>💎 MAPBOX PRO</title>
+<title>💎 VALÓDI DEM PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -40,7 +40,6 @@ const MAPBOX_TOKEN = "IDE_A_SAJÁT_KULCSOD";
 
 let map=L.map('map').setView([47.55,19.03],13);
 
-// 🌲 SZÉP TÉRKÉP
 L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`,{
   tileSize:512,
   zoomOffset:-1
@@ -63,7 +62,6 @@ map.on("click",e=>{
 function drawAir(){
   let a=[pts[0][1],pts[0][0]];
   let b=[pts[1][1],pts[1][0]];
-
   let d=map.distance(a,b);
 
   if(airLine) map.removeLayer(airLine);
@@ -83,6 +81,9 @@ async function route(){
 
   let coords=d.routes[0].geometry.coordinates;
 
+  // 🔧 limit
+  coords=coords.filter((c,i)=>i%5===0);
+
   if(line) map.removeLayer(line);
   markers.forEach(m=>map.removeLayer(m));
   markers=[];
@@ -92,32 +93,24 @@ async function route(){
   await calc(coords);
 }
 
-// ===== MAGASSÁG MAPBOX
-async function getElevationBatch(coords){
+// ===== DEM API
+async function getElevation(coords){
 
-  let result=[];
+  let locations = coords.map(c=>c[1]+","+c[0]).join("|");
 
-  for(let i=0;i<coords.length;i+=50){
+  let res = await fetch(
+    "https://api.open-elevation.com/api/v1/lookup?locations="+locations
+  );
 
-    let batch=coords.slice(i,i+50);
+  let data = await res.json();
 
-    let query=batch.map(c=>c.join(",")).join(";");
-
-    let url=`https://api.mapbox.com/v4/mapbox.mapbox-terrain-v2/tilequery/${query}.json?layers=contour&limit=1&access_token=${MAPBOX_TOKEN}`;
-
-    let r=await fetch(url);
-    let d=await r.json();
-
-    batch.forEach(()=>result.push(0)); // fallback
-  }
-
-  return result;
+  return data.results.map(r=>r.elevation);
 }
 
 // ===== SZÁMOLÁS
 async function calc(coords){
 
-  let elev = await getElevationBatch(coords);
+  let elev = await getElevation(coords);
 
   let total=0,up=0,down=0,max=-999,min=999;
 
@@ -126,8 +119,7 @@ async function calc(coords){
     let a=coords[i],b=coords[i+1];
 
     let d=map.distance([a[1],a[0]],[b[1],b[0]]);
-
-    let h = (Math.random()*6-3); // ⚠️ ide jön majd a valós DEM
+    let h=elev[i+1]-elev[i];
 
     if(d<2) continue;
 
