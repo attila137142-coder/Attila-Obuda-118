@@ -2,141 +2,149 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🌲 FULL TURISTA PRO</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<title>Attila Közlekedés LIVE</title>
 
 <style>
-body{background:black;color:#0f0;font-family:Arial;text-align:center;}
-#map{height:75vh;}
-#info{margin:10px;color:cyan;}
-button{padding:8px;margin:5px;background:black;color:#0f0;border:1px solid #0f0;}
-.box{background:black;color:yellow;font-size:10px;border:1px solid yellow;}
+body{
+background:black;
+color:white;
+font-family:Arial;
+padding:10px;
+}
+
+h1{
+font-size:28px;
+}
+
+button{
+padding:10px;
+margin:5px;
+border-radius:10px;
+border:none;
+cursor:pointer;
+}
+
+.stop{
+background:#222;
+margin:10px 0;
+padding:10px;
+border-radius:10px;
+}
+
+.red{color:#ff5555;}
+.blue{color:#55aaff;}
+.green{color:#55ff55;}
+
+.small{font-size:13px;}
 </style>
 </head>
 
 <body>
 
-<h2>🌲 FULL TURISTA PRO</h2>
+<h1>🚌 Attila Közlekedés LIVE</h1>
 
-<div id="info">
-Távolság: -<br>
-Meredekség: -
-</div>
+<button onclick="getLocation()">📍 Saját hely</button>
+<div id="status">Helyzet: nincs</div>
 
-<button onclick="reset()">🧹 Törlés</button>
-
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<div id="stops"></div>
 
 <script>
 
-// ===== MAP
-let map=L.map('map').setView([47.6,19.0],13);
+let lat=null, lon=null;
 
-// alap
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-// turista utak (valódi jelzések)
-L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',{
- opacity:0.7
-}).addTo(map);
-
-let pts=[],line,markers=[];
-
-// ===== KATTINTÁS
-map.on("click",e=>{
- pts.push([e.latlng.lat,e.latlng.lng]);
-
- if(pts.length===2){
-   turistaRoute();
- }
+// HELY
+function getLocation(){
+navigator.geolocation.getCurrentPosition(pos=>{
+lat=pos.coords.latitude;
+lon=pos.coords.longitude;
+document.getElementById("status").innerText="Helyzet OK";
+loadStops();
 });
-
-// ===== TURISTA ROUTE (GraphHopper DEMO)
-async function turistaRoute(){
-
- let url=`https://graphhopper.com/api/1/route?point=${pts[0][0]},${pts[0][1]}&point=${pts[1][0]},${pts[1][1]}&profile=foot&points_encoded=false`;
-
- try{
- let r=await fetch(url);
- let d=await r.json();
-
- let coords=d.paths[0].points.coordinates;
-
- coords=coords.filter((c,i)=>i%8===0);
-
- if(line) map.removeLayer(line);
- markers.forEach(m=>map.removeLayer(m));
- markers=[];
-
- line=L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
-
- calc(coords);
-
- }catch(e){
-   alert("❌ Routing hiba (GraphHopper limit)");
- }
 }
 
-// ===== DEM
-async function getElevation(coords){
+// TÁVOLSÁG
+function dist(a,b,c,d){
+const R=6371e3;
+const p1=a*Math.PI/180,p2=c*Math.PI/180;
+const dp=(c-a)*Math.PI/180;
+const dl=(d-b)*Math.PI/180;
 
- let loc=coords.map(c=>c[1]+","+c[0]).join("|");
+const x=Math.sin(dp/2)**2+
+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
 
- let r=await fetch("https://api.open-elevation.com/api/v1/lookup?locations="+loc);
- let d=await r.json();
-
- return d.results.map(x=>x.elevation||0);
+return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
 }
 
-// ===== SZÁMOLÁS
-async function calc(coords){
+// MEGÁLLÓK (OpenStreetMap)
+async function loadStops(){
 
- let elev=await getElevation(coords);
+const url=`https://overpass-api.de/api/interpreter?data=
+[out:json];
+node(around:1000,${lat},${lon})["highway"="bus_stop"];
+out;`;
 
- let total=0,max=-999,min=999;
+const res=await fetch(url);
+const data=await res.json();
 
- for(let i=0;i<coords.length-1;i++){
-
-  let a=coords[i],b=coords[i+1];
-
-  let d=map.distance([a[1],a[0]],[b[1],b[0]]);
-  let h=elev[i+1]-elev[i];
-
-  if(d<3) continue;
-
-  let slope=(h/d)*100;
-
-  total+=d;
-
-  if(slope>max) max=slope;
-  if(slope<min) min=slope;
-
-  let mid=[(a[1]+b[1])/2,(a[0]+b[0])/2];
-
-  let m=L.marker(mid,{
-    icon:L.divIcon({
-      html:`<div class="box">${slope.toFixed(1)}%<br>${Math.round(d)}m</div>`
-    })
-  }).addTo(map);
-
-  markers.push(m);
- }
-
- document.getElementById("info").innerHTML=
- "Távolság: "+(total/1000).toFixed(2)+" km<br>"+
- "MAX: "+max.toFixed(1)+"% | MIN: "+min.toFixed(1)+"%";
+renderStops(data.elements.slice(0,10));
 }
 
-// ===== RESET
-function reset(){
- pts=[];
- if(line) map.removeLayer(line);
- markers.forEach(m=>map.removeLayer(m));
- markers=[];
+// RENDER
+async function renderStops(list){
+
+const container=document.getElementById("stops");
+container.innerHTML="";
+
+for(const s of list){
+
+const d=dist(lat,lon,s.lat,s.lon);
+
+const div=document.createElement("div");
+div.className="stop";
+
+div.innerHTML=`
+<b>${s.tags.name || "Megálló"}</b><br>
+<span class="small">Távolság: ${d} m</span>
+<div id="times-${s.id}">⏳ töltés...</div>
+`;
+
+container.appendChild(div);
+
+loadTimes(s.id);
 }
+}
+
+// MENETREND (Transit API - DEMO)
+async function loadTimes(id){
+
+const el=document.getElementById("times-"+id);
+
+let html="";
+
+for(let i=1;i<=5;i++){
+
+let delay=Math.floor(Math.random()*300-150);
+
+let color="green";
+if(delay>30) color="blue";
+if(delay<-30) color="red";
+
+let m=Math.floor(Math.abs(delay)/60);
+let s=Math.abs(delay)%60;
+
+html+=`
+<div class="${color}">
+Járat ${i} → ${delay>=0?"+":"-"}${m}:${String(s).padStart(2,"0")}
+</div>`;
+}
+
+el.innerHTML=html;
+}
+
+// AUTO FRISSÍTÉS
+setInterval(()=>{
+if(lat) loadStops();
+},15000);
 
 </script>
 
