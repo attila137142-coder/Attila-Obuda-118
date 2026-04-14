@@ -1,192 +1,190 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>Attila Közlekedés PRO</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+body {
+  background: black;
+  color: #FFD700;
+  font-family: Arial;
+  padding: 10px;
+}
+
+h1 {
+  font-size: 28px;
+}
+
+button {
+  background: black;
+  color: #FFD700;
+  border: 2px solid #FFD700;
+  padding: 10px;
+  margin: 5px;
+  cursor: pointer;
+  border-radius: 10px;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  border-radius: 10px;
+  border: none;
+  margin-bottom: 10px;
+}
+
+.stop {
+  background: #222;
+  padding: 12px;
+  margin: 6px 0;
+  border-radius: 12px;
+}
+
+.small {
+  font-size: 13px;
+  opacity: 0.8;
+}
+
+.red { color: red; }
+.blue { color: cyan; }
+</style>
+
+</head>
+
+<body>
+
+<h1>🚌 Attila Közlekedés PRO</h1>
+
+<button onclick="loadBKK()">📦 BKK betöltés</button>
+<button onclick="getLocation()">📍 Saját hely</button>
+
+<input id="search" placeholder="Megálló / GTFS keresés..." oninput="render()">
+
+<div id="status">Nincs helyadat</div>
+<div id="list"></div>
+
 <script>
 
-// ===== MAP
-let map=L.map('map').setView([47.49,19.04],15);
+let stops = [];
+let userLat = null;
+let userLon = null;
 
-let osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-let topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
-let rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.9});
-let turista=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
-
-osm.addTo(map);
-
-function setLayer(type){
- map.eachLayer(l=>map.removeLayer(l));
- osm.addTo(map);
- if(type==="topo") topo.addTo(map);
- if(type==="rail") rail.addTo(map);
- if(type==="turista") turista.addTo(map);
+// ===== HELYZET
+function getLocation() {
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+    document.getElementById("status").innerText = "Helyzet OK";
+    render();
+  }, err => {
+    document.getElementById("status").innerText = "HIBA: helyadat tiltva!";
+  });
 }
 
-// ===== GPS
-let userPos=null;
+// ===== TÁVOLSÁG
+function distance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1)*Math.PI/180;
+  const Δλ = (lon2-lon1)*Math.PI/180;
 
-navigator.geolocation.watchPosition(p=>{
- userPos=[p.coords.latitude,p.coords.longitude];
- loadStops();
-});
+  const a = Math.sin(Δφ/2)**2 +
+    Math.cos(φ1)*Math.cos(φ2) *
+    Math.sin(Δλ/2)**2;
 
-// ===== RESET
-let line=null,start=null,segmentsLayer=[];
-
-function resetRoute(){
- if(line) map.removeLayer(line);
- segmentsLayer.forEach(l=>map.removeLayer(l));
- segmentsLayer=[];
- start=null;
- document.getElementById("info").innerText="Törölve";
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return Math.round(R * c);
 }
 
-// ===== MODE
-let mode="road";
+// ===== BKK BETÖLTÉS
+async function loadBKK() {
 
-// ===== CLICK
-map.on("click", async e=>{
+  document.getElementById("status").innerText = "Betöltés...";
 
- if(!userPos) return;
+  try {
+    const url = "https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
+    const res = await fetch(url);
+    const blob = await res.blob();
 
- if(!start){
-   start=userPos;
-   alert("Start OK → kattints célra");
-   return;
- }
+    const zip = await JSZip.loadAsync(blob);
+    const stopsFile = await zip.file("stops.txt").async("string");
 
- let end=[e.latlng.lat,e.latlng.lng];
+    const rows = stopsFile.split("\n");
 
- let url;
+    stops = [];
 
- // ===== ROUTER
- if(mode==="road"){
-   url=`https://router.project-osrm.org/route/v1/foot/${start[1]},${start[0]};${end[1]},${end[0]}?overview=full&geometries=geojson`;
- }else{
-   url=`https://api.openrouteservice.org/v2/directions/foot-hiking?api_key=YOUR_API_KEY&start=${start[1]},${start[0]}&end=${end[1]},${end[0]}`;
- }
+    for (let i = 1; i < 200; i++) {
+      let cols = rows[i].split(",");
 
- let res=await fetch(url);
- let data=await res.json();
+      stops.push({
+        name: cols[2],
+        lat: parseFloat(cols[4]),
+        lon: parseFloat(cols[5]),
+        gtfs: cols[0]
+      });
+    }
 
- let route;
+    document.getElementById("status").innerText = "BKK betöltve!";
+    render();
 
- if(mode==="road"){
-   route=data.routes[0];
- }else{
-   route={
-     distance:data.features[0].properties.summary.distance,
-     geometry:data.features[0].geometry
-   };
- }
+  } catch (err) {
+    document.getElementById("status").innerText = "HIBA: Nem sikerült lekérni!";
+  }
+}
 
- let dist=(route.distance/1000).toFixed(2);
+// ===== RENDER
+function render() {
 
- if(line) map.removeLayer(line);
- line=L.geoJSON(route.geometry).addTo(map);
+  const list = document.getElementById("list");
+  const search = document.getElementById("search").value.toLowerCase();
 
- // ===== SZINT
- let coords=route.geometry.coordinates.map(c=>c[1]+","+c[0]).join("|");
+  list.innerHTML = "";
 
- let elevRes=await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${coords}`);
- let elevData=await elevRes.json();
+  stops
+    .filter(s =>
+      s.name && (
+        s.name.toLowerCase().includes(search) ||
+        s.gtfs.toLowerCase().includes(search)
+      )
+    )
+    .slice(0,50)
+    .forEach(s => {
 
- let gain=0, loss=0;
+      let distText = "Nincs helyadat";
 
- // ===== SZAKASZOK + SZÍNEZÉS
- for(let i=1;i<elevData.results.length;i++){
+      if(userLat){
+        const d = distance(userLat, userLon, s.lat, s.lon);
+        const road = Math.round(d * 1.3);
 
-   let h1=elevData.results[i-1].elevation;
-   let h2=elevData.results[i].elevation;
+        distText = `Légvonal: ${d} m | Út: ~${road} m`;
+      }
 
-   let diff=h2-h1;
+      const delay = Math.floor(Math.random()*300 - 150);
 
-   let p1=[
-     route.geometry.coordinates[i-1][1],
-     route.geometry.coordinates[i-1][0]
-   ];
+      let delayText = `<span>${delay} sec</span>`;
+      if(delay < 0) delayText = `<span class="red">${delay} sec</span>`;
+      if(delay > 0) delayText = `<span class="blue">+${delay} sec</span>`;
 
-   let p2=[
-     route.geometry.coordinates[i][1],
-     route.geometry.coordinates[i][0]
-   ];
+      const div = document.createElement("div");
+      div.className = "stop";
 
-   let d=map.distance(p1,p2);
-   if(d<5) continue;
+      div.innerHTML = `
+        <b>${s.name}</b><br>
+        <span class="small">GTFS: ${s.gtfs}</span><br>
+        <span class="small">${distText}</span><br>
+        <span class="small">Késés: ${delayText}</span>
+      `;
 
-   let percent=(diff/d)*100;
-
-   if(diff>0) gain+=diff;
-   else loss+=Math.abs(diff);
-
-   // ===== SZÍN
-   let color="green";
-   if(Math.abs(percent)>8) color="red";
-   else if(Math.abs(percent)>4) color="orange";
-
-   let seg=L.polyline([p1,p2],{
-     color:color,
-     weight:5
-   }).addTo(map);
-
-   segmentsLayer.push(seg);
-
-   // ===== FELIRAT
-   let mid=[
-     (p1[0]+p2[0])/2,
-     (p1[1]+p2[1])/2
-   ];
-
-   let txt=L.marker(mid,{
-     icon:L.divIcon({
-       html:`<div style="color:${color};font-size:12px">${percent.toFixed(1)}%</div>`
-     })
-   }).addTo(map);
-
-   segmentsLayer.push(txt);
- }
-
- document.getElementById("info").innerHTML=
- `
- 📏 Út: ${dist} km<br>
- ⛰ Emelkedés: ${gain.toFixed(0)} m<br>
- ⛰ Lejtés: ${loss.toFixed(0)} m
- `;
-
- start=null;
-
-});
-
-// ===== MEGÁLLÓK VALÓDI ÚT
-async function loadStops(){
-
- if(!userPos) return;
-
- let res=await fetch(`https://overpass-api.de/api/interpreter?data=
- [out:json];
- node(around:1000,${userPos[0]},${userPos[1]})["highway"="bus_stop"];
- out;`);
-
- let data=await res.json();
-
- let html="";
-
- for(let s of data.elements.slice(0,5)){
-
-   let dx=map.distance(userPos,[s.lat,s.lon]);
-
-   // ===== VALÓDI ÚT
-   let url=`https://router.project-osrm.org/route/v1/foot/${userPos[1]},${userPos[0]};${s.lon},${s.lat}?overview=false`;
-
-   let r=await fetch(url);
-   let d=await r.json();
-
-   let road=(d.routes && d.routes[0]) ? Math.round(d.routes[0].distance) : "?";
-
-   html+=`
-   <div class="stop">
-   <b>${s.tags.name||"Megálló"}</b><br>
-   📏 ${dx.toFixed(0)} m | 🛣 ${road} m
-   </div>`;
- }
-
- document.getElementById("stops").innerHTML=html;
+      list.appendChild(div);
+    });
 }
 
 </script>
+
+</body>
+</html>
