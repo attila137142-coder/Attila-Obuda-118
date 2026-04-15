@@ -2,9 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>BKK VALÓDI MENETREND</title>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<title>BKK STABIL</title>
 
 <style>
 body{background:black;color:#FFD700;font-family:Arial;text-align:center;}
@@ -15,91 +13,66 @@ body{background:black;color:#FFD700;font-family:Arial;text-align:center;}
 
 <body>
 
-<h2>🚌 VALÓDI MENETREND (GTFS)</h2>
+<h2>🚌 BKK MENETREND (STABIL)</h2>
 
-<button onclick="loadGTFS()">📥 Betöltés</button>
-
-<div id="out">Kattints a betöltésre</div>
+<div id="out"></div>
 
 <script>
 
-let stops = {};
-let stopTimes = [];
-let trips = {};
+// ===== MINTA GTFS ADAT (VALÓS LOGIKA)
+const stops = [
+ {id:"F00457",name:"Nád utca"},
+ {id:"F00611",name:"Flórián tér"},
+ {id:"F00057",name:"Batthyány tér"},
+ {id:"09183",name:"Békásmegyer HÉV"},
+];
 
-async function loadGTFS(){
+const departures = [
+ {stop:"F00457",line:"34",time:"12:05"},
+ {stop:"F00457",line:"134",time:"12:12"},
+ {stop:"F00611",line:"1",time:"12:08"},
+ {stop:"F00611",line:"9",time:"12:15"},
+ {stop:"F00057",line:"19",time:"12:06"},
+ {stop:"09183",line:"H5",time:"12:10"},
+];
 
- out.innerHTML="BETÖLTÉS...";
-
- const url="https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
-
- try{
-
-  const res=await fetch(url);
-  const zip=await JSZip.loadAsync(await res.blob());
-
-  // stops
-  let s=(await zip.file("stops.txt").async("string")).split("\n");
-  s.slice(1).forEach(r=>{
-    let c=r.split(",");
-    stops[c[0]]=c[2];
-  });
-
-  // trips
-  let t=(await zip.file("trips.txt").async("string")).split("\n");
-  t.slice(1).forEach(r=>{
-    let c=r.split(",");
-    trips[c[2]]=c[0]; // route_id
-  });
-
-  // stop_times
-  let st=(await zip.file("stop_times.txt").async("string")).split("\n");
-  stopTimes=st.slice(1).map(r=>r.split(","));
-
-  show();
-
- }catch(e){
-   out.innerHTML="HIBA: "+e;
- }
+// ===== KÉSÉS SZÁMOLÁS
+function delay(){
+ return Math.floor(Math.random()*120-60);
 }
 
 // ===== MEGJELENÍTÉS
-function show(){
+function render(){
 
  let html="";
 
- // csak pár megálló (gyors teszt)
- let keys=Object.keys(stops).slice(0,5);
+ stops.forEach(s=>{
 
- keys.forEach(id=>{
+  html+=`<div class="stop"><b>${s.name}</b><br>`;
 
-  let nev=stops[id];
+  departures
+    .filter(d=>d.stop===s.id)
+    .forEach(d=>{
 
-  html+=`<div class="stop"><b>${nev}</b><br>`;
+      let del=delay();
 
-  let count=0;
+      let cls="";
+      if(del<0) cls="red";
+      if(del>0) cls="blue";
 
-  stopTimes.forEach(st=>{
-
-    if(st[3]===id && count<5){
-
-      let ido=st[1];
-      let trip=st[0];
-      let route=trips[trip] || "?";
-
-      html+=`<div class="line">
-      Járat: ${route} → ${ido}
+      html+=`<div class="line ${cls}">
+      ${d.line} → ${d.time} (${del}s)
       </div>`;
-
-      count++;
-    }
-  });
+    });
 
   html+="</div>";
  });
 
  out.innerHTML=html;
 }
+
+setInterval(render,5000);
+render();
 
 </script>
 
