@@ -1,134 +1,105 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>🚌 Megálló + LIVE rendszer</title>
+<meta charset="utf-8">
+<title>BKK VALÓDI MENETREND</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body{background:black;color:#FFD700;font-family:Arial;text-align:center;}
-#list{max-width:600px;margin:auto;}
-.stop{border:1px solid #444;padding:10px;margin:5px;border-radius:10px;}
-.small{font-size:12px;color:cyan;}
-.red{color:red;}
-.blue{color:cyan;}
+.stop{border:1px solid #444;margin:5px;padding:10px;}
+.line{color:cyan;}
 </style>
 </head>
 
 <body>
 
-<h2>🚌 Megállók + LIVE</h2>
+<h2>🚌 VALÓDI MENETREND (GTFS)</h2>
 
-<button onclick="getLocation()">📍 Saját hely</button>
+<button onclick="loadGTFS()">📥 Betöltés</button>
 
-<div id="status">Nincs helyadat</div>
-
-<div id="list"></div>
+<div id="out">Kattints a betöltésre</div>
 
 <script>
 
-// ===== 45 MEGÁLLÓ (rövidítve, bővíthető)
-const stops = [
- {name:"Békásmegyer HÉV",lat:47.5981,lon:19.0546},
- {name:"Nád utca",lat:47.5940,lon:19.0484},
- {name:"Flórián tér",lat:47.5428,lon:19.0422},
- {name:"Batthyány tér",lat:47.5060,lon:19.0394},
- {name:"Szentendre HÉV",lat:47.6610,lon:19.0756},
- {name:"Pomáz",lat:47.6427,lon:19.0326},
- {name:"Vác",lat:47.7819,lon:19.1296},
- {name:"Királyrét",lat:47.8950,lon:18.9776},
- {name:"Kemence",lat:48.0159,lon:18.8884},
- {name:"Nagybörzsöny",lat:47.9360,lon:18.8277}
-];
+let stops = {};
+let stopTimes = [];
+let trips = {};
 
-let userLat=null,userLon=null;
+async function loadGTFS(){
 
-// ===== HELYZET
-function getLocation(){
- navigator.geolocation.getCurrentPosition(pos=>{
-   userLat=pos.coords.latitude;
-   userLon=pos.coords.longitude;
-   status.innerText="Helyzet OK";
-   render();
- });
-}
+ out.innerHTML="BETÖLTÉS...";
 
-// ===== TÁVOLSÁG
-function dist(a,b,c,d){
- const R=6371e3;
- const φ1=a*Math.PI/180;
- const φ2=c*Math.PI/180;
- const dφ=(c-a)*Math.PI/180;
- const dλ=(d-b)*Math.PI/180;
+ const url="https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
 
- const x=Math.sin(dφ/2)**2+
- Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
+ try{
 
- return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
-}
+  const res=await fetch(url);
+  const zip=await JSZip.loadAsync(await res.blob());
 
-// ===== MENETREND
-function fakeMenetrend(){
+  // stops
+  let s=(await zip.file("stops.txt").async("string")).split("\n");
+  s.slice(1).forEach(r=>{
+    let c=r.split(",");
+    stops[c[0]]=c[2];
+  });
 
- let now=new Date();
- let out="";
+  // trips
+  let t=(await zip.file("trips.txt").async("string")).split("\n");
+  t.slice(1).forEach(r=>{
+    let c=r.split(",");
+    trips[c[2]]=c[0]; // route_id
+  });
 
- for(let i=1;i<=3;i++){
+  // stop_times
+  let st=(await zip.file("stop_times.txt").async("string")).split("\n");
+  stopTimes=st.slice(1).map(r=>r.split(","));
 
-  let sec=i*120 + Math.floor(Math.random()*60);
-  let delay=Math.floor(Math.random()*120-60);
+  show();
 
-  let real=sec+delay;
-
-  let m=Math.floor(real/60);
-  let s=real%60;
-
-  let cls="";
-
-  if(delay<0) cls="red";
-  if(delay>0) cls="blue";
-
-  out+=`<div class="${cls}">
-  ${m}:${String(s).padStart(2,"0")}
-  (${delay}s)
-  </div>`;
+ }catch(e){
+   out.innerHTML="HIBA: "+e;
  }
-
- return out;
 }
 
-// ===== RENDER
-function render(){
+// ===== MEGJELENÍTÉS
+function show(){
 
  let html="";
 
- stops.forEach(s=>{
+ // csak pár megálló (gyors teszt)
+ let keys=Object.keys(stops).slice(0,5);
 
-  let d="nincs adat";
+ keys.forEach(id=>{
 
-  if(userLat){
-    let t=dist(userLat,userLon,s.lat,s.lon);
-    let road=Math.round(t*1.3);
+  let nev=stops[id];
 
-    d=`${t} m | ~${road} m`;
-  }
+  html+=`<div class="stop"><b>${nev}</b><br>`;
 
-  html+=`
-  <div class="stop">
-    <b>${s.name}</b><br>
-    <div class="small">${d}</div>
-    ${fakeMenetrend()}
-  </div>`;
+  let count=0;
+
+  stopTimes.forEach(st=>{
+
+    if(st[3]===id && count<5){
+
+      let ido=st[1];
+      let trip=st[0];
+      let route=trips[trip] || "?";
+
+      html+=`<div class="line">
+      Járat: ${route} → ${ido}
+      </div>`;
+
+      count++;
+    }
+  });
+
+  html+="</div>";
  });
 
- list.innerHTML=html;
+ out.innerHTML=html;
 }
-
-// ===== FRISSÍTÉS
-setInterval(()=>{
- if(userLat) render();
-},15000);
-
-render();
 
 </script>
 
