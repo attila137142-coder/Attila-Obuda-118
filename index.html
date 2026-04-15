@@ -2,49 +2,40 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚌 DISZPÉCSER PRO</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<title>🚌 Attila Közlekedés LIVE PRO</title>
 
 <style>
 body{background:black;color:#FFD700;font-family:Arial;text-align:center;}
-#map{height:50vh;}
-#list{max-width:900px;margin:auto;}
-.row{border-bottom:1px solid #333;padding:6px;}
+#list{max-width:800px;margin:auto;}
+.stop{border:1px solid #333;margin:6px;padding:10px;border-radius:12px;}
+.small{font-size:12px;color:cyan;}
 .red{color:red;}
 .blue{color:#00aaff;}
 .white{color:white;}
+.vehicle{color:#0f0;font-size:12px;}
+button{padding:10px;margin:5px;}
 </style>
 </head>
 
 <body>
 
-<h2>🚌 DISZPÉCSER NÉZET</h2>
+<h2>🚌 LIVE PRO – Megállók + Jármű</h2>
 
 <button onclick="getLocation()">📍 Saját hely</button>
 
-<div id="map"></div>
+<div id="status">Nincs helyadat</div>
 <div id="list"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-// ===== MAP
-let map=L.map('map').setView([47.55,19.05],11);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-// ===== MEGÁLLÓK (rövidítve)
-const stops=[
- {name:"Békásmegyer",lat:47.598,lon:19.054},
- {name:"Flórián tér",lat:47.542,lon:19.042},
- {name:"Batthyány tér",lat:47.506,lon:19.039},
- {name:"Szentendre",lat:47.661,lon:19.075}
+// ===== MEGÁLLÓK (te listád rövidítve)
+const stops = [
+ {name:"Békásmegyer HÉV",gtfs:"H5-09183",lat:47.598091,lon:19.054599},
+ {name:"Nád utca",gtfs:"BKK-F00457",lat:47.594072,lon:19.048469},
+ {name:"Flórián tér",gtfs:"BKK-F00611",lat:47.542896,lon:19.042252},
+ {name:"Batthyány tér",gtfs:"BKK-F00057",lat:47.506002,lon:19.039456},
+ {name:"Szentendre HÉV",gtfs:"H5-09142221",lat:47.661038,lon:19.075607}
 ];
-
-// ===== JÁRMŰVEK
-let vehicles=[];
 
 // ===== HELYZET
 let userLat=null,userLon=null;
@@ -53,107 +44,133 @@ function getLocation(){
  navigator.geolocation.getCurrentPosition(pos=>{
   userLat=pos.coords.latitude;
   userLon=pos.coords.longitude;
+  status.innerText="Helyzet OK";
+  render();
  });
 }
 
-// ===== GENERÁLÁS
-function generate(){
+// ===== TÁVOLSÁG
+function dist(a,b,c,d){
+ const R=6371e3;
+ const φ1=a*Math.PI/180;
+ const φ2=c*Math.PI/180;
+ const dφ=(c-a)*Math.PI/180;
+ const dλ=(d-b)*Math.PI/180;
 
- vehicles=[];
+ const x=Math.sin(dφ/2)**2+
+ Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
+
+ return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
+}
+
+// ===== JÁRMŰ TÍPUS
+function getType(gtfs){
+ if(gtfs.includes("H5")) return "HÉV";
+ if(gtfs.includes("VOLAN")) return "Volánbusz";
+ if(gtfs.includes("ERDÖ")) return "Kisvasút";
+ return "Autóbusz";
+}
+
+// ===== VISZONYLAT
+function getLine(gtfs){
+ if(gtfs.includes("H5")) return "H5";
+ if(gtfs.includes("243")) return "243";
+ if(gtfs.includes("134")) return "134";
+ return Math.floor(Math.random()*200);
+}
+
+// ===== „RENDSZÁM”
+function getVehicleId(i){
+ return "BUS-" + (100+i);
+}
+
+// ===== FORDA
+function getForda(i){
+ return "F" + (10+i);
+}
+
+// ===== MENETREND LOGIKA
+function departures(){
 
  let now=new Date();
- let base=now.getMinutes()*60+now.getSeconds();
+ let sec=now.getMinutes()*60+now.getSeconds();
 
- for(let i=0;i<12;i++){
+ let out=[];
 
-  let stop=stops[Math.floor(Math.random()*stops.length)];
+ for(let i=1;i<=3;i++){
 
-  let baseTime=(i+1)*180;
-  let delay=Math.floor(Math.random()*120-60);
+  let base=i*300;
+  let diff=base-(sec%300);
 
-  let real=baseTime-(base%180)+delay;
+  let delay=Math.floor(Math.random()*60-30);
 
-  vehicles.push({
-    line: [34,134,243,"H5"][i%4],
-    dest: ["Szentendre","Vác","Békás","Batthyány"][i%4],
-    time: real,
-    delay: delay,
-    forda:"F"+(10+i),
-    id:"BUS-"+(100+i),
-    lat: stop.lat + (Math.random()-0.5)*0.01,
-    lon: stop.lon + (Math.random()-0.5)*0.01
-  });
+  let final=diff+delay;
+
+  let m=Math.floor(final/60);
+  let s=final%60;
+
+  out.push({m,s,delay});
  }
 
- // rendezés idő szerint
- vehicles.sort((a,b)=>a.time-b.time);
+ return out;
 }
 
-// ===== TÉRKÉP
-let markers=[];
-
-function drawMap(){
-
- markers.forEach(m=>map.removeLayer(m));
- markers=[];
-
- vehicles.forEach(v=>{
-
-  let m=L.marker([v.lat,v.lon]).addTo(map)
-    .bindPopup(`🚌 ${v.line} → ${v.dest}`);
-
-  markers.push(m);
- });
-}
-
-// ===== LISTA
+// ===== RENDER
 function render(){
 
  let html="";
 
- vehicles.forEach(v=>{
+ stops.forEach((s,i)=>{
 
-  let m=Math.floor(v.time/60);
-  let s=v.time%60;
+  let tav="nincs adat";
 
-  let cls="white";
-  if(v.delay<0) cls="red";
-  if(v.delay>0) cls="blue";
+  if(userLat){
+   let d=dist(userLat,userLon,s.lat,s.lon);
+   let road=Math.round(d*1.3);
+   tav=`${d} m | ~${road} m`;
+  }
 
-  html+=`<div class="row ${cls}">
-  <b>${v.line}</b> |
-  ${m}:${String(s).padStart(2,"0")} |
-  (${v.delay}s) |
-  ${v.dest} |
-  ${v.forda} |
-  ${v.id}
-  </div>`;
+  let type=getType(s.gtfs);
+  let line=getLine(s.gtfs);
+  let veh=getVehicleId(i);
+  let forda=getForda(i);
+
+  html+=`<div class="stop">
+  <b>${s.name}</b><br>
+  <div class="small">${tav}</div>
+
+  <div class="vehicle">
+  🚍 ${type} | Járat: ${line}<br>
+  ID: ${veh} | Forda: ${forda}
+  </div>
+  `;
+
+  departures().forEach(d=>{
+
+   let cls="white";
+   if(d.delay<0) cls="red";
+   if(d.delay>0) cls="blue";
+
+   html+=`<div class="${cls}">
+   ${d.m}:${String(d.s).padStart(2,"0")} (${d.delay}s)
+   </div>`;
+  });
+
+  html+="</div>";
  });
 
  list.innerHTML=html;
 }
 
 // ===== FRISSÍTÉS
-function update(){
+setInterval(()=>{
+ if(userLat) render();
+},15000);
 
- generate();
-
- vehicles.forEach(v=>{
-  v.time-=1;
-  v.lat+= (Math.random()-0.5)*0.0005;
-  v.lon+= (Math.random()-0.5)*0.0005;
- });
-
- drawMap();
- render();
-}
-
-setInterval(update,1000);
-
-generate();
-update();
+render();
 
 </script>
 
 </body>
 </html>
+
