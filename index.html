@@ -1,159 +1,101 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>🚌 DISZPÉCSER PRO</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
-<style>
-body{background:black;color:#FFD700;font-family:Arial;text-align:center;}
-#map{height:50vh;}
-#list{max-width:900px;margin:auto;}
-.row{border-bottom:1px solid #333;padding:6px;}
-.red{color:red;}
-.blue{color:#00aaff;}
-.white{color:white;}
-</style>
-</head>
-
-<body>
-
-<h2>🚌 DISZPÉCSER NÉZET</h2>
-
-<button onclick="getLocation()">📍 Saját hely</button>
-
-<div id="map"></div>
-<div id="list"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 
-// ===== MAP
-let map=L.map('map').setView([47.55,19.05],11);
+const GTFS_URL = "https://bkk.hu/gtfs/budapest_gtfs.zip";
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+let stopsMap = {};
+let tripsMap = {};
+let routesMap = {};
+let stopTimes = [];
 
-// ===== MEGÁLLÓK (rövidítve)
-const stops=[
- {name:"Békásmegyer",lat:47.598,lon:19.054},
- {name:"Flórián tér",lat:47.542,lon:19.042},
- {name:"Batthyány tér",lat:47.506,lon:19.039},
- {name:"Szentendre",lat:47.661,lon:19.075}
+// ===== BETÖLTÉS
+async function loadGTFS(){
+
+ console.log("GTFS töltés...");
+
+ const res = await fetch(GTFS_URL);
+ const blob = await res.blob();
+
+ const zip = await JSZip.loadAsync(blob);
+
+ // ===== STOPS
+ let stopsTxt = await zip.file("stops.txt").async("string");
+ stopsTxt.split("\n").slice(1).forEach(r=>{
+  let c=r.split(",");
+  stopsMap[c[0]] = {
+    name:c[2],
+    lat:parseFloat(c[4]),
+    lon:parseFloat(c[5])
+  };
+ });
+
+ // ===== ROUTES
+ let routesTxt = await zip.file("routes.txt").async("string");
+ routesTxt.split("\n").slice(1).forEach(r=>{
+  let c=r.split(",");
+  routesMap[c[0]] = c[2]; // route_short_name
+ });
+
+ // ===== TRIPS
+ let tripsTxt = await zip.file("trips.txt").async("string");
+ tripsTxt.split("\n").slice(1).forEach(r=>{
+  let c=r.split(",");
+  tripsMap[c[2]] = {
+    route:c[0],
+    headsign:c[3]
+  };
+ });
+
+ // ===== STOP TIMES
+ let stTxt = await zip.file("stop_times.txt").async("string");
+ stopTimes = stTxt.split("\n").slice(1).map(r=>r.split(","));
+
+ console.log("GTFS kész");
+
+ renderReal();
+}
+
+// ===== SZŰRÉS A TE 45 MEGÁLLÓDRA
+const myStops = [
+ "H5-09183","BKK-F00457","BKK-00438","BKK-F00611"
 ];
 
-// ===== JÁRMŰVEK
-let vehicles=[];
+// ===== RENDER
+function renderReal(){
 
-// ===== HELYZET
-let userLat=null,userLon=null;
-
-function getLocation(){
- navigator.geolocation.getCurrentPosition(pos=>{
-  userLat=pos.coords.latitude;
-  userLon=pos.coords.longitude;
- });
-}
-
-// ===== GENERÁLÁS
-function generate(){
-
- vehicles=[];
-
- let now=new Date();
- let base=now.getMinutes()*60+now.getSeconds();
-
- for(let i=0;i<12;i++){
-
-  let stop=stops[Math.floor(Math.random()*stops.length)];
-
-  let baseTime=(i+1)*180;
-  let delay=Math.floor(Math.random()*120-60);
-
-  let real=baseTime-(base%180)+delay;
-
-  vehicles.push({
-    line: [34,134,243,"H5"][i%4],
-    dest: ["Szentendre","Vác","Békás","Batthyány"][i%4],
-    time: real,
-    delay: delay,
-    forda:"F"+(10+i),
-    id:"BUS-"+(100+i),
-    lat: stop.lat + (Math.random()-0.5)*0.01,
-    lon: stop.lon + (Math.random()-0.5)*0.01
-  });
- }
-
- // rendezés idő szerint
- vehicles.sort((a,b)=>a.time-b.time);
-}
-
-// ===== TÉRKÉP
-let markers=[];
-
-function drawMap(){
-
- markers.forEach(m=>map.removeLayer(m));
- markers=[];
-
- vehicles.forEach(v=>{
-
-  let m=L.marker([v.lat,v.lon]).addTo(map)
-    .bindPopup(`🚌 ${v.line} → ${v.dest}`);
-
-  markers.push(m);
- });
-}
-
-// ===== LISTA
-function render(){
+ let now = new Date();
+ let timeNow = now.toTimeString().slice(0,8);
 
  let html="";
 
- vehicles.forEach(v=>{
+ stopTimes.forEach(st=>{
 
-  let m=Math.floor(v.time/60);
-  let s=v.time%60;
+  let tripId = st[0];
+  let dep = st[2];
+  let stopId = st[3];
 
-  let cls="white";
-  if(v.delay<0) cls="red";
-  if(v.delay>0) cls="blue";
+  if(!myStops.includes(stopId)) return;
+  if(dep < timeNow) return;
 
-  html+=`<div class="row ${cls}">
-  <b>${v.line}</b> |
-  ${m}:${String(s).padStart(2,"0")} |
-  (${v.delay}s) |
-  ${v.dest} |
-  ${v.forda} |
-  ${v.id}
-  </div>`;
+  let trip = tripsMap[tripId];
+  if(!trip) return;
+
+  let route = routesMap[trip.route] || "?";
+
+  html += `
+  <div>
+  🚌 ${route} |
+  ${dep} |
+  ${trip.headsign}
+  </div>
+  `;
  });
 
- list.innerHTML=html;
+ document.body.innerHTML += html;
 }
 
-// ===== FRISSÍTÉS
-function update(){
-
- generate();
-
- vehicles.forEach(v=>{
-  v.time-=1;
-  v.lat+= (Math.random()-0.5)*0.0005;
-  v.lon+= (Math.random()-0.5)*0.0005;
- });
-
- drawMap();
- render();
-}
-
-setInterval(update,1000);
-
-generate();
-update();
+// ===== INDÍTÁS
+loadGTFS();
 
 </script>
-
-</body>
-</html>
