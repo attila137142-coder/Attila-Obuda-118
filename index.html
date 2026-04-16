@@ -1,197 +1,93 @@
-<head>
-<meta charset="UTF-8">
-<title>🚀 Attila Közlekedés PRO</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
-<style>
-body{background:black;color:#FFD700;font-family:Arial;text-align:center;}
-#map{height:50vh;}
-.row{border-bottom:1px solid #333;padding:6px;}
-.red{color:red;}
-.blue{color:#00aaff;}
-.white{color:white;}
-button{padding:10px;margin:5px;}
-</style>
-</head>
-
-<body>
-
-<h2>🚀 Attila Közlekedés PRO</h2>
-
-<button onclick="getLocation()">📍 Saját hely</button>
-<button onclick="mode='near';render()">Közeli</button>
-<button onclick="mode='all';render()">Összes</button>
-
-<div id="map"></div>
-<div id="list"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script>
 
-// ===== MAP
-let map=L.map('map').setView([47.55,19.05],11);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+// ===== IDŐ FRISSÍTÉS (VALÓDI)
+let departures = [];
 
-// ===== MÓD
-let mode="near";
+function genData(){
+  departures = [];
 
-// ===== SAJÁT 45 MEGÁLLÓ (rövidítve demo)
-const stops=[
- {name:"Békásmegyer",lat:47.598,lon:19.054},
- {name:"Flórián tér",lat:47.542,lon:19.042},
- {name:"Batthyány tér",lat:47.506,lon:19.039},
- {name:"Szentendre",lat:47.661,lon:19.075},
- {name:"Keszthely",lat:46.768,lon:17.245},
- {name:"Hévíz",lat:46.790,lon:17.185}
-];
-
-// ===== GYERMEKVASÚT STOP ID-k
-const gyStops=[
- {name:"Hűvösvölgy",id:"005546847"},
- {name:"Hárs-hegy",id:"005546854"},
- {name:"Szépjuhászné",id:"005546862"},
- {name:"Jánoshegy",id:"005546870"},
- {name:"Virágvölgy",id:"005546888"},
- {name:"Csillebérc",id:"005546896"}
-];
-
-// ===== HELYZET
-let userLat=null,userLon=null;
-
-function getLocation(){
- navigator.geolocation.getCurrentPosition(pos=>{
-  userLat=pos.coords.latitude;
-  userLon=pos.coords.longitude;
-  render();
- });
-}
-
-// ===== TÁVOLSÁG
-function dist(a,b,c,d){
- const R=6371e3;
- const φ1=a*Math.PI/180;
- const φ2=c*Math.PI/180;
- const dφ=(c-a)*Math.PI/180;
- const dλ=(d-b)*Math.PI/180;
-
- const x=Math.sin(dφ/2)**2+
- Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
-
- return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
-}
-
-// ===== GENERÁLT JÁRATOK (GTFS-szerű)
-function genDepartures(){
-
- let now=new Date();
- let sec=now.getMinutes()*60+now.getSeconds();
-
- let arr=[];
-
- stops.forEach((s,i)=>{
-
-  let d=Math.floor(Math.random()*300+60);
-  let delay=Math.floor(Math.random()*120-60);
-
-  arr.push({
-    line:[34,134,243,"H5","S72","880"][i%6],
-    dest:["Vác","Szentendre","Békás","Hévíz","Keszthely"][i%5],
-    time:d,
-    delay:delay,
-    lat:s.lat,
-    lon:s.lon,
-    type:["BKK","Volán","MÁV"][i%3]
+  stops.forEach(s=>{
+    for(let i=0;i<2;i++){
+      departures.push({
+        stop:s.name,
+        line:[134,243,"H5","S72"][i%4],
+        dest:["Szentendre","Vác","Békás"][i%3],
+        time:Math.floor(Math.random()*600+60),
+        delay:Math.floor(Math.random()*60-30),
+        type:["BKK","Volán","MÁV"][i%3]
+      });
+    }
   });
- });
 
- return arr.sort((a,b)=>a.time-b.time);
-}
-
-// ===== KISVASÚT „LIVE” (szimulált fallback)
-function gyData(){
-
- let arr=[];
-
- gyStops.forEach((s,i)=>{
-
-  let t=Math.floor(Math.random()*600+120);
-
-  arr.push({
-    line:"GY",
-    dest:"Széchenyi-hegy",
-    time:t,
-    delay:0,
-    type:"Kisvasút"
+  // kisvasút külön
+  gyStops.forEach(s=>{
+    departures.push({
+      stop:s.name,
+      line:"GV",
+      dest:"Széchenyi-hegy",
+      time:Math.floor(Math.random()*600+120),
+      delay:0,
+      type:"Kisvasút"
+    });
   });
- });
-
- return arr;
 }
 
-// ===== MARKEREK
-let markers=[];
-
-function drawMap(data){
-
- markers.forEach(m=>map.removeLayer(m));
- markers=[];
-
- data.forEach(v=>{
-  let m=L.circleMarker([v.lat,v.lon],{radius:6,color:"yellow"}).addTo(map);
-  markers.push(m);
- });
+// ===== CSÖKKENTÉS
+function tick(){
+  departures.forEach(d=>{
+    d.time--;
+  });
 }
 
 // ===== RENDER
 function render(){
 
- let data=genDepartures();
+ let grouped={};
 
- // szűrés
- if(mode==="near" && userLat){
-  data=data.filter(d=>dist(userLat,userLon,d.lat,d.lon)<2000);
- }
+ departures.forEach(d=>{
+  if(d.time<0) return;
 
- // kisvasút hozzáadás
- data=data.concat(gyData());
-
- data.sort((a,b)=>a.time-b.time);
+  if(!grouped[d.stop]) grouped[d.stop]=[];
+  grouped[d.stop].push(d);
+ });
 
  let html="";
 
- data.forEach(v=>{
+ Object.keys(grouped).forEach(stop=>{
 
-  let m=Math.floor(v.time/60);
-  let s=v.time%60;
+  html+=`<h3>📍 ${stop}</h3>`;
 
-  let cls="white";
-  if(v.delay<0) cls="red";
-  if(v.delay>0) cls="blue";
+  grouped[stop]
+   .sort((a,b)=>a.time-b.time)
+   .forEach(v=>{
 
-  html+=`<div class="row ${cls}">
-  <b>${v.line}</b> |
-  ${m}:${String(s).padStart(2,"0")} |
-  (${v.delay}s) |
-  ${v.dest} |
-  ${v.type}
-  </div>`;
+    let m=Math.floor(v.time/60);
+    let s=v.time%60;
+
+    let cls="white";
+    if(v.delay<0) cls="red";
+    if(v.delay>0) cls="blue";
+
+    html+=`
+    <div class="${cls}">
+    ${v.line} → ${m}:${String(s).padStart(2,"0")} →
+    ${v.dest} (${v.type})
+    </div>`;
+   });
+
  });
 
- list.innerHTML=html;
-
- drawMap(data);
+ document.getElementById("list").innerHTML=html;
 }
 
-// ===== FRISSÍTÉS
+// ===== LOOP
+genData();
+
 setInterval(()=>{
+ tick();
  render();
-},5000);
+},1000);
 
 render();
 
 </script>
-
-</body>
-</html>
