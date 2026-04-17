@@ -1,6 +1,88 @@
-const GTFS_SOURCES = [
- "https://raw.githubusercontent.com/USER/REPO/main/gtfs.zip",
- "https://YOUR-BACKUP-URL/gtfs.zip"
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>🚍 NAV ENGINE v5</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+body{background:#000;color:#ffd700;font-family:Arial;padding:10px;}
+h1{text-align:center;font-size:18px;}
+
+.mode{display:flex;gap:5px;margin-bottom:10px;}
+.mode button{flex:1;padding:10px;border-radius:10px;border:0;background:#222;color:#ffd700;}
+.active{background:#0a0;}
+
+input{width:100%;padding:10px;border-radius:10px;margin-bottom:10px;}
+
+.card{background:#111;padding:10px;margin:8px 0;border-radius:10px;}
+.small{font-size:12px;opacity:0.7;}
+</style>
+</head>
+
+<body>
+
+<h1>🚍 FULL STABIL NAV ENGINE v5</h1>
+
+<div class="mode">
+<button onclick="setMode('basic')" id="m1">Alap</button>
+<button onclick="setMode('pro')" id="m2">PRO</button>
+<button onclick="setMode('full')" id="m3">FULL</button>
+<button onclick="setMode('forest')" id="m4">🌲 ERDŐ</button>
+</div>
+
+<button onclick="getLocation()">📍 GPS</button>
+<button onclick="loadGTFS()">📦 GTFS</button>
+
+<input id="search" placeholder="Keresés..." oninput="render()">
+
+<div id="status" class="card">Indítás...</div>
+<div id="out"></div>
+
+<script>
+
+let mode="basic";
+let stops=[],stopTimes=[],trips=[];
+let tripsMap={},stopMap={};
+let userLat=null,userLon=null;
+
+// ---------------- MODE ----------------
+function setMode(m){
+ mode=m;
+ ["m1","m2","m3","m4"].forEach(id=>document.getElementById(id).classList.remove("active"));
+ document.getElementById("m"+(m==="basic"?1:m==="pro"?2:m==="full"?3:4)).classList.add("active");
+ render();
+}
+
+// ---------------- GPS ----------------
+function getLocation(){
+ navigator.geolocation.getCurrentPosition(p=>{
+  userLat=p.coords.latitude;
+  userLon=p.coords.longitude;
+  document.getElementById("status").innerText="✔ GPS OK";
+  render();
+ });
+}
+
+// ---------------- SAFE DIST ----------------
+function dist(a,b,c,d){
+ const R=6371000;
+ const d1=(c-a)*Math.PI/180;
+ const d2=(d-b)*Math.PI/180;
+ const x=Math.sin(d1/2)**2+
+ Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
+ Math.sin(d2/2)**2;
+ return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+function fmt(m){
+ return m<1000 ? Math.round(m)+" m" : (m/1000).toFixed(2)+" km";
+}
+
+// ---------------- SAFE LOADER v2 ----------------
+const SOURCES=[
+ "https://raw.githubusercontent.com/USER/REPO/main/gtfs.zip"
 ];
 
 async function loadGTFS(){
@@ -8,47 +90,104 @@ async function loadGTFS(){
  document.getElementById("status").innerText="📦 GTFS betöltés...";
 
  let blob=null;
- let lastError=null;
 
- for(const url of GTFS_SOURCES){
+ for(let url of SOURCES){
   try{
-   const res=await fetch(url);
-   if(!res.ok) throw new Error("HTTP "+res.status);
-   blob=await res.blob();
+   let r=await fetch(url);
+   if(!r.ok) throw new Error(r.status);
+   blob=await r.blob();
    break;
   }catch(e){
-   lastError=e;
-   console.log("GTFS fail:",url,e);
+   console.log("GTFS fail:",url);
   }
  }
 
  if(!blob){
-  document.getElementById("status").innerHTML=
-  "❌ GTFS nem elérhető<br><span class='small'>"+lastError+"</span>";
-
-  // UI NEM HAL MEG
-  stops=[];
-  stopTimes=[];
-  trips=[];
+  document.getElementById("status").innerText="❌ GTFS nincs";
+  stops=[];stopTimes=[];trips=[];
   render();
   return;
  }
 
- try{
+ const zip=await JSZip.loadAsync(blob);
 
-  const zip=await JSZip.loadAsync(blob);
+ stops=parseCSV(await zip.file("stops.txt").async("string"));
+ stopTimes=parseCSV(await zip.file("stop_times.txt").async("string"));
+ trips=parseCSV(await zip.file("trips.txt").async("string"));
 
-  stops=parseCSV(await zip.file("stops.txt").async("string"));
-  stopTimes=parseCSV(await zip.file("stop_times.txt").async("string"));
-  trips=parseCSV(await zip.file("trips.txt").async("string"));
+ trips.forEach(t=>tripsMap[t.trip_id]=t);
 
-  document.getElementById("status").innerText="✔ GTFS betöltve";
+ document.getElementById("status").innerText="✔ GTFS OK";
+ render();
+}
 
-  render();
+// ---------------- CSV SAFE ----------------
+function parseCSV(t){
+ let r=t.trim().split("\n");
+ let h=r[0].split(",");
+ return r.slice(1).map(x=>{
+  let c=x.split(",");
+  let o={};
+  h.forEach((v,i)=>o[v]=c[i]);
+  return o;
+ });
+}
 
- }catch(e){
-  document.getElementById("status").innerText="❌ GTFS feldolgozási hiba";
-  console.log(e);
+// ---------------- ERDŐ POI ----------------
+function forestPOI(){
+ return [
+  {name:"🌲 Kisinóci Turistaház",lat:47.9,lon:18.9},
+  {name:"🏔️ Prédikálószék",lat:47.75,lon:18.95},
+  {name:"🌄 Hármashatár-hegy",lat:47.54,lon:19.02}
+ ];
+}
+
+// ---------------- RENDER ----------------
+function render(){
+
+ let q=document.getElementById("search").value.toLowerCase();
+ let html="";
+
+ if(mode!=="forest"){
+
+  stops.slice(0,40).forEach(s=>{
+
+   if(q && !s.stop_name.toLowerCase().includes(q)) return;
+
+   let d=userLat?dist(userLat,userLon,s.stop_lat,s.stop_lon):0;
+
+   html+=`
+   <div class="card">
+   🚏 ${s.stop_name}<br>
+   ${mode!=="basic" ? "📏 "+fmt(d)+"<br>" : ""}
+   </div>`;
+  });
  }
 
+ if(mode==="forest"){
+
+  forestPOI().forEach(p=>{
+
+   if(q && !p.name.toLowerCase().includes(q)) return;
+
+   let d=userLat?dist(userLat,userLon,p.lat,p.lon):0;
+
+   html+=`
+   <div class="card">
+   ${p.name}<br>
+   📏 ${fmt(d)}<br>
+   📶 jel: ${Math.max(0,100-Math.round(d/1000*10))}%
+   </div>`;
+  });
+ }
+
+ document.getElementById("out").innerHTML=html;
 }
+
+setMode("basic");
+
+</script>
+
+</body>
+</html>
+
