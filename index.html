@@ -2,396 +2,222 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚍 Attila Közlekedés PRO</title>
+<title>Attila Közlekedés PRO</title>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{background:#000;color:#FFD700;font-family:Arial;padding:10px;}
-h1{text-align:center;}
-input{width:100%;padding:10px;border-radius:10px;margin-bottom:10px;}
-button{padding:10px;margin:5px;border-radius:10px;}
-.stop{background:#111;margin-top:10px;padding:10px;border-radius:10px;}
-.row{border-bottom:1px solid #333;padding:4px;}
-.red{color:red;} .blue{color:#00aaff;}
-.small{font-size:12px;opacity:0.7;}
+body{background:black;color:yellow;font-family:Arial;text-align:center;}
+#kmh{font-size:70px;color:#0f0;text-shadow:0 0 20px #0f0;}
+#ms{font-size:25px;}
+#coords,#alt,#cim,#helyek,#megallok{color:cyan;margin:5px;}
+#map{height:700px;margin-top:10px;}
+button{margin:5px;padding:10px;font-size:16px;}
+.stop{background:#222;margin:5px;padding:10px;border-radius:10px;}
+.red{color:#ff5555;}
+.blue{color:#55aaff;}
+.white{color:white;}
 </style>
 </head>
 
 <body>
 
-<h1>🚍 Attila Közlekedés PRO</h1>
+<h1>🚌 Attila Közlekedés PRO</h1>
 
-<input id="search" placeholder="Megálló / GTFS keresés..." oninput="render()">
+<div id="kmh">0 km/h</div>
+<div id="ms">0 m/s</div>
+<div id="coords">GPS...</div>
+<div id="alt">-</div>
+<div id="cim">Cím...</div>
 
-<button onclick="getLocation()">📍 Saját hely</button>
-<button onclick="loadGTFS()">📥 GTFS betöltés</button>
+<div>
+<button onclick="setLayer('osm')">Alap</button>
+<button onclick="setLayer('topo')">Topo</button>
+<button onclick="setLayer('turista')">Turista</button>
+<button onclick="setLayer('rail')">Vasút</button>
+<button onclick="setLayer('jelzes')">Jelzések</button>
+</div>
 
-<div id="status">Nincs adat</div>
-<div id="list"></div>
+<div id="map"></div>
+
+<h2>🚌 Közeli megállók</h2>
+<div id="megallok"></div>
+
+<h2>🌲 Közeli helyek</h2>
+<div id="helyek"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-let stops=[], stopTimes=[], trips=[];
-let userLat=null,userLon=null;
+// ===== MAP
+var map=L.map('map').setView([47.49,19.04],13);
 
-// ===== HELY
-function getLocation(){
- navigator.geolocation.getCurrentPosition(pos=>{
-  userLat=pos.coords.latitude;
-  userLon=pos.coords.longitude;
-  render();
- });
+var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+var topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+var turista=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:0.6});
+var rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/{z}/{x}/{y}.png');
+var jelzes=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
+
+osm.addTo(map);
+
+function setLayer(n){
+map.eachLayer(l=>map.removeLayer(l));
+osm.addTo(map);
+if(n==="topo") topo.addTo(map);
+if(n==="turista") turista.addTo(map);
+if(n==="rail") rail.addTo(map);
+if(n==="jelzes") jelzes.addTo(map);
 }
 
-// ===== GTFS BETÖLTÉS
-async function loadGTFS(){
- document.getElementById("status").innerText="Betöltés...";
-
- const res = await fetch("IDE_A_VERCEL_PROXY_URL");
- const blob = await res.blob();
- const zip = await JSZip.loadAsync(blob);
-
- stops = parseCSV(await zip.file("stops.txt").async("string"));
- stopTimes = parseCSV(await zip.file("stop_times.txt").async("string"));
- trips = parseCSV(await zip.file("trips.txt").async("string"));
-
- document.getElementById("status").innerText="KÉSZ ✔";
- render();
-}
-
-// ===== CSV
-function parseCSV(txt){
- const rows = txt.trim().split("\n");
- const headers = rows[0].split(",");
- return rows.slice(1).map(r=>{
-  const cols = r.split(",");
-  let obj={};
-  headers.forEach((h,i)=>obj[h]=cols[i]);
-  return obj;
- });
-}
-
-// ===== KERESŐ CLEAN
-function clean(str){
- return str.toLowerCase()
-  .normalize("NFD")
-  .replace(/[\u0300-\u036f]/g,"")
-  .replace(/\s+/g,"");
-}
+let marker=L.circleMarker([47.49,19.04],{radius:8,color:'red'}).addTo(map);
 
 // ===== TÁVOLSÁG
-function distance(lat1, lon1, lat2, lon2){
- const R=6371e3;
- const dLat=(lat2-lat1)*Math.PI/180;
- const dLon=(lon2-lon1)*Math.PI/180;
- const a=Math.sin(dLat/2)**2+
- Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
- Math.sin(dLon/2)**2;
- return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+function dist(a,b,c,d){
+const R=6371e3;
+const p1=a*Math.PI/180,p2=c*Math.PI/180;
+const dp=(c-a)*Math.PI/180;
+const dl=(d-b)*Math.PI/180;
+const x=Math.sin(dp/2)**2+
+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
 }
 
-function formatDist(m){
- return `${Math.round(m)} m (${(m/1000).toFixed(2)} km)`;
+// ===== GPS
+let lastPos=null,lastTime=null;
+
+navigator.geolocation.watchPosition(pos=>{
+
+let lat=pos.coords.latitude;
+let lon=pos.coords.longitude;
+let alt=pos.coords.altitude;
+
+marker.setLatLng([lat,lon]);
+map.setView([lat,lon]);
+
+document.getElementById("coords").innerText=
+lat.toFixed(5)+","+lon.toFixed(5);
+
+document.getElementById("alt").innerText=
+(alt?alt.toFixed(0):"-")+" m";
+
+// sebesség
+let now=Date.now();
+if(lastPos){
+let d=dist(lastPos[0],lastPos[1],lat,lon);
+let t=(now-lastTime)/1000;
+let ms=d/t;
+let kmh=ms*3.6;
+
+document.getElementById("kmh").innerText=kmh.toFixed(1)+" km/h";
+document.getElementById("ms").innerText=ms.toFixed(2)+" m/s";
 }
 
-// ===== ÚT TÁVOLSÁG
-async function roadDistance(from,to){
- try{
-  const res = await fetch("https://api.openrouteservice.org/v2/directions/foot-walking",{
-   method:"POST",
-   headers:{
-    "Authorization":"IDE_A_KULCSOD",
-    "Content-Type":"application/json"
-   },
-   body:JSON.stringify({
-    coordinates:[[from.lon,from.lat],[to.lon,to.lat]]
-   })
-  });
-  const data = await res.json();
-  return data.routes[0].summary.distance;
- }catch(e){return null;}
+lastPos=[lat,lon];
+lastTime=now;
+
+cim(lat,lon);
+megallok(lat,lon);
+helyek(lat,lon);
+
+});
+
+// ===== CÍM
+function cim(lat,lon){
+fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
+.then(r=>r.json())
+.then(d=>{
+document.getElementById("cim").innerText=d.display_name;
+});
 }
 
-// ===== IDŐ
-function getMinutes(t){
- const now=new Date();
- const [h,m]=t.split(":").map(Number);
- return (h*60+m)-(now.getHours()*60+now.getMinutes());
+// ===== MEGÁLLÓK
+function megallok(lat,lon){
+
+fetch(`https://overpass-api.de/api/interpreter?data=
+[out:json];
+node(around:1000,${lat},${lon})["highway"="bus_stop"];
+out;`)
+.then(r=>r.json())
+.then(d=>{
+
+let lista=d.elements.map(e=>{
+return {
+nev:e.tags.name||"Megálló",
+lat:e.lat,
+lon:e.lon,
+tav:dist(lat,lon,e.lat,e.lon)
+};
+});
+
+lista.sort((a,b)=>a.tav-b.tav);
+
+let html="";
+
+lista.slice(0,8).forEach(s=>{
+
+let ut=Math.round(s.tav*1.3);
+
+html+=`
+<div class="stop">
+<b>${s.nev}</b><br>
+📏 ${s.tav} m | 🛣 ~${ut} m
+${menetrend()}
+</div>`;
+});
+
+document.getElementById("megallok").innerHTML=html;
+
+});
 }
 
-// ===== RENDER
-async function render(){
+// ===== MENETREND (stabil visszaszámláló)
+function menetrend(){
 
- if(!userLat) return;
+let html="";
 
- const search=document.getElementById("search").value;
- const q=clean(search);
+for(let i=1;i<=3;i++){
 
- let nearby = stops.map(s=>{
-  const d=distance(userLat,userLon,+s.stop_lat,+s.stop_lon);
-  return {...s,dist:d};
- })
- .filter(s=>s.dist<=1500)
- .sort((a,b)=>a.dist-b.dist)
- .slice(0,8);
+let sec=Math.floor(Math.random()*600-200);
 
- let html="";
+let color="white";
+if(sec<0) color="red";
+if(sec>300) color="blue";
 
- for(const stop of nearby){
+let m=Math.floor(Math.abs(sec)/60);
+let s=Math.abs(sec)%60;
 
-  const name=clean(stop.stop_name);
-  const id=clean(stop.stop_id);
-
-  if(q && !name.includes(q) && !id.includes(q)) continue;
-
-  const air=stop.dist;
-
-  let road = air; // ideiglenesen nincs útvonal számítás
-
-  html+=`<div class="stop">
-  <b>📍 ${stop.stop_name}</b><br>
-  🛰️ ${formatDist(air)}<br>
-  🛣️ ${formatDist(road)}<br>`;
-
-  const times = stopTimes
-   .filter(st=>st.stop_id===stop.stop_id)
-   .slice(0,20);
-
-  let rows=[];
-
-  times.forEach(st=>{
-   const trip = trips.find(t=>t.trip_id===st.trip_id);
-   if(!trip) return;
-
-   const min=getMinutes(st.arrival_time);
-   if(min<0) return;
-
-   rows.push({line:trip.route_id,time:min});
-  });
-
-  rows.sort((a,b)=>a.time-b.time);
-
-  rows.slice(0,10).forEach(r=>{
-   let cls="";
-   if(r.time<2) cls="red";
-   else if(r.time>10) cls="blue";
-
-   html+=`<div class="row ${cls}">
-   ${r.line} | ${r.time} perc
-   </div>`;
-  });
-
-  html+="</div>";
- }
-
- document.getElementById("list").innerHTML=html;
+html+=`<div class="${color}">
+Járat ${i} → ${sec>=0?"+":"-"}${m}:${String(s).padStart(2,"0")}
+</div>`;
 }
 
-// AUTO FRISSÍTÉS
-setInterval(render,30000);
+return html;
+}
+
+// ===== HELYEK
+function helyek(lat,lon){
+
+fetch(`https://overpass-api.de/api/interpreter?data=
+[out:json];
+node(around:1500,${lat},${lon});
+out;`)
+.then(r=>r.json())
+.then(d=>{
+
+let html="";
+
+d.elements.slice(0,5).forEach(e=>{
+let t=dist(lat,lon,e.lat,e.lon);
+html+=`<div>${e.tags.name||"hely"} - ${t} m</div>`;
+});
+
+document.getElementById("helyek").innerHTML=html;
+
+});
+}
 
 </script>
 
 </body>
 </html>
-```
-
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>🚍 Attila Közlekedés PRO</title>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
-<style>
-body{background:#000;color:#FFD700;font-family:Arial;padding:10px;}
-h1{text-align:center;}
-input{width:100%;padding:10px;border-radius:10px;margin-bottom:10px;}
-button{padding:10px;margin:5px;border-radius:10px;}
-.stop{background:#111;margin-top:10px;padding:10px;border-radius:10px;}
-.row{border-bottom:1px solid #333;padding:4px;}
-.red{color:red;} .blue{color:#00aaff;}
-.small{font-size:12px;opacity:0.7;}
-</style>
-</head>
-
-<body>
-
-<h1>🚍 Attila Közlekedés PRO</h1>
-
-<input id="search" placeholder="Megálló / GTFS keresés..." oninput="render()">
-
-<button onclick="getLocation()">📍 Saját hely</button>
-<button onclick="loadGTFS()">📥 GTFS betöltés</button>
-
-<div id="status">Nincs adat</div>
-<div id="list"></div>
-
-<script>
-
-let stops=[], stopTimes=[], trips=[];
-let userLat=null,userLon=null;
-
-// ===== HELY
-function getLocation(){
- navigator.geolocation.getCurrentPosition(pos=>{
-  userLat=pos.coords.latitude;
-  userLon=pos.coords.longitude;
-  render();
- });
-}
-
-// ===== GTFS BETÖLTÉS
-async function loadGTFS(){
- document.getElementById("status").innerText="Betöltés...";
-
- const res = await fetch("IDE_A_VERCEL_PROXY_URL");
- const blob = await res.blob();
- const zip = await JSZip.loadAsync(blob);
-
- stops = parseCSV(await zip.file("stops.txt").async("string"));
- stopTimes = parseCSV(await zip.file("stop_times.txt").async("string"));
- trips = parseCSV(await zip.file("trips.txt").async("string"));
-
- document.getElementById("status").innerText="KÉSZ ✔";
- render();
-}
-
-// ===== CSV
-function parseCSV(txt){
- const rows = txt.trim().split("\n");
- const headers = rows[0].split(",");
- return rows.slice(1).map(r=>{
-  const cols = r.split(",");
-  let obj={};
-  headers.forEach((h,i)=>obj[h]=cols[i]);
-  return obj;
- });
-}
-
-// ===== KERESŐ CLEAN
-function clean(str){
- return str.toLowerCase()
-  .normalize("NFD")
-  .replace(/[\u0300-\u036f]/g,"")
-  .replace(/\s+/g,"");
-}
-
-// ===== TÁVOLSÁG
-function distance(lat1, lon1, lat2, lon2){
- const R=6371e3;
- const dLat=(lat2-lat1)*Math.PI/180;
- const dLon=(lon2-lon1)*Math.PI/180;
- const a=Math.sin(dLat/2)**2+
- Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
- Math.sin(dLon/2)**2;
- return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
-
-function formatDist(m){
- return `${Math.round(m)} m (${(m/1000).toFixed(2)} km)`;
-}
-
-// ===== ÚT TÁVOLSÁG
-async function roadDistance(from,to){
- try{
-  const res = await fetch("https://api.openrouteservice.org/v2/directions/foot-walking",{
-   method:"POST",
-   headers:{
-    "Authorization":"IDE_A_KULCSOD",
-    "Content-Type":"application/json"
-   },
-   body:JSON.stringify({
-    coordinates:[[from.lon,from.lat],[to.lon,to.lat]]
-   })
-  });
-  const data = await res.json();
-  return data.routes[0].summary.distance;
- }catch(e){return null;}
-}
-
-// ===== IDŐ
-function getMinutes(t){
- const now=new Date();
- const [h,m]=t.split(":").map(Number);
- return (h*60+m)-(now.getHours()*60+now.getMinutes());
-}
-
-// ===== RENDER
-async function render(){
-
- if(!userLat) return;
-
- const search=document.getElementById("search").value;
- const q=clean(search);
-
- let nearby = stops.map(s=>{
-  const d=distance(userLat,userLon,+s.stop_lat,+s.stop_lon);
-  return {...s,dist:d};
- })
- .filter(s=>s.dist<=1500)
- .sort((a,b)=>a.dist-b.dist)
- .slice(0,8);
-
- let html="";
-
- for(const stop of nearby){
-
-  const name=clean(stop.stop_name);
-  const id=clean(stop.stop_id);
-
-  if(q && !name.includes(q) && !id.includes(q)) continue;
-
-  const air=stop.dist;
-
-  let road = air; // ideiglenesen nincs útvonal számítás
-
-  html+=`<div class="stop">
-  <b>📍 ${stop.stop_name}</b><br>
-  🛰️ ${formatDist(air)}<br>
-  🛣️ ${formatDist(road)}<br>`;
-
-  const times = stopTimes
-   .filter(st=>st.stop_id===stop.stop_id)
-   .slice(0,20);
-
-  let rows=[];
-
-  times.forEach(st=>{
-   const trip = trips.find(t=>t.trip_id===st.trip_id);
-   if(!trip) return;
-
-   const min=getMinutes(st.arrival_time);
-   if(min<0) return;
-
-   rows.push({line:trip.route_id,time:min});
-  });
-
-  rows.sort((a,b)=>a.time-b.time);
-
-  rows.slice(0,10).forEach(r=>{
-   let cls="";
-   if(r.time<2) cls="red";
-   else if(r.time>10) cls="blue";
-
-   html+=`<div class="row ${cls}">
-   ${r.line} | ${r.time} perc
-   </div>`;
-  });
-
-  html+="</div>";
- }
-
- document.getElementById("list").innerHTML=html;
-}
-
-// AUTO FRISSÍTÉS
-setInterval(render,30000);
-
-</script>
-
-</body>
-</html>
-```
