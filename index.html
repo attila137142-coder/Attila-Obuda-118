@@ -2,108 +2,102 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Megállók és Menetrend</title>
+<title>Attila Közlekedés MASTER</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{background:black;color:yellow;font-family:Arial;text-align:center;}
-
-#map{height:500px;margin:10px;}
-
-button,input{
-padding:10px;
-margin:5px;
-font-size:18px;
-}
-
-#lista{
-color:cyan;
-font-size:18px;
-margin-top:10px;
-}
-
-.piros{color:red;}
-.kek{color:cyan;}
-.normal{color:white;}
-
+body{background:black;color:yellow;text-align:center;font-family:Arial;}
+#kmh{font-size:90px;color:#0f0;text-shadow:0 0 20px #0f0;}
+#ms{font-size:25px;}
+#coords,#alt,#cim,#tav,#megallo,#menetrend,#helyek{font-size:18px;color:cyan;margin:8px;}
+#map{height:800px;}
+button,input{padding:8px;margin:5px;font-size:16px;}
+section{border:2px solid yellow;margin:15px;padding:15px;}
 </style>
 </head>
 
 <body>
 
-<h1>🚏 Megállók és Menetrend</h1>
+<h1>🚌 Attila Közlekedés MASTER</h1>
 
-<input id="kereso" placeholder="Megálló név vagy kód">
-<button onclick="keresMegallo()">🔎 Keresés</button>
+<section>
+<div id="kmh">0 km/h</div>
+<div id="ms">0 m/s</div>
+<div id="coords">GPS...</div>
+<div id="alt">-</div>
+<div id="cim">-</div>
+<div id="tav">Távolság: -</div>
+<div id="megallo">Megálló: -</div>
+<div id="menetrend">Menetrend: -</div>
+<div id="helyek">Közeli helyek: -</div>
+</section>
 
-<br>
+<section>
+<input id="kereso" placeholder="Keresés">
+<button onclick="keres()">Keresés</button>
+</section>
 
-<button onclick="kozeliMegallok()">📍 1 km megállók</button>
-<button onclick="osszesMegallo()">📡 Összes keresés</button>
+<section>
+<button onclick="setLayer('osm')">Alap</button>
+<button onclick="setLayer('topo')">Topo</button>
+<button onclick="setLayer('turista')">Turista</button>
+<button onclick="setLayer('rail')">Vasút</button>
+<button onclick="setLayer('jelzes')">Turista utak</button>
+</section>
 
 <div id="map"></div>
-
-<div id="lista">Adatok...</div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-// térkép
+// MAP
 var map=L.map('map').setView([47.49,19.04],13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+var topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+var turista=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:0.6});
+var rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/{z}/{x}/{y}.png');
+var jelzes=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
 
-let sajatPoz=null;
+osm.addTo(map);
+
+function setLayer(n){
+map.eachLayer(l=>map.removeLayer(l));
+osm.addTo(map);
+
+if(n==="topo") topo.addTo(map);
+if(n==="turista") turista.addTo(map);
+if(n==="rail") rail.addTo(map);
+if(n==="jelzes") jelzes.addTo(map);
+}
+
+let marker=L.circleMarker([47.49,19.04],{radius:8,color:'red'}).addTo(map);
+
+let aktualisPoz=null;
 
 // GPS
 navigator.geolocation.watchPosition(function(pos){
+
 let lat=pos.coords.latitude;
 let lon=pos.coords.longitude;
 
-sajatPoz=[lat,lon];
+aktualisPoz=[lat,lon];
 
+marker.setLatLng([lat,lon]);
 map.setView([lat,lon]);
-});
 
-// 📍 1 KM MEGÁLLÓK
-function kozeliMegallok(){
+document.getElementById("coords").innerText=
+lat.toFixed(5)+","+lon.toFixed(5);
 
-if(!sajatPoz){alert("Nincs GPS");return;}
-
-fetch(`https://overpass-api.de/api/interpreter?data=
-[out:json];
-node(around:1000,${sajatPoz[0]},${sajatPoz[1]})
-["highway"="bus_stop"];
-out;`)
-
-.then(r=>r.json())
-.then(d=>{
-
-let lista=[];
-
-d.elements.forEach(e=>{
-let tav=map.distance(sajatPoz,[e.lat,e.lon]);
-lista.push({
-nev:e.tags.name||"Megálló",
-tav:tav,
-lat:e.lat,
-lon:e.lon
-});
-});
-
-// rendezés távolság szerint
-lista.sort((a,b)=>a.tav-b.tav);
-
-megjelenit(lista);
+helyekKeres(lat,lon);
+megalloKeres(lat,lon);
 
 });
-}
 
-// 🔎 KERESÉS
-function keresMegallo(){
-
+// kereső
+function keres(){
 let q=document.getElementById("kereso").value;
 
 fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`)
@@ -113,65 +107,82 @@ if(d.length){
 let lat=d[0].lat;
 let lon=d[0].lon;
 
-map.setView([lat,lon],16);
+map.setView([lat,lon],15);
 
-menetrend(d[0].display_name);
+if(aktualisPoz){
+let t=map.distance(aktualisPoz,[lat,lon]);
+document.getElementById("tav").innerText=
+"Távolság: "+(t/1000).toFixed(2)+" km";
+}
 }
 });
 }
 
-// 📡 ÖSSZES (demo)
-function osszesMegallo(){
-document.getElementById("lista").innerHTML=
-"Teljes adatbázis kereséshez GTFS/API kell (később bővítjük)";
-}
+// közeli helyek
+function helyekKeres(lat,lon){
 
-// 🚏 LISTA MEGJELENÍTÉS
-function megjelenit(lista){
-
-let html="";
-
-lista.slice(0,10).forEach(e=>{
-
-html+=`
-<div onclick="menetrend('${e.nev}')">
-${e.nev} - ${(e.tav/1000).toFixed(2)} km
-</div>
-`;
+fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:500,${lat},${lon});out;`)
+.then(r=>r.json())
+.then(d=>{
+let lista="";
+d.elements.slice(0,5).forEach(e=>{
+let t=map.distance([lat,lon],[e.lat,e.lon]);
+lista+=`<div>${e.tags.name||"hely"} - ${(t/1000).toFixed(2)} km</div>`;
 });
-
-document.getElementById("lista").innerHTML=html;
+document.getElementById("helyek").innerHTML=lista;
+});
 }
 
-// ⏱️ MENETREND (SZÍNES)
-function menetrend(nev){
+// megálló
+function megalloKeres(lat,lon){
 
+fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:300,${lat},${lon})["highway"="bus_stop"];out;`)
+.then(r=>r.json())
+.then(d=>{
+if(d.elements.length){
+let nev=d.elements[0].tags.name||"Megálló";
+document.getElementById("megallo").innerText="Megálló: "+nev;
+menetrend();
+}
+});
+}
+// menetrend (demo)
+function menetrend(){
 let now=new Date();
-let html=`<h3>${nev}</h3>`;
+let lista="";
 
-for(let i=1;i<=6;i++){
+for(let i=1;i<=5;i++){
+let p=i*5;
+let ido=new Date(now.getTime()+p*60000);
+let kes=Math.floor(Math.random()*3)-1;
 
-let ido=new Date(now.getTime()+i*5*60000);
+let sz="white";
+if(kes>0) sz="blue";
+if(kes<0) sz="red";
 
-let kes=Math.floor(Math.random()*120)-60; // mp
-
-let szin="normal";
-if(kes>10) szin="kek";
-if(kes<-10) szin="piros";
-
-html+=`
-<div class="${szin}">
-Járat ${i} → 
-${ido.getHours()}:${String(ido.getMinutes()).padStart(2,'0')}
-(${kes} mp)
-</div>
-`;
+lista+=`<div style="color:${sz}">
+Járat ${i} → ${ido.getHours()}:${String(ido.getMinutes()).padStart(2,'0')}
+(${kes}p)
+</div>`;
 }
 
-document.getElementById("lista").innerHTML=html;
+document.getElementById("menetrend").innerHTML=lista;
 }
+
+setInterval(()=>{ if(aktualisPoz) megalloKeres(aktualisPoz[0],aktualisPoz[1]); },15000);
+
+// erdei vasutak
+[
+["Gyermekvasút",47.55,18.98],
+["Királyrét",47.92,19.01],
+["Szob",47.82,18.86],
+["Nagybörzsöny",47.94,18.83],
+["Kemence",48.01,18.90]
+].forEach(v=>{
+L.marker([v[1],v[2]]).addTo(map).bindPopup("🚂 "+v[0]);
+});
 
 </script>
-
 </body>
 </html>
+
