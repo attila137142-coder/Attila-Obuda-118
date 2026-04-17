@@ -2,33 +2,49 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>📱 Attila Mobil Navigáció PRO v2</title>
+<title>🚍 Attila Mobil Navigáció PRO v4</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body{
- margin:0;
- font-family:Arial;
  background:#000;
  color:#FFD700;
+ font-family:Arial;
+ margin:0;
  padding:10px;
 }
 
-h1{font-size:18px;text-align:center;}
+h1{text-align:center;font-size:18px;}
 
-button{
- width:100%;
+.mode{
+ display:flex;
+ gap:5px;
+ margin-bottom:10px;
+}
+
+.mode button{
+ flex:1;
  padding:10px;
- margin:5px 0;
  border-radius:10px;
  border:0;
  background:#222;
  color:#FFD700;
 }
 
+.active{background:#0a0;}
+
+input{
+ width:100%;
+ padding:10px;
+ border-radius:10px;
+ margin-bottom:10px;
+}
+
 .card{
  background:#111;
  padding:10px;
- margin-top:10px;
+ margin:8px 0;
  border-radius:10px;
 }
 
@@ -37,255 +53,193 @@ button{
 .blue{color:#4db8ff;}
 .green{color:#4dff88;}
 </style>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 
 <body>
 
-<h1>📱 Attila Mobil Navigáció PRO v2</h1>
+<h1>🚍 Attila PRO v4</h1>
 
-<button onclick="getLocation()">📍 GPS frissítés</button>
-<button onclick="loadGTFS()">📦 GTFS betöltés</button>
+<div class="mode">
+<button onclick="setMode('basic')" id="m1">Alap</button>
+<button onclick="setMode('pro')" id="m2">PRO</button>
+<button onclick="setMode('full')" id="m3">FULL</button>
+<button onclick="setMode('forest')" id="m4">🌲 ERDŐ</button>
+</div>
 
-<div id="status" class="card">⚠️ Indítás...</div>
-<div id="debug" class="card small"></div>
+<button onclick="getLocation()">📍 GPS</button>
+<button onclick="loadGTFS()">📦 GTFS</button>
 
+<input id="search" placeholder="Keresés..." oninput="render()">
+
+<div id="status" class="card">Indítás...</div>
 <div id="results"></div>
 
 <script>
 
-// ======================
-// GLOBAL
-// ======================
-let stops = [];
-let stopTimes = [];
-let trips = [];
+let mode="basic";
+let stops=[],stopTimes=[],trips=[];
+let tripsMap={},stopTimesMap={};
+let userLat=null,userLon=null;
 
-let tripsMap = {};
-let stopTimesMap = {};
+// ---------------- MODE ----------------
+function setMode(m){
+ mode=m;
+ ["m1","m2","m3","m4"].forEach(id=>document.getElementById(id).classList.remove("active"));
 
-let userLat = null;
-let userLon = null;
+ if(m==="basic")document.getElementById("m1").classList.add("active");
+ if(m==="pro")document.getElementById("m2").classList.add("active");
+ if(m==="full")document.getElementById("m3").classList.add("active");
+ if(m==="forest")document.getElementById("m4").classList.add("active");
 
-// ======================
-// DEBUG LOG
-// ======================
-function log(msg){
- document.getElementById("debug").innerHTML += msg + "<br>";
- console.log(msg);
+ render();
 }
 
-// ======================
-// GPS
-// ======================
+// ---------------- GPS ----------------
 function getLocation(){
-
- if(!navigator.geolocation){
-  document.getElementById("status").innerText =
-   "❌ GPS nem elérhető";
-  return;
- }
-
  navigator.geolocation.getCurrentPosition(pos=>{
-  userLat = pos.coords.latitude;
-  userLon = pos.coords.longitude;
-
-  document.getElementById("status").innerText =
-   "✔ GPS OK";
-
-  setTimeout(render, 300);
-
- },err=>{
-  document.getElementById("status").innerText =
-   "❌ GPS hiba: " + err.message;
+  userLat=pos.coords.latitude;
+  userLon=pos.coords.longitude;
+  document.getElementById("status").innerText="✔ GPS OK";
+  render();
  });
 }
 
-// ======================
-// GTFS BETÖLTÉS
-// ======================
+// ---------------- GTFS ----------------
 async function loadGTFS(){
 
+ const url="https://raw.githubusercontent.com/USER/REPO/main/gtfs.zip";
+
  try{
+  const res=await fetch(url);
+  const blob=await res.blob();
+  const zip=await JSZip.loadAsync(blob);
 
-  document.getElementById("status").innerText =
-   "📦 GTFS betöltés...";
+  stops=parseCSV(await zip.file("stops.txt").async("string"));
+  stopTimes=parseCSV(await zip.file("stop_times.txt").async("string"));
+  trips=parseCSV(await zip.file("trips.txt").async("string"));
 
-  const res = await fetch("IDE_A_VERCEL_PROXY_URL");
+  tripsMap={};
+  stopTimesMap={};
 
-  if(!res.ok){
-   throw new Error("HTTP hiba: " + res.status);
-  }
-
-  const blob = await res.blob();
-
-  const zip = await JSZip.loadAsync(blob);
-
-  const stopsTxt = await zip.file("stops.txt").async("string");
-  const stopTimesTxt = await zip.file("stop_times.txt").async("string");
-  const tripsTxt = await zip.file("trips.txt").async("string");
-
-  stops = parseCSV(stopsTxt);
-  stopTimes = parseCSV(stopTimesTxt);
-  trips = parseCSV(tripsTxt);
-
-  log("Stops: " + stops.length);
-  log("StopTimes: " + stopTimes.length);
-  log("Trips: " + trips.length);
-
-  // INDEX
-  tripsMap = {};
-  stopTimesMap = {};
-
-  trips.forEach(t=>{
-   tripsMap[t.trip_id] = t;
-  });
-
+  trips.forEach(t=>tripsMap[t.trip_id]=t);
   stopTimes.forEach(st=>{
-   if(!stopTimesMap[st.stop_id]){
-    stopTimesMap[st.stop_id] = [];
-   }
+   if(!stopTimesMap[st.stop_id])stopTimesMap[st.stop_id]=[];
    stopTimesMap[st.stop_id].push(st);
   });
 
-  document.getElementById("status").innerText =
-   "✔ GTFS betöltve: " + stops.length + " megálló";
-
+  document.getElementById("status").innerText="✔ GTFS kész";
   render();
 
  }catch(e){
-
-  document.getElementById("status").innerText =
-   "❌ GTFS HIBA: " + e.message;
-
-  log("ERROR: " + e.message);
+  document.getElementById("status").innerText="❌ GTFS hiba";
  }
 }
 
-// ======================
-// CSV (egyszerű parser)
-// ======================
+// ---------------- CSV ----------------
 function parseCSV(txt){
-
- if(!txt){
-  log("❌ Üres CSV");
-  return [];
- }
-
- const rows = txt.split("\n").filter(r=>r.trim()!=="");
-
- const headers = rows[0].split(",");
-
+ const rows=txt.split("\n");
+ const h=rows[0].split(",");
  return rows.slice(1).map(r=>{
-  const cols = r.split(",");
-  let obj = {};
-  headers.forEach((h,i)=>obj[h]=cols[i]);
-  return obj;
+  const c=r.split(",");
+  let o={};
+  h.forEach((x,i)=>o[x]=c[i]);
+  return o;
  });
 }
 
-// ======================
-// DISTANCE
-// ======================
-function haversine(lat1, lon1, lat2, lon2){
-
- const R = 6371000;
- const dLat = (lat2-lat1)*Math.PI/180;
- const dLon = (lon2-lon1)*Math.PI/180;
-
- const a =
-  Math.sin(dLat/2)**2 +
-  Math.cos(lat1*Math.PI/180) *
-  Math.cos(lat2*Math.PI/180) *
-  Math.sin(dLon/2)**2;
-
- return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+// ---------------- DIST ----------------
+function dist(a,b,c,d){
+ const R=6371000;
+ const d1=(c-a)*Math.PI/180;
+ const d2=(d-b)*Math.PI/180;
+ const x=Math.sin(d1/2)**2+
+ Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
+ Math.sin(d2/2)**2;
+ return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ======================
-// RENDER
-// ======================
+// ---------------- FORMAT ----------------
+function formatDistance(m){
+ if(m<1000) return Math.round(m)+" m";
+ return (m/1000).toFixed(2)+" km";
+}
+
+// ---------------- GSM SIM ----------------
+function signalEstimate(lat,lon){
+ if(!userLat) return 50;
+ let d=dist(lat,lon,userLat,userLon)/1000;
+
+ let s=100-d*10;
+ if(s<0)s=0;
+ if(s>100)s=100;
+ return Math.round(s);
+}
+
+// ---------------- ERDEI POI ----------------
+function forestPOI(){
+ return [
+  {name:"🌲 Kisinóci Turistaház",lat:47.9,lon:18.9},
+  {name:"🏔️ Prédikálószék",lat:47.75,lon:18.95},
+  {name:"🌄 Hármashatár-hegy",lat:47.54,lon:19.02},
+ ];
+}
+
+// ---------------- RENDER ----------------
 function render(){
 
- if(!stops.length){
-  document.getElementById("results").innerHTML =
-   "<div class='card red'>❌ Nincs GTFS adat betöltve</div>";
-  return;
+ let q=document.getElementById("search").value.toLowerCase();
+ let html="";
+
+ // ================= GTFS MODE =================
+ if(mode!=="forest"){
+
+  stops.slice(0,50).forEach(s=>{
+
+   if(q && !s.stop_name.toLowerCase().includes(q)) return;
+
+   let d=userLat?dist(userLat,userLon,s.stop_lat,s.stop_lon):0;
+
+   html+=`
+   <div class="card">
+   🚏 ${s.stop_name}<br>
+   ${mode!=="basic" ? "📏 "+formatDistance(d)+"<br>" : ""}`;
+
+   if(mode==="full"||mode==="pro"){
+    let times=stopTimesMap[s.stop_id]||[];
+    times.slice(0,3).forEach(t=>{
+     let tr=tripsMap[t.trip_id];
+     if(!tr) return;
+     html+=`🚍 ${tr.route_id}<br>`;
+    });
+   }
+
+   html+="</div>";
+  });
  }
 
- if(!userLat){
-  document.getElementById("results").innerHTML =
-   "<div class='card blue'>📍 Várakozás GPS-re...</div>";
-  return;
- }
+ // ================= FOREST MODE =================
+ if(mode==="forest"){
 
- let nearby = stops.map(s=>{
+  forestPOI().forEach(p=>{
 
-  const lat = parseFloat(s.stop_lat || 0);
-  const lon = parseFloat(s.stop_lon || 0);
+   if(q && !p.name.toLowerCase().includes(q)) return;
 
-  return {
-   ...s,
-   dist: haversine(userLat,userLon,lat,lon)
-  };
+   let d=userLat?dist(userLat,userLon,p.lat,p.lon):0;
+   let sig=signalEstimate(p.lat,p.lon);
 
- }).sort((a,b)=>a.dist-b.dist).slice(0,10);
-
- let html = "";
-
- nearby.forEach(s=>{
-
-  let times = stopTimesMap[s.stop_id] || [];
-
-  let next = [];
-
-  for(let t of times.slice(0,25)){
-
-   const trip = tripsMap[t.trip_id];
-   if(!trip) continue;
-
-   let [h,m] = (t.arrival_time||"0:0").split(":").map(Number);
-   h = h % 24;
-
-   const now = new Date();
-   const min =
-    (h*60+m) - (now.getHours()*60 + now.getMinutes());
-
-   if(min < 0 || min > 180) continue;
-
-   next.push({
-    line: trip.route_id,
-    time: min
-   });
-  }
-
-  next.sort((a,b)=>a.time-b.time);
-
-  html += `
-  <div class="card">
-   🚏 <b>${s.stop_name}</b><br>
-   📏 ${(s.dist/1000).toFixed(2)} km | ${Math.round(s.dist)} m<br>
-  `;
-
-  next.slice(0,5).forEach(n=>{
-   let c = "";
-   if(n.time < 2) c="red";
-   else if(n.time > 10) c="blue";
-
-   html += `<div class="${c}">
-    🚍 ${n.line} | ${n.time} perc
+   html+=`
+   <div class="card">
+   ${p.name}<br>
+   📏 ${formatDistance(d)}<br>
+   📶 Jel: ${sig}%<br>
    </div>`;
   });
+ }
 
-  html += "</div>";
- });
-
- document.getElementById("results").innerHTML = html;
+ document.getElementById("results").innerHTML=html;
 }
 
-// auto refresh
-setInterval(render, 30000);
+setMode("basic");
 
 </script>
 
