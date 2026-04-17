@@ -2,219 +2,262 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés FIX</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<title>📱 Attila Mobil Navigáció PRO v1</title>
 
 <style>
-body {background:black;color:yellow;text-align:center;font-family:Arial;}
-#kmh{font-size:100px;color:#0f0;text-shadow:0 0 20px #0f0;}
-#ms{font-size:30px;}
-#coords,#alt,#cim,#tav,#utvonal,#megallo{font-size:22px;color:cyan;margin:10px;}
-section{border:2px solid yellow;margin:20px;padding:20px;border-radius:15px;}
-#map{height:800px;}
-button,input{padding:10px;font-size:18px;margin:5px;}
+body{
+margin:0;
+font-family:Arial;
+background:#000;
+color:#FFD700;
+padding:10px;
+}
+
+h1{text-align:center;font-size:20px;}
+
+button{
+padding:10px;
+margin:5px 0;
+width:100%;
+border-radius:10px;
+border:0;
+background:#222;
+color:#FFD700;
+}
+
+.card{
+background:#111;
+padding:10px;
+margin-top:10px;
+border-radius:10px;
+}
+
+.small{font-size:12px;opacity:0.7;}
+.red{color:red;}
+.blue{color:#00aaff;}
 </style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 </head>
 
 <body>
 
-<h1>🚌 Attila Közlekedés</h1>
+<h1>📱 Attila Mobil Navigáció PRO v1</h1>
 
-<section>
-<div id="kmh">0 km/h</div>
-<div id="ms">0 m/s</div>
-<div id="coords">GPS betöltés...</div>
-<div id="alt">-</div>
-<div id="cim">-</div>
-<div id="tav">Távolság: -</div>
-<div id="utvonal">Útvonal: -</div>
-<div id="megallo">Megálló: -</div>
-</section>
+<button onclick="getLocation()">📍 Hely frissítés</button>
+<button onclick="loadGTFS()">📥 GTFS betöltés</button>
+<button onclick="toggleSurvival()">🌲 Börzsöny mód</button>
 
-<section>
-<input id="kereso" placeholder="Hely keresése">
-<button onclick="keres()">Keresés</button>
-</section>
+<div id="status" class="card">⚠️ Nincs adat</div>
 
-<section>
-<button onclick="setLayer('osm')">Alap</button>
-<button onclick="setLayer('topo')">Topo</button>
-<button onclick="setLayer('turista')">Turista</button>
-<button onclick="setLayer('rail')">Vasút</button>
-<button onclick="setLayer('sat')">Műhold</button>
-</section>
+<div id="network" class="card">📡 Hálózat: -</div>
 
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<div id="results"></div>
 
 <script>
 
-// 🌍 MAP
-var map=L.map('map').setView([47.49,19.04],15);
+// =====================
+// ADATOK
+// =====================
+let stops = [];
+let stopTimes = [];
+let trips = [];
 
-// alap
-var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+let tripsMap = {};
+let stopTimesMap = {};
 
-// külön rétegek
-var topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
-var turista=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:0.7});
-var rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png');
-var sat=L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png');
+let userLat = null;
+let userLon = null;
 
-osm.addTo(map);
+let survivalMode = false;
 
-function setLayer(name){
-  map.eachLayer(l=>map.removeLayer(l));
+// =====================
+// GPS
+// =====================
+function getLocation(){
+navigator.geolocation.getCurrentPosition(pos=>{
+userLat = pos.coords.latitude;
+userLon = pos.coords.longitude;
 
-  osm.addTo(map); // mindig legyen alaptérkép
+document.getElementById("status").innerText =
+"✔ GPS frissítve";
 
-  if(name==="topo") topo.addTo(map);
-  if(name==="turista") turista.addTo(map);
-  if(name==="rail") rail.addTo(map);
-  if(name==="sat") sat.addTo(map);
+render();
+});
 }
 
-// marker
-let marker=L.circleMarker([47.49,19.04],{radius:8,color:'red'}).addTo(map);
+// =====================
+// GTFS BETÖLTÉS
+// =====================
+async function loadGTFS(){
 
-// változók
-let aktualisPoz=null;
-let elozoPoz=null;
-let elozoIdo=null;
-let cel=null;
-let routeLayer=null;
+document.getElementById("status").innerText =
+"📦 GTFS betöltés...";
 
-// 📍 cím
-function cimKeres(lat,lon){
- fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
- .then(r=>r.json())
- .then(d=>{
-   if(d.display_name){
-     document.getElementById("cim").innerText=d.display_name;
-   }
- });
-}
+const res = await fetch("IDE_A_VERCEL_PROXY_URL");
+const blob = await res.blob();
 
-// 🔎 kereső
-function keres(){
- let q=document.getElementById("kereso").value;
+const zip = await JSZip.loadAsync(blob);
 
- fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`)
- .then(r=>r.json())
- .then(d=>{
-   if(d.length>0){
+stops = parseCSV(await zip.file("stops.txt").async("string"));
+stopTimes = parseCSV(await zip.file("stop_times.txt").async("string"));
+trips = parseCSV(await zip.file("trips.txt").async("string"));
 
-     let lat=parseFloat(d[0].lat);
-     let lon=parseFloat(d[0].lon);
+// index
+tripsMap = {};
+stopTimesMap = {};
 
-     cel=[lat,lon];
-
-     map.setView(cel,15);
-     L.marker(cel).addTo(map);
-
-     if(aktualisPoz){
-       let tav=map.distance(aktualisPoz,cel);
-
-       document.getElementById("tav").innerText=
-       "Légvonal: "+tav.toFixed(0)+" m ("+(tav/1000).toFixed(2)+" km)";
-     } else {
-       document.getElementById("tav").innerText="Nincs GPS adat";
-     }
-
-     utvonal();
-   }
- });
-}
-
-// 🧭 útvonal
-function utvonal(){
- if(!aktualisPoz||!cel) return;
-
- fetch(`https://router.project-osrm.org/route/v1/foot/${aktualisPoz[1]},${aktualisPoz[0]};${cel[1]},${cel[0]}?overview=full&geometries=geojson`)
- .then(r=>r.json())
- .then(d=>{
-
-   let route=d.routes[0];
-
-   document.getElementById("utvonal").innerText=
-   "Útvonal: "+(route.distance/1000).toFixed(2)+" km";
-
-   if(routeLayer) map.removeLayer(routeLayer);
-
-   routeLayer=L.geoJSON(route.geometry).addTo(map);
- });
-}
-
-// 🚏 kattintás
-map.on('click',function(e){
-
- let lat=e.latlng.lat;
- let lon=e.latlng.lng;
-
- fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
- .then(r=>r.json())
- .then(d=>{
-   if(d.display_name){
-     document.getElementById("megallo").innerText=
-     "Közeli hely: "+d.display_name;
-   }
- });
-
+trips.forEach(t=>{
+tripsMap[t.trip_id] = t;
 });
 
-// 🚀 GPS + HIBA KEZELÉS
-navigator.geolocation.watchPosition(
+stopTimes.forEach(st=>{
+if(!stopTimesMap[st.stop_id]) stopTimesMap[st.stop_id]=[];
+stopTimesMap[st.stop_id].push(st);
+});
 
-function(pos){
+document.getElementById("status").innerText =
+"✔ GTFS kész";
 
- let lat=pos.coords.latitude;
- let lon=pos.coords.longitude;
- let alt=pos.coords.altitude;
- let acc=pos.coords.accuracy;
+render();
+}
 
- aktualisPoz=[lat,lon];
+// =====================
+// CSV
+// =====================
+function parseCSV(txt){
+const rows = txt.trim().split("\n");
+const headers = rows[0].split(",");
 
- document.getElementById("coords").innerText=
- lat.toFixed(5)+","+lon.toFixed(5)+" (±"+acc.toFixed(0)+"m)";
+return rows.slice(1).map(r=>{
+const cols = r.split(",");
+let obj={};
+headers.forEach((h,i)=>obj[h]=cols[i]);
+return obj;
+});
+}
 
- document.getElementById("alt").innerText=
- (alt?alt.toFixed(0):"N/A")+" m";
+// =====================
+// TÁVOLSÁG
+// =====================
+function haversine(lat1, lon1, lat2, lon2){
+const R = 6371000;
+const dLat = (lat2-lat1)*Math.PI/180;
+const dLon = (lon2-lon1)*Math.PI/180;
 
- marker.setLatLng([lat,lon]);
- map.setView([lat,lon]);
+const a =
+Math.sin(dLat/2)**2 +
+Math.cos(lat1*Math.PI/180) *
+Math.cos(lat2*Math.PI/180) *
+Math.sin(dLon/2)**2;
 
- let most=Date.now();
+return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
 
- if(elozoPoz){
-   let tav=map.distance(elozoPoz,[lat,lon]);
-   let ido=(most-elozoIdo)/1000;
+// =====================
+// NETWORK (becsült)
+// =====================
+function networkInfo(){
+const c = navigator.connection;
 
-   if(tav>2 && ido>0){
-     let ms=tav/ido;
-     let kmh=ms*3.6;
+if(!c) return "ismeretlen";
 
-     document.getElementById("kmh").innerText=kmh.toFixed(1)+" km/h";
-     document.getElementById("ms").innerText=ms.toFixed(2)+" m/s";
-   }
- }
+return `${c.effectiveType || "?"} | RTT ${c.rtt || "?"}ms`;
+}
 
- elozoPoz=[lat,lon];
- elozoIdo=most;
+// =====================
+// SURVIVAL MODE
+// =====================
+function toggleSurvival(){
+survivalMode = !survivalMode;
 
- cimKeres(lat,lon);
+if(survivalMode){
+document.body.style.background = "#001100";
+document.getElementById("status").innerText =
+"🌲 Börzsöny mód AKTÍV";
+} else {
+document.body.style.background = "#000";
+document.getElementById("status").innerText =
+"Normál mód";
+}
 
-},
+render();
+}
 
-function(err){
- document.getElementById("coords").innerText=
- "GPS HIBA: engedélyezd vagy használj telefont";
-},
+// =====================
+// RENDER
+// =====================
+function render(){
 
-{enableHighAccuracy:true}
+document.getElementById("network").innerText =
+"📡 Hálózat: " + networkInfo();
 
+if(!userLat || stops.length === 0) return;
+
+let nearby = stops.map(s=>{
+const d = haversine(
+userLat,userLon,
++s.stop_lat,+s.stop_lon
 );
+
+return {...s,dist:d};
+})
+.sort((a,b)=>a.dist-b.dist)
+.slice(0,12);
+
+let html = "";
+
+nearby.forEach(s=>{
+
+let times = stopTimesMap[s.stop_id] || [];
+
+let next = [];
+
+for(let t of times.slice(0,20)){
+const trip = tripsMap[t.trip_id];
+if(!trip) continue;
+
+let [h,m] = (t.arrival_time||"0:0").split(":").map(Number);
+h = h % 24;
+
+const now = new Date();
+const min =
+(h*60+m) - (now.getHours()*60 + now.getMinutes());
+
+if(min < 0 || min > 180) continue;
+
+next.push({
+line: trip.route_id,
+time: min
+});
+}
+
+next.sort((a,b)=>a.time-b.time);
+
+html += `
+<div class="card">
+🚏 <b>${s.stop_name}</b><br>
+📏 ${(s.dist/1000).toFixed(2)} km (${Math.round(s.dist)} m)<br>
+`;
+
+next.slice(0,5).forEach(n=>{
+let c = "";
+if(n.time < 2) c="red";
+else if(n.time > 10) c="blue";
+
+html += `<div class="${c}">
+🚍 ${n.line} | ${n.time} perc
+</div>`;
+});
+
+html += "</div>";
+});
+
+document.getElementById("results").innerHTML = html;
+}
+
+// auto frissítés
+setInterval(render, 30000);
 
 </script>
 
