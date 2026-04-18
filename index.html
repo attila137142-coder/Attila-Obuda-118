@@ -2,10 +2,11 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚍 NAV ENGINE PRO 2.0</title>
+<title>🚍 NAV ENGINE PRO v3</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body{margin:0;background:#000;color:#ffd700;font-family:Arial;}
@@ -13,30 +14,24 @@ h1{text-align:center;font-size:16px;margin:10px;}
 
 #map{height:50vh;width:100%;}
 
-.mode{
-display:flex;gap:5px;padding:5px;
-}
-
+.mode{display:flex;gap:5px;padding:5px;}
 .mode button{
-flex:1;padding:10px;border:0;border-radius:10px;
-background:#222;color:#ffd700;
+ flex:1;padding:10px;border:0;border-radius:10px;
+ background:#222;color:#ffd700;
 }
-
 .active{background:#0a0;}
 
 .panel{padding:10px;}
 
 .card{
-background:#111;padding:8px;margin:5px 0;border-radius:8px;
+ background:#111;padding:8px;margin:5px 0;border-radius:8px;
 }
-
-.small{font-size:12px;opacity:0.7;}
 </style>
 </head>
 
 <body>
 
-<h1>🚍 NAV ENGINE PRO 2.0</h1>
+<h1>🚍 NAV ENGINE PRO v3</h1>
 
 <div class="mode">
 <button onclick="setMode('basic')" id="m1">Alap</button>
@@ -50,6 +45,7 @@ background:#111;padding:8px;margin:5px 0;border-radius:8px;
 <div class="panel">
 <button onclick="getGPS()">📍 GPS</button>
 <button onclick="loadPOI()">🌲 POI</button>
+<button onclick="loadGTFS()">🚍 GTFS</button>
 
 <div id="info" class="card">Indítás...</div>
 </div>
@@ -67,22 +63,14 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 let mode="basic";
 let userMarker=null;
 let poiMarkers=[];
-
-// ---------------- POI ----------------
-function getPOI(){
- return [
-  {name:"🌲 Kisinóci Turistaház",lat:47.9,lon:18.9},
-  {name:"🏔️ Prédikálószék",lat:47.75,lon:18.95},
-  {name:"🌄 Hármashatár-hegy",lat:47.54,lon:19.02},
- ];
-}
+let stops=[];
+let stopMarkers=[];
 
 // ---------------- MODE ----------------
 function setMode(m){
  mode=m;
  ["m1","m2","m3","m4"].forEach(id=>document.getElementById(id).classList.remove("active"));
  document.getElementById("m"+(m==="basic"?1:m==="pro"?2:m==="full"?3:4)).classList.add("active");
-
  document.getElementById("info").innerHTML="Mód: "+m;
 }
 
@@ -104,7 +92,15 @@ function getGPS(){
  });
 }
 
-// ---------------- POI LOAD ----------------
+// ---------------- POI ----------------
+function getPOI(){
+ return [
+  {name:"🌲 Kisinóci Turistaház",lat:47.9,lon:18.9},
+  {name:"🏔️ Prédikálószék",lat:47.75,lon:18.95},
+  {name:"🌄 Hármashatár-hegy",lat:47.54,lon:19.02},
+ ];
+}
+
 function loadPOI(){
 
  poiMarkers.forEach(m=>map.removeLayer(m));
@@ -117,9 +113,76 @@ function loadPOI(){
   poiMarkers.push(m);
  });
 
- document.getElementById("info").innerHTML="POI betöltve";
+ document.getElementById("info").innerHTML="🌲 POI betöltve";
 }
 
+// ---------------- GTFS ----------------
+async function loadGTFS(){
+
+ document.getElementById("info").innerHTML="📦 GTFS betöltés...";
+
+ try{
+
+  const url="IDE_A_VALÓDI_GTFS_LINK"; // <-- EZT CSERÉLD KI!
+  const res=await fetch(url);
+
+  if(!res.ok) throw new Error(res.status);
+
+  const blob=await res.blob();
+  const zip=await JSZip.loadAsync(blob);
+
+  const txt=await zip.file("stops.txt").async("string");
+  stops=parseCSV(txt);
+
+  document.getElementById("info").innerHTML=
+  "✔ GTFS betöltve ("+stops.length+" megálló)";
+
+  renderStops();
+
+ }catch(e){
+  document.getElementById("info").innerHTML="❌ GTFS hiba";
+  console.log(e);
+ }
+}
+
+// ---------------- CSV ----------------
+function parseCSV(t){
+ let r=t.trim().split("\n");
+ let h=r[0].split(",");
+ return r.slice(1).map(x=>{
+  let c=x.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
+  let o={};
+  h.forEach((v,i)=>o[v]=c[i]);
+  return o;
+ });
+}
+
+// ---------------- STOP RENDER ----------------
+function renderStops(){
+
+ stopMarkers.forEach(m=>map.removeLayer(m));
+ stopMarkers=[];
+
+ stops.slice(0,500).forEach(s=>{
+
+  if(!s.stop_lat || !s.stop_lon) return;
+
+  let m=L.circleMarker(
+   [parseFloat(s.stop_lat),parseFloat(s.stop_lon)],
+   {
+    radius:4,
+    color:"#00aaff"
+   }
+  ).addTo(map);
+
+  m.bindPopup("🚏 "+s.stop_name);
+
+  stopMarkers.push(m);
+
+ });
+}
+
+// ---------------- INIT ----------------
 setMode("basic");
 
 </script>
