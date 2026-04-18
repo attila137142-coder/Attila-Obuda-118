@@ -1,4 +1,154 @@
-```html
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>🗺 Attila Térkép PRO FULL</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+body{margin:0;background:#000;color:#FFD700;font-family:Arial;}
+#map{height:90vh;}
+#panel{height:10vh;background:#111;padding:8px;font-size:14px;overflow:auto;}
+
+/* erősebb feliratok */
+.leaflet-tile{
+  filter: contrast(1.3) brightness(1.1) saturate(1.1);
+}
+.leaflet-container{
+  text-shadow:0 0 2px #000,0 0 4px #000;
+}
+</style>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+</head>
+
+<body>
+
+<div id="map"></div>
+<div id="panel">GPS indul...</div>
+
+<script>
+
+let map = L.map('map').setView([47.5,19.05], 13);
+
+// 🌍 TOPO
+L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{
+ maxZoom:17
+}).addTo(map);
+
+// 🔴 piros pont ikon
+const redIcon = L.divIcon({
+ html:'<div style="width:14px;height:14px;background:red;border-radius:50%;border:2px solid white;"></div>',
+ iconSize:[18,18]
+});
+
+let marker=null;
+let circle=null;
+
+// 🌍 cím lekérés
+let lastAddress="...";
+let lastTime=0;
+
+async function getAddress(lat,lon){
+ if(Date.now()-lastTime<5000) return lastAddress;
+ lastTime=Date.now();
+ try{
+  const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+  const d = await r.json();
+  const a=d.address||{};
+  lastAddress =
+   (a.country||"")+", "+
+   (a.city||a.town||a.village||"")+", "+
+   (a.road||"erdő")+" "+
+   (a.house_number||"");
+  return lastAddress;
+ }catch{
+  return "cím nincs";
+ }
+}
+
+// 📈 lejtés %
+let lastAlt=null;
+let lastLat=null,lastLon=null;
+
+function distance(a,b,c,d){
+ const R=6371e3;
+ const dLat=(c-a)*Math.PI/180;
+ const dLon=(d-b)*Math.PI/180;
+ const x=Math.sin(dLat/2)**2+
+ Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
+ Math.sin(dLon/2)**2;
+ return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+async function updateGPS(){
+
+ navigator.geolocation.getCurrentPosition(async pos=>{
+
+  let lat=pos.coords.latitude;
+  let lon=pos.coords.longitude;
+  let acc=pos.coords.accuracy;
+  let speed=pos.coords.speed||0;
+  let heading=pos.coords.heading||0;
+  let alt=pos.coords.altitude;
+
+  // marker
+  if(!marker){
+   marker=L.marker([lat,lon],{icon:redIcon}).addTo(map);
+  }else{
+   marker.setLatLng([lat,lon]);
+  }
+
+  // pontosság kör
+  if(circle) map.removeLayer(circle);
+  circle=L.circle([lat,lon],{
+   radius:acc,
+   color:'yellow',
+   fillOpacity:0.15
+  }).addTo(map);
+
+  map.setView([lat,lon],15);
+
+  // cím
+  const addr = await getAddress(lat,lon);
+
+  // lejtés számítás
+  let slope="--";
+  if(lastAlt!==null && alt!==null){
+   const dist = distance(lastLat,lastLon,lat,lon);
+   if(dist>2){
+    slope = ((alt-lastAlt)/dist*100).toFixed(1);
+   }
+  }
+
+  lastAlt=alt;
+  lastLat=lat;
+  lastLon=lon;
+
+  document.getElementById("panel").innerHTML=`
+  📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>
+  🏠 ${addr}<br>
+  🎯 Pontosság: ±${Math.round(acc)} m<br>
+  🚶 ${(speed*3.6).toFixed(1)} km/h | ${speed.toFixed(2)} m/s<br>
+  🧭 ${Math.round(heading)}°<br>
+  ⛰️ Lejtés: ${slope} %
+  `;
+
+ },e=>{
+  document.getElementById("panel").innerText="GPS hiba: "+e.message;
+ });
+
+}
+
+setInterval(updateGPS,3000);
+updateGPS();
+
+</script>
+
+</body>
+</html>
+```
 <!DOCTYPE html>
 <html lang="hu">
 <head>
