@@ -1,163 +1,131 @@
-```html id="y6r0z2"
+
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚍 PRO MAX FIX</title>
+<title>🚍 Attila Közlekedés PRO MAX</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{background:#000;color:#FFD700;font-family:Arial;padding:10px;}
-button{padding:10px;margin:5px;border-radius:10px;}
+body{margin:0;background:#000;color:#FFD700;font-family:Arial;}
+#map{height:50vh;}
+.panel{padding:10px;}
 .card{background:#111;padding:10px;margin-top:10px;border-radius:10px;}
-.red{color:#ff4d4d;} .blue{color:#4db8ff;}
-#mapFrame{width:100%;height:350px;border:0;margin-top:10px;}
+button{padding:10px;margin:5px;border-radius:10px;}
+#chart{height:200px;}
+.red{color:#ff4d4d;}
 </style>
 </head>
 
 <body>
 
-<h2>🚍 PRO rendszer (FIX)</h2>
+<h2 style="text-align:center;">🚍 PRO Navigáció</h2>
 
-<button onclick="start()">▶ Indítás</button>
+<div id="map"></div>
 
-<button onclick="loadMap('osm')">🗺️ OSM</button>
-<button onclick="loadMap('topo')">⛰️ Topo</button>
-<button onclick="loadMap('rail')">🚆 Vasút</button>
-<button onclick="loadMap('brouter')">🧭 Útvonal</button>
+<div class="panel">
+<button onclick="getLocation()">📍 GPS</button>
+<button onclick="exportPDF()">📄 PDF mentés</button>
 
-<input id="search" placeholder="Megálló keresés..." oninput="render()">
+<div id="info" class="card"></div>
+<canvas id="chart"></canvas>
+</div>
 
-<div id="status"></div>
-<div id="location" class="card"></div>
-
-<iframe id="mapFrame"></iframe>
-
-<div id="list"></div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <script>
 
-let userLat,userLon,userAcc;
-let stops=[];
+// ===== MAP
+var map = L.map('map').setView([47.4979,19.0402],13);
+
+// BASE
+var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+
+// OVERLAYS
+var rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png');
+var tourist = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
+var road = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png');
+
+osm.addTo(map);
+
+L.control.layers(
+ {"OSM":osm,"Topo":topo},
+ {"Vasút":rail,"Turista":tourist,"Közút":road}
+).addTo(map);
 
 // ===== GPS
+let marker, path=[];
 function getLocation(){
- return new Promise((res,rej)=>{
-  navigator.geolocation.getCurrentPosition(p=>{
-   userLat=p.coords.latitude;
-   userLon=p.coords.longitude;
-   userAcc=p.coords.accuracy;
-   res();
-  },rej);
+ navigator.geolocation.watchPosition(pos=>{
+  let lat=pos.coords.latitude;
+  let lon=pos.coords.longitude;
+  let acc=pos.coords.accuracy;
+  let speed=(pos.coords.speed||0)*3.6;
+
+  if(marker) map.removeLayer(marker);
+  marker = L.circleMarker([lat,lon],{radius:8,color:'red'}).addTo(map);
+
+  map.setView([lat,lon],15);
+
+  path.push([lat,lon]);
+
+  if(path.length>1){
+   L.polyline(path,{color:'yellow'}).addTo(map);
+  }
+
+  updateInfo(lat,lon,acc,speed);
+  drawProfile();
+
  });
 }
 
-// ===== CÍM
-async function getAddress(lat,lon){
- try{
-  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-  const d = await res.json();
-  const a = d.address||{};
-  return `${a.country||""} → ${a.city||a.town||""} → ${a.road||""} ${a.house_number||""}`;
- }catch{return "Cím nem elérhető";}
-}
-
-// ===== DIST
-function dist(a,b,c,d){
- const R=6371e3;
- const dLat=(c-a)*Math.PI/180;
- const dLon=(d-b)*Math.PI/180;
- const x=Math.sin(dLat/2)**2+
- Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
- Math.sin(dLon/2)**2;
- return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-// ===== OSM
-async function loadStops(){
- const query = `
- [out:json];
- node(around:2000,${userLat},${userLon})["highway"="bus_stop"];
- node(around:2000,${userLat},${userLon})["railway"="tram_stop"];
- node(around:2000,${userLat},${userLon})["railway"="station"];
- out;
+// ===== INFO
+function updateInfo(lat,lon,acc,speed){
+ let ms = speed/3.6;
+ document.getElementById("info").innerHTML=`
+ 📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>
+ 🎯 Pontosság: ±${Math.round(acc)} m<br>
+ 🚶 Sebesség: ${speed.toFixed(1)} km/h (${ms.toFixed(2)} m/s)
  `;
- const res = await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:query});
- const data = await res.json();
-
- return data.elements.map(e=>({
-  name:e.tags.name || "Megálló",
-  lat:e.lat,
-  lon:e.lon
- }));
 }
 
-// ===== MAP JAVÍTVA
-function loadMap(type){
+// ===== SZINT PROFIL (fake DEMO, később cserélhető valósra)
+function drawProfile(){
 
- if(type==="osm"){
-  mapFrame.src=`https://www.openstreetmap.org/export/embed.html?bbox=${userLon-0.01},${userLat-0.01},${userLon+0.01},${userLat+0.01}`;
+ let dist=0;
+ let data=[];
+ let labels=[];
+
+ for(let i=1;i<path.length;i++){
+  let d = map.distance(path[i-1],path[i]);
+  dist+=d;
+
+  let elev = 100 + Math.sin(i/3)*50; // DEMO magasság
+  data.push(elev);
+  labels.push((dist/1000).toFixed(2)+" km");
  }
 
- if(type==="topo"){
-  mapFrame.src=`https://opentopomap.org/#map=14/${userLat}/${userLon}`;
- }
+ if(data.length<2) return;
 
- if(type==="rail"){
-  mapFrame.src=`https://www.openrailwaymap.org/?map=14/${userLat}/${userLon}`;
- }
-
- if(type==="brouter"){
-  mapFrame.src=`https://brouter.de/brouter-web/#map=14/${userLat}/${userLon}/standard`;
- }
-}
-
-// ===== RENDER
-async function render(){
-
- const q = document.getElementById("search").value.toLowerCase();
-
- const addr = await getAddress(userLat,userLon);
-
- document.getElementById("location").innerHTML=`
- 📍 ${userLat.toFixed(6)}, ${userLon.toFixed(6)}<br>
- 🎯 ±${Math.round(userAcc)} m<br>
- 🏠 ${addr}
- `;
-
- let list = stops.map(s=>({...s,d:dist(userLat,userLon,s.lat,s.lon)}));
-
- if(q){
-  list = list.filter(s=>s.name.toLowerCase().includes(q));
- }
-
- list.sort((a,b)=>a.d-b.d);
-
- let near = list.slice(0,10);
-
- let html="";
-
- if(near.length===0){
-  html="<div class='card red'>Nincs találat</div>";
- }
-
- near.forEach(s=>{
-  html+=`<div class="card">
-  🚏 <b>${s.name}</b><br>
-  📏 ${Math.round(s.d)} m
-  </div>`;
+ new Chart(document.getElementById("chart"),{
+  type:"line",
+  data:{
+   labels:labels,
+   datasets:[{
+    label:"Szintprofil (m)",
+    data:data
+   }]
+  }
  });
-
- document.getElementById("list").innerHTML=html;
 }
 
-// ===== START
-async function start(){
- await getLocation();
- document.getElementById("status").innerText="Betöltés...";
- stops = await loadStops();
- loadMap("osm");
- document.getElementById("status").innerText="✔ Kész";
- render();
+// ===== PDF
+function exportPDF(){
+ html2pdf().from(document.body).save("terkep.pdf");
 }
 
 </script>
