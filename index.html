@@ -1,11 +1,9 @@
-
+```html
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚏 Megállók 2km PRO</title>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<title>🚏 Attila Megállók PRO</title>
 
 <style>
 body{background:#000;color:#FFD700;font-family:Arial;padding:10px;}
@@ -17,7 +15,7 @@ button{padding:10px;margin:5px;border-radius:10px;}
 
 <body>
 
-<h2>🚏 2km-en belüli megállók</h2>
+<h2>🚏 2 km megállók</h2>
 
 <button onclick="start()">▶ Indítás</button>
 
@@ -26,14 +24,22 @@ button{padding:10px;margin:5px;border-radius:10px;}
 
 <script>
 
-const PROXY = "https://attila-obuda-118.vercel.app/api/gtfs";
+// ====== SAJÁT MEGÁLLÓK (amit küldtél)
+const STOPS = [
+{name:"Békásmegyer HÉV-állomás",gtfs:"H5-09183",lat:47.598091,lon:19.054599},
+{name:"Nád utca",gtfs:"BKK-F00457",lat:47.594072,lon:19.048469},
+{name:"Gulácsy Lajos utca",gtfs:"BKK-00438",lat:47.602562,lon:19.048229},
+{name:"Flórián tér",gtfs:"BKK-F00611",lat:47.542896,lon:19.042252},
+{name:"Batthyány tér",gtfs:"BKK-F00057",lat:47.506002,lon:19.039456},
+{name:"Lakás",gtfs:"UTCA",lat:47.594304,lon:19.048770}
+];
 
-let stops=[], stopTimes=[], trips=[];
-let stopMap={}, tripMap={};
+// ====== DEMÓ MENETREND (később cseréljük valósra)
+const TIMES = ["05:10","05:20","05:30","05:40","05:50","06:00"];
 
-let userLat=null,userLon=null;
+// ====== GPS
+let userLat,userLon;
 
-// ===== GPS
 function getLocation(){
  return new Promise((res,rej)=>{
   navigator.geolocation.getCurrentPosition(p=>{
@@ -44,19 +50,7 @@ function getLocation(){
  });
 }
 
-// ===== CSV
-function parseCSV(txt){
- const rows=txt.split("\\n").filter(r=>r.trim());
- const h=rows[0].split(",");
- return rows.slice(1).map(r=>{
-  const c=r.split(",");
-  let o={};
-  h.forEach((x,i)=>o[x]=c[i]);
-  return o;
- });
-}
-
-// ===== TÁVOLSÁG
+// ====== TÁVOLSÁG
 function dist(a,b,c,d){
  const R=6371e3;
  const dLat=(c-a)*Math.PI/180;
@@ -67,69 +61,40 @@ function dist(a,b,c,d){
  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ===== BETÖLTÉS
-async function loadGTFS(){
- document.getElementById("status").innerText="GTFS betöltés...";
- const res = await fetch(PROXY);
- const blob = await res.blob();
- const zip = await JSZip.loadAsync(blob);
-
- stops = parseCSV(await zip.file("stops.txt").async("string"));
- stopTimes = parseCSV(await zip.file("stop_times.txt").async("string"));
- trips = parseCSV(await zip.file("trips.txt").async("string"));
-
- trips.forEach(t=>tripMap[t.trip_id]=t);
-
- stopTimes.forEach(st=>{
-  if(!stopMap[st.stop_id]) stopMap[st.stop_id]=[];
-  stopMap[st.stop_id].push(st);
- });
-
- document.getElementById("status").innerText="GTFS OK";
+// ====== IDŐ
+function getMin(t){
+ const now=new Date();
+ const [h,m]=t.split(":").map(Number);
+ return (h*60+m)-(now.getHours()*60+now.getMinutes());
 }
 
-// ===== LISTA
+// ====== RENDER
 function render(){
 
- let now=new Date();
- let cur=now.getHours()*60+now.getMinutes();
-
- let near = stops.map(s=>{
-  return {...s,d:dist(userLat,userLon,+s.stop_lat,+s.stop_lon)};
+ let near = STOPS.map(s=>{
+  return {...s,d:dist(userLat,userLon,s.lat,s.lon)};
  })
  .filter(s=>s.d<=2000)
- .sort((a,b)=>a.d-b.d)
- .slice(0,6);
+ .sort((a,b)=>a.d-b.d);
 
  let html="";
 
  near.forEach(s=>{
 
-  let list = stopMap[s.stop_id]||[];
-  let next=[];
-
-  list.slice(0,40).forEach(st=>{
-   let [h,m]=st.arrival_time.split(":").map(Number);
-   h=h%24;
-   let min=(h*60+m)-cur;
-   if(min<0||min>120) return;
-
-   let trip=tripMap[st.trip_id];
-   if(!trip) return;
-
-   next.push({line:trip.route_id,time:min});
-  });
-
-  next.sort((a,b)=>a.time-b.time);
-
   html+=`<div class="card">
-  📍 ${s.stop_name} (${Math.round(s.d)} m)<br>`;
+  📍 ${s.name} (${Math.round(s.d)} m)<br>`;
 
-  next.slice(0,5).forEach(n=>{
+  TIMES.forEach(t=>{
+   let min=getMin(t);
+   if(min<0||min>60) return;
+
    let c="";
-   if(n.time<2)c="red";
-   else if(n.time>10)c="blue";
-   html+=`<div class="${c}">🚍 ${n.line} | ${n.time} perc</div>`;
+   if(min<2)c="red";
+   else if(min>10)c="blue";
+
+   html+=`<div class="${c}">
+   🚍 ${s.gtfs} | ${min} perc
+   </div>`;
   });
 
   html+="</div>";
@@ -138,11 +103,11 @@ function render(){
  document.getElementById("list").innerHTML=html;
 }
 
-// ===== START
+// ====== START
 async function start(){
  try{
   await getLocation();
-  await loadGTFS();
+  document.getElementById("status").innerText="✔ GPS OK";
   render();
  }catch(e){
   document.getElementById("status").innerText="Hiba: "+e.message;
