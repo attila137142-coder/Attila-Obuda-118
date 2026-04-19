@@ -3,19 +3,22 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚏 Attila Megállók PRO</title>
+<title>🚏 Attila Közlekedés PRO</title>
 
 <style>
 body{background:#000;color:#FFD700;font-family:Arial;padding:10px;}
+h2{text-align:center;}
 button{padding:10px;margin:5px;border-radius:10px;}
 .card{background:#111;padding:10px;margin-top:10px;border-radius:10px;}
-.red{color:#ff4d4d;} .blue{color:#4db8ff;}
+.small{font-size:12px;opacity:0.7;}
+.red{color:#ff4d4d;}
+.blue{color:#4db8ff;}
 </style>
 </head>
 
 <body>
 
-<h2>🚏 2 km megállók</h2>
+<h2>🚏 2 km-en belüli megállók</h2>
 
 <button onclick="start()">▶ Indítás</button>
 
@@ -24,33 +27,33 @@ button{padding:10px;margin:5px;border-radius:10px;}
 
 <script>
 
-// ====== SAJÁT MEGÁLLÓK (amit küldtél)
+// ===== SAJÁT MEGÁLLÓK (rövidítve, bővíthető)
 const STOPS = [
-{name:"Békásmegyer HÉV-állomás",gtfs:"H5-09183",lat:47.598091,lon:19.054599},
-{name:"Nád utca",gtfs:"BKK-F00457",lat:47.594072,lon:19.048469},
-{name:"Gulácsy Lajos utca",gtfs:"BKK-00438",lat:47.602562,lon:19.048229},
-{name:"Flórián tér",gtfs:"BKK-F00611",lat:47.542896,lon:19.042252},
-{name:"Batthyány tér",gtfs:"BKK-F00057",lat:47.506002,lon:19.039456},
-{name:"Lakás",gtfs:"UTCA",lat:47.594304,lon:19.048770}
+{name:"Békásmegyer HÉV",lat:47.598091,lon:19.054599},
+{name:"Nád utca",lat:47.594072,lon:19.048469},
+{name:"Gulácsy Lajos utca",lat:47.602562,lon:19.048229},
+{name:"Flórián tér",lat:47.542896,lon:19.042252},
+{name:"Lakás",lat:47.594304,lon:19.048770}
 ];
 
-// ====== DEMÓ MENETREND (később cseréljük valósra)
-const TIMES = ["05:10","05:20","05:30","05:40","05:50","06:00"];
+// ===== DEMO MENETREND
+const TIMES = ["05:10","05:20","05:30","05:40","05:50","06:00","06:10","06:20"];
 
-// ====== GPS
-let userLat,userLon;
+let userLat,userLon,userAcc;
 
+// ===== GPS
 function getLocation(){
  return new Promise((res,rej)=>{
   navigator.geolocation.getCurrentPosition(p=>{
    userLat=p.coords.latitude;
    userLon=p.coords.longitude;
+   userAcc=p.coords.accuracy;
    res();
   },rej);
  });
 }
 
-// ====== TÁVOLSÁG
+// ===== TÁVOLSÁG
 function dist(a,b,c,d){
  const R=6371e3;
  const dLat=(c-a)*Math.PI/180;
@@ -61,15 +64,26 @@ function dist(a,b,c,d){
  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ====== IDŐ
+// ===== IDŐ
 function getMin(t){
  const now=new Date();
  const [h,m]=t.split(":").map(Number);
  return (h*60+m)-(now.getHours()*60+now.getMinutes());
 }
 
-// ====== RENDER
-function render(){
+// ===== CÍM (egyszerű)
+async function getAddress(lat,lon){
+ try{
+  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+  const data = await res.json();
+  return data.display_name || "Ismeretlen hely";
+ }catch{
+  return "Cím nem elérhető";
+ }
+}
+
+// ===== RENDER
+async function render(){
 
  let near = STOPS.map(s=>{
   return {...s,d:dist(userLat,userLon,s.lat,s.lon)};
@@ -77,12 +91,22 @@ function render(){
  .filter(s=>s.d<=2000)
  .sort((a,b)=>a.d-b.d);
 
- let html="";
+ let addr = await getAddress(userLat,userLon);
+
+ let html = `
+ <div class="card">
+ 📍 Saját hely<br>
+ 🌐 ${userLat.toFixed(6)}, ${userLon.toFixed(6)}<br>
+ 🎯 Pontosság: ±${Math.round(userAcc)} m<br>
+ 🏠 ${addr}
+ </div>
+ `;
 
  near.forEach(s=>{
 
   html+=`<div class="card">
-  📍 ${s.name} (${Math.round(s.d)} m)<br>`;
+  🚏 ${s.name}<br>
+  📏 ${Math.round(s.d)} m (${(s.d/1000).toFixed(2)} km)<br>`;
 
   TIMES.forEach(t=>{
    let min=getMin(t);
@@ -93,7 +117,7 @@ function render(){
    else if(min>10)c="blue";
 
    html+=`<div class="${c}">
-   🚍 ${s.gtfs} | ${min} perc
+   🚍 ${min} perc
    </div>`;
   });
 
@@ -103,7 +127,7 @@ function render(){
  document.getElementById("list").innerHTML=html;
 }
 
-// ====== START
+// ===== START
 async function start(){
  try{
   await getLocation();
