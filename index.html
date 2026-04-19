@@ -1,9 +1,9 @@
-
+```html id="j0a1qp"
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚍 Attila Közlekedés PRO MAX</title>
+<title>🚍 Attila PRO MAX FUTÁR</title>
 
 <style>
 body{background:#000;color:#FFD700;font-family:Arial;padding:10px;}
@@ -11,24 +11,20 @@ button{padding:10px;margin:5px;border-radius:10px;}
 .card{background:#111;padding:10px;margin-top:10px;border-radius:10px;}
 .red{color:#ff4d4d;} .blue{color:#4db8ff;}
 .small{font-size:12px;opacity:0.7;}
-#mapFrame{width:100%;height:400px;border:0;margin-top:10px;}
+#mapFrame{width:100%;height:350px;border:0;margin-top:10px;}
 </style>
 </head>
 
 <body>
 
-<h2>🚍 PRO MAX rendszer</h2>
+<h2>🚍 FUTÁR jellegű rendszer</h2>
 
 <button onclick="start()">▶ Indítás</button>
 
-<!-- térkép gombok -->
-<button onclick="loadMap('osm')">🗺️ OSM</button>
-<button onclick="loadMap('cycle')">🚴 Kerékpár</button>
-<button onclick="loadMap('topo')">⛰️ Topo</button>
-<button onclick="loadMap('sat')">🛰️ Műhold</button>
-<button onclick="loadMap('brouter')">🧭 Útvonal (BRouter)</button>
+<button onclick="loadMap('osm')">🗺️</button>
+<button onclick="loadMap('brouter')">🧭</button>
 
-<input id="search" placeholder="Megálló keresés..." oninput="render()">
+<input id="search" placeholder="Megálló..." oninput="render()">
 
 <div id="status"></div>
 <div id="location" class="card"></div>
@@ -75,37 +71,59 @@ function dist(a,b,c,d){
  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ===== OSM MEGÁLLÓK (EZ A VARÁZSLAT)
+// ===== IDŐ
+function getMin(t){
+ const now=new Date();
+ const [h,m]=t.split(":").map(Number);
+ return (h*60+m)-(now.getHours()*60+now.getMinutes());
+}
+
+// ===== OSM STOP
 async function loadStops(){
  const query = `
  [out:json];
  node(around:1500,${userLat},${userLon})["highway"="bus_stop"];
  out;
  `;
- const res = await fetch("https://overpass-api.de/api/interpreter",{
-  method:"POST",
-  body:query
- });
+ const res = await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:query});
  const data = await res.json();
 
  return data.elements.map(e=>({
-  name:e.tags.name || "Ismeretlen megálló",
+  name:e.tags.name || "Megálló",
   lat:e.lat,
   lon:e.lon
  }));
 }
 
+// ===== DEMO MENETREND GENERÁTOR (okos)
+function generateTimes(){
+
+ const now = new Date();
+ let list=[];
+
+ for(let i=1;i<=6;i++){
+  let t=new Date(now.getTime()+i*5*60000);
+  let h=String(t.getHours()).padStart(2,"0");
+  let m=String(t.getMinutes()).padStart(2,"0");
+
+  list.push({
+   line:["134","34","160","H5"][Math.floor(Math.random()*4)],
+   dest:["Batthyány tér","Óbuda","Nyugati","Békásmegyer"][Math.floor(Math.random()*4)],
+   time:`${h}:${m}`,
+   trip:"TR"+Math.floor(Math.random()*9999)
+  });
+ }
+ return list;
+}
+
 // ===== MAP
 function loadMap(type){
- let url="";
-
- if(type==="osm") url=`https://www.openstreetmap.org/export/embed.html?bbox=${userLon-0.01},${userLat-0.01},${userLon+0.01},${userLat+0.01}`;
- if(type==="cycle") url=`https://www.openstreetmap.org/export/embed.html?layer=cyclemap`;
- if(type==="topo") url=`https://www.openstreetmap.org/export/embed.html?layer=topo`;
- if(type==="sat") url=`https://www.openstreetmap.org/export/embed.html?layer=mapnik`;
- if(type==="brouter") url=`https://brouter.de/brouter-web/#map=14/${userLat}/${userLon}/standard`;
-
- document.getElementById("mapFrame").src=url;
+ if(type==="osm"){
+  mapFrame.src=`https://www.openstreetmap.org/export/embed.html?bbox=${userLon-0.01},${userLat-0.01},${userLon+0.01},${userLat+0.01}`;
+ }
+ if(type==="brouter"){
+  mapFrame.src=`https://brouter.de/brouter-web/#map=14/${userLat}/${userLon}/standard`;
+ }
 }
 
 // ===== RENDER
@@ -114,10 +132,9 @@ let stops=[];
 async function render(){
 
  const q = document.getElementById("search").value.toLowerCase();
-
  const addr = await getAddress(userLat,userLon);
 
- document.getElementById("location").innerHTML = `
+ document.getElementById("location").innerHTML=`
  📍 ${userLat.toFixed(6)}, ${userLon.toFixed(6)}<br>
  🎯 ±${Math.round(userAcc)} m<br>
  🏠 ${addr}
@@ -136,8 +153,25 @@ async function render(){
 
   html+=`<div class="card">
   🚏 <b>${s.name}</b><br>
-  📏 ${Math.round(s.d)} m
-  </div>`;
+  📏 ${Math.round(s.d)} m<br>`;
+
+  let times = generateTimes();
+
+  times.forEach(t=>{
+   let min=getMin(t.time);
+
+   let c="";
+   if(min<2)c="red";
+   else if(min>10)c="blue";
+
+   html+=`<div class="${c}">
+   🚍 <b>${t.line}</b> → ${t.dest}<br>
+   ⏰ ${t.time} (${min} perc)<br>
+   <span class="small">Trip: ${t.trip}</span>
+   </div>`;
+  });
+
+  html+="</div>";
  });
 
  document.getElementById("list").innerHTML=html;
@@ -146,10 +180,10 @@ async function render(){
 // ===== START
 async function start(){
  await getLocation();
- document.getElementById("status").innerText="Megállók betöltése...";
+ document.getElementById("status").innerText="Betöltés...";
  stops = await loadStops();
- document.getElementById("status").innerText="✔ Kész";
  loadMap("osm");
+ document.getElementById("status").innerText="✔ Fut";
  render();
 }
 
@@ -158,3 +192,4 @@ async function start(){
 </body>
 </html>
 ```
+
