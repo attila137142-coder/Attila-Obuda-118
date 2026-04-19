@@ -3,7 +3,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚍 Valódi Menetrend PRO</title>
+<title>🚍 Attila Közlekedés PRO</title>
 
 <style>
 body{background:#000;color:#FFD700;font-family:Arial;padding:10px;}
@@ -11,19 +11,21 @@ body{background:#000;color:#FFD700;font-family:Arial;padding:10px;}
 .red{color:#ff4d4d;} .blue{color:#4db8ff;}
 .small{font-size:12px;opacity:0.7;}
 </style>
-</head>
 
+</head>
 <body>
 
-<h2>🚍 Valódi indulások</h2>
+<h2>🚍 Valódi megállós indulások</h2>
+
 <button onclick="start()">▶ Indítás</button>
 
-<div id="status">Várakozás...</div>
+<div id="status">Indítás...</div>
+<div id="location" class="card"></div>
 <div id="list"></div>
 
 <script>
 
-// ===== MINI „VALÓDI” ADAT (ILYET FOGSZ CSINÁLNI GTFS-BŐL)
+// ===== "GTFS JSON" (MINTA - EZT CSERÉLJÜK KÉSŐBB!)
 const DATA = [
 {
  stop:"Nád utca",
@@ -47,16 +49,31 @@ const DATA = [
 ];
 
 // ===== GPS
-let userLat,userLon;
+let userLat,userLon,userAcc;
 
+// ===== HELY
 function getLocation(){
  return new Promise((res,rej)=>{
   navigator.geolocation.getCurrentPosition(p=>{
    userLat=p.coords.latitude;
    userLon=p.coords.longitude;
+   userAcc=p.coords.accuracy;
    res();
   },rej);
  });
+}
+
+// ===== CÍM (SZÉTBONTVA)
+async function getAddress(lat,lon){
+ try{
+  const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+  const data = await res.json();
+  const a = data.address || {};
+
+  return `${a.country||""} → ${a.city||a.town||""} → ${a.road||""} ${a.house_number||""}`;
+ }catch{
+  return "Cím nem elérhető";
+ }
 }
 
 // ===== TÁVOLSÁG
@@ -78,7 +95,16 @@ function getMin(t){
 }
 
 // ===== RENDER
-function render(){
+async function render(){
+
+ const addr = await getAddress(userLat,userLon);
+
+ document.getElementById("location").innerHTML = `
+ 📍 Saját hely<br>
+ 🌐 ${userLat.toFixed(6)}, ${userLon.toFixed(6)}<br>
+ 🎯 Pontosság: ±${Math.round(userAcc)} m<br>
+ 🏠 ${addr}
+ `;
 
  let near = DATA.map(s=>{
   return {...s,d:dist(userLat,userLon,s.lat,s.lon)};
@@ -128,4 +154,3 @@ async function start(){
 </body>
 </html>
 ```
-
