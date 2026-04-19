@@ -1,78 +1,63 @@
+```html
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🗺 Attila Térkép PRO FULL</title>
+<title>🚏 Megállók 2km PRO</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body{margin:0;background:#000;color:#FFD700;font-family:Arial;}
-#map{height:180vh;}
-#panel{height:20vh;background:#111;padding:16px;font-size:28px;overflow:auto;}
-
-/* erősebb feliratok */
-.leaflet-tile{
-  filter: contrast(1.3) brightness(1.1) saturate(1.1);
-}
-.leaflet-container{
-  text-shadow:0 0 4px #000,0 0 8px #000;
-}
+body{background:#000;color:#FFD700;font-family:Arial;padding:10px;}
+button{padding:10px;margin:5px;border-radius:10px;}
+.card{background:#111;padding:10px;margin-top:10px;border-radius:10px;}
+.red{color:#ff4d4d;} .blue{color:#4db8ff;}
 </style>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 </head>
 
 <body>
 
-<div id="map"></div>
-<div id="panel">GPS indul...</div>
+<h2>🚏 2km-en belüli megállók</h2>
+
+<button onclick="start()">▶ Indítás</button>
+
+<div id="status">Várakozás...</div>
+<div id="list"></div>
 
 <script>
 
-let map = L.map('map').setView([47.5,19.05], 13);
+const PROXY = "https://attila-obuda-118.vercel.app/api/gtfs";
 
-// 🌍 TOPO
-L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{
- maxZoom:17
-}).addTo(map);
+let stops=[], stopTimes=[], trips=[];
+let stopMap={}, tripMap={};
 
-// 🔴 piros pont ikon
-const redIcon = L.divIcon({
- html:'<div style="width:14px;height:14px;background:red;border-radius:50%;border:2px solid white;"></div>',
- iconSize:[18,18]
-});
+let userLat=null,userLon=null;
 
-let marker=null;
-let circle=null;
-
-// 🌍 cím lekérés
-let lastAddress="...";
-let lastTime=0;
-
-async function getAddress(lat,lon){
- if(Date.now()-lastTime<5000) return lastAddress;
- lastTime=Date.now();
- try{
-  const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-  const d = await r.json();
-  const a=d.address||{};
-  lastAddress =
-   (a.country||"")+", "+
-   (a.city||a.town||a.village||"")+", "+
-   (a.road||"erdő")+" "+
-   (a.house_number||"");
-  return lastAddress;
- }catch{
-  return "cím nincs";
- }
+// ===== GPS
+function getLocation(){
+ return new Promise((res,rej)=>{
+  navigator.geolocation.getCurrentPosition(p=>{
+   userLat=p.coords.latitude;
+   userLon=p.coords.longitude;
+   res();
+  },rej);
+ });
 }
 
-// 📈 lejtés %
-let lastAlt=null;
-let lastLat=null,lastLon=null;
+// ===== CSV
+function parseCSV(txt){
+ const rows=txt.split("\\n").filter(r=>r.trim());
+ const h=rows[0].split(",");
+ return rows.slice(1).map(r=>{
+  const c=r.split(",");
+  let o={};
+  h.forEach((x,i)=>o[x]=c[i]);
+  return o;
+ });
+}
 
-function distance(a,b,c,d){
+// ===== TÁVOLSÁG
+function dist(a,b,c,d){
  const R=6371e3;
  const dLat=(c-a)*Math.PI/180;
  const dLon=(d-b)*Math.PI/180;
@@ -82,69 +67,90 @@ function distance(a,b,c,d){
  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-async function updateGPS(){
+// ===== BETÖLTÉS
+async function loadGTFS(){
+ document.getElementById("status").innerText="GTFS betöltés...";
+ const res = await fetch(PROXY);
+ const blob = await res.blob();
+ const zip = await JSZip.loadAsync(blob);
 
- navigator.geolocation.getCurrentPosition(async pos=>{
+ stops = parseCSV(await zip.file("stops.txt").async("string"));
+ stopTimes = parseCSV(await zip.file("stop_times.txt").async("string"));
+ trips = parseCSV(await zip.file("trips.txt").async("string"));
 
-  let lat=pos.coords.latitude;
-  let lon=pos.coords.longitude;
-  let acc=pos.coords.accuracy;
-  let speed=pos.coords.speed||0;
-  let heading=pos.coords.heading||0;
-  let alt=pos.coords.altitude;
+ trips.forEach(t=>tripMap[t.trip_id]=t);
 
-  // marker
-  if(!marker){
-   marker=L.marker([lat,lon],{icon:redIcon}).addTo(map);
-  }else{
-   marker.setLatLng([lat,lon]);
-  }
-
-  // pontosság kör
-  if(circle) map.removeLayer(circle);
-  circle=L.circle([lat,lon],{
-   radius:acc,
-   color:'yellow',
-   fillOpacity:0.15
-  }).addTo(map);
-
-  map.setView([lat,lon],15);
-
-  // cím
-  const addr = await getAddress(lat,lon);
-
-  // lejtés számítás
-  let slope="--";
-  if(lastAlt!==null && alt!==null){
-   const dist = distance(lastLat,lastLon,lat,lon);
-   if(dist>2){
-    slope = ((alt-lastAlt)/dist*100).toFixed(1);
-   }
-  }
-
-  lastAlt=alt;
-  lastLat=lat;
-  lastLon=lon;
-
-  document.getElementById("panel").innerHTML=`
-  📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>
-  🏠 ${addr}<br>
-  🎯 Pontosság: ±${Math.round(acc)} m<br>
-  🚶 ${(speed*3.6).toFixed(1)} km/h | ${speed.toFixed(2)} m/s<br>
-  🧭 ${Math.round(heading)}°<br>
-  ⛰️ Lejtés: ${slope} %
-  `;
-
- },e=>{
-  document.getElementById("panel").innerText="GPS hiba: "+e.message;
+ stopTimes.forEach(st=>{
+  if(!stopMap[st.stop_id]) stopMap[st.stop_id]=[];
+  stopMap[st.stop_id].push(st);
  });
 
+ document.getElementById("status").innerText="GTFS OK";
 }
 
-setInterval(updateGPS,6000);
-updateGPS();
+// ===== LISTA
+function render(){
+
+ let now=new Date();
+ let cur=now.getHours()*60+now.getMinutes();
+
+ let near = stops.map(s=>{
+  return {...s,d:dist(userLat,userLon,+s.stop_lat,+s.stop_lon)};
+ })
+ .filter(s=>s.d<=2000)
+ .sort((a,b)=>a.d-b.d)
+ .slice(0,6);
+
+ let html="";
+
+ near.forEach(s=>{
+
+  let list = stopMap[s.stop_id]||[];
+  let next=[];
+
+  list.slice(0,40).forEach(st=>{
+   let [h,m]=st.arrival_time.split(":").map(Number);
+   h=h%24;
+   let min=(h*60+m)-cur;
+   if(min<0||min>120) return;
+
+   let trip=tripMap[st.trip_id];
+   if(!trip) return;
+
+   next.push({line:trip.route_id,time:min});
+  });
+
+  next.sort((a,b)=>a.time-b.time);
+
+  html+=`<div class="card">
+  📍 ${s.stop_name} (${Math.round(s.d)} m)<br>`;
+
+  next.slice(0,5).forEach(n=>{
+   let c="";
+   if(n.time<2)c="red";
+   else if(n.time>10)c="blue";
+   html+=`<div class="${c}">🚍 ${n.line} | ${n.time} perc</div>`;
+  });
+
+  html+="</div>";
+ });
+
+ document.getElementById("list").innerHTML=html;
+}
+
+// ===== START
+async function start(){
+ try{
+  await getLocation();
+  await loadGTFS();
+  render();
+ }catch(e){
+  document.getElementById("status").innerText="Hiba: "+e.message;
+ }
+}
 
 </script>
 
 </body>
 </html>
+```
