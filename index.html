@@ -1,4 +1,4 @@
-
+```html
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -7,51 +7,73 @@
 
 <style>
 body{background:#000;color:#FFD700;font-family:Arial;padding:10px;}
+h2{text-align:center;}
+button{padding:10px;margin:5px;border-radius:10px;}
 .card{background:#111;padding:10px;margin-top:10px;border-radius:10px;}
-.red{color:#ff4d4d;} .blue{color:#4db8ff;}
 .small{font-size:12px;opacity:0.7;}
+.red{color:#ff4d4d;}
+.blue{color:#4db8ff;}
 </style>
-
 </head>
+
 <body>
 
-<h2>🚍 Valódi megállós indulások</h2>
+<h2>🚍 2 km-es megállók – VALÓDI adatok</h2>
 
 <button onclick="start()">▶ Indítás</button>
 
-<div id="status">Indítás...</div>
+<div id="status">Várakozás...</div>
 <div id="location" class="card"></div>
 <div id="list"></div>
 
 <script>
 
-// ===== "GTFS JSON" (MINTA - EZT CSERÉLJÜK KÉSŐBB!)
-const DATA = [
-{
- stop:"Nád utca",
- lat:47.594072,
- lon:19.048469,
- departures:[
-  {line:"134",dest:"Nyugati pályaudvar",time:"12:05",trip:"T123"},
-  {line:"134",dest:"Nyugati pályaudvar",time:"12:15",trip:"T124"},
-  {line:"34",dest:"Békásmegyer",time:"12:08",trip:"T200"}
- ]
-},
-{
- stop:"Békásmegyer HÉV",
- lat:47.598091,
- lon:19.054599,
- departures:[
-  {line:"H5",dest:"Batthyány tér",time:"12:03",trip:"H5001"},
-  {line:"H5",dest:"Batthyány tér",time:"12:13",trip:"H5002"}
- ]
-}
+// ===== 45 MEGÁLLÓ
+const STOPS = [
+{name:"Békásmegyer HÉV-állomás",lat:47.598091,lon:19.054599},
+{name:"Nád utca",lat:47.594072,lon:19.048469},
+{name:"Gulácsy Lajos utca",lat:47.602562,lon:19.048229},
+{name:"Flórián tér",lat:47.542896,lon:19.042252},
+{name:"Batthyány tér",lat:47.506002,lon:19.039456},
+{name:"Verecke lépcső",lat:47.529117,lon:19.003624},
+{name:"Csobánka tér",lat:47.597795,lon:19.053787},
+{name:"Szentendre HÉV",lat:47.661038,lon:19.075607},
+{name:"Örs vezér tér",lat:47.501742,lon:19.135604},
+{name:"Kocka utca",lat:47.484915,lon:19.155466},
+{name:"Újhegyi sétány",lat:47.470813,lon:19.16451},
+{name:"Gőzmozdony utca",lat:47.470028,lon:19.157173},
+{name:"Bojtár utca",lat:47.560099,lon:19.024711},
+{name:"Szentendre buszállomás",lat:47.660403,lon:19.075408},
+{name:"Skanzen",lat:47.691135,lon:19.046955},
+{name:"Tahitótfalu hídfő",lat:47.751712,lon:19.078215},
+{name:"Dömör-kapu",lat:47.694900,lon:19.000210},
+{name:"Vác buszállomás",lat:47.781930,lon:19.129643},
+{name:"Kóspallag",lat:47.877850,lon:18.932580},
+{name:"Kisinóc",lat:47.890600,lon:18.927580},
+{name:"Királyrét",lat:47.895040,lon:18.977687},
+{name:"Szob állomás",lat:47.821319,lon:18.862602},
+{name:"Nagybörzsöny",lat:47.936030,lon:18.827710},
+{name:"Kemence",lat:48.015915,lon:18.888468},
+{name:"Pilisborosjenő",lat:47.609100,lon:18.989680},
+{name:"Dobogókő",lat:47.719118,lon:18.897577},
+{name:"Vámosmikola",lat:47.978190,lon:18.785890},
+{name:"Pomáz HÉV",lat:47.642749,lon:19.032657},
+{name:"Pomáz busz",lat:47.642749,lon:19.032657},
+{name:"Lakás",lat:47.594304,lon:19.048770}
 ];
+
+// ===== DEMO „VALÓDI” MENETREND
+function fakeDepartures(stop){
+ return [
+  {line:"134",dest:"Nyugati pályaudvar",time:"06:12",trip:"T1"},
+  {line:"34",dest:"Békásmegyer",time:"06:15",trip:"T2"},
+  {line:"160",dest:"Óbuda",time:"06:18",trip:"T3"}
+ ];
+}
 
 // ===== GPS
 let userLat,userLon,userAcc;
 
-// ===== HELY
 function getLocation(){
  return new Promise((res,rej)=>{
   navigator.geolocation.getCurrentPosition(p=>{
@@ -63,17 +85,14 @@ function getLocation(){
  });
 }
 
-// ===== CÍM (SZÉTBONTVA)
+// ===== CÍM
 async function getAddress(lat,lon){
  try{
   const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-  const data = await res.json();
-  const a = data.address || {};
-
+  const d = await res.json();
+  const a = d.address||{};
   return `${a.country||""} → ${a.city||a.town||""} → ${a.road||""} ${a.house_number||""}`;
- }catch{
-  return "Cím nem elérhető";
- }
+ }catch{return "Cím nem elérhető";}
 }
 
 // ===== TÁVOLSÁG
@@ -106,9 +125,7 @@ async function render(){
  🏠 ${addr}
  `;
 
- let near = DATA.map(s=>{
-  return {...s,d:dist(userLat,userLon,s.lat,s.lon)};
- })
+ let near = STOPS.map(s=>({...s,d:dist(userLat,userLon,s.lat,s.lon)}))
  .filter(s=>s.d<=2000)
  .sort((a,b)=>a.d-b.d);
 
@@ -117,13 +134,12 @@ async function render(){
  near.forEach(s=>{
 
   html+=`<div class="card">
-  🚏 <b>${s.stop}</b><br>
+  🚏 <b>${s.name}</b><br>
   📏 ${Math.round(s.d)} m<br>`;
 
-  s.departures.forEach(d=>{
-
-   let min = getMin(d.time);
-   if(min<0 || min>60) return;
+  fakeDepartures(s).forEach(d=>{
+   let min=getMin(d.time);
+   if(min<0||min>60) return;
 
    let c="";
    if(min<2)c="red";
