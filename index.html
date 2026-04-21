@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila PRO NAV</title>
+<title>PRO NAV + SRTM</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -16,11 +16,14 @@ body { margin:0; font-family:Arial; }
  left:10px;
  background:white;
  padding:10px;
- width:350px;
+ width:360px;
+ z-index:1000;
  max-height:90vh;
  overflow:auto;
- z-index:1000;
 }
+
+canvas { width:100%; height:120px; }
+button { width:100%; margin-top:5px; }
 </style>
 </head>
 
@@ -31,16 +34,21 @@ body { margin:0; font-family:Arial; }
 <h3>📍 Hely</h3>
 <div id="loc"></div>
 
-<h3>🔎 Kereső</h3>
+<h3>🗺️ Térképek</h3>
+<button onclick="setOSM()">Alap</button>
+<button onclick="setTopo()">Turista (Topo)</button>
+<button onclick="setRail()">Vasút</button>
+
+<h3>🔎 Keresés</h3>
 <input id="search">
 <button onclick="search()">Keres</button>
-<button onclick="route()">🚗 Útvonal</button>
+<button onclick="route()">🚗 Útvonal + szint</button>
 
-<h3>🚏 Megállók</h3>
-<div id="stops"></div>
+<h3>📊 Szintprofil</h3>
+<canvas id="chart"></canvas>
 
-<h3>📊 Adatok</h3>
-<div id="info"></div>
+<h3>📍 POI</h3>
+<div id="poi"></div>
 
 </div>
 
@@ -53,27 +61,26 @@ body { margin:0; font-family:Arial; }
 // MAP
 let map = L.map('map').setView([47.5,19.04],13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png').addTo(map);
+let osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+let topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+let rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png');
+
+osm.addTo(map);
+
+function setOSM(){ map.eachLayer(l=>map.removeLayer(l)); osm.addTo(map); }
+function setTopo(){ map.eachLayer(l=>map.removeLayer(l)); topo.addTo(map); }
+function setRail(){ map.eachLayer(l=>map.removeLayer(l)); rail.addTo(map); }
 
 let user, target;
-let stopLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
 
 // HELY
-navigator.geolocation.getCurrentPosition(async pos=>{
+navigator.geolocation.getCurrentPosition(pos=>{
 
- user = [pos.coords.latitude, pos.coords.longitude];
+ user = [pos.coords.latitude,pos.coords.longitude];
 
  map.setView(user,14);
  L.marker(user).addTo(map);
-
- let r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user[0]}&lon=${user[1]}`);
- let d = await r.json();
-
- document.getElementById("loc").innerHTML = d.display_name;
-
- loadStops();
 
 });
 
@@ -85,117 +92,68 @@ async function search(){
  let r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
  let d = await r.json();
 
- if(!d.length) return alert("NINCS TALÁLAT");
-
- target = [parseFloat(d[0].lat), parseFloat(d[0].lon)];
+ target = [parseFloat(d[0].lat),parseFloat(d[0].lon)];
 
  map.setView(target,15);
  L.marker(target).addTo(map);
 
 }
 
-// 🚏 MEGÁLLÓK (ROBUST CSV!)
-async function loadStops(){
-
- let res = await fetch("stops.txt");
- let text = await res.text();
-
- let lines = text.split("\n");
-
- let stops=[];
-
- for(let i=1;i<lines.length;i++){
-
-  let row = lines[i];
-
-  // CSV kezelés idézőjellel
-  let cols = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-
-  if(!cols || cols.length<6) continue;
-
-  let lat = parseFloat(cols[4]);
-  let lon = parseFloat(cols[5]);
-
-  if(isNaN(lat)) continue;
-
-  let d = map.distance(user,[lat,lon]);
-
-  stops.push({
-   id:cols[0],
-   name:cols[2].replace(/"/g,""),
-   lat,lon,dist:d
-  });
- }
-
- stops.sort((a,b)=>a.dist-b.dist);
-
- stopLayer.clearLayers();
-
- let html="";
-
- stops.slice(0,10).forEach(s=>{
-
-  html += `${s.name} – ${Math.round(s.dist)} m<br>`;
-
-  L.circleMarker([s.lat,s.lon],{radius:5})
-   .addTo(stopLayer)
-   .bindPopup(`${s.name}<br>${s.id}<br>${Math.round(s.dist)} m`);
-
- });
-
- document.getElementById("stops").innerHTML = html;
-
-}
-
-// 🚗 ÚTVONAL + SZAKASZOK
+// 🚗 ÚTVONAL + SRTM
 async function route(){
 
- if(!target) return alert("Adj célt!");
+ if(!target) return;
 
  let url = `https://router.project-osrm.org/route/v1/driving/${user[1]},${user[0]};${target[1]},${target[0]}?overview=full&geometries=geojson`;
 
  let r = await fetch(url);
  let data = await r.json();
 
- let route = data.routes[0];
-
- let coords = route.geometry.coordinates.map(c=>[c[1],c[0]]);
+ let coords = data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
 
  routeLayer.clearLayers();
-
  L.polyline(coords,{color:"blue"}).addTo(routeLayer);
 
- // 📏 LÉGI
- let air = map.distance(user,target);
+ let elevations = [];
 
- // 📏 SZAKASZOK
- let segments = [];
+ // 🌄 SRTM API (Open Elevation)
+ for(let c of coords.slice(0,30)){ // limit API miatt
 
- for(let i=1;i<coords.length;i++){
+  let e = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${c[0]},${c[1]}`);
+  let d = await e.json();
 
-  let d = map.distance(coords[i-1],coords[i]);
-
-  let slope = (Math.random()*6-3); // demo %
-
-  segments.push({
-   dist:d,
-   slope:slope
-  });
+  elevations.push(d.results[0].elevation);
 
  }
 
- // KIÍRÁS
- let html = `
- Légvonal: ${(air/1000).toFixed(2)} km<br>
- Közút: ${(route.distance/1000).toFixed(2)} km<br><br>
- <b>Szakaszok:</b><br>
- `;
+ drawChart(elevations);
 
- segments.slice(0,10).forEach((s,i)=>{
-  html += `${i+1}. ${Math.round(s.dist)} m | ${s.slope.toFixed(1)} %<br>`;
+}
+
+// 📊 GRAFIKON
+function drawChart(data){
+
+ let canvas = document.getElementById("chart");
+ let ctx = canvas.getContext("2d");
+
+ ctx.clearRect(0,0,400,200);
+
+ let max = Math.max(...data);
+ let min = Math.min(...data);
+
+ ctx.beginPath();
+
+ data.forEach((v,i)=>{
+
+  let x = i*10;
+  let y = 100 - ((v-min)/(max-min))*100;
+
+  ctx.lineTo(x,y+100);
+
  });
 
- document.getElementById("info").innerHTML = html;
+ ctx.strokeStyle="green";
+ ctx.stroke();
 
 }
 
