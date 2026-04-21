@@ -2,136 +2,133 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>3. rész – Valós járműkövetés</title>
+<title>Attila Közlekedés STABIL</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{
- font-family:Arial;
- background:#111;
- color:#0f0;
- padding:20px;
-}
-code{
- display:block;
- background:#000;
- padding:10px;
- margin:10px 0;
- border:1px solid #0f0;
-}
-h1,h2{color:#0f0;}
+body{background:black;color:#0f0;text-align:center;font-family:Arial;}
+#kmh{font-size:70px;text-shadow:0 0 20px #0f0;}
+#ms{font-size:24px;}
+#coords,#alt,#cim,#tav{color:cyan;margin:8px;font-size:18px;}
+#map{height:500px;}
+section{border:2px solid #0f0;margin:20px;padding:20px;}
+input,button{padding:8px;margin:5px;}
 </style>
 </head>
 
 <body>
 
-<h1>🚆 3. rész – Valós járműkövetés (FUTÁR szint)</h1>
+<h1>🚌 Attila Közlekedés</h1>
 
-<h2>1. Mi az a GTFS-RT?</h2>
-<p>Valós idejű adat: jármű helyzet, késés, mozgás.</p>
+<section>
+<div id="kmh">0 km/h</div>
+<div id="ms">0 m/s</div>
+<div id="coords">-</div>
+<div id="alt">-</div>
+<div id="cim">-</div>
+<div id="tav">Távolság: -</div>
+</section>
 
-<ul>
-<li>Vehicle Positions → hol van a jármű</li>
-<li>Trip Updates → késések</li>
-<li>Alerts → rendkívüli események</li>
-</ul>
+<section>
+<input id="kereso" placeholder="Hely keresése">
+<button onclick="keres()">Keresés</button>
+</section>
 
----
+<div id="map"></div>
 
-<h2>2. Fontos igazság</h2>
-<p>
-❗ A legtöbb szolgáltató (BKK, MÁV) nem ad teljes nyílt hozzáférést.<br>
-👉 ezért proxy vagy saját feldolgozás kell.
-</p>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
----
+<script>
 
-<h2>3. Alap működés</h2>
+var map=L.map('map').setView([47.49,19.04],15);
 
-<code>
-// lekérés
-fetch("API_URL")
- .then(r=>r.json())
- .then(data=>{
-  console.log(data);
- });
-</code>
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
----
+let marker=L.circleMarker([47.49,19.04],{radius:8,color:'red'}).addTo(map);
 
-<h2>4. Jármű marker térképen</h2>
+let elozoPoz=null;
+let elozoIdo=null;
+let aktualisPoz=null;
 
-<code>
-let bus = L.marker([47.5,19.04]).addTo(map);
-</code>
-
----
-
-<h2>5. Mozgás (FRISSÍTÉS)</h2>
-
-<code>
-setInterval(async ()=>{
-
- let res = await fetch("adat.json");
- let data = await res.json();
-
- bus.setLatLng([data.lat, data.lon]);
-
-}, 5000);
-</code>
-
-<p>👉 5 másodpercenként frissül</p>
-
----
-
-<h2>6. Saját „mini FUTÁR” logika</h2>
-
-<code>
-vehicles.forEach(v=>{
- L.marker([v.lat,v.lon])
-  .bindPopup(v.line)
-  .addTo(map);
-});
-</code>
-
----
-
-<h2>7. Késés megjelenítés</h2>
-
-<code>
-if(v.delay > 60){
- color = "red";
+// cím
+function cimKeres(lat,lon){
+fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
+.then(r=>r.json())
+.then(d=>{
+if(d.display_name){
+document.getElementById("cim").innerText=d.display_name;
 }
-</code>
+});
+}
 
----
+// keresés
+function keres(){
+let q=document.getElementById("kereso").value;
 
-<h2>8. PRO TIPP</h2>
+fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`)
+.then(r=>r.json())
+.then(d=>{
+if(d.length>0){
+let lat=parseFloat(d[0].lat);
+let lon=parseFloat(d[0].lon);
 
-<ul>
-<li>Ne tölts túl sok adatot egyszerre</li>
-<li>Frissítés 5–10 mp</li>
-<li>Használj layerGroup-ot</li>
-</ul>
+map.setView([lat,lon],15);
+L.marker([lat,lon]).addTo(map);
 
----
+if(aktualisPoz){
+let tav=map.distance(aktualisPoz,[lat,lon]);
 
-<h2>9. Valóság (amit tudni kell)</h2>
+document.getElementById("tav").innerText=
+"Légvonal: "+tav.toFixed(0)+" m ("+(tav/1000).toFixed(2)+" km)";
+}
+}
+});
+}
 
-<p>
-✔ működik → ha van API<br>
-❌ nem működik → ha nincs hozzáférés
-</p>
+// GPS
+navigator.geolocation.watchPosition(function(pos){
 
----
+let lat=pos.coords.latitude;
+let lon=pos.coords.longitude;
+let alt=pos.coords.altitude;
+let acc=pos.coords.accuracy;
 
-<h2>10. Összegzés</h2>
+aktualisPoz=[lat,lon];
 
-<ul>
-<li>✔ jármű mozgás</li>
-<li>✔ élő frissítés</li>
-<li>✔ FUTÁR alap</li>
-</ul>
+document.getElementById("coords").innerText=
+lat.toFixed(5)+","+lon.toFixed(5)+" (±"+acc.toFixed(0)+"m)";
 
+document.getElementById("alt").innerText=
+(alt?alt.toFixed(0):"N/A")+" m";
+
+marker.setLatLng([lat,lon]);
+map.setView([lat,lon]);
+
+let most=Date.now();
+
+if(elozoPoz){
+let tav=map.distance(elozoPoz,[lat,lon]);
+let ido=(most-elozoIdo)/1000;
+
+if(tav>2 && ido>0){
+let ms=tav/ido;
+let kmh=ms*3.6;
+
+document.getElementById("kmh").innerText=kmh.toFixed(1)+" km/h";
+document.getElementById("ms").innerText=ms.toFixed(2)+" m/s";
+}
+}
+
+elozoPoz=[lat,lon];
+elozoIdo=most;
+
+cimKeres(lat,lon);
+
+},{
+enableHighAccuracy:true
+});
+
+</script>
 </body>
 </html>
-
