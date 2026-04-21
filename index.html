@@ -2,9 +2,11 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚍 Attila PRO FUTÁR+</title>
+<title>🚍 Attila PRO rendszer</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body{margin:0;background:#000;color:#FFD700;font-family:Arial;}
@@ -12,189 +14,179 @@ body{margin:0;background:#000;color:#FFD700;font-family:Arial;}
 .panel{padding:10px;}
 .card{background:#111;padding:10px;margin-top:10px;border-radius:10px;}
 button{padding:10px;margin:5px;border-radius:10px;}
-input{padding:10px;width:100%;margin-top:5px;border-radius:10px;}
-iframe{width:100%;height:300px;border:0;margin-top:10px;}
+.row{display:flex;justify-content:space-between;border-bottom:1px solid #333;padding:5px;}
 .red{color:#ff4d4d;}
+.blue{color:#4db8ff;}
+.small{font-size:12px;}
 </style>
 </head>
 
 <body>
 
-<h2 style="text-align:center;">🚍 PRO FUTÁR+</h2>
+<h2 style="text-align:center;">🚍 Attila PRO</h2>
 
 <div id="map"></div>
 
 <div class="panel">
 
 <button onclick="getLocation()">📍 GPS</button>
-<button onclick="exportPDF()">📄 PDF</button>
-
-<input id="search" placeholder="Cím / hely keresés...">
-
-<!-- külső rendszerek -->
-<button onclick="openMap('bkk')">🚍 BKK FUTÁR</button>
-<button onclick="openMap('mav')">🚆 Vonat térkép</button>
-<button onclick="openMap('rt')">🌍 RealTime</button>
-<button onclick="openMap('volan')">🚌 Utas.hu</button>
+<button onclick="loadStops()">🚏 Megállók</button>
+<button onclick="showFavorites()">⭐ Kedvencek</button>
+<button onclick="openAnalyzer()">📊 Vonal elemző</button>
+<button onclick="showSignal()">📶 Térerő</button>
 
 <div id="info" class="card"></div>
-<div id="places" class="card"></div>
 <div id="stops" class="card"></div>
+<div id="analyzer" class="card" style="display:none"></div>
+<div id="signal" class="card" style="display:none"></div>
 
 </div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <script>
 
 // ===== MAP
 var map = L.map('map').setView([47.4979,19.0402],13);
 
-var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.8}).addTo(map);
 
-var rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.9});
-var tourist = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
-var road = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png');
-
-osm.addTo(map);
-
-L.control.layers(
- {"OSM":osm,"Topo":topo},
- {"Vasút":rail,"Turista":tourist,"Közút":road}
-).addTo(map);
-
-// ===== GLOBAL
-let marker,path=[];
-let minAcc=9999,maxAcc=0;
+let userLat,userLon,marker;
 
 // ===== GPS
 function getLocation(){
- navigator.geolocation.watchPosition(async pos=>{
+navigator.geolocation.getCurrentPosition(pos=>{
+userLat=pos.coords.latitude;
+userLon=pos.coords.longitude;
 
-  let lat=pos.coords.latitude;
-  let lon=pos.coords.longitude;
-  let acc=pos.coords.accuracy;
-  let speed=(pos.coords.speed||0)*3.6;
-  let alt=pos.coords.altitude||0;
+if(marker) map.removeLayer(marker);
 
-  minAcc=Math.min(minAcc,acc);
-  maxAcc=Math.max(maxAcc,acc);
+marker=L.circleMarker([userLat,userLon],{
+radius:8,color:'red'
+}).addTo(map);
 
-  if(marker) map.removeLayer(marker);
-  marker=L.circleMarker([lat,lon],{radius:8,color:'red'}).addTo(map);
+map.setView([userLat,userLon],15);
 
-  map.setView([lat,lon],15);
+let speed = pos.coords.speed ? (pos.coords.speed*3.6).toFixed(1) : 0;
+let acc = pos.coords.accuracy;
 
-  path.push([lat,lon]);
-  if(path.length>1){
-   L.polyline(path,{color:'yellow'}).addTo(map);
-  }
-
-  let addr = await getAddress(lat,lon);
-
-  document.getElementById("info").innerHTML=`
-  📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>
-  🏠 ${addr}<br>
-  ⛰️ ${alt.toFixed(1)} m<br>
-  🎯 ±${Math.round(acc)} m<br>
-  📉 Min:${Math.round(minAcc)} | 📈 Max:${Math.round(maxAcc)} m<br>
-  🚶 ${speed.toFixed(1)} km/h (${(speed/3.6).toFixed(2)} m/s)
-  `;
-
-  loadNearby(lat,lon);
-  loadStops(lat,lon);
-
- });
+document.getElementById("info").innerHTML=`
+📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}<br>
+🎯 Pontosság: ±${Math.round(acc)} m<br>
+🚀 Sebesség: ${speed} km/h (${(speed/3.6).toFixed(1)} m/s)
+`;
+});
 }
 
-// ===== cím
-async function getAddress(lat,lon){
- try{
-  let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-  let d=await res.json();
-  let a=d.address||{};
-  return `${a.country||""} → ${a.city||a.town||""} → ${a.road||""} ${a.house_number||""}`;
- }catch{return "Cím hiba";}
+// ===== TÁVOLSÁG
+function dist(a,b){
+return map.distance(a,b);
 }
 
-// ===== kereső
-document.getElementById("search").addEventListener("change", async function(){
- let q=this.value;
- let res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let data=await res.json();
+// ===== MEGÁLLÓK (OSM)
+async function loadStops(){
 
- if(data.length){
-  let lat=data[0].lat;
-  let lon=data[0].lon;
-  map.setView([lat,lon],15);
-  L.marker([lat,lon]).addTo(map);
- }
+if(!userLat) return;
+
+let query=`
+[out:json];
+node(around:2000,${userLat},${userLon})["highway"="bus_stop"];
+node(around:2000,${userLat},${userLon})["railway"="station"];
+out;
+`;
+
+let res=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:query});
+let data=await res.json();
+
+let html="<b>Közeli megállók:</b><br>";
+
+data.elements.slice(0,8).forEach(s=>{
+let d = dist([userLat,userLon],[s.lat,s.lon]);
+
+html+=`
+🚏 ${s.tags.name||"megálló"}<br>
+📏 ${Math.round(d)} m<br><br>
+`;
 });
 
-// ===== közeli helyek
-async function loadNearby(lat,lon){
-
- const query=`
- [out:json];
- node(around:1000,${lat},${lon})["amenity"];
- out;
- `;
-
- let res=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:query});
- let data=await res.json();
-
- let html="<b>Közeli helyek:</b><br>";
-
- data.elements.slice(0,10).forEach(e=>{
-  let d=map.distance([lat,lon],[e.lat,e.lon]);
-  html+=`📍 ${e.tags.name||"hely"} - ${Math.round(d)} m<br>`;
- });
-
- document.getElementById("places").innerHTML=html;
+document.getElementById("stops").innerHTML=html;
 }
 
-// ===== MEGÁLLÓK + MENETREND
-async function loadStops(lat,lon){
+// ===== KEDVENCEK (IDE MÁSOLD A 45-ÖT)
+function showFavorites(){
 
- const query=`
- [out:json];
- node(around:1500,${lat},${lon})["highway"="bus_stop"];
- node(around:1500,${lat},${lon})["railway"="tram_stop"];
- node(around:1500,${lat},${lon})["railway"="station"];
- out;
- `;
+let favs=[
+{name:"Békásmegyer",lat:47.598,lon:19.054}
+];
 
- let res=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:query});
- let data=await res.json();
+let html="<b>Kedvencek:</b><br>";
 
- let html="<b>Közeli megállók:</b><br>";
+favs.forEach(f=>{
+let d=dist([userLat,userLon],[f.lat,f.lon]);
+html+=`⭐ ${f.name} (${Math.round(d)} m)<br>`;
+});
 
- data.elements.slice(0,8).forEach(s=>{
-  let d=map.distance([lat,lon],[s.lat,s.lon]);
-
-  html+=`
-  🚏 ${s.tags.name||"megálló"}<br>
-  📏 ${Math.round(d)} m<br>
-  ⏱️ menetrend: közel (GTFS bővítés alatt)<br><br>
-  `;
- });
-
- document.getElementById("stops").innerHTML=html;
+document.getElementById("stops").innerHTML=html;
 }
 
-// ===== külső térképek
-function openMap(type){
- if(type==="bkk") window.open("https://futar.bkk.hu/");
- if(type==="mav") window.open("https://vonatterkep.info/");
- if(type==="rt") window.open("https://map.realtimenext.hu/");
- if(type==="volan") window.open("https://utas.hu/");
+// ===== VONAL ELEMZŐ
+async function openAnalyzer(){
+
+document.getElementById("analyzer").style.display="block";
+
+let route=[
+{name:"Pont1",lat:47.59,lon:19.05},
+{name:"Pont2",lat:47.60,lon:19.04}
+];
+
+let html="<b>📊 Profil</b><br>";
+
+for(let i=1;i<route.length;i++){
+
+let a=route[i-1];
+let b=route[i];
+
+let d=dist([a.lat,a.lon],[b.lat,b.lon]);
+
+html+=`
+${a.name} → ${b.name}<br>
+📏 ${Math.round(d)} m<br><br>
+`;
 }
 
-// ===== PDF
-function exportPDF(){
- html2pdf().from(document.body).save("futar_plus.pdf");
+document.getElementById("analyzer").innerHTML=html;
+}
+
+// ===== GSM / TÉRERŐ
+function showSignal(){
+
+let box=document.getElementById("signal");
+box.style.display="block";
+
+let connection = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+
+let type = connection ? connection.effectiveType : "ismeretlen";
+let down = connection ? connection.downlink : "-";
+
+let batteryLevel = "ismeretlen";
+
+if(navigator.getBattery){
+navigator.getBattery().then(b=>{
+batteryLevel = Math.round(b.level*100);
+
+box.innerHTML=`
+📶 Kapcsolat: ${type}<br>
+📡 Letöltés: ${down} Mbps<br>
+🔋 Akku: ${batteryLevel}%<br>
+⚠️ GSM torony adat: böngésző nem adja ki!
+`;
+});
+}else{
+box.innerHTML=`
+📶 Kapcsolat: ${type}<br>
+📡 Letöltés: ${down} Mbps<br>
+⚠️ GSM részletes adat NEM elérhető böngészőből
+`;
+}
 }
 
 </script>
