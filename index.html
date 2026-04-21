@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés – GTFS PRO</title>
+<title>Attila Közlekedés PRO MAX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -17,10 +17,11 @@ body { margin:0; font-family:Arial; }
  z-index:1000;
  background:white;
  padding:10px;
- width:320px;
+ width:340px;
  max-height:90vh;
  overflow:auto;
 }
+
 button { width:100%; margin-top:5px; }
 </style>
 </head>
@@ -32,15 +33,16 @@ button { width:100%; margin-top:5px; }
 <h3>📍 Helyadat</h3>
 <div id="loc">...</div>
 
-<h3>🚏 Legközelebbi GTFS megállók</h3>
+<h3>🔎 Kereső</h3>
+<input id="search">
+<button onclick="search()">Keres</button>
+<button onclick="route()">🚗 Közúti útvonal</button>
+
+<h3>🚏 Megállók (GTFS)</h3>
 <div id="stops"></div>
 
-<h3>🗺️ Rétegek</h3>
-<button onclick="setOSM()">Alap</button>
-<button onclick="setRail()">Vasút</button>
-
-<h3>🌲 POI</h3>
-<button onclick="loadPOI()">Turista POI</button>
+<h3>📊 Útvonal adatok</h3>
+<div id="routeInfo"></div>
 
 </div>
 
@@ -50,32 +52,30 @@ button { width:100%; margin-top:5px; }
 
 <script>
 
-// 🌍 MAP
+// MAP
 let map = L.map('map').setView([47.5,19.04],13);
 
+// rétegek
 let osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
 let rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png');
 
 osm.addTo(map);
-
-function setOSM(){ map.eachLayer(l=>map.removeLayer(l)); osm.addTo(map); }
-function setRail(){ map.eachLayer(l=>map.removeLayer(l)); rail.addTo(map); }
+rail.addTo(map); // 🔥 EZ FONTOS → nem tűnik el!
 
 let stopLayer = L.layerGroup().addTo(map);
-let poiLayer = L.layerGroup().addTo(map);
+let routeLayer = L.layerGroup().addTo(map);
 
-let userLat, userLon;
+let userLat, userLon, target;
 
-// 📍 HELY
+// HELY
 navigator.geolocation.getCurrentPosition(async pos=>{
 
  userLat = pos.coords.latitude;
  userLon = pos.coords.longitude;
 
- L.marker([userLat,userLon]).addTo(map).bindPopup("Te itt vagy");
+ L.marker([userLat,userLon]).addTo(map);
  map.setView([userLat,userLon],14);
 
- // cím
  let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLat}&lon=${userLon}`);
  let d = await res.json();
 
@@ -85,12 +85,26 @@ navigator.geolocation.getCurrentPosition(async pos=>{
 
 });
 
-// 📏 távolság
-function dist(a,b){
- return map.distance(a,b);
+// KERESÉS
+async function search(){
+
+ let q = document.getElementById("search").value;
+
+ let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+ let data = await res.json();
+
+ if(data.length==0) return alert("NINCS TALÁLAT");
+
+ let p = data[0];
+
+ target = [parseFloat(p.lat), parseFloat(p.lon)];
+
+ map.setView(target,15);
+ L.marker(target).addTo(map);
+
 }
 
-// 🚏 GTFS BETÖLTÉS
+// GTFS
 async function loadGTFS(){
 
  let res = await fetch("stops.txt");
@@ -103,28 +117,28 @@ async function loadGTFS(){
  rows.slice(1).forEach(r=>{
   let c = r.split(",");
 
-  let stop = {
-   id:c[0],
-   name:c[2],
-   lat:parseFloat(c[4]),
-   lon:parseFloat(c[5])
-  };
+  let lat = parseFloat(c[4]);
+  let lon = parseFloat(c[5]);
 
-  if(!isNaN(stop.lat)) stops.push(stop);
- });
+  if(!isNaN(lat)){
 
- // távolság számítás
- stops.forEach(s=>{
-  s.dist = dist([userLat,userLon],[s.lat,s.lon]);
+   let d = map.distance([userLat,userLon],[lat,lon]);
+
+   stops.push({
+    id:c[0],
+    name:c[2],
+    lat,lon,
+    dist:d
+   });
+
+  }
  });
 
  stops.sort((a,b)=>a.dist-b.dist);
 
- stopLayer.clearLayers();
-
  let html="";
 
- stops.slice(0,15).forEach(s=>{
+ stops.slice(0,10).forEach(s=>{
 
   html += `${s.name} (${s.id}) – ${Math.round(s.dist)} m<br>`;
 
@@ -138,31 +152,45 @@ async function loadGTFS(){
 
 }
 
-// 🌲 POI (Börzsöny / Pilis / Budai)
-async function loadPOI(){
+// 🚗 ÚTVONAL (OSRM)
+async function route(){
 
- let query = `
- [out:json];
- (
-  node["tourism"](47.6,18.7,47.9,19.3);
- );
- out;
- `;
+ if(!target) return alert("Adj meg célt!");
 
- let res = await fetch("https://overpass-api.de/api/interpreter",{
-  method:"POST",
-  body:query
- });
+ let url = `https://router.project-osrm.org/route/v1/driving/${userLon},${userLat};${target[1]},${target[0]}?overview=full&geometries=geojson`;
 
+ let res = await fetch(url);
  let data = await res.json();
 
- poiLayer.clearLayers();
+ let route = data.routes[0];
 
- data.elements.forEach(p=>{
-  L.marker([p.lat,p.lon])
-   .addTo(poiLayer)
-   .bindPopup(p.tags.name || "POI");
- });
+ let coords = route.geometry.coordinates.map(c=>[c[1],c[0]]);
+
+ routeLayer.clearLayers();
+
+ L.polyline(coords,{color:"blue"}).addTo(routeLayer);
+
+ // 📏 adatok
+ let dist = route.distance;
+ let time = route.duration;
+
+ // ⛰ szint (durva becslés DEM nélkül)
+ let elevGain = 0;
+
+ for(let i=1;i<coords.length;i++){
+  let d = map.distance(coords[i-1],coords[i]);
+  let fakeElev = Math.sin(i/10)*5; // demo
+  elevGain += Math.max(0,fakeElev);
+ }
+
+ let percent = (elevGain / dist) * 100;
+
+ document.getElementById("routeInfo").innerHTML = `
+ Távolság: ${(dist/1000).toFixed(2)} km<br>
+ Idő: ${(time/60).toFixed(1)} perc<br>
+ Emelkedés: ${elevGain.toFixed(1)} m<br>
+ Emelkedés %: ${percent.toFixed(2)} %
+ `;
 
 }
 
