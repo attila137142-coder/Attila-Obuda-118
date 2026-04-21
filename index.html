@@ -1,317 +1,105 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<title>Attila PRO NAV v1</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<title>Attila Közlekedés</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-body{margin:0;background:#000;color:#0f0;font-family:Arial}
-#map{height:60vh;}
-#panel{padding:10px}
-button{padding:10px;margin:5px;background:#111;color:#0f0;border:1px solid #0f0}
-input{padding:10px;width:70%}
-.card{background:#111;margin-top:10px;padding:10px;border-radius:10px}
+body{margin:0;font-family:Arial;}
+
+#map{height:100vh;width:100%;}
+
+.panel{
+position:absolute;
+top:10px;
+left:10px;
+width:260px;
+background:white;
+z-index:1000;
+padding:10px;
+border-radius:8px;
+box-shadow:0 3px 10px rgba(0,0,0,0.3);
+}
+
+button{
+width:100%;
+margin-top:5px;
+padding:8px;
+}
 </style>
+
 </head>
 
 <body>
 
+<div class="panel">
+
+<h3>Térképek</h3>
+
+<button onclick="setStreet()">🗺️ Utca</button>
+<button onclick="setTopo()">⛰️ Domborzat</button>
+<button onclick="setRail()">🚆 Vasút</button>
+
+<hr>
+
+<h3>Pozíció</h3>
+<button onclick="locateMe()">📍 Saját hely</button>
+
+<hr>
+
+<h3>Megállók</h3>
+<button onclick="showStops()">🚏 1 km-en belül</button>
+
+</div>
+
 <div id="map"></div>
 
-<div id="panel">
-<button onclick="getLocation()">📍 Helyzet</button>
-<input id="search" placeholder="Keresés...">
-<button onclick="search()">🔎</button>
-
-<div id="info"></div>
-<div id="stops"></div>
-</div>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-let map = L.map('map').setView([47.5,19.0],13);
+var map = L.map('map').setView([47.55,19.03],13);
 
-let osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-let topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
-let rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:1});
+var street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19});
+var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17});
+var rail = L.tileLayer('https://{s}.tile.openrailwaymap.org/standard/{z}/{x}/{y}.png',{maxZoom:19});
 
-osm.addTo(map);
+street.addTo(map);
 
-L.control.layers({
- "Alap": osm,
- "Topo": topo
-},{
- "Vasút": rail
-}).addTo(map);
-
-let marker;
-let userLat, userLon;
-
-let stopLayer = L.layerGroup().addTo(map);
-let routeLayer = L.layerGroup().addTo(map);
-
-// ==== MEGÁLLÓK (rövid lista – bővíthető)
-let stops = [
-
-{name: "Békásmegyer HÉV-állomás", gtfs: "H5-09183", lat: 47.598091, lon: 19.054599},
-{name: "Nád utca", gtfs: "BKK-F00457", lat: 47.594072, lon: 19.048469},
-{name: "Gulácsy Lajos utca", gtfs: "BKK-00438", lat: 47.602562, lon: 19.048229},
-{name: "Florián tér", gtfs: "BKK-F00611", lat: 47.542896, lon: 19.042252},
-{name: "Florián tér", gtfs: "BKK-F00613", lat: 47.541664, lon: 19.040084},
-{name: "Batthyány tér (villamos)", gtfs: "BKK-F00057", lat: 47.506002, lon: 19.039456},
-{name: "Verecke lépcsö", gtfs: "BKK-F00265", lat: 47.529117, lon: 19.003624},
-{name: "Csobánka tér-243 vá", gtfs: "BKK-F044192", lat: 47.597795, lon: 19.053787},
-{name: "Csobánka tér-160 vá", gtfs: "BKK-008939", lat: 47.598425, lon: 19.054240},
-{name: "Szentendre, HÉV végállomás", gtfs: "H5-09142221", lat: 47.661038, lon: 19.075607},
-{name: "Örs Vezér tér-85-85E", gtfs: "BKK-008030", lat: 47.501742, lon: 19.135604},
-{name: "Kocka utca (kifelé)", gtfs: "BKK-1831", lat: 47.484915, lon: 19.155466},
-{name: "Kocka utca (befelé)", gtfs: "BKK-1832", lat: 47.484708, lon: 19.155969},
-{name: "Újhegyi sétány (befelé)", gtfs: "BKK-F01842", lat: 47.470813, lon: 19.16451},
-{name: "Gőzmozdony utca (kifelé)", gtfs: "BKK-008863", lat: 47.470028, lon: 19.157173},
-{name: "Bojtár utca (kifelé)", gtfs: "VOLÁN-773493-1-BKK-F00520", lat: 47.560099, lon: 19.024711},
-{name: "Bojtár utca (befelé)", gtfs: "VOLÁN-773493-2-BKK-F00521", lat: 47.559047, lon: 19.042921},
-{name: "Szentendre, Autóbusz-állomás", gtfs: "VOLÁN-778806-99", lat: 47.660403, lon: 19.075408},
-{name: "Szentendre, Skanzen (1)", gtfs: "VOLÁN-778840-1", lat: 47.691135, lon: 19.046955},
-{name: "Szentendre, Skanzen (2)", gtfs: "VOLÁN-778840-2", lat: 47.691273, lon: 19.045667},
-{name: "Tahitótfalu, hídfő 1", gtfs: "VOLÁN-779053-1", lat: 47.751712, lon: 19.078215},
-{name: "Tahitótfalu, hídfő 2", gtfs: "VOLÁN-779053-2", lat: 47.751648, lon: 19.078091},
-{name: "Szentendre, Dömör-kapu", gtfs: "VOLÁN-778803", lat: 47.694900, lon: 19.000210},
-{name: "Vác, Autóbusz-állomás", gtfs: "VOLÁN-779365_99", lat: 47.781930, lon: 19.129643},
-{name: "Kóspallag, templom", gtfs: "VOLÁN-778190", lat: 47.877850, lon: 18.932580},
-{name: "Kisinóci turistaház", gtfs: "VOLAN-778186", lat: 47.890600, lon: 18.927580},
-{name: "Királyrét", gtfs: "VOLAN-779017", lat: 47.895040, lon: 18.977687},
-{name: "Szob, Vasútállomás", gtfs: "VOLAN-779011", lat: 47.821319, lon: 18.862602},
-{name: "Nagybörzsöny, községháza", gtfs: "VOLAN-778310", lat: 47.936030, lon: 18.827710},
-{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-1", lat: 48.015915, lon: 18.888468},
-{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-2", lat: 48.015710, lon: 18.888021},
-{name: "Pilisborosjenő, buszforduló", gtfs: "VOLAN-778532", lat: 47.609100, lon: 18.989680},
-{name: "Dobogókő, hegytető", gtfs: "VOLAN-778561", lat: 47.719118, lon: 18.897577},
-{name: "Vámosmikola, községháza", gtfs: "VOLAN-779478", lat: 47.978190, lon: 18.785890},
-{name: "Dunapataj, iskola", gtfs: "VOLAN-325369", lat: 46.644280, lon: 19.000233},
-{name: "Szelidi-tó, autóbusz-forduló", gtfs: "VOLAN-325374", lat: 46.625050, lon: 19.046159},
-{name: "Pomáz, HÉV állomás", gtfs: "HEV5-09134", lat: 47.642749, lon: 19.032657},
-{name: "Pomáz, autóbusz-állomás", gtfs: "VOLAN-778618", lat: 47.642749, lon: 19.032657},
-{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-1-BKK-009170", lat: 47.645570, lon: 19.027226},
-{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-2-BKK-009171", lat: 47.645554, lon: 19.027001},
-{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-1", lat: 46.789883, lon: 17.181239},
-{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-2", lat: 46.790057, lon: 17.182311},
-{name: "Héviz, Autobusz állomás", gtfs: "VOLAN-561337", lat: 46.792964, lon: 17.192426},
-{name: "Keszhely,Vasut-és  Autobusz állomás", gtfs: "VOLAN-561442", lat: 46.757976, lon: 17.246480},
-{name: "Magas taxi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.92842, lon: 18.92997},
-{name: "Nagyhideghegyi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.936111, lon: 18.921944},
-{name: "Csoványos, (hegycsucs,Börzsöny,kiláto)", gtfs: "ERDÖ", lat: 47.94908, lon: 18.9483},
-{name: "Lakás, (Dino lak)", gtfs: "UTCA", lat: 47.594304, lon: 19.048770},
-
-];
-
-
-];
-
-// ===== GPS
-async function getLocation(){
-
- navigator.geolocation.getCurrentPosition(async pos=>{
-
-  userLat = pos.coords.latitude;
-  userLon = pos.coords.longitude;
-
-  if(marker) map.removeLayer(marker);
-
-  marker = L.circleMarker([userLat,userLon],{
-   radius:8,color:'red'
-  }).addTo(map);
-
-  map.setView([userLat,userLon],15);
-
-  let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLat}&lon=${userLon}`);
-  let d = await res.json();
-  let a = d.address || {};
-
-  document.getElementById("info").innerHTML=`
-  🌍 ${a.country||""}<br>
-  🏙️ ${a.city||a.town||""}<br>
-  🛣️ ${a.road||""} ${a.house_number||""}<br>
-  🎯 ±${Math.round(pos.coords.accuracy)} m
-  `;
-
-  showStops();
- });
+function setStreet(){
+map.eachLayer(l=>map.removeLayer(l));
+street.addTo(map);
 }
 
-// ===== KÖZÚTI ÚTVONAL (VALÓDI)
-async function routeTo(lat,lon){
-
- routeLayer.clearLayers();
-
- let url = `https://router.project-osrm.org/route/v1/driving/${userLon},${userLat};${lon},${lat}?overview=full&geometries=geojson`;
-
- let res = await fetch(url);
- let data = await res.json();
-
- let route = data.routes[0];
-
- let coords = route.geometry.coordinates.map(c=>[c[1],c[0]]);
-
- L.polyline(coords,{color:'lime'}).addTo(routeLayer);
-
- let dist = (route.distance/1000).toFixed(2);
- let time = Math.round(route.duration/60);
-
- alert(`🚗 ${dist} km | ⏱ ${time} perc`);
+function setTopo(){
+map.eachLayer(l=>map.removeLayer(l));
+topo.addTo(map);
 }
 
-// ===== MEGÁLLÓK
+function setRail(){
+map.eachLayer(l=>map.removeLayer(l));
+rail.addTo(map);
+}
+
+function locateMe(){
+navigator.geolocation.getCurrentPosition(function(pos){
+var lat = pos.coords.latitude;
+var lon = pos.coords.longitude;
+
+L.marker([lat,lon]).addTo(map).bindPopup("Itt vagy").openPopup();
+map.setView([lat,lon],15);
+});
+}
+
 function showStops(){
-function showDepartures(stopName){
- function parseCSV(text){
-
- let lines = text.split("\n");
- let headers = lines[0].split(",");
-
- return lines.slice(1).map(line=>{
-  let obj = {};
-  let cols = line.split(",");
-  headers.forEach((h,i)=>{
-   obj[h] = cols[i];
-  });
-  return obj;
- });
+alert("Következő lépés: GTFS megállók betöltése");
 }
 
- let stop = GTFS.stops.find(s=>s.stop_name === stopName);
-
- if(!stop){
-  alert("Nincs GTFS megálló");
-  return;
- }
-
- let now = new Date();
- let nowSec = now.getHours()*3600 + now.getMinutes()*60;
-
- let times = GTFS.stopTimes
-  .filter(t=>t.stop_id === stop.stop_id)
-  .map(t=>{
-    let parts = t.departure_time.split(":");
-    let sec = parts[0]*3600 + parts[1]*60;
-    return {...t,sec};
-  })
-  .filter(t=>t.sec > nowSec)
-  .sort((a,b)=>a.sec-b.sec)
-  .slice(0,5);
-
- let html = `<h3>🕒 ${stopName}</h3>`;
-
- times.forEach(t=>{
-
-  let min = Math.round((t.sec - nowSec)/60);
-
-  let trip = GTFS.trips.find(tr=>tr.trip_id === t.trip_id);
-
-  html+=`
-  <div>
-   🚍 ${trip.route_id || "?"}
-   → ${trip.trip_headsign || ""}
-   | ${min} perc
-  </div>
-  `;
- });
-
- document.getElementById("stops").innerHTML = html;
-}
- 
- stopLayer.clearLayers();
-
- let arr = stops.map(s=>{
-  let d = map.distance([userLat,userLon],[s.lat,s.lon]);
-  return {...s,dist:d};
- });
-
- arr.sort((a,b)=>a.dist-b.dist);
-
- let html="<h3>🚏 Megállók</h3>";
-let GTFS = {
- stops: [],
- stopTimes: [],
- trips: []
-};
-
-async function loadGTFS(){
-
- let url = "IDE_RAKD_A_LINKET.zip";
-
- let res = await fetch(url);
- let buffer = await res.arrayBuffer();
-
- let zip = await JSZip.loadAsync(buffer);
-
- // stops
- let stopsText = await zip.file("stops.txt").async("string");
- GTFS.stops = parseCSV(stopsText);
-
- // stop_times
- let stText = await zip.file("stop_times.txt").async("string");
- GTFS.stopTimes = parseCSV(stText);
-
- // trips
- let trText = await zip.file("trips.txt").async("string");
- GTFS.trips = parseCSV(trText);
-
- console.log("GTFS betöltve");
-}
- arr.slice(0,10).forEach(s=>{
-
-  let air = s.dist<1000 ? Math.round(s.dist)+" m" : (s.dist/1000).toFixed(2)+" km";
-
-  html+=`
-  <div class="card">
-   <b>${s.name}</b><br>
-   📏 ${air}<br>
-   <button onclick="routeTo(${s.lat},${s.lon})">Útvonal</button>
-  </div>
-  `;
-
-  L.marker([s.lat,s.lon]).addTo(stopLayer)
-   .bindPopup(`<b>${s.name}</b><br><button onclick="routeTo(${s.lat},${s.lon})">Menj ide</button>`);
- });
-
- document.getElementById("stops").innerHTML = html;
-}
-
-// ===== OKOS KERESŐ
-async function search(){
-
- let q = document.getElementById("search").value;
-
- let found = stops.find(s=>s.name.toLowerCase().includes(q.toLowerCase()));
-
- if(found){
-  map.setView([found.lat,found.lon],16);
-  L.marker([found.lat,found.lon]).addTo(stopLayer)
-   .bindPopup(found.name).openPopup();
-  return;
- }
-
- let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let data = await res.json();
-
- if(data.length>0){
-
-  let p = data[0];
-
-  map.setView([p.lat,p.lon],16);
-
-  L.marker([p.lat,p.lon]).addTo(stopLayer)
-   .bindPopup(p.display_name).openPopup();
-
- }else{
-  alert("Nincs találat");
- }
-}
-loadGTFS();
- 
 </script>
 
 </body>
