@@ -1,136 +1,67 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html>
 <head>
 <meta charset="UTF-8">
-<title>3. rész – Valós járműkövetés</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body{
- font-family:Arial;
- background:#111;
- color:#0f0;
- padding:20px;
-}
-code{
- display:block;
- background:#000;
- padding:10px;
- margin:10px 0;
- border:1px solid #0f0;
-}
-h1,h2{color:#0f0;}
+#map{height:100vh;}
 </style>
 </head>
 
 <body>
 
-<h1>🚆 3. rész – Valós járműkövetés (FUTÁR szint)</h1>
+<div id="map"></div>
 
-<h2>1. Mi az a GTFS-RT?</h2>
-<p>Valós idejű adat: jármű helyzet, késés, mozgás.</p>
+<script>
 
-<ul>
-<li>Vehicle Positions → hol van a jármű</li>
-<li>Trip Updates → késések</li>
-<li>Alerts → rendkívüli események</li>
-</ul>
+// térkép
+let map = L.map('map').setView([47.5,19.04],13);
 
----
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+ maxZoom:19
+}).addTo(map);
 
-<h2>2. Fontos igazság</h2>
-<p>
-❗ A legtöbb szolgáltató (BKK, MÁV) nem ad teljes nyílt hozzáférést.<br>
-👉 ezért proxy vagy saját feldolgozás kell.
-</p>
+// jármű layer
+let vehiclesLayer = L.layerGroup().addTo(map);
 
----
+// ikon
+let icon = L.icon({
+ iconUrl:"https://cdn-icons-png.flaticon.com/512/61/61231.png",
+ iconSize:[30,30]
+});
 
-<h2>3. Alap működés</h2>
+// BETÖLTÉS
+async function load(){
 
-<code>
-// lekérés
-fetch("API_URL")
- .then(r=>r.json())
- .then(data=>{
-  console.log(data);
- });
-</code>
-
----
-
-<h2>4. Jármű marker térképen</h2>
-
-<code>
-let bus = L.marker([47.5,19.04]).addTo(map);
-</code>
-
----
-
-<h2>5. Mozgás (FRISSÍTÉS)</h2>
-
-<code>
-setInterval(async ()=>{
-
- let res = await fetch("adat.json");
+ // IDE jön majd a VALÓDI proxy URL!
+ let res = await fetch("vehicles.json");
  let data = await res.json();
 
- bus.setLatLng([data.lat, data.lon]);
+ vehiclesLayer.clearLayers();
 
-}, 5000);
-</code>
+ data.forEach(v=>{
 
-<p>👉 5 másodpercenként frissül</p>
+  let color = v.delay > 60 ? "red" : "green";
 
----
+  let m = L.marker([v.lat,v.lon],{icon:icon})
+   .bindPopup(`
+    🚍 ${v.line}<br>
+    ⏱ ${v.delay} sec
+   `);
 
-<h2>6. Saját „mini FUTÁR” logika</h2>
+  m.addTo(vehiclesLayer);
+ });
 
-<code>
-vehicles.forEach(v=>{
- L.marker([v.lat,v.lon])
-  .bindPopup(v.line)
-  .addTo(map);
-});
-</code>
-
----
-
-<h2>7. Késés megjelenítés</h2>
-
-<code>
-if(v.delay > 60){
- color = "red";
 }
-</code>
 
----
+// frissítés
+setInterval(load,5000);
+load();
 
-<h2>8. PRO TIPP</h2>
-
-<ul>
-<li>Ne tölts túl sok adatot egyszerre</li>
-<li>Frissítés 5–10 mp</li>
-<li>Használj layerGroup-ot</li>
-</ul>
-
----
-
-<h2>9. Valóság (amit tudni kell)</h2>
-
-<p>
-✔ működik → ha van API<br>
-❌ nem működik → ha nincs hozzáférés
-</p>
-
----
-
-<h2>10. Összegzés</h2>
-
-<ul>
-<li>✔ jármű mozgás</li>
-<li>✔ élő frissítés</li>
-<li>✔ FUTÁR alap</li>
-</ul>
+</script>
 
 </body>
 </html>
