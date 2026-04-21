@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés PRO MAX</title>
+<title>Attila PRO NAV</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -14,15 +14,13 @@ body { margin:0; font-family:Arial; }
  position:absolute;
  top:10px;
  left:10px;
- z-index:1000;
  background:white;
  padding:10px;
- width:340px;
+ width:350px;
  max-height:90vh;
  overflow:auto;
+ z-index:1000;
 }
-
-button { width:100%; margin-top:5px; }
 </style>
 </head>
 
@@ -30,19 +28,19 @@ button { width:100%; margin-top:5px; }
 
 <div id="panel">
 
-<h3>📍 Helyadat</h3>
-<div id="loc">...</div>
+<h3>📍 Hely</h3>
+<div id="loc"></div>
 
 <h3>🔎 Kereső</h3>
 <input id="search">
 <button onclick="search()">Keres</button>
-<button onclick="route()">🚗 Közúti útvonal</button>
+<button onclick="route()">🚗 Útvonal</button>
 
-<h3>🚏 Megállók (GTFS)</h3>
+<h3>🚏 Megállók</h3>
 <div id="stops"></div>
 
-<h3>📊 Útvonal adatok</h3>
-<div id="routeInfo"></div>
+<h3>📊 Adatok</h3>
+<div id="info"></div>
 
 </div>
 
@@ -55,33 +53,27 @@ button { width:100%; margin-top:5px; }
 // MAP
 let map = L.map('map').setView([47.5,19.04],13);
 
-// rétegek
-let osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-let rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png');
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png').addTo(map);
 
-osm.addTo(map);
-rail.addTo(map); // 🔥 EZ FONTOS → nem tűnik el!
-
+let user, target;
 let stopLayer = L.layerGroup().addTo(map);
 let routeLayer = L.layerGroup().addTo(map);
-
-let userLat, userLon, target;
 
 // HELY
 navigator.geolocation.getCurrentPosition(async pos=>{
 
- userLat = pos.coords.latitude;
- userLon = pos.coords.longitude;
+ user = [pos.coords.latitude, pos.coords.longitude];
 
- L.marker([userLat,userLon]).addTo(map);
- map.setView([userLat,userLon],14);
+ map.setView(user,14);
+ L.marker(user).addTo(map);
 
- let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLat}&lon=${userLon}`);
- let d = await res.json();
+ let r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user[0]}&lon=${user[1]}`);
+ let d = await r.json();
 
  document.getElementById("loc").innerHTML = d.display_name;
 
- loadGTFS();
+ loadStops();
 
 });
 
@@ -90,57 +82,60 @@ async function search(){
 
  let q = document.getElementById("search").value;
 
- let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let data = await res.json();
+ let r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+ let d = await r.json();
 
- if(data.length==0) return alert("NINCS TALÁLAT");
+ if(!d.length) return alert("NINCS TALÁLAT");
 
- let p = data[0];
-
- target = [parseFloat(p.lat), parseFloat(p.lon)];
+ target = [parseFloat(d[0].lat), parseFloat(d[0].lon)];
 
  map.setView(target,15);
  L.marker(target).addTo(map);
 
 }
 
-// GTFS
-async function loadGTFS(){
+// 🚏 MEGÁLLÓK (ROBUST CSV!)
+async function loadStops(){
 
  let res = await fetch("stops.txt");
  let text = await res.text();
 
- let rows = text.split("\n");
+ let lines = text.split("\n");
 
- let stops = [];
+ let stops=[];
 
- rows.slice(1).forEach(r=>{
-  let c = r.split(",");
+ for(let i=1;i<lines.length;i++){
 
-  let lat = parseFloat(c[4]);
-  let lon = parseFloat(c[5]);
+  let row = lines[i];
 
-  if(!isNaN(lat)){
+  // CSV kezelés idézőjellel
+  let cols = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
 
-   let d = map.distance([userLat,userLon],[lat,lon]);
+  if(!cols || cols.length<6) continue;
 
-   stops.push({
-    id:c[0],
-    name:c[2],
-    lat,lon,
-    dist:d
-   });
+  let lat = parseFloat(cols[4]);
+  let lon = parseFloat(cols[5]);
 
-  }
- });
+  if(isNaN(lat)) continue;
+
+  let d = map.distance(user,[lat,lon]);
+
+  stops.push({
+   id:cols[0],
+   name:cols[2].replace(/"/g,""),
+   lat,lon,dist:d
+  });
+ }
 
  stops.sort((a,b)=>a.dist-b.dist);
+
+ stopLayer.clearLayers();
 
  let html="";
 
  stops.slice(0,10).forEach(s=>{
 
-  html += `${s.name} (${s.id}) – ${Math.round(s.dist)} m<br>`;
+  html += `${s.name} – ${Math.round(s.dist)} m<br>`;
 
   L.circleMarker([s.lat,s.lon],{radius:5})
    .addTo(stopLayer)
@@ -152,15 +147,15 @@ async function loadGTFS(){
 
 }
 
-// 🚗 ÚTVONAL (OSRM)
+// 🚗 ÚTVONAL + SZAKASZOK
 async function route(){
 
- if(!target) return alert("Adj meg célt!");
+ if(!target) return alert("Adj célt!");
 
- let url = `https://router.project-osrm.org/route/v1/driving/${userLon},${userLat};${target[1]},${target[0]}?overview=full&geometries=geojson`;
+ let url = `https://router.project-osrm.org/route/v1/driving/${user[1]},${user[0]};${target[1]},${target[0]}?overview=full&geometries=geojson`;
 
- let res = await fetch(url);
- let data = await res.json();
+ let r = await fetch(url);
+ let data = await r.json();
 
  let route = data.routes[0];
 
@@ -170,27 +165,37 @@ async function route(){
 
  L.polyline(coords,{color:"blue"}).addTo(routeLayer);
 
- // 📏 adatok
- let dist = route.distance;
- let time = route.duration;
+ // 📏 LÉGI
+ let air = map.distance(user,target);
 
- // ⛰ szint (durva becslés DEM nélkül)
- let elevGain = 0;
+ // 📏 SZAKASZOK
+ let segments = [];
 
  for(let i=1;i<coords.length;i++){
+
   let d = map.distance(coords[i-1],coords[i]);
-  let fakeElev = Math.sin(i/10)*5; // demo
-  elevGain += Math.max(0,fakeElev);
+
+  let slope = (Math.random()*6-3); // demo %
+
+  segments.push({
+   dist:d,
+   slope:slope
+  });
+
  }
 
- let percent = (elevGain / dist) * 100;
-
- document.getElementById("routeInfo").innerHTML = `
- Távolság: ${(dist/1000).toFixed(2)} km<br>
- Idő: ${(time/60).toFixed(1)} perc<br>
- Emelkedés: ${elevGain.toFixed(1)} m<br>
- Emelkedés %: ${percent.toFixed(2)} %
+ // KIÍRÁS
+ let html = `
+ Légvonal: ${(air/1000).toFixed(2)} km<br>
+ Közút: ${(route.distance/1000).toFixed(2)} km<br><br>
+ <b>Szakaszok:</b><br>
  `;
+
+ segments.slice(0,10).forEach((s,i)=>{
+  html += `${i+1}. ${Math.round(s.dist)} m | ${s.slope.toFixed(1)} %<br>`;
+ });
+
+ document.getElementById("info").innerHTML = html;
 
 }
 
