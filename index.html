@@ -1,205 +1,28 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>Attila PRO NAV</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
-<style>
-body { margin:0; font-family:Arial; }
-#map { height:100vh; }
-
-#panel {
- position:absolute;
- top:10px;
- left:10px;
- background:white;
- padding:10px;
- width:350px;
- max-height:90vh;
- overflow:auto;
- z-index:1000;
-}
-</style>
-</head>
-
-<body>
-
-<div id="panel">
-
-<h3>📍 Hely</h3>
-<div id="loc"></div>
-
-<h3>🔎 Kereső</h3>
-<input id="search">
-<button onclick="search()">Keres</button>
-<button onclick="route()">🚗 Útvonal</button>
-
-<h3>🚏 Megállók</h3>
-<div id="stops"></div>
-
-<h3>📊 Adatok</h3>
-<div id="info"></div>
-
-</div>
-
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script>
+const menetrend = [
+  { vonat: "156", erkezik: "15:12", indul: "", megjegyzes: "" },
+  { vonat: "151", erkezik: "", indul: "15:30", megjegyzes: "" },
+  { vonat: "G 556", erkezik: "15:47", indul: "", megjegyzes: "KIÁLL!" },
+  // stb...
+];
 
-// MAP
-let map = L.map('map').setView([47.5,19.04],13);
+function renderTabla() {
+  const tabla = document.getElementById("tabla");
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png').addTo(map);
-
-let user, target;
-let stopLayer = L.layerGroup().addTo(map);
-let routeLayer = L.layerGroup().addTo(map);
-
-// HELY
-navigator.geolocation.getCurrentPosition(async pos=>{
-
- user = [pos.coords.latitude, pos.coords.longitude];
-
- map.setView(user,14);
- L.marker(user).addTo(map);
-
- let r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user[0]}&lon=${user[1]}`);
- let d = await r.json();
-
- document.getElementById("loc").innerHTML = d.display_name;
-
- loadStops();
-
-});
-
-// KERESÉS
-async function search(){
-
- let q = document.getElementById("search").value;
-
- let r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let d = await r.json();
-
- if(!d.length) return alert("NINCS TALÁLAT");
-
- target = [parseFloat(d[0].lat), parseFloat(d[0].lon)];
-
- map.setView(target,15);
- L.marker(target).addTo(map);
-
-}
-
-// 🚏 MEGÁLLÓK (ROBUST CSV!)
-async function loadStops(){
-
- let res = await fetch("stops.txt");
- let text = await res.text();
-
- let lines = text.split("\n");
-
- let stops=[];
-
- for(let i=1;i<lines.length;i++){
-
-  let row = lines[i];
-
-  // CSV kezelés idézőjellel
-  let cols = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-
-  if(!cols || cols.length<6) continue;
-
-  let lat = parseFloat(cols[4]);
-  let lon = parseFloat(cols[5]);
-
-  if(isNaN(lat)) continue;
-
-  let d = map.distance(user,[lat,lon]);
-
-  stops.push({
-   id:cols[0],
-   name:cols[2].replace(/"/g,""),
-   lat,lon,dist:d
+  menetrend.forEach(j => {
+    tabla.innerHTML += `
+      <tr>
+        <td>${j.vonat}</td>
+        <td>I.</td>
+        <td>${j.erkezik}</td>
+        <td></td>
+        <td>${j.indul}</td>
+        <td></td>
+        <td>${j.megjegyzes}</td>
+      </tr>
+    `;
   });
- }
-
- stops.sort((a,b)=>a.dist-b.dist);
-
- stopLayer.clearLayers();
-
- let html="";
-
- stops.slice(0,10).forEach(s=>{
-
-  html += `${s.name} – ${Math.round(s.dist)} m<br>`;
-
-  L.circleMarker([s.lat,s.lon],{radius:5})
-   .addTo(stopLayer)
-   .bindPopup(`${s.name}<br>${s.id}<br>${Math.round(s.dist)} m`);
-
- });
-
- document.getElementById("stops").innerHTML = html;
-
 }
 
-// 🚗 ÚTVONAL + SZAKASZOK
-async function route(){
-
- if(!target) return alert("Adj célt!");
-
- let url = `https://router.project-osrm.org/route/v1/driving/${user[1]},${user[0]};${target[1]},${target[0]}?overview=full&geometries=geojson`;
-
- let r = await fetch(url);
- let data = await r.json();
-
- let route = data.routes[0];
-
- let coords = route.geometry.coordinates.map(c=>[c[1],c[0]]);
-
- routeLayer.clearLayers();
-
- L.polyline(coords,{color:"blue"}).addTo(routeLayer);
-
- // 📏 LÉGI
- let air = map.distance(user,target);
-
- // 📏 SZAKASZOK
- let segments = [];
-
- for(let i=1;i<coords.length;i++){
-
-  let d = map.distance(coords[i-1],coords[i]);
-
-  let slope = (Math.random()*6-3); // demo %
-
-  segments.push({
-   dist:d,
-   slope:slope
-  });
-
- }
-
- // KIÍRÁS
- let html = `
- Légvonal: ${(air/1000).toFixed(2)} km<br>
- Közút: ${(route.distance/1000).toFixed(2)} km<br><br>
- <b>Szakaszok:</b><br>
- `;
-
- segments.slice(0,10).forEach((s,i)=>{
-  html += `${i+1}. ${Math.round(s.dist)} m | ${s.slope.toFixed(1)} %<br>`;
- });
-
- document.getElementById("info").innerHTML = html;
-
-}
-
+window.onload = renderTabla;
 </script>
-
-</body>
-</html>
