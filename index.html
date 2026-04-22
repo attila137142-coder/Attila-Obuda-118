@@ -2,204 +2,169 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila PRO NAV</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<title>Attila PUSKA</title>
 
 <style>
-body { margin:0; font-family:Arial; }
-#map { height:100vh; }
-
-#panel {
- position:absolute;
- top:10px;
- left:10px;
- background:white;
+body{
+ font-family:Arial;
+ background:#0b0b0b;
+ color:#00ff88;
+ padding:20px;
+}
+h1,h2{
+ color:#00ff88;
+ border-bottom:1px solid #00ff88;
+}
+code{
+ display:block;
+ background:#000;
  padding:10px;
- width:350px;
- max-height:90vh;
- overflow:auto;
- z-index:1000;
+ margin:10px 0;
+ border-left:4px solid lime;
+ color:#0f0;
+ white-space:pre-wrap;
+}
+.box{
+ border:1px solid #00ff88;
+ padding:10px;
+ margin:10px 0;
 }
 </style>
 </head>
 
 <body>
 
-<div id="panel">
+<h1>🚍 ATTILA KÖZLEKEDÉS – GYORS PUSKA</h1>
 
-<h3>📍 Hely</h3>
-<div id="loc"></div>
-
-<h3>🔎 Kereső</h3>
-<input id="search">
-<button onclick="search()">Keres</button>
-<button onclick="route()">🚗 Útvonal</button>
-
-<h3>🚏 Megállók</h3>
-<div id="stops"></div>
-
-<h3>📊 Adatok</h3>
-<div id="info"></div>
-
-</div>
-
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<script>
-
-// MAP
-let map = L.map('map').setView([47.5,19.04],13);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png').addTo(map);
-
-let user, target;
-let stopLayer = L.layerGroup().addTo(map);
-let routeLayer = L.layerGroup().addTo(map);
-
-// HELY
+<div class="box">
+<h2>📍 GPS + CÍM</h2>
+<code>
 navigator.geolocation.getCurrentPosition(async pos=>{
 
- user = [pos.coords.latitude, pos.coords.longitude];
+ let lat = pos.coords.latitude;
+ let lon = pos.coords.longitude;
 
- map.setView(user,14);
- L.marker(user).addTo(map);
+ let res = await fetch(
+  `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
+ );
 
- let r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user[0]}&lon=${user[1]}`);
- let d = await r.json();
+ let d = await res.json();
+ let a = d.address;
 
- document.getElementById("loc").innerHTML = d.display_name;
-
- loadStops();
-
-});
-
-// KERESÉS
-async function search(){
-
- let q = document.getElementById("search").value;
-
- let r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let d = await r.json();
-
- if(!d.length) return alert("NINCS TALÁLAT");
-
- target = [parseFloat(d[0].lat), parseFloat(d[0].lon)];
-
- map.setView(target,15);
- L.marker(target).addTo(map);
-
-}
-
-// 🚏 MEGÁLLÓK (ROBUST CSV!)
-async function loadStops(){
-
- let res = await fetch("stops.txt");
- let text = await res.text();
-
- let lines = text.split("\n");
-
- let stops=[];
-
- for(let i=1;i<lines.length;i++){
-
-  let row = lines[i];
-
-  // CSV kezelés idézőjellel
-  let cols = row.match(/(".*?"|[^",\s]+)(?=\s*,|\s*$)/g);
-
-  if(!cols || cols.length<6) continue;
-
-  let lat = parseFloat(cols[4]);
-  let lon = parseFloat(cols[5]);
-
-  if(isNaN(lat)) continue;
-
-  let d = map.distance(user,[lat,lon]);
-
-  stops.push({
-   id:cols[0],
-   name:cols[2].replace(/"/g,""),
-   lat,lon,dist:d
-  });
- }
-
- stops.sort((a,b)=>a.dist-b.dist);
-
- stopLayer.clearLayers();
-
- let html="";
-
- stops.slice(0,10).forEach(s=>{
-
-  html += `${s.name} – ${Math.round(s.dist)} m<br>`;
-
-  L.circleMarker([s.lat,s.lon],{radius:5})
-   .addTo(stopLayer)
-   .bindPopup(`${s.name}<br>${s.id}<br>${Math.round(s.dist)} m`);
-
- });
-
- document.getElementById("stops").innerHTML = html;
-
-}
-
-// 🚗 ÚTVONAL + SZAKASZOK
-async function route(){
-
- if(!target) return alert("Adj célt!");
-
- let url = `https://router.project-osrm.org/route/v1/driving/${user[1]},${user[0]};${target[1]},${target[0]}?overview=full&geometries=geojson`;
-
- let r = await fetch(url);
- let data = await r.json();
-
- let route = data.routes[0];
-
- let coords = route.geometry.coordinates.map(c=>[c[1],c[0]]);
-
- routeLayer.clearLayers();
-
- L.polyline(coords,{color:"blue"}).addTo(routeLayer);
-
- // 📏 LÉGI
- let air = map.distance(user,target);
-
- // 📏 SZAKASZOK
- let segments = [];
-
- for(let i=1;i<coords.length;i++){
-
-  let d = map.distance(coords[i-1],coords[i]);
-
-  let slope = (Math.random()*6-3); // demo %
-
-  segments.push({
-   dist:d,
-   slope:slope
-  });
-
- }
-
- // KIÍRÁS
- let html = `
- Légvonal: ${(air/1000).toFixed(2)} km<br>
- Közút: ${(route.distance/1000).toFixed(2)} km<br><br>
- <b>Szakaszok:</b><br>
+ let cim = `
+ ${a.country}
+ ${a.city || a.town}
+ ${a.road || ""} ${a.house_number || ""}
  `;
 
- segments.slice(0,10).forEach((s,i)=>{
-  html += `${i+1}. ${Math.round(s.dist)} m | ${s.slope.toFixed(1)} %<br>`;
- });
+ console.log(cim);
+});
+</code>
+</div>
 
- document.getElementById("info").innerHTML = html;
-
+<div class="box">
+<h2>🗺 TÉRKÉP TELJES KÉPERNYŐ</h2>
+<code>
+#map{
+ height:100vh;
 }
+</code>
+</div>
 
-</script>
+<div class="box">
+<h2>📏 TÁVOLSÁG</h2>
+<code>
+// légvonal
+map.distance([lat1,lon1],[lat2,lon2]);
+
+// formázás
+function format(m){
+ if(m < 1000) return Math.round(m)+" m";
+ return (m/1000).toFixed(2)+" km";
+}
+</code>
+</div>
+
+<div class="box">
+<h2>🚗 VALÓDI ÚTVONAL (OSRM)</h2>
+<code>
+let url = `
+https://router.project-osrm.org/route/v1/driving/
+${lon1},${lat1};${lon2},${lat2}?overview=full&geometries=geojson
+`;
+
+let res = await fetch(url);
+let data = await res.json();
+
+let dist = data.routes[0].distance;
+let time = data.routes[0].duration;
+</code>
+</div>
+
+<div class="box">
+<h2>🌲 TURISTA ÚT</h2>
+<code>
+/foot/
+</code>
+</div>
+
+<div class="box">
+<h2>📍 100 MÉTER PONTOK</h2>
+<code>
+coords.forEach((c,i)=>{
+ if(i%5==0){
+  L.circleMarker(c).addTo(map);
+ }
+});
+</code>
+</div>
+
+<div class="box">
+<h2>⛰ EMELKEDÉS %</h2>
+<code>
+let slope = (heightDiff / distance) * 100;
+</code>
+</div>
+
+<div class="box">
+<h2>🔎 KERESŐ (OKOS)</h2>
+<code>
+let res = await fetch(
+ `https://nominatim.openstreetmap.org/search?format=json&q=${q}`
+);
+</code>
+</div>
+
+<div class="box">
+<h2>🚏 MEGÁLLÓ TÁVOLSÁG</h2>
+<code>
+let d = map.distance(
+ [userLat,userLon],
+ [stop.lat,stop.lon]
+);
+</code>
+</div>
+
+<div class="box">
+<h2>⚠️ HIBÁK</h2>
+<code>
+- hiányzó </script>
+- dupla map
+- rossz link
+- egy soros HTML
+</code>
+</div>
+
+<div class="box">
+<h2>💻 GITHUB</h2>
+<code>
+✔ kevés mentés
+✔ külön fájlok
+
+❌ 300 commit / nap
+❌ rossz link
+</code>
+</div>
 
 </body>
 </html>
