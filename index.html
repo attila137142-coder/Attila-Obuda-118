@@ -2,31 +2,78 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés - GPS + Megállók</title>
+<title>Attila Közlekedés V2</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-#map { height: 400px; margin-top:10px; }
-body { font-family: Arial; }
-.box { padding:10px; border:1px solid #ccc; margin:10px 0; }
+body { margin:0; font-family:Arial; background:#0f172a; color:white; }
+
+#topbar {
+ display:flex;
+ justify-content:space-between;
+ padding:10px;
+ background:#111827;
+ font-size:14px;
+}
+
+#container {
+ display:grid;
+ grid-template-columns: 2fr 1fr;
+ height: calc(100vh - 40px);
+}
+
+#map { height:100%; }
+
+.panel {
+ background:#1f2937;
+ padding:10px;
+ overflow:auto;
+}
+
+.card {
+ background:#111827;
+ padding:8px;
+ margin-bottom:8px;
+ border-radius:8px;
+}
+
+input {
+ width:100%;
+ padding:6px;
+ margin-bottom:10px;
+}
 </style>
 </head>
 
 <body>
 
-<h2>📍 Helyzet + Közlekedés rendszer</h2>
+<div id="topbar">
+ <div id="gps">📍 GPS...</div>
+ <div id="net">📶 ...</div>
+ <div id="status">🟢 READY</div>
+</div>
 
-<div class="box" id="location">GPS betöltés...</div>
-<div class="box" id="gsm">Hálózat...</div>
+<div id="container">
 
-<div id="map"></div>
+ <div id="map"></div>
 
-<h3>🚏 Legközelebbi megállók</h3>
-<div id="stops">--</div>
+ <div class="panel">
+
+  <input id="search" placeholder="🔎 Megálló keresés..." oninput="searchStops()">
+
+  <h3>🚏 Legközelebbi</h3>
+  <div id="stops"></div>
+
+ </div>
+
+</div>
 
 <script>
+
+/* ================= MAP ================= */
+
 let map = L.map('map').setView([47.4979,19.0402], 12);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
@@ -35,117 +82,105 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 
 let userLat, userLon;
 
-/* ================= STOP ADATBÁZIS ================= */
+/* ================= ADATBÁZIS ================= */
 
 let stops = [
 
 {line:"Gyermekvasút", name:"Hűvösvölgy", lat:47.5412, lon:18.9640},
 {line:"Gyermekvasút", name:"Normafa", lat:47.5070, lon:18.9630},
 
-{line:"Királyrét", name:"Kismaros", lat:47.8270, lon:19.0150},
-{line:"Királyrét", name:"Királyrét", lat:47.9100, lon:18.9730},
+{line:"MÁV", name:"Kelenföld", lat:47.4649, lon:19.0193},
+{line:"MÁV", name:"Déli pályaudvar", lat:47.4990, lon:19.0250},
 
-{line:"Kemence", name:"Kemence", lat:47.9980, lon:18.8910},
+{line:"BKK", name:"Deák Ferenc tér", lat:47.4979, lon:19.0540},
 
-{line:"Szob", name:"Szob", lat:47.8190, lon:18.8680}
+{line:"Kisvasút", name:"Királyrét", lat:47.9100, lon:18.9730}
 
 ];
 
-/* ================= FORMÁZÁS ================= */
+/* ================= GPS ================= */
 
-function formatDistance(m){
- return m < 1000 ? Math.round(m)+" m" : (m/1000).toFixed(2)+" km";
+function update(pos){
+
+ userLat = pos.coords.latitude;
+ userLon = pos.coords.longitude;
+
+ document.getElementById("gps").innerHTML =
+ `📍 ${userLat.toFixed(4)}, ${userLon.toFixed(4)}`;
+
+ L.marker([userLat,userLon]).addTo(map);
+ map.setView([userLat,userLon],14);
+
+ renderStops();
 }
 
-/* ================= KÖZELI MEGÁLLÓK ================= */
+/* ================= NETWORK ================= */
 
-function getNearest(){
+function net(){
 
- return stops.map(s=>({
-  ...s,
-  d: map.distance([userLat,userLon],[s.lat,s.lon])
- }))
- .sort((a,b)=>a.d-b.d)
- .slice(0,10);
+ let c = navigator.connection;
+ if(!c) return "📶 N/A";
+
+ return `📶 ${c.effectiveType} | ⚡ ${c.downlink} Mbps`;
 }
 
-function showStops(){
+setInterval(()=>{
+ document.getElementById("net").innerHTML = net();
+},2000);
 
- let list = getNearest();
+/* ================= NEAREST ================= */
+
+function dist(a,b){
+ return map.distance(a,b);
+}
+
+function renderStops(){
+
+ let arr = stops.map(s=>{
+  return {
+   ...s,
+   d: dist([userLat,userLon],[s.lat,s.lon])
+  };
+ });
+
+ arr.sort((a,b)=>a.d-b.d);
+
  let html = "";
 
- list.forEach(s=>{
+ arr.slice(0,8).forEach(s=>{
   html += `
+  <div class="card">
    🚏 <b>${s.name}</b><br>
    🚆 ${s.line}<br>
-   📏 ${formatDistance(s.d)}<br><br>
-  `;
+   📏 ${(s.d/1000).toFixed(2)} km
+  </div>`;
  });
 
  document.getElementById("stops").innerHTML = html;
 }
 
-/* ================= GPS ================= */
+/* ================= SEARCH ================= */
 
-async function updateLocation(pos){
+function searchStops(){
 
- userLat = pos.coords.latitude;
- userLon = pos.coords.longitude;
+ let q = document.getElementById("search").value.toLowerCase();
 
- let acc = pos.coords.accuracy;
-
- /* cím */
- let res = await fetch(
-  `https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLat}&lon=${userLon}`
+ let filtered = stops.filter(s =>
+  s.name.toLowerCase().includes(q)
  );
 
- let d = await res.json();
- let a = d.address || {};
-
- document.getElementById("location").innerHTML = `
- 📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}<br>
- 🎯 ±${Math.round(acc)} m<br><br>
- 🌍 ${a.country || "-"}<br>
- 🏙 ${a.city || a.town || a.village || "-"}<br>
- 🛣 ${a.road || ""} ${a.house_number || ""}
- `;
-
- L.marker([userLat,userLon]).addTo(map);
- map.setView([userLat,userLon],14);
-
- showStops();
+ document.getElementById("stops").innerHTML =
+ filtered.map(s=>`
+  <div class="card">
+   🚏 ${s.name}<br>
+   🚆 ${s.line}
+  </div>
+ `).join("");
 }
 
-/* ================= HÁLÓZAT ================= */
+/* ================= INIT ================= */
 
-function getSignalInfo(){
-
- let c = navigator.connection;
- if(!c) return "📡 nincs adat";
-
- let speed = c.downlink;
- let type = c.effectiveType;
-
- let percent = Math.min(100, Math.round(speed*20));
-
- return `
- 📶 Jel: ${percent}%<br>
- 🌐 Típus: ${type}<br>
- ⚡ ${speed} Mbps
- `;
-}
-
-setInterval(()=>{
- document.getElementById("gsm").innerHTML = getSignalInfo();
-},2000);
-
-/* ================= GPS indítás ================= */
-
-navigator.geolocation.watchPosition(
- updateLocation,
- ()=> document.getElementById("location").innerHTML="❌ GPS hiba",
- { enableHighAccuracy:true, maximumAge:0, timeout:10000 }
-);
+navigator.geolocation.watchPosition(update);
 
 </script>
 
