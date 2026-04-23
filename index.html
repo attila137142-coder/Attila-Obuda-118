@@ -2,77 +2,67 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés V5 - GTFS Dispatcher</title>
+<title>Attila Közlekedés V6 - Mini BKK Control Center</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body { margin:0; font-family:Arial; background:#0b1220; color:#fff; }
+body{margin:0;font-family:Arial;background:#0b1220;color:#fff;}
 
-#topbar{
- display:flex;
- justify-content:space-between;
- padding:10px;
- background:#111827;
- font-size:13px;
+#top{
+display:flex;
+justify-content:space-between;
+padding:10px;
+background:#111827;
+font-size:13px;
 }
 
-#container{
- display:grid;
- grid-template-columns: 2fr 1fr;
- height: calc(100vh - 40px);
+#wrap{
+display:grid;
+grid-template-columns:2fr 1fr;
+height:calc(100vh - 40px);
 }
 
-#map{ height:100%; }
+#map{height:100%;}
 
 .panel{
- background:#1f2937;
- padding:10px;
- overflow:auto;
+background:#1f2937;
+padding:10px;
+overflow:auto;
 }
 
 .card{
- background:#0f172a;
- padding:8px;
- margin-bottom:8px;
- border-radius:8px;
- border:1px solid #243244;
- font-size:13px;
+background:#0f172a;
+padding:8px;
+margin-bottom:8px;
+border-radius:8px;
+border:1px solid #243244;
+font-size:13px;
 }
 
-input{
- width:100%;
- padding:8px;
- margin-bottom:10px;
- border-radius:6px;
- border:none;
-}
-
-h3{ color:#38bdf8; }
+h3{color:#38bdf8;}
 </style>
 </head>
 
 <body>
 
-<div id="topbar">
+<div id="top">
  <div id="gps">📍 GPS...</div>
- <div id="status">🟢 GTFS CORE READY</div>
+ <div>🚦 Attila Control Center V6</div>
 </div>
 
-<div id="container">
+<div id="wrap">
 
  <div id="map"></div>
 
  <div class="panel">
 
-  <input id="search" placeholder="🔎 megálló keresés..." oninput="searchStops()">
+  <h3>🚏 Megállók</h3>
+  <div id="stops"></div>
 
-  <h3>🚏 Legközelebbi megállók</h3>
-  <div id="stops">--</div>
-
-  <h3>🚌 Következő indulások</h3>
-  <div id="departures">--</div>
+  <h3>🚌 Élő járatok (szimulált mozgás)</h3>
+  <div id="vehicles"></div>
 
  </div>
 
@@ -85,137 +75,109 @@ h3{ color:#38bdf8; }
 let map = L.map('map').setView([47.4979,19.0402], 12);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
- attribution:'OSM'
+ attribution:"OSM"
 }).addTo(map);
 
-/* ================= USER ================= */
-
-let userLat, userLon;
-
-/* ================= GTFS-LIKE DATA (SIMPLIFIED CORE) ================= */
+/* ================= DATA ================= */
 
 let stops = [
-{ id:"S1", type:"BKK", name:"Deák Ferenc tér", lat:47.4979, lon:19.0540 },
-{ id:"S2", type:"MÁV", name:"Kelenföld", lat:47.4649, lon:19.0193 },
-{ id:"S3", type:"VOLÁN", name:"Népliget", lat:47.4760, lon:19.0990 },
-{ id:"S4", type:"VOLÁN", name:"Zalaegerszeg autóbusz-állomás", lat:46.8440, lon:16.8460 }
+{name:"Deák tér", lat:47.4979, lon:19.0540},
+{name:"Blaha", lat:47.4963, lon:19.0700},
+{name:"Keleti", lat:47.5008, lon:19.0830}
 ];
 
-/* ================= SIMULATED GTFS stop_times ================= */
+/* ================= DRAW STOPS ================= */
 
-let stopTimes = [
-{ stop_id:"S1", route:"M3", time:"12:10" },
-{ stop_id:"S1", route:"M3", time:"12:25" },
-{ stop_id:"S2", route:"100a", time:"12:15" },
-{ stop_id:"S3", route:"260", time:"12:20" },
-{ stop_id:"S4", route:"8", time:"12:30" }
+stops.forEach(s=>{
+ L.circleMarker([s.lat,s.lon],{
+  radius:6,
+  color:"#22c55e"
+ }).addTo(map).bindPopup("🚏 "+s.name);
+});
+
+/* ================= VEHICLES (SIMULATED MOVEMENT) ================= */
+
+let vehicles = [
+{
+ name:"🚌 M3 Metro",
+ path:[
+  [47.4979,19.0540],
+  [47.4963,19.0700],
+  [47.5008,19.0830]
+ ],
+ i:0
+}
 ];
 
-/* ================= UTIL ================= */
+vehicles.forEach(v=>{
+ v.marker = L.marker(v.path[0]).addTo(map);
+});
 
-function dist(a,b){
- return map.distance(a,b);
+/* ================= ANIMATION LOOP ================= */
+
+function moveVehicles(){
+
+ vehicles.forEach(v=>{
+
+  v.i += 0.01;
+
+  if(v.i >= v.path.length-1){
+   v.i = 0;
+  }
+
+  let i0 = Math.floor(v.i);
+  let i1 = i0+1;
+
+  let t = v.i - i0;
+
+  if(i1 < v.path.length){
+
+   let lat = v.path[i0][0] + (v.path[i1][0]-v.path[i0][0])*t;
+   let lon = v.path[i0][1] + (v.path[i1][1]-v.path[i0][1])*t;
+
+   v.marker.setLatLng([lat,lon]);
+
+  }
+
+ });
+
 }
 
-function format(m){
- return m<1000 ? Math.round(m)+" m" : (m/1000).toFixed(2)+" km";
-}
+/* ================= PANEL ================= */
 
-/* ================= NEAREST ================= */
+function renderVehicles(){
 
-function getNearest(){
-
- return stops.map(s=>({
-  ...s,
-  d: dist([userLat,userLon],[s.lat,s.lon])
- }))
- .sort((a,b)=>a.d-b.d)
- .slice(0,8);
-
-}
-
-/* ================= RENDER STOPS ================= */
-
-function renderStops(list){
-
- let data = list || getNearest();
-
- document.getElementById("stops").innerHTML =
- data.map(s=>`
-  <div class="card" onclick="showDepartures('${s.id}')">
-   🚏 <b>${s.name}</b><br>
-   🏷 ${s.type}<br>
-   📏 ${format(s.d)}
+ document.getElementById("vehicles").innerHTML =
+ vehicles.map(v=>`
+  <div class="card">
+   ${v.name}<br>
+   📍 mozgásban
   </div>
  `).join("");
-}
 
-/* ================= SEARCH ================= */
-
-function searchStops(){
-
- let q = document.getElementById("search").value.toLowerCase();
-
- if(!q){
-  renderStops();
-  return;
- }
-
- let filtered = stops.filter(s =>
-  s.name.toLowerCase().includes(q) ||
-  s.type.toLowerCase().includes(q)
- );
-
- renderStops(filtered);
-}
-
-/* ================= GTFS CORE LOGIC ================= */
-
-function showDepartures(stopId){
-
- let now = new Date();
- let current = now.getHours()*60 + now.getMinutes();
-
- let deps = stopTimes
- .filter(t => t.stop_id === stopId)
- .map(t=>{
-  let [h,m] = t.time.split(":").map(Number);
-  let mins = h*60 + m;
-  return { ...t, mins, diff: mins - current };
- })
- .filter(t => t.diff >= 0)
- .sort((a,b)=>a.diff-b.diff)
- .slice(0,5);
-
- document.getElementById("departures").innerHTML =
- `<div class="card">
- <b>🚏 Indulások</b><br><br>
- ` +
- deps.map(d=>`
- 🚌 ${d.route} → ${d.time} (+${d.diff} perc)<br>
- `).join("")
- + "</div>";
 }
 
 /* ================= GPS ================= */
 
-function update(pos){
-
- userLat = pos.coords.latitude;
- userLon = pos.coords.longitude;
+navigator.geolocation.watchPosition(pos=>{
 
  document.getElementById("gps").innerHTML =
- `📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`;
+ `📍 ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
 
- L.marker([userLat,userLon]).addTo(map);
- map.setView([userLat,userLon],13);
+ L.marker([pos.coords.latitude,pos.coords.longitude]).addTo(map);
 
- renderStops();
-}
+ map.setView([pos.coords.latitude,pos.coords.longitude],13);
 
-/* ================= START ================= */
+});
 
-navigator.geolocation.watchPosition(update);
+/* ================= LOOP ================= */
+
+setInterval(()=>{
+ moveVehicles();
+ renderVehicles();
+},100);
+
+renderVehicles();
 
 </script>
 
