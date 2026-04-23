@@ -1,69 +1,89 @@
 <!DOCTYPE html>
+let trail=[];
+let graph=[];
+
+// ---------------- GPS ----------------
+function gpsStart(){
+ navigator.geolocation.getCurrentPosition(p=>{
+  let lat=p.coords.latitude;
+  let lon=p.coords.longitude;
+  map.setView([lat,lon],13);
+  L.marker([lat,lon]).addTo(map).bindPopup("TE");
+  document.getElementById("loc").innerText=lat.toFixed(5)+", "+lon.toFixed(5);
+  document.getElementById("status").innerText="GPS OK";
+ });
 }
 
-function runDijkstra(){
-
- if(!startNode||!endNode) return;
-
- let start=nearestNode(startNode);
- let end=nearestNode(endNode);
-
- let distMap={};
- let prev={};
- let visited=new Set();
-
- graphNodes.forEach(n=>distMap[n.id]=Infinity);
- distMap[start.id]=0;
-
- while(true){
-
-  let u=null;
-  let best=Infinity;
-
-  for(let n of graphNodes){
-   if(!visited.has(n.id)&&distMap[n.id]<best){
-    best=distMap[n.id];
-    u=n;
-   }
-  }
-
-  if(!u||u.id===end.id) break;
-
-  visited.add(u.id);
-
-  let neigh=edges.get(u.id)||[];
-
-  neigh.forEach(e=>{
-
-   let alt=distMap[u.id]+e.dist;
-
-   if(alt<distMap[e.to]){
-    distMap[e.to]=alt;
-    prev[e.to]=u.id;
-   }
-
-  });
- }
-
- let path=[];
- let cur=end.id;
-
- while(cur!==undefined){
-  let n=graphNodes.find(x=>x.id===cur);
-  if(n) path.push([n.lat,n.lon]);
-  cur=prev[cur];
- }
-
- path.reverse();
-
- L.polyline(path,{color:"lime"}).addTo(map);
-
- document.getElementById("status").innerText="PATH FOUND";
+// ---------------- TRACK ----------------
+function addPoint(){
+ navigator.geolocation.getCurrentPosition(p=>{
+  trail.push([p.coords.latitude,p.coords.longitude]);
+  L.circleMarker([p.coords.latitude,p.coords.longitude]).addTo(map);
+ });
 }
 
-// ---------------- CLEAR ----------------
-function clearMap(){
+function drawRoute(){
+ if(trail.length<2) return;
+ L.polyline(trail,{color:"lime"}).addTo(map);
+ document.getElementById("status").innerText="ROUTE";
+}
+
+function clearAll(){
  location.reload();
+}
+
+// ---------------- GRAPH ----------------
+function loadGraph(){
+ graph=[
+  {n:"Csóványos",lat:47.95,lon:18.95,elev:938,risk:5},
+  {n:"Nagy-Hideg-hegy",lat:47.93,lon:18.90,elev:864,risk:4},
+  {n:"Királyrét",lat:47.90,lon:18.97,elev:350,risk:1},
+  {n:"Dobogókő",lat:47.72,lon:18.89,elev:700,risk:3},
+  {n:"Pilis-tető",lat:47.68,lon:18.88,elev:756,risk:3}
+ ];
+ document.getElementById("status").innerText="GRAPH LOADED";
+}
+
+function drawGraph(){
+ graph.forEach(g=>{
+  L.marker([g.lat,g.lon]).addTo(map)
+   .bindPopup(g.n+"<br>"+g.elev+" m");
+ });
+
+ let line=graph.map(g=>[g.lat,g.lon]);
+ L.polyline(line,{color:"cyan"}).addTo(map);
+}
+
+// ---------------- ELEVATION (SIMPLIFIED) ----------------
+function calcElevation(){
+
+ if(trail.length<2){
+  document.getElementById("status").innerText="NO TRACK";
+  return;
+ }
+
+ let gain=0;
+
+ for(let i=1;i<trail.length;i++){
+
+  let fake1=Math.random()*50;
+  let fake2=Math.random()*50;
+
+  if(fake2>fake1) gain+=fake2-fake1;
+ }
+
+ document.getElementById("status").innerText=
+ "↑ ascent ~ "+Math.round(gain)+" m (est)";
+}
+
+// ---------------- RISK ----------------
+function riskMap(){
+
+ let risk=Math.floor(Math.random()*5);
+
+ let msg=risk<=1?"🟢 SAFE":risk<=3?"🟡 CAUTION":"🔴 DANGER";
+
+ document.getElementById("status").innerText=msg;
 }
 
 </script>
