@@ -2,15 +2,15 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés V2.1 GTFS Dispatcher</title>
+<title>Google Transit Control HU V3</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body { margin:0; font-family:Arial; background:#0b1220; color:#fff; }
+body { margin:0; font-family:Arial; background:#0b1020; color:#fff; }
 
-#top {
+#topbar {
  display:flex;
  justify-content:space-between;
  padding:10px;
@@ -18,9 +18,9 @@ body { margin:0; font-family:Arial; background:#0b1220; color:#fff; }
  font-size:13px;
 }
 
-#wrap {
+#grid {
  display:grid;
- grid-template-columns: 2fr 1fr;
+ grid-template-columns: 2.2fr 1fr;
  height: calc(100vh - 40px);
 }
 
@@ -39,29 +39,38 @@ body { margin:0; font-family:Arial; background:#0b1220; color:#fff; }
  border-radius:8px;
 }
 
-input {
+input, select {
  width:100%;
  padding:6px;
- margin-bottom:10px;
+ margin-bottom:8px;
 }
 </style>
 </head>
 
 <body>
 
-<div id="top">
+<div id="topbar">
  <div id="gps">📍 GPS...</div>
  <div id="net">📶 ...</div>
- <div id="addr">🌍 ...</div>
+ <div id="zone">🧭 zóna...</div>
 </div>
 
-<div id="wrap">
+<div id="grid">
 
  <div id="map"></div>
 
  <div class="panel">
 
-  <input id="search" placeholder="🔎 megálló keresés..." oninput="searchStops()">
+  <input id="search" placeholder="🔎 megálló / vonal..." oninput="filter()">
+
+  <select id="network" onchange="setNetwork()">
+   <option value="ALL">🌐 Összes</option>
+   <option value="BKK">🟡 BKK</option>
+   <option value="MAV">🔵 MÁV</option>
+   <option value="HÉV">🟢 HÉV</option>
+   <option value="KISVASUT">🚂 Kisvasút</option>
+   <option value="ZALA">🟣 Zala</option>
+  </select>
 
   <h3>🚏 Legközelebbi</h3>
   <div id="stops"></div>
@@ -82,57 +91,58 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 
 let userLat, userLon;
 
-/* ================= GTFS ADAT (UNIVERZÁLIS) ================= */
-/*
-Ez ide fogja fogadni:
-- BKK GTFS
-- MÁV GTFS
-- Zala megye GTFS
-- bármilyen JSON konvertált feed
-*/
+/* ================= GTFS CORE ================= */
 
 let stops = [];
 
-/* ================= KISVASUT (LOCAL OVERLAY) ================= */
+/*
+FORMAT:
+{
+ name:"",
+ lat:0,
+ lon:0,
+ network:"BKK/MAV/HÉV/ZALA/KISVASUT",
+ line:""
+}
+*/
+
+/* ================= KISVASUT DEMO ================= */
 
 let kisvasut = [
- {name:"Hűvösvölgy", lat:47.5412, lon:18.9640, line:"Gyermekvasút"},
- {name:"Normafa", lat:47.5070, lon:18.9630, line:"Gyermekvasút"},
- {name:"Kismaros", lat:47.8270, lon:19.0150, line:"Királyrét"},
- {name:"Királyrét", lat:47.9100, lon:18.9730, line:"Királyrét"},
- {name:"Szob", lat:47.8190, lon:18.8680, line:"Szobi"}
+ {name:"Hűvösvölgy", lat:47.5412, lon:18.9640, network:"KISVASUT", line:"Gyermekvasút"},
+ {name:"Normafa", lat:47.5070, lon:18.9630, network:"KISVASUT", line:"Gyermekvasút"},
+ {name:"Királyrét", lat:47.9100, lon:18.9730, network:"KISVASUT", line:"Börzsöny"}
 ];
-
-function loadKisvasut(){
- kisvasut.forEach(s=>{
-  L.circleMarker([s.lat,s.lon],{
-   radius:5,
-   color:"green"
-  }).addTo(map).bindPopup("🚂 "+s.name+"<br>"+s.line);
- });
-}
 
 /* ================= DIST ================= */
 
-function dist(a,b){
+function d(a,b){
  return map.distance(a,b);
 }
 
-/* ================= LEGKÖZELEBBI ================= */
+/* ================= RENDER ================= */
 
-function renderStops(){
+function render(){
 
  if(!userLat) return;
 
+ let net = document.getElementById("network").value;
+
  let arr = stops.map(s=>({
   ...s,
-  d: dist([userLat,userLon],[s.lat,s.lon])
+  dist: d([userLat,userLon],[s.lat,s.lon])
  }));
 
- arr.sort((a,b)=>a.d-b.d);
+ if(net !== "ALL"){
+  arr = arr.filter(s=>s.network === net);
+ }
 
- // 🔥 20 km szűrés (reális városi zóna)
- arr = arr.filter(s=>s.d < 20000);
+ arr = arr.filter(s=>s.dist < 25000);
+
+ arr.sort((a,b)=>a.dist-b.dist);
+
+ document.getElementById("zone").innerHTML =
+ `🧭 aktív: ${net}`;
 
  let html = "";
 
@@ -140,8 +150,8 @@ function renderStops(){
   html += `
   <div class="card">
    🚏 <b>${s.name}</b><br>
-   🚆 ${s.line || "GTFS"}<br>
-   📏 ${(s.d/1000).toFixed(2)} km
+   🚆 ${s.network} | ${s.line}<br>
+   📏 ${(s.dist/1000).toFixed(2)} km
   </div>`;
  });
 
@@ -150,24 +160,25 @@ function renderStops(){
 
 /* ================= SEARCH ================= */
 
-function searchStops(){
+function filter(){
 
  let q = document.getElementById("search").value.toLowerCase();
 
  let f = stops.filter(s=>
-  s.name.toLowerCase().includes(q)
+  s.name.toLowerCase().includes(q) ||
+  (s.line||"").toLowerCase().includes(q)
  );
 
  document.getElementById("stops").innerHTML =
  f.slice(0,15).map(s=>`
   <div class="card">
    🚏 ${s.name}<br>
-   🚆 ${s.line || "GTFS"}
+   ${s.network} | ${s.line}
   </div>
  `).join("");
 }
 
-/* ================= GPS + REVERSE ================= */
+/* ================= GPS ================= */
 
 async function update(pos){
 
@@ -190,14 +201,12 @@ async function update(pos){
   let d = await r.json();
   let a = d.address || {};
 
-  document.getElementById("addr").innerHTML =
-  `🌍 ${a.country || "-"} | 🏙 ${a.city || a.town || "-"} | 🛣 ${a.road || ""} ${a.house_number || ""}`;
+  document.getElementById("gps").innerHTML +=
+  `<br>🌍 ${a.city || a.town || a.village || "-"} | ${a.road || ""}`;
 
- }catch(e){
-  document.getElementById("addr").innerHTML = "❌ cím hiba";
- }
+ }catch(e){}
 
- renderStops();
+ render();
 }
 
 /* ================= NET ================= */
@@ -205,30 +214,33 @@ async function update(pos){
 function net(){
  let c = navigator.connection;
  if(!c) return "📶 N/A";
- return `📶 ${c.effectiveType} | ⚡ ${c.downlink} Mbps`;
+ return `📶 ${c.effectiveType} | ⚡ ${c.downlink}`;
 }
 
 setInterval(()=>{
  document.getElementById("net").innerHTML = net();
 },2000);
 
-/* ================= GTFS LOADER (FONTOS RÉSZ) ================= */
-/*
-IDE TÖLTÖD BE:
-- bkk_stops.json
-- mav_stops.json
-- zalamegye_stops.json
-*/
+/* ================= NETWORK SET ================= */
+
+function setNetwork(){
+ render();
+}
+
+/* ================= LOAD GTFS ================= */
 
 async function loadGTFS(){
 
- // 🔥 példa fallback (amíg nincs API)
+ // 🔥 IDE jönnek majd:
+ // BKK GTFS
+ // MÁV GTFS
+ // Zala GTFS
+
  let res = await fetch("stops.json");
  let data = await res.json();
 
- stops = data;
+ stops = data.concat(kisvasut);
 
- loadKisvasut();
 }
 
 /* ================= INIT ================= */
