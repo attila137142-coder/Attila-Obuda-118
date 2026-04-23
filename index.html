@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Mini BKK Control Room V2 FIX</title>
+<title>Budapest LIVE Transit V8</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -61,8 +61,6 @@ cursor:pointer;
 .volan{background:#f59e0b;}
 .regio{background:#a855f7;}
 
-button:hover{opacity:0.85;}
-
 h3{color:#38bdf8;}
 </style>
 </head>
@@ -77,13 +75,13 @@ h3{color:#38bdf8;}
 
 <input id="search" placeholder="🔎 megálló keresés..." oninput="renderStops()">
 
-<h3>🚏 Megállók</h3>
+<h3>🚏 Budapest LIVE hálózat</h3>
 <div id="stops"></div>
 
-<h3>🕒 Indulások</h3>
+<h3>🕒 Élő indulások (számolt)</h3>
 <div id="departures">Válassz megállót</div>
 
-<h3>🌐 URL menetrendek</h3>
+<h3>🌐 Rendszer linkek</h3>
 <div id="links"></div>
 
 </div>
@@ -102,39 +100,39 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
  attribution:"OSM"
 }).addTo(map);
 
-/* ================= DATA ================= */
+/* ================= DATA LAYER ================= */
 
 let stops = [
 {name:"Deák tér", type:"BKK", lat:47.4979, lon:19.0540, url:"https://futar.bkk.hu"},
-{name:"Blaha Lujza tér", type:"BKK", lat:47.4963, lon:19.0700, url:"https://futar.bkk.hu"},
+{name:"Blaha", type:"BKK", lat:47.4963, lon:19.0700, url:"https://futar.bkk.hu"},
 {name:"Kelenföld", type:"MÁV", lat:47.4649, lon:19.0193, url:"https://jegy.mav.hu"},
 {name:"Nyugati", type:"MÁV", lat:47.5101, lon:19.0560, url:"https://jegy.mav.hu"},
-{name:"Népliget", type:"VOLÁN", lat:47.4760, lon:19.0990, url:"https://menetrendek.hu"},
-{name:"Zalaegerszeg", type:"REGIO", lat:46.8440, lon:16.8460, url:"https://menetrendek.hu"}
+{name:"Népliget", type:"VOLÁN", lat:47.4760, lon:19.0990, url:"https://menetrendek.hu"}
 ];
 
-/* +45 megálló stabil bővítés */
-for(let i=0;i<39;i++){
+/* + bővítés (Budapest + agglomeráció LIVE CORE) */
+
+for(let i=0;i<40;i++){
  stops.push({
-  name:"Megálló "+(i+1),
+  name:"BP Megálló "+(i+1),
   type:"REGIO",
-  lat:47.4+Math.random()*0.2,
-  lon:19.0+Math.random()*0.2,
+  lat:47.4+Math.random()*0.25,
+  lon:19.0+Math.random()*0.25,
   url:"https://menetrendek.hu"
  });
 }
 
-/* ================= GTFS ================= */
+/* ================= GTFS CORE ================= */
 
 let stopTimes = [
 {stop:"Deák tér", route:"M2", time:"12:10"},
 {stop:"Deák tér", route:"M2", time:"12:25"},
-{stop:"Blaha Lujza tér", route:"4-6", time:"12:12"},
+{stop:"Blaha", route:"4-6", time:"12:12"},
 {stop:"Kelenföld", route:"M4", time:"12:18"},
 {stop:"Népliget", route:"VOLÁN 260", time:"12:30"}
 ];
 
-/* ================= MAP DRAW ================= */
+/* ================= MAP ================= */
 
 stops.forEach(s=>{
 
@@ -151,7 +149,14 @@ stops.forEach(s=>{
 
 });
 
-/* ================= RENDER STOPS ================= */
+/* ================= LIVE ENGINE (FRISSÜLŐ LOGIKA) ================= */
+
+function getNowMinutes(){
+ let n = new Date();
+ return n.getHours()*60 + n.getMinutes();
+}
+
+/* ================= STOPS ================= */
 
 function renderStops(){
 
@@ -176,13 +181,11 @@ function renderStops(){
    🚏 <b>${s.name}</b><br>
    🏷 ${s.type}
 
-   <button class="${cls}"
-    onclick="showDepartures('${escapeHtml(s.name)}')">
+   <button class="${cls}" onclick="showDepartures('${s.name}')">
     🕒 Indulások
    </button>
 
-   <button class="${cls}"
-    onclick="openUrl('${escapeHtml(s.url)}')">
+   <button class="${cls}" onclick="openUrl('${s.url}')">
     🌐 Menetrend
    </button>
 
@@ -192,21 +195,13 @@ function renderStops(){
  }).join("");
 
  renderLinks();
-
 }
 
-/* ================= SAFE HTML ================= */
-
-function escapeHtml(str){
- return String(str).replace(/'/g,"\\'");
-}
-
-/* ================= GTFS ================= */
+/* ================= LIVE DEPARTURES ================= */
 
 function showDepartures(stopName){
 
- let now = new Date();
- let current = now.getHours()*60 + now.getMinutes();
+ let now = getNowMinutes();
 
  let deps = stopTimes
  .filter(t=>t.stop===stopName)
@@ -215,7 +210,10 @@ function showDepartures(stopName){
   let [h,m]=t.time.split(":").map(Number);
   let mins=h*60+m;
 
-  return {...t,diff:mins-current};
+  return {
+   ...t,
+   diff:mins-now
+  };
 
  })
  .filter(t=>t.diff>=0)
@@ -226,29 +224,22 @@ function showDepartures(stopName){
   <div class="card">
    🚌 ${d.route}<br>
    🕒 ${d.time}<br>
-   ⏱ ${d.diff} perc
+   ⏱ ${d.diff} perc múlva
   </div>
- `).join("") : "❌ nincs indulás";
+ `).join("") : "❌ nincs további indulás";
 }
 
-/* ================= LINKS (FIXED SAFE VERSION) ================= */
+/* ================= LINKS ================= */
 
 function renderLinks(){
 
- let html = "";
-
- stops.slice(0,6).forEach(s=>{
-  html += `
-   <div class="card">
-    🌐 ${s.name}<br>
-    <button class="bkk" onclick="openUrl('${escapeHtml(s.url)}')">
-     Megnyitás
-    </button>
-   </div>
-  `;
- });
-
- document.getElementById("links").innerHTML = html;
+ document.getElementById("links").innerHTML =
+ stops.slice(0,8).map(s=>`
+  <div class="card">
+   🌐 ${s.name}
+   <button class="bkk" onclick="openUrl('${s.url}')">Megnyitás</button>
+  </div>
+ `).join("");
 
 }
 
@@ -258,15 +249,19 @@ function openUrl(url){
  window.open(url,"_blank");
 }
 
-/* ================= INIT ================= */
+/* ================= AUTO LIVE REFRESH ================= */
+
+setInterval(()=>{
+ renderStops();
+},10000); // LIVE feeling
 
 renderStops();
 renderLinks();
 
-console.log("CONTROL ROOM V2 FIX OK");
+console.log("V8 LIVE TRANSIT READY");
 
 }catch(e){
- console.error("FATAL ERROR:",e);
+ console.error("FATAL:",e);
 }
 
 </script>
