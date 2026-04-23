@@ -1,14 +1,4 @@
 <!DOCTYPE html>
- setTimeout(signalLoop,2000);
-}
-
-// ---------------- NAV ----------------
-function addPoint(){
- navigator.geolocation.getCurrentPosition(p=>{
-  trail.push([p.coords.latitude,p.coords.longitude]);
-  L.circleMarker([p.coords.latitude,p.coords.longitude]).addTo(map);
-  document.getElementById("status").innerText="POINT +1";
- });
 }
 
 function drawRoute(){
@@ -17,53 +7,85 @@ function drawRoute(){
  document.getElementById("status").innerText="ROUTE DRAWN";
 }
 
-function clearRoute(){
+function clearAll(){
  trail=[];
+ graphNodes=[];
  map.eachLayer(l=>{
-  if(l instanceof L.Polyline || l instanceof L.CircleMarker){ map.removeLayer(l); }
+  if(l instanceof L.Polyline || l instanceof L.CircleMarker){map.removeLayer(l);}
  });
  document.getElementById("status").innerText="CLEARED";
 }
 
-// ---------------- RESCUE ----------------
-function rescueMode(){
- if(trail.length<2) return;
+// ---------------- CENTER ----------------
+function centerBorzsony(){
+ map.setView([47.95,18.95],11);
+ document.getElementById("status").innerText="BÖRZSÖNY CENTER";
+}
 
+// ---------------- RESCUE ----------------
+function rescue(){
+ if(trail.length<2) return;
  let a=trail[0];
  let b=trail[trail.length-1];
-
  L.polyline([b,a],{color:"red"}).addTo(map);
  document.getElementById("status").innerText="RESCUE ACTIVE";
 }
 
-// ---------------- RISK ----------------
-function riskCheck(){
- let r=Math.random()*100;
- let msg=r<40?"🟢 OK":r<70?"🟡 CAUTION":"🔴 DANGER";
- document.getElementById("status").innerText=msg;
+// ---------------- OSM GRAPH LOADER ----------------
+async function loadOSMGraph(){
+
+ document.getElementById("status").innerText="LOADING OSM...";
+
+ // Overpass API – Börzsöny hiking paths
+ let query=`[out:json];(
+ way[highway=path](47.75,18.75,48.05,19.15);
+ way[highway=footway](47.75,18.75,48.05,19.15);
+ way[highway=track](47.75,18.75,48.05,19.15);
+);out geom;`;
+
+ try{
+
+  let res=await fetch("https://overpass-api.de/api/interpreter",{
+   method:"POST",
+   body:query
+  });
+
+  let data=await res.json();
+
+  graphNodes=[];
+
+  data.elements.forEach(el=>{
+
+   if(el.geometry){
+
+    let coords=el.geometry.map(p=>[p.lat,p.lon]);
+
+    graphNodes.push(coords);
+
+   }
+
+  });
+
+  document.getElementById("status").innerText="OSM GRAPH LOADED: "+graphNodes.length;
+
+ }catch(e){
+  document.getElementById("status").innerText="OSM LOAD ERROR";
+ }
 }
 
-// ---------------- GRAPH ----------------
-function loadGraph(){
- graph=[
-  {n:"Budai",lat:47.52,lon:18.96},
-  {n:"Pilis",lat:47.68,lon:18.88},
-  {n:"Börzsöny",lat:47.92,lon:18.95},
-  {n:"Királyrét",lat:47.90,lon:18.97},
-  {n:"Dobogókő",lat:47.72,lon:18.89}
- ];
- document.getElementById("status").innerText="GRAPH LOADED";
-}
-
+// ---------------- DRAW GRAPH ----------------
 function drawGraph(){
- graph.forEach(g=>{
-  L.marker([g.lat,g.lon]).addTo(map).bindPopup(g.n);
+
+ if(graphNodes.length==0){
+  document.getElementById("status").innerText="NO GRAPH";
+  return;
+ }
+
+ graphNodes.forEach(line=>{
+  L.polyline(line,{color:"cyan",weight:2}).addTo(map);
  });
 
- let line=graph.map(g=>[g.lat,g.lon]);
- L.polyline(line,{color:"cyan"}).addTo(map);
-
- document.getElementById("status").innerText="GRAPH SHOWN";
+ document.getElementById("status").innerText="GRAPH DRAWN";
 }
 
 </script>
