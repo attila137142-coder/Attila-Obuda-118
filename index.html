@@ -1,91 +1,69 @@
 <!DOCTYPE html>
 }
 
-function drawRoute(){
- if(trail.length<2) return;
- L.polyline(trail,{color:"lime"}).addTo(map);
- document.getElementById("status").innerText="ROUTE DRAWN";
-}
+function runDijkstra(){
 
-function clearAll(){
- trail=[];
- graphNodes=[];
- map.eachLayer(l=>{
-  if(l instanceof L.Polyline || l instanceof L.CircleMarker){map.removeLayer(l);}
- });
- document.getElementById("status").innerText="CLEARED";
-}
+ if(!startNode||!endNode) return;
 
-// ---------------- CENTER ----------------
-function centerBorzsony(){
- map.setView([47.95,18.95],11);
- document.getElementById("status").innerText="BÖRZSÖNY CENTER";
-}
+ let start=nearestNode(startNode);
+ let end=nearestNode(endNode);
 
-// ---------------- RESCUE ----------------
-function rescue(){
- if(trail.length<2) return;
- let a=trail[0];
- let b=trail[trail.length-1];
- L.polyline([b,a],{color:"red"}).addTo(map);
- document.getElementById("status").innerText="RESCUE ACTIVE";
-}
+ let distMap={};
+ let prev={};
+ let visited=new Set();
 
-// ---------------- OSM GRAPH LOADER ----------------
-async function loadOSMGraph(){
+ graphNodes.forEach(n=>distMap[n.id]=Infinity);
+ distMap[start.id]=0;
 
- document.getElementById("status").innerText="LOADING OSM...";
+ while(true){
 
- // Overpass API – Börzsöny hiking paths
- let query=`[out:json];(
- way[highway=path](47.75,18.75,48.05,19.15);
- way[highway=footway](47.75,18.75,48.05,19.15);
- way[highway=track](47.75,18.75,48.05,19.15);
-);out geom;`;
+  let u=null;
+  let best=Infinity;
 
- try{
+  for(let n of graphNodes){
+   if(!visited.has(n.id)&&distMap[n.id]<best){
+    best=distMap[n.id];
+    u=n;
+   }
+  }
 
-  let res=await fetch("https://overpass-api.de/api/interpreter",{
-   method:"POST",
-   body:query
-  });
+  if(!u||u.id===end.id) break;
 
-  let data=await res.json();
+  visited.add(u.id);
 
-  graphNodes=[];
+  let neigh=edges.get(u.id)||[];
 
-  data.elements.forEach(el=>{
+  neigh.forEach(e=>{
 
-   if(el.geometry){
+   let alt=distMap[u.id]+e.dist;
 
-    let coords=el.geometry.map(p=>[p.lat,p.lon]);
-
-    graphNodes.push(coords);
-
+   if(alt<distMap[e.to]){
+    distMap[e.to]=alt;
+    prev[e.to]=u.id;
    }
 
   });
-
-  document.getElementById("status").innerText="OSM GRAPH LOADED: "+graphNodes.length;
-
- }catch(e){
-  document.getElementById("status").innerText="OSM LOAD ERROR";
  }
+
+ let path=[];
+ let cur=end.id;
+
+ while(cur!==undefined){
+  let n=graphNodes.find(x=>x.id===cur);
+  if(n) path.push([n.lat,n.lon]);
+  cur=prev[cur];
+ }
+
+ path.reverse();
+
+ L.polyline(path,{color:"lime"}).addTo(map);
+
+ document.getElementById("status").innerText="PATH FOUND";
 }
 
-// ---------------- DRAW GRAPH ----------------
-function drawGraph(){
-
- if(graphNodes.length==0){
-  document.getElementById("status").innerText="NO GRAPH";
-  return;
- }
-
- graphNodes.forEach(line=>{
-  L.polyline(line,{color:"cyan",weight:2}).addTo(map);
- });
-
- document.getElementById("status").innerText="GRAPH DRAWN";
+// ---------------- CLEAR ----------------
+function clearMap(){
+ location.reload();
 }
 
 </script>
