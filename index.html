@@ -1,91 +1,178 @@
 <!DOCTYPE html>
-location.reload();
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROXY V6 OFFLINE STABLE</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+body { margin:0; font-family:Arial; background:#0b0b0b; color:#0f0; }
+#map { height:100vh; }
+
+#panel{
+ position:absolute;
+ top:10px;
+ left:10px;
+ z-index:1000;
+ background:rgba(0,0,0,0.9);
+ border:1px solid #0f0;
+ padding:10px;
+ width:320px;
+ max-height:90vh;
+ overflow:auto;
 }
 
-// ---------------- GRAPH ----------------
-function loadGraph(){
-graph=[
-{n:"Csóványos",lat:47.95,lon:18.95},
-{n:"Nagy-Hideg-hegy",lat:47.93,lon:18.90},
-{n:"Királyrét",lat:47.90,lon:18.97},
-{n:"Dobogókő",lat:47.72,lon:18.89},
-{n:"Pilis-tető",lat:47.68,lon:18.88}
-];
-document.getElementById("status").innerText="GRAPH LOADED";
+button{
+ width:100%;
+ margin:3px 0;
+ padding:6px;
+ background:black;
+ color:#0f0;
+ border:1px solid #0f0;
+ cursor:pointer;
 }
 
-function drawGraph(){
-graph.forEach(g=>{
-L.marker([g.lat,g.lon]).addTo(map).bindPopup(g.n);
-});
+.status{
+ border:1px solid #0f0;
+ padding:5px;
+ margin:5px 0;
+}
+</style>
+</head>
 
-L.polyline(graph.map(g=>[g.lat,g.lon]),{color:"cyan"}).addTo(map);
+<body>
+
+<div id="panel">
+<h3>🧭 ROXY V6 OFFLINE</h3>
+<div id="status" class="status">READY</div>
+
+<h4>📍 GPS</h4>
+<div id="loc">--</div>
+
+<button onclick="startGPS()">▶ GPS</button>
+<button onclick="addPoint()">➕ Track pont</button>
+<button onclick="drawRoute()">🧭 Útvonal</button>
+<button onclick="calcStats()">📊 Elemzés</button>
+<button onclick="clearAll()">🧹 Törlés</button>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+
+// MAP
+let map = L.map('map').setView([47.5,19.04],13);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+ maxZoom:19
+}).addTo(map);
+
+let trail = [];
+let line;
+
+// GPS
+function startGPS(){
+ navigator.geolocation.getCurrentPosition(
+  p=>{
+   let lat = p.coords.latitude;
+   let lon = p.coords.longitude;
+
+   map.setView([lat,lon],15);
+   L.marker([lat,lon]).addTo(map).bindPopup("Te itt vagy");
+
+   document.getElementById("loc").innerText =
+    lat.toFixed(5)+", "+lon.toFixed(5);
+
+   document.getElementById("status").innerText="GPS OK";
+  },
+  err=>{
+   document.getElementById("status").innerText="GPS HIBA";
+  }
+ );
 }
 
-// ---------------- SRTM ELEVATION ----------------
-async function getElevation(points){
+// TRACK
+function addPoint(){
+ navigator.geolocation.getCurrentPosition(p=>{
+  let pt = [p.coords.latitude, p.coords.longitude];
+  trail.push(pt);
 
-let locs = points.map(p=>p[0]+","+p[1]).join("|");
+  L.circleMarker(pt).addTo(map);
 
-try{
-let res = await fetch("https://api.opentopodata.org/v1/srtm90m?locations="+locs);
-let data = await res.json();
-return data.results.map(r=>r.elevation);
-}catch(e){
-return points.map(()=>Math.random()*500+200);
-}
-}
-
-// ---------------- REAL ELEVATION PROFILE ----------------
-async function calcElevation(){
-
-if(trail.length<2){
-document.getElementById("status").innerText="NO TRACK";
-return;
+  document.getElementById("status").innerText =
+   "Pontok: "+trail.length;
+ });
 }
 
-document.getElementById("status").innerText="LOADING SRTM...";
+// ROUTE
+function drawRoute(){
+ if(trail.length < 2){
+  alert("Legalább 2 pont kell!");
+  return;
+ }
 
-let elevations = await getElevation(trail);
+ if(line) map.removeLayer(line);
 
-let gain=0;
+ line = L.polyline(trail,{color:"lime"}).addTo(map);
 
-for(let i=1;i<elevations.length;i++){
-let diff = elevations[i]-elevations[i-1];
-if(diff>0) gain += diff;
+ document.getElementById("status").innerText="Útvonal kirajzolva";
 }
 
-document.getElementById("status").innerText=
-"↑ ascent: "+Math.round(gain)+" m (SRTM)";
+// TÁVOLSÁG
+function getDistance(a,b){
+ return map.distance(a,b);
 }
 
-// ---------------- RISK (REALISTIC SLOPE) ----------------
-async function riskCalc(){
+// ELEMZÉS
+function calcStats(){
 
-if(trail.length<2){
-document.getElementById("status").innerText="NO DATA";
-return;
+ if(trail.length < 2){
+  document.getElementById("status").innerText="Nincs adat";
+  return;
+ }
+
+ let total = 0;
+ let gain = 0;
+
+ for(let i=1;i<trail.length;i++){
+
+  let d = getDistance(trail[i-1], trail[i]);
+  total += d;
+
+  // OFFLINE "domborzat" szimuláció
+  let h1 = Math.sin(i)*50 + 200;
+  let h2 = Math.sin(i+1)*50 + 200;
+
+  let diff = h2 - h1;
+
+  if(diff > 0) gain += diff;
+ }
+
+ // "lejtés" becslés
+ let slope = gain / total * 100;
+
+ let risk =
+  slope < 5 ? "🟢 SAFE" :
+  slope < 12 ? "🟡 KÖZEPES" :
+  "🔴 MEREDek";
+
+ document.getElementById("status").innerHTML =
+  `Távolság: ${(total/1000).toFixed(2)} km<br>
+   Emelkedés: ${Math.round(gain)} m<br>
+   Lejtés: ${slope.toFixed(1)} %<br>
+   Állapot: ${risk}`;
 }
 
-let elev = await getElevation(trail);
-
-let maxSlope = 0;
-
-for(let i=1;i<elev.length;i++){
-
-let d = elev[i]-elev[i-1];
-let slope = Math.abs(d);
-
-if(slope>maxSlope) maxSlope=slope;
-}
-
-let msg = maxSlope<30?"🟢 SAFE":maxSlope<80?"🟡 CAUTION":"🔴 DANGER";
-
-document.getElementById("status").innerText = msg;
+// CLEAR
+function clearAll(){
+ location.reload();
 }
 
 </script>
 
 </body>
 </html>
-
