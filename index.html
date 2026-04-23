@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROXY V6 OFFLINE STABLE</title>
+<title>ROXY V6 STABLE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -45,38 +45,17 @@ button{
 <body>
 
 <div id="panel">
-<h3>🧭 ROXY V6 OFFLINE</h3>
+<h3>🧭 ROXY V6 STABLE</h3>
 <div id="status" class="status">READY</div>
 
-<h4>📍 GPS</h4>
+<h4>📍 Hely</h4>
 <div id="loc">--</div>
 
-
-   // 👉 CÍM LEKÉRÉS (ha van net)
-   try{
-    let r = await fetch(
-     `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
-    );
-    let d = await r.json();
-
-    document.getElementById("loc").innerHTML =
-     `${d.display_name}`;
-   }catch{
-    // offline fallback
-   }
-
-  },
-  err=>{
-   document.getElementById("status").innerText="GPS HIBA vagy nincs engedély";
-  }
- );
-}
-
 <button onclick="startGPS()">▶ GPS</button>
-<button onclick="addPoint()">➕ Track pont</button>
-<button onclick="drawRoute()">🧭 Útvonal</button>
-<button onclick="calcStats()">📊 Elemzés</button>
-<button onclick="clearAll()">🧹 Törlés</button>
+<button onclick="addPoint()">➕ TRACK</button>
+<button onclick="drawRoute()">🧭 ÚTVONAL</button>
+<button onclick="calcStats()">📊 ELEMZÉS</button>
+<button onclick="clearAll()">🧹 RESET</button>
 </div>
 
 <div id="map"></div>
@@ -98,35 +77,44 @@ let line;
 // GPS
 function startGPS(){
  navigator.geolocation.getCurrentPosition(
-  p=>{
+  function(p){
    let lat = p.coords.latitude;
    let lon = p.coords.longitude;
 
    map.setView([lat,lon],15);
-   L.marker([lat,lon]).addTo(map).bindPopup("Te itt vagy");
+
+   L.marker([lat,lon]).addTo(map)
+    .bindPopup("Te itt vagy");
 
    document.getElementById("loc").innerText =
-    lat.toFixed(5)+", "+lon.toFixed(5);
+    lat.toFixed(5) + ", " + lon.toFixed(5);
 
-   document.getElementById("status").innerText="GPS OK";
+   document.getElementById("status").innerText = "GPS OK";
   },
-  err=>{
-   document.getElementById("status").innerText="GPS HIBA";
+  function(){
+   document.getElementById("status").innerText = "GPS HIBA";
   }
  );
 }
 
 // TRACK
 function addPoint(){
- navigator.geolocation.getCurrentPosition(p=>{
-  let pt = [p.coords.latitude, p.coords.longitude];
-  trail.push(pt);
+ navigator.geolocation.getCurrentPosition(
+  function(p){
 
-  L.circleMarker(pt).addTo(map);
+   let pt = [p.coords.latitude, p.coords.longitude];
 
-  document.getElementById("status").innerText =
-   "Pontok: "+trail.length;
- });
+   trail.push(pt);
+
+   L.circleMarker(pt).addTo(map);
+
+   document.getElementById("status").innerText =
+    "Pontok száma: " + trail.length;
+  },
+  function(){
+   document.getElementById("status").innerText = "NINCS GPS";
+  }
+ );
 }
 
 // ROUTE
@@ -136,23 +124,26 @@ function drawRoute(){
   return;
  }
 
- if(line) map.removeLayer(line);
+ if(line){
+  map.removeLayer(line);
+ }
 
  line = L.polyline(trail,{color:"lime"}).addTo(map);
 
- document.getElementById("status").innerText="Útvonal kirajzolva";
+ document.getElementById("status").innerText =
+  "Útvonal kirajzolva";
 }
 
-// TÁVOLSÁG
-function getDistance(a,b){
+// DIST
+function getDist(a,b){
  return map.distance(a,b);
 }
 
-// ELEMZÉS
+// ANALYSIS
 function calcStats(){
 
  if(trail.length < 2){
-  document.getElementById("status").innerText="Nincs adat";
+  document.getElementById("status").innerText = "Nincs adat";
   return;
  }
 
@@ -161,34 +152,35 @@ function calcStats(){
 
  for(let i=1;i<trail.length;i++){
 
-  let d = getDistance(trail[i-1], trail[i]);
+  let d = getDist(trail[i-1], trail[i]);
   total += d;
 
-  // OFFLINE "domborzat" szimuláció
-  let h1 = Math.sin(i)*50 + 200;
-  let h2 = Math.sin(i+1)*50 + 200;
+  // stabil offline "domborzat"
+  let h1 = Math.sin(i)*40 + 200;
+  let h2 = Math.sin(i+1)*40 + 200;
 
   let diff = h2 - h1;
 
-  if(diff > 0) gain += diff;
+  if(diff > 0){
+   gain += diff;
+  }
  }
 
- // "lejtés" becslés
  let slope = gain / total * 100;
 
  let risk =
-  slope < 5 ? "🟢 SAFE" :
-  slope < 12 ? "🟡 KÖZEPES" :
+  slope < 5 ? "🟢 SÍK" :
+  slope < 12 ? "🟡 EMELKEDŐ" :
   "🔴 MEREDek";
 
  document.getElementById("status").innerHTML =
-  `Távolság: ${(total/1000).toFixed(2)} km<br>
-   Emelkedés: ${Math.round(gain)} m<br>
-   Lejtés: ${slope.toFixed(1)} %<br>
-   Állapot: ${risk}`;
+  "Táv: " + (total/1000).toFixed(2) + " km<br>" +
+  "Szint: " + Math.round(gain) + " m<br>" +
+  "Lejtés: " + slope.toFixed(1) + " %<br>" +
+  "Állapot: " + risk;
 }
 
-// CLEAR
+// RESET
 function clearAll(){
  location.reload();
 }
