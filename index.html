@@ -1,92 +1,92 @@
 <!DOCTYPE html>
-let graphLines;
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>ROXY ARCH STABLE</title>
 
-// ---------------- GPS ----------------
-navigator.geolocation.getCurrentPosition(pos=>{
- let lat = pos.coords.latitude;
- let lon = pos.coords.longitude;
- userMarker = L.marker([lat,lon]).addTo(map);
- map.setView([lat,lon],12);
- document.getElementById("loc").innerText = lat.toFixed(5)+", "+lon.toFixed(5);
-});
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
-// ---------------- SIGNAL ----------------
-function getSignal(){ return Math.floor(Math.random()*100); }
-setInterval(()=>{
- document.getElementById("gsm").innerText = "📶 " + getSignal()+"%";
-},2000);
+<style>
+body { margin:0; font-family:Arial; }
+#map { height:100vh; }
 
-// ---------------- BREADCRUMB ----------------
-function startTrail(){
- tracking = true;
- document.getElementById("status").innerText="Tracking ON";
- setInterval(()=>{
-  if(!tracking) return;
-  navigator.geolocation.getCurrentPosition(p=>{
-   trail.push({lat:p.coords.latitude, lon:p.coords.longitude});
-  });
- },4000);
+#panel{
+ position:absolute;
+ top:10px;
+ left:10px;
+ background:white;
+ padding:10px;
+ z-index:1000;
+ width:300px;
 }
-function stopTrail(){ tracking=false; document.getElementById("status").innerText="STOPPED"; }
-function drawTrail(){
- let line = trail.map(p=>[p.lat,p.lon]);
- L.polyline(line,{color:"lime"}).addTo(map);
-}
+button{width:100%;margin:3px 0;}
+</style>
+</head>
 
-// ---------------- RESCUE ----------------
-function rescueMode(){
- if(trail.length<2) return;
- let start = trail[0];
- let last = trail[trail.length-1];
- L.polyline([[last.lat,last.lon],[start.lat,start.lon]],{color:"red"}).addTo(map);
- document.getElementById("status").innerText="RESCUE ACTIVE";
-}
+<body>
 
-// ---------------- RISK ----------------
-function riskCheck(){
- let r = Math.random()*100;
- let msg = r<40?"🟢 OK":r<70?"🟡 CAUTION":"🔴 DANGER";
- document.getElementById("status").innerText=msg;
-}
-function simulateNight(){ document.getElementById("status").innerText="🌙 NIGHT RISK HIGH"; }
+<div id="panel">
+<h3>ROXY STABLE</h3>
 
-// ---------------- HEATMAP ----------------
-function toggleHeat(){
- if(heatLayer){ map.removeLayer(heatLayer); heatLayer=null; return; }
- let pts = trail.map(p=>[p.lat,p.lon,0.5]);
- heatLayer = L.heatLayer(pts,{radius:25}).addTo(map);
-}
+<button onclick="start()">GPS START</button>
+<button onclick="addPoint()">ADD POINT</button>
+<button onclick="draw()">DRAW ROUTE</button>
 
-// ---------------- GRAPH NAV (ERDÉSZETI) ----------------
-function loadGraph(){
- graphNodes = [
-  {name:"Budai",lat:47.52,lon:18.96},
-  {name:"Pilis",lat:47.68,lon:18.88},
-  {name:"Börzsöny",lat:47.92,lon:18.95},
-  {name:"Királyrét",lat:47.90,lon:18.97},
-  {name:"Dobogókő",lat:47.72,lon:18.89}
- ];
- graphNodes.forEach(n=>L.marker([n.lat,n.lon]).addTo(map).bindPopup(n.name));
- document.getElementById("status").innerText="GRAPH LOADED";
-}
+<div id="info">READY</div>
+</div>
 
-function findPath(){
- if(graphNodes.length<2) return;
- let path = graphNodes.map(n=>[n.lat,n.lon]);
- L.polyline(path,{color:"cyan"}).addTo(map);
- document.getElementById("status").innerText="GRAPH PATH";
-}
+<div id="map"></div>
 
-// ---------------- ZONES ----------------
-function showZones(){
- let zones=[
-  {n:"Csóványos",lat:47.94,lon:18.95},
-  {n:"Nagy-Hideg-hegy",lat:47.92,lon:18.93}
- ];
- zones.forEach(z=>{
-  L.circle([z.lat,z.lon],{radius:3000,color:"red"}).addTo(map).bindPopup(z.n);
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+
+let map = L.map('map').setView([47.5,19.04],10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let trail = [];
+let marker;
+
+function start(){
+
+ navigator.geolocation.getCurrentPosition(p=>{
+
+  let lat=p.coords.latitude;
+  let lon=p.coords.longitude;
+
+  map.setView([lat,lon],14);
+
+  marker = L.marker([lat,lon]).addTo(map)
+   .bindPopup("Te itt vagy").openPopup();
+
+  document.getElementById("info").innerText="GPS OK";
+
  });
- document.getElementById("status").innerText="DANGER ZONES";
+
+}
+
+function addPoint(){
+
+ navigator.geolocation.getCurrentPosition(p=>{
+
+  trail.push([p.coords.latitude,p.coords.longitude]);
+
+  L.circleMarker([p.coords.latitude,p.coords.longitude]).addTo(map);
+
+  document.getElementById("info").innerText="Pont hozzáadva: "+trail.length;
+
+ });
+
+}
+
+function draw(){
+
+ if(trail.length<2) return;
+
+ L.polyline(trail,{color:"blue"}).addTo(map);
+
+ document.getElementById("info").innerText="Route drawn";
+
 }
 
 </script>
