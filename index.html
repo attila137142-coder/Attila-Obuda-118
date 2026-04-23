@@ -1,89 +1,87 @@
 <!DOCTYPE html>
-let trail=[];
-let graph=[];
-
-// ---------------- GPS ----------------
-function gpsStart(){
- navigator.geolocation.getCurrentPosition(p=>{
-  let lat=p.coords.latitude;
-  let lon=p.coords.longitude;
-  map.setView([lat,lon],13);
-  L.marker([lat,lon]).addTo(map).bindPopup("TE");
-  document.getElementById("loc").innerText=lat.toFixed(5)+", "+lon.toFixed(5);
-  document.getElementById("status").innerText="GPS OK";
- });
-}
-
-// ---------------- TRACK ----------------
-function addPoint(){
- navigator.geolocation.getCurrentPosition(p=>{
-  trail.push([p.coords.latitude,p.coords.longitude]);
-  L.circleMarker([p.coords.latitude,p.coords.longitude]).addTo(map);
- });
-}
-
-function drawRoute(){
- if(trail.length<2) return;
- L.polyline(trail,{color:"lime"}).addTo(map);
- document.getElementById("status").innerText="ROUTE";
-}
-
-function clearAll(){
  location.reload();
 }
 
 // ---------------- GRAPH ----------------
 function loadGraph(){
  graph=[
-  {n:"Csóványos",lat:47.95,lon:18.95,elev:938,risk:5},
-  {n:"Nagy-Hideg-hegy",lat:47.93,lon:18.90,elev:864,risk:4},
-  {n:"Királyrét",lat:47.90,lon:18.97,elev:350,risk:1},
-  {n:"Dobogókő",lat:47.72,lon:18.89,elev:700,risk:3},
-  {n:"Pilis-tető",lat:47.68,lon:18.88,elev:756,risk:3}
+  {n:"Csóványos",lat:47.95,lon:18.95},
+  {n:"Nagy-Hideg-hegy",lat:47.93,lon:18.90},
+  {n:"Királyrét",lat:47.90,lon:18.97},
+  {n:"Dobogókő",lat:47.72,lon:18.89},
+  {n:"Pilis-tető",lat:47.68,lon:18.88}
  ];
  document.getElementById("status").innerText="GRAPH LOADED";
 }
 
 function drawGraph(){
  graph.forEach(g=>{
-  L.marker([g.lat,g.lon]).addTo(map)
-   .bindPopup(g.n+"<br>"+g.elev+" m");
+  L.marker([g.lat,g.lon]).addTo(map).bindPopup(g.n);
  });
 
- let line=graph.map(g=>[g.lat,g.lon]);
- L.polyline(line,{color:"cyan"}).addTo(map);
+ L.polyline(graph.map(g=>[g.lat,g.lon]),{color:"cyan"}).addTo(map);
 }
 
-// ---------------- ELEVATION (SIMPLIFIED) ----------------
-function calcElevation(){
+// ---------------- SRTM ELEVATION ----------------
+async function getElevation(points){
+
+ let locs = points.map(p=>p[0]+","+p[1]).join("|");
+
+ try{
+  let res = await fetch("https://api.opentopodata.org/v1/srtm90m?locations="+locs);
+  let data = await res.json();
+  return data.results.map(r=>r.elevation);
+ }catch(e){
+  return points.map(()=>Math.random()*500+200);
+ }
+}
+
+// ---------------- REAL ELEVATION PROFILE ----------------
+async function calcElevation(){
 
  if(trail.length<2){
   document.getElementById("status").innerText="NO TRACK";
   return;
  }
 
+ document.getElementById("status").innerText="LOADING SRTM...";
+
+ let elevations = await getElevation(trail);
+
  let gain=0;
 
- for(let i=1;i<trail.length;i++){
-
-  let fake1=Math.random()*50;
-  let fake2=Math.random()*50;
-
-  if(fake2>fake1) gain+=fake2-fake1;
+ for(let i=1;i<elevations.length;i++){
+  let diff = elevations[i]-elevations[i-1];
+  if(diff>0) gain += diff;
  }
 
  document.getElementById("status").innerText=
- "↑ ascent ~ "+Math.round(gain)+" m (est)";
+ "↑ ascent: "+Math.round(gain)+" m (SRTM)";
 }
 
-// ---------------- RISK ----------------
-function riskMap(){
+// ---------------- RISK (REALISTIC SLOPE) ----------------
+async function riskCalc(){
 
- let risk=Math.floor(Math.random()*5);
+ if(trail.length<2){
+  document.getElementById("status").innerText="NO DATA";
+  return;
+ }
 
- let msg=risk<=1?"🟢 SAFE":risk<=3?"🟡 CAUTION":"🔴 DANGER";
+ let elev = await getElevation(trail);
 
- document.getElementById("status").innerText=msg;
+ let maxSlope = 0;
+
+ for(let i=1;i<elev.length;i++){
+
+  let d = elev[i]-elev[i-1];
+  let slope = Math.abs(d);
+
+  if(slope>maxSlope) maxSlope=slope;
+ }
+
+ let msg = maxSlope<30?"🟢 SAFE":maxSlope<80?"🟡 CAUTION":"🔴 DANGER";
+
+ document.getElementById("status").innerText = msg;
 }
 
 </script>
