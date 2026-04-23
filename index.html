@@ -2,23 +2,23 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés V2</title>
+<title>Attila Közlekedés V2.1 GTFS Dispatcher</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body { margin:0; font-family:Arial; background:#0f172a; color:white; }
+body { margin:0; font-family:Arial; background:#0b1220; color:#fff; }
 
-#topbar {
+#top {
  display:flex;
  justify-content:space-between;
  padding:10px;
  background:#111827;
- font-size:14px;
+ font-size:13px;
 }
 
-#container {
+#wrap {
  display:grid;
  grid-template-columns: 2fr 1fr;
  height: calc(100vh - 40px);
@@ -33,7 +33,7 @@ body { margin:0; font-family:Arial; background:#0f172a; color:white; }
 }
 
 .card {
- background:#111827;
+ background:#0f172a;
  padding:8px;
  margin-bottom:8px;
  border-radius:8px;
@@ -49,19 +49,19 @@ input {
 
 <body>
 
-<div id="topbar">
+<div id="top">
  <div id="gps">📍 GPS...</div>
  <div id="net">📶 ...</div>
- <div id="status">🟢 READY</div>
+ <div id="addr">🌍 ...</div>
 </div>
 
-<div id="container">
+<div id="wrap">
 
  <div id="map"></div>
 
  <div class="panel">
 
-  <input id="search" placeholder="🔎 Megálló keresés..." oninput="searchStops()">
+  <input id="search" placeholder="🔎 megálló keresés..." oninput="searchStops()">
 
   <h3>🚏 Legközelebbi</h3>
   <div id="stops"></div>
@@ -74,7 +74,7 @@ input {
 
 /* ================= MAP ================= */
 
-let map = L.map('map').setView([47.4979,19.0402], 12);
+let map = L.map('map').setView([47.4979,19.0402], 11);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
  attribution:'OSM'
@@ -82,76 +82,65 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 
 let userLat, userLon;
 
-/* ================= ADATBÁZIS ================= */
+/* ================= GTFS ADAT (UNIVERZÁLIS) ================= */
+/*
+Ez ide fogja fogadni:
+- BKK GTFS
+- MÁV GTFS
+- Zala megye GTFS
+- bármilyen JSON konvertált feed
+*/
 
-let stops = [
+let stops = [];
 
-{line:"Gyermekvasút", name:"Hűvösvölgy", lat:47.5412, lon:18.9640},
-{line:"Gyermekvasút", name:"Normafa", lat:47.5070, lon:18.9630},
+/* ================= KISVASUT (LOCAL OVERLAY) ================= */
 
-{line:"MÁV", name:"Kelenföld", lat:47.4649, lon:19.0193},
-{line:"MÁV", name:"Déli pályaudvar", lat:47.4990, lon:19.0250},
-
-{line:"BKK", name:"Deák Ferenc tér", lat:47.4979, lon:19.0540},
-
-{line:"Kisvasút", name:"Királyrét", lat:47.9100, lon:18.9730}
-
+let kisvasut = [
+ {name:"Hűvösvölgy", lat:47.5412, lon:18.9640, line:"Gyermekvasút"},
+ {name:"Normafa", lat:47.5070, lon:18.9630, line:"Gyermekvasút"},
+ {name:"Kismaros", lat:47.8270, lon:19.0150, line:"Királyrét"},
+ {name:"Királyrét", lat:47.9100, lon:18.9730, line:"Királyrét"},
+ {name:"Szob", lat:47.8190, lon:18.8680, line:"Szobi"}
 ];
 
-/* ================= GPS ================= */
-
-function update(pos){
-
- userLat = pos.coords.latitude;
- userLon = pos.coords.longitude;
-
- document.getElementById("gps").innerHTML =
- `📍 ${userLat.toFixed(4)}, ${userLon.toFixed(4)}`;
-
- L.marker([userLat,userLon]).addTo(map);
- map.setView([userLat,userLon],14);
-
- renderStops();
+function loadKisvasut(){
+ kisvasut.forEach(s=>{
+  L.circleMarker([s.lat,s.lon],{
+   radius:5,
+   color:"green"
+  }).addTo(map).bindPopup("🚂 "+s.name+"<br>"+s.line);
+ });
 }
 
-/* ================= NETWORK ================= */
-
-function net(){
-
- let c = navigator.connection;
- if(!c) return "📶 N/A";
-
- return `📶 ${c.effectiveType} | ⚡ ${c.downlink} Mbps`;
-}
-
-setInterval(()=>{
- document.getElementById("net").innerHTML = net();
-},2000);
-
-/* ================= NEAREST ================= */
+/* ================= DIST ================= */
 
 function dist(a,b){
  return map.distance(a,b);
 }
 
+/* ================= LEGKÖZELEBBI ================= */
+
 function renderStops(){
 
- let arr = stops.map(s=>{
-  return {
-   ...s,
-   d: dist([userLat,userLon],[s.lat,s.lon])
-  };
- });
+ if(!userLat) return;
+
+ let arr = stops.map(s=>({
+  ...s,
+  d: dist([userLat,userLon],[s.lat,s.lon])
+ }));
 
  arr.sort((a,b)=>a.d-b.d);
 
+ // 🔥 20 km szűrés (reális városi zóna)
+ arr = arr.filter(s=>s.d < 20000);
+
  let html = "";
 
- arr.slice(0,8).forEach(s=>{
+ arr.slice(0,10).forEach(s=>{
   html += `
   <div class="card">
    🚏 <b>${s.name}</b><br>
-   🚆 ${s.line}<br>
+   🚆 ${s.line || "GTFS"}<br>
    📏 ${(s.d/1000).toFixed(2)} km
   </div>`;
  });
@@ -165,22 +154,88 @@ function searchStops(){
 
  let q = document.getElementById("search").value.toLowerCase();
 
- let filtered = stops.filter(s =>
+ let f = stops.filter(s=>
   s.name.toLowerCase().includes(q)
  );
 
  document.getElementById("stops").innerHTML =
- filtered.map(s=>`
+ f.slice(0,15).map(s=>`
   <div class="card">
    🚏 ${s.name}<br>
-   🚆 ${s.line}
+   🚆 ${s.line || "GTFS"}
   </div>
  `).join("");
+}
+
+/* ================= GPS + REVERSE ================= */
+
+async function update(pos){
+
+ userLat = pos.coords.latitude;
+ userLon = pos.coords.longitude;
+
+ let acc = pos.coords.accuracy;
+
+ document.getElementById("gps").innerHTML =
+ `📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)} | ±${Math.round(acc)} m`;
+
+ L.marker([userLat,userLon]).addTo(map);
+ map.setView([userLat,userLon],13);
+
+ try{
+  let r = await fetch(
+   `https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLat}&lon=${userLon}`
+  );
+
+  let d = await r.json();
+  let a = d.address || {};
+
+  document.getElementById("addr").innerHTML =
+  `🌍 ${a.country || "-"} | 🏙 ${a.city || a.town || "-"} | 🛣 ${a.road || ""} ${a.house_number || ""}`;
+
+ }catch(e){
+  document.getElementById("addr").innerHTML = "❌ cím hiba";
+ }
+
+ renderStops();
+}
+
+/* ================= NET ================= */
+
+function net(){
+ let c = navigator.connection;
+ if(!c) return "📶 N/A";
+ return `📶 ${c.effectiveType} | ⚡ ${c.downlink} Mbps`;
+}
+
+setInterval(()=>{
+ document.getElementById("net").innerHTML = net();
+},2000);
+
+/* ================= GTFS LOADER (FONTOS RÉSZ) ================= */
+/*
+IDE TÖLTÖD BE:
+- bkk_stops.json
+- mav_stops.json
+- zalamegye_stops.json
+*/
+
+async function loadGTFS(){
+
+ // 🔥 példa fallback (amíg nincs API)
+ let res = await fetch("stops.json");
+ let data = await res.json();
+
+ stops = data;
+
+ loadKisvasut();
 }
 
 /* ================= INIT ================= */
 
 navigator.geolocation.watchPosition(update);
+
+loadGTFS();
 
 </script>
 
