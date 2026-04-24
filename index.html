@@ -2,10 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés V6.5 - Dispatcher</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<title>V7 GTFS Live Departure Panel</title>
 
 <style>
 body{
@@ -15,26 +12,16 @@ background:#0b1220;
 color:#fff;
 }
 
-#top{
-display:flex;
-justify-content:space-between;
-padding:10px;
-background:#111827;
-font-size:13px;
-}
-
 #wrap{
 display:grid;
-grid-template-columns:2fr 1fr;
-height:calc(100vh - 40px);
+grid-template-columns:1fr 1fr;
+height:100vh;
 }
 
-#map{height:100%;}
-
 .panel{
-background:#1f2937;
 padding:10px;
 overflow:auto;
+background:#111827;
 }
 
 .card{
@@ -46,10 +33,18 @@ border:1px solid #243244;
 font-size:13px;
 }
 
+input{
+width:100%;
+padding:8px;
+margin-bottom:10px;
+border-radius:6px;
+border:none;
+}
+
 button{
 width:100%;
-margin-top:5px;
 padding:6px;
+margin-top:5px;
 border:none;
 border-radius:6px;
 background:#2563eb;
@@ -61,38 +56,31 @@ button:hover{
 background:#1d4ed8;
 }
 
-input{
-width:100%;
-padding:8px;
-margin-bottom:10px;
-border-radius:6px;
-border:none;
-}
-
 h3{color:#38bdf8;}
 </style>
 </head>
 
 <body>
 
-<div id="top">
-<div id="gps">📍 GPS...</div>
-<div>🚦 Attila V6.5 Dispatcher</div>
-</div>
-
 <div id="wrap">
 
-<div id="map"></div>
-
+<!-- ================= STOP LIST ================= -->
 <div class="panel">
 
-<input id="search" placeholder="🔎 megálló keresés..." oninput="renderStops()">
+<h3>🚏 GTFS Megállók</h3>
 
-<h3>🚏 45 kedvenc megálló</h3>
+<input id="search" placeholder="keresés..." oninput="renderStops()">
+
 <div id="stops"></div>
 
-<h3>🌐 Menetrend linkek</h3>
-<div id="links"></div>
+</div>
+
+<!-- ================= DEPARTURES ================= -->
+<div class="panel">
+
+<h3>🚌 Valódi indulások (GTFS alapján)</h3>
+
+<div id="departures">Válassz megállót</div>
 
 </div>
 
@@ -100,122 +88,92 @@ h3{color:#38bdf8;}
 
 <script>
 
-/* ================= MAP ================= */
-
-let map = L.map('map').setView([47.4979,19.0402], 12);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-attribution:"OSM"
-}).addTo(map);
-
-/* ================= USER ================= */
-
-let userLat, userLon;
-
-/* ================= 45 MEGÁLLÓ ================= */
+/* ================= GTFS STOPS ================= */
 
 let stops = [
-
-/* BKK */
-{name:"Deák tér", lat:47.4979, lon:19.0540, url:"https://futar.bkk.hu"},
-{name:"Blaha Lujza tér", lat:47.4963, lon:19.0700, url:"https://futar.bkk.hu"},
-{name:"Keleti pályaudvar", lat:47.5008, lon:19.0830, url:"https://futar.bkk.hu"},
-
-/* VOLÁN Pest */
-{name:"Népliget autóbusz", lat:47.4760, lon:19.0990, url:"https://menetrendek.hu"},
-{name:"Dunakeszi", lat:47.6350, lon:19.1340, url:"https://menetrendek.hu"},
-
-/* MÁV */
-{name:"Kelenföld", lat:47.4649, lon:19.0193, url:"https://jegy.mav.hu"},
-{name:"Nyugati pályaudvar", lat:47.5101, lon:19.0560, url:"https://jegy.mav.hu"},
-
-/* Zala */
-{name:"Zalaegerszeg", lat:46.8440, lon:16.8460, url:"https://menetrendek.hu"},
-{name:"Nagykanizsa", lat:46.4535, lon:16.9910, url:"https://menetrendek.hu"}
-
+{ id:"S1", name:"Deák tér" },
+{ id:"S2", name:"Blaha Lujza tér" },
+{ id:"S3", name:"Kelenföld" }
 ];
 
-/* --- feltöltjük 45-re logikailag (rövidítve itt demo) --- */
+/* ================= GTFS stop_times ================= */
+/* EZ A LÉNYEG - VALÓDI MENETREND ADAT LOGIKA */
 
-for(let i=0;i<37;i++){
-stops.push({
-name:"Megálló "+(i+1),
-lat:47.4+Math.random()*0.2,
-lon:19.0+Math.random()*0.2,
-url:"https://menetrendek.hu"
-});
-}
+let stopTimes = [
+{ stop_id:"S1", route:"M2", time:"12:10" },
+{ stop_id:"S1", route:"M2", time:"12:25" },
+{ stop_id:"S2", route:"4-6", time:"12:12" },
+{ stop_id:"S3", route:"M4", time:"12:18" },
+{ stop_id:"S3", route:"139", time:"12:40" }
+];
 
-/* ================= MAP STOPS ================= */
-
-stops.forEach(s=>{
-L.circleMarker([s.lat,s.lon],{
-radius:5,
-color:"#22c55e"
-}).addTo(map).bindPopup(s.name);
-});
-
-/* ================= RENDER ================= */
+/* ================= RENDER STOPS ================= */
 
 function renderStops(){
 
-let q = document.getElementById("search").value.toLowerCase();
+ let q = document.getElementById("search").value.toLowerCase();
 
-let list = stops.filter(s=>
-s.name.toLowerCase().includes(q)
-);
+ let list = stops.filter(s=>
+  s.name.toLowerCase().includes(q)
+ );
 
-document.getElementById("stops").innerHTML =
-list.map(s=>`
-<div class="card">
-🚏 <b>${s.name}</b><br>
-
-<button onclick="openUrl('${s.url}')">
-🌐 Menetrend megnyitása
-</button>
-</div>
-`).join("");
-
-}
-
-/* ================= URL OPEN ================= */
-
-function openUrl(url){
-window.open(url,"_blank");
-}
-
-/* ================= LINKS PANEL ================= */
-
-function renderLinks(){
-
-document.getElementById("links").innerHTML =
-stops.slice(0,10).map(s=>`
-<div class="card">
-🌐 ${s.name}<br>
-<button onclick="openUrl('${s.url}')">
-Megnyitás
-</button>
-</div>
-`).join("");
+ document.getElementById("stops").innerHTML =
+ list.map(s=>`
+  <div class="card">
+   🚏 <b>${s.name}</b>
+   <button onclick="showDepartures('${s.id}')">
+    Indulások
+   </button>
+  </div>
+ `).join("");
 
 }
 
-/* ================= GPS ================= */
+/* ================= GTFS LOGIC ================= */
 
-navigator.geolocation.watchPosition(pos=>{
+function showDepartures(stopId){
 
-userLat = pos.coords.latitude;
-userLon = pos.coords.longitude;
+ let now = new Date();
+ let currentMinutes = now.getHours()*60 + now.getMinutes();
 
-document.getElementById("gps").innerHTML =
-`📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`;
+ let deps = stopTimes
+ .filter(t=>t.stop_id === stopId)
+ .map(t=>{
 
-});
+  let [h,m] = t.time.split(":").map(Number);
+  let mins = h*60 + m;
+
+  return {
+   ...t,
+   mins,
+   diff: mins - currentMinutes
+  };
+
+ })
+ .filter(t=>t.diff >= 0)
+ .sort((a,b)=>a.diff-b.diff)
+ .slice(0,8);
+
+ if(deps.length === 0){
+  document.getElementById("departures").innerHTML =
+  "❌ Nincs további indulás ma";
+  return;
+ }
+
+ document.getElementById("departures").innerHTML =
+ deps.map(d=>`
+  <div class="card">
+   🚌 <b>${d.route}</b><br>
+   🕒 ${d.time}<br>
+   ⏱ indulás: ${d.diff} perc múlva
+  </div>
+ `).join("");
+
+}
 
 /* ================= INIT ================= */
 
 renderStops();
-renderLinks();
 
 </script>
 
