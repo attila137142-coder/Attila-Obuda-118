@@ -44,7 +44,72 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
 
 // 📍 kattintás = koordináta
 map.on("click", async e => {
+map.on("click", async e => {
 
+ let lat = e.latlng.lat;
+ let lon = e.latlng.lng;
+
+ document.getElementById("info").innerHTML = "🔍 keresés...";
+
+ // nagyobb kör + több típus
+ let query = `
+ [out:json];
+ (
+  node(around:500,${lat},${lon})["highway"="bus_stop"];
+  node(around:500,${lat},${lon})["public_transport"="platform"];
+  node(around:500,${lat},${lon})["railway"="tram_stop"];
+  node(around:500,${lat},${lon})["railway"="station"];
+ );
+ out;
+ `;
+
+ try{
+
+  let res = await fetch("https://overpass-api.de/api/interpreter", {
+    method:"POST",
+    body:query
+  });
+
+  let data = await res.json();
+
+  if(!data.elements.length){
+    document.getElementById("info").innerHTML =
+    "❌ nincs megálló a közelben";
+    return;
+  }
+
+  // töröljük a régi marker-eket
+  if(window.stopLayer){
+    map.removeLayer(window.stopLayer);
+  }
+
+  window.stopLayer = L.layerGroup().addTo(map);
+
+  let html = "<b>Közeli megállók:</b><br>";
+
+  data.elements.slice(0,10).forEach(s=>{
+
+    let name = s.tags.name || "névtelen megálló";
+
+    // MARKER!
+    L.circleMarker([s.lat,s.lon],{
+      radius:8,
+      color:"yellow",
+      fillColor:"yellow",
+      fillOpacity:1
+    }).addTo(window.stopLayer);
+
+    html += "🚏 " + name + "<br>";
+  });
+
+  document.getElementById("info").innerHTML = html;
+
+ }catch(err){
+  document.getElementById("info").innerHTML =
+  "❌ hálózati hiba";
+ }
+
+});
  let lat = e.latlng.lat;
  let lon = e.latlng.lng;
 
