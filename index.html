@@ -1,11 +1,9 @@
-ezt a SAFETY CORE helyett használd / vagy ráépítésként
-
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROXY V7-B UPGRADE</title>
+<title>ROXY CORE MASTER FULL</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -47,15 +45,20 @@ button{
 <body>
 
 <div id="panel">
-<h3>🌲 ROXY V7-B UPGRADE</h3>
+<h3>🧭 ROXY CORE MASTER</h3>
 
 <div id="status" class="status">READY</div>
-<div id="info" class="status">--</div>
 
 <button onclick="startGPS()">📍 GPS</button>
 <button onclick="startTrack()">📡 TRACK</button>
-<button onclick="calcStats()">📊 ANALYZE</button>
-<button onclick="resetAll()">🧹 RESET</button>
+<button onclick="stopTrack()">⛔ STOP</button>
+
+<hr style="border:1px solid #0f0;">
+
+<button onclick="toggleModule('gtfs')">🚉 GTFS</button>
+<button onclick="toggleModule('forest')">🌲 ERDŐ NAV</button>
+<button onclick="toggleModule('road')">🛣️ ROAD NAV</button>
+
 </div>
 
 <div id="map"></div>
@@ -64,88 +67,91 @@ button{
 
 <script>
 
-// ================= MAP =================
+//
+// ================= MAP CORE =================
+//
 let map = L.map('map').setView([47.5,19.04],13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ================= DATA =================
-let trail = [];
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+ attribution:'ROXY CORE'
+}).addTo(map);
+
 let watchID = null;
-let line;
+let trail = [];
+let line = null;
 
+//
+// ================= MODULE SYSTEM =================
+//
+const modules = {
+ gtfs: false,
+ forest: false,
+ road: false
+};
+
+function toggleModule(name){
+ modules[name] = !modules[name];
+ document.getElementById("status").innerText =
+  name.toUpperCase() + " = " + modules[name];
+}
+
+//
 // ================= GPS =================
+//
 function startGPS(){
  navigator.geolocation.getCurrentPosition(p=>{
   map.setView([p.coords.latitude,p.coords.longitude],15);
+  L.marker([p.coords.latitude,p.coords.longitude]).addTo(map);
  });
 }
 
+//
 // ================= TRACK =================
+//
 function startTrack(){
 
  if(watchID) return;
 
  watchID = navigator.geolocation.watchPosition(p=>{
 
-  let pt = {
-   lat: p.coords.latitude,
-   lon: p.coords.longitude,
-   acc: p.coords.accuracy,
-   alt: p.coords.altitude || 0
-  };
-
+  let pt = [p.coords.latitude, p.coords.longitude];
   trail.push(pt);
 
-  L.circleMarker([pt.lat,pt.lon],{radius:4,color:"lime"}).addTo(map);
+  L.circleMarker(pt,{radius:4,color:"lime"}).addTo(map);
 
   if(line) map.removeLayer(line);
+  line = L.polyline(trail,{color:"lime"}).addTo(map);
 
-  line = L.polyline(trail.map(t=>[t.lat,t.lon]),{color:"lime"}).addTo(map);
+  // MODULE HOOK
+  runModules(pt);
 
  });
-
 }
 
-// ================= ANALYZE =================
-function calcStats(){
-
- if(trail.length < 2){
-  alert("Nincs elég adat");
-  return;
+function stopTrack(){
+ if(watchID){
+  navigator.geolocation.clearWatch(watchID);
+  watchID = null;
  }
-
- let total = 0;
- let maxSlope = 0;
-
- for(let i=1;i<trail.length;i++){
-
-  let a = trail[i-1];
-  let b = trail[i];
-
-  let dx = (b.lon - a.lon)*111000;
-  let dy = (b.lat - a.lat)*111000;
-
-  let dist = Math.sqrt(dx*dx + dy*dy);
-
-  let dz = (b.alt - a.alt);
-
-  let slope = dist ? (dz/dist)*100 : 0;
-
-  total += dist;
-  maxSlope = Math.max(maxSlope, slope);
- }
-
- document.getElementById("info").innerHTML =
-  "📏 Táv: "+Math.round(total)+" m<br>"+
-  "⛰️ Max meredekség: "+maxSlope.toFixed(1)+"%";
-
- document.getElementById("status").innerText =
-  "ANALYZED";
 }
 
-// ================= RESET =================
-function resetAll(){
- location.reload();
+//
+// ================= MODULE ENGINE =================
+//
+function runModules(point){
+
+ if(modules.gtfs){
+  console.log("GTFS active:", point);
+ }
+
+ if(modules.forest){
+  console.log("FOREST NAV active:", point);
+ }
+
+ if(modules.road){
+  console.log("ROAD NAV active:", point);
+ }
+
 }
 
 </script>
