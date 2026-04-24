@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V3</title>
+<title>ROXY V4 FULL</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -26,7 +26,9 @@ body{margin:0;font-family:Arial}
 
 .stop{
  cursor:pointer;
- padding:3px;
+ padding:4px;
+ margin-bottom:5px;
+ border-bottom:1px solid #0f0;
 }
 .stop:hover{
  background:#0f0;
@@ -38,7 +40,7 @@ body{margin:0;font-family:Arial}
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY V3</h3>
+<h3>🚆 ROXY V4</h3>
 <div id="info">Térképre kattints</div>
 </div>
 
@@ -56,10 +58,44 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
 
 let stopLayer = L.layerGroup().addTo(map);
 
+// ================= GPS =================
+let userLat=null,userLon=null;
+
+navigator.geolocation.getCurrentPosition(pos=>{
+ userLat=pos.coords.latitude;
+ userLon=pos.coords.longitude;
+});
+
+// ================= DIST =================
+function getDistance(lat1,lon1,lat2,lon2){
+ let R=6371000;
+ let dLat=(lat2-lat1)*Math.PI/180;
+ let dLon=(lon2-lon1)*Math.PI/180;
+
+ let a=Math.sin(dLat/2)**2+
+  Math.cos(lat1*Math.PI/180)*
+  Math.cos(lat2*Math.PI/180)*
+  Math.sin(dLon/2)**2;
+
+ let c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+ return Math.round(R*c);
+}
+
+// ================= ADDRESS =================
+async function getAddress(lat,lon){
+ try{
+  let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+  let d=await res.json();
+  let a=d.address;
+  return `${a.city||a.town||""}, ${a.road||""}`;
+ }catch(e){
+  return "nincs adat";
+ }
+}
+
 // ================= OVERPASS =================
 async function fetchOverpass(query){
-
- let urls = [
+ let urls=[
   "https://overpass-api.de/api/interpreter",
   "https://lz4.overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter"
@@ -67,29 +103,65 @@ async function fetchOverpass(query){
 
  for(let url of urls){
   try{
-    let res = await fetch(url,{
-      method:"POST",
-      body:query
-    });
-
-    if(res.ok){
-      return await res.json();
-    }
+   let res=await fetch(url,{method:"POST",body:query});
+   if(res.ok) return await res.json();
   }catch(e){}
  }
-
- throw "nincs szerver";
+ throw "no server";
 }
 
-// ================= CLICK =================
-map.on("click", async e => {
+// ================= GTFS =================
+let GTFS={stopTimes:[]};
 
- let lat = e.latlng.lat;
- let lon = e.latlng.lng;
+async function loadGTFS(){
+ try{
+  let res=await fetch("stop_times.txt");
+  let text=await res.text();
+  let lines=text.split("\n");
 
- document.getElementById("info").innerHTML = "🔍 keresés...";
+  for(let i=1;i<lines.length;i++){
+   let c=lines[i].split(",");
+   GTFS.stopTimes.push({
+    stop_id:c[3],
+    dep:c[2]
+   });
+  }
 
- let query = `
+  console.log("GTFS:",GTFS.stopTimes.length);
+
+ }catch(e){
+  console.log("GTFS hiba");
+ }
+}
+
+// ================= TIME FILTER =================
+function getNextDepartures(){
+ let now=new Date();
+ let current=
+  now.getHours().toString().padStart(2,'0')+":"+
+  now.getMinutes().toString().padStart(2,'0');
+
+ let res=[];
+
+ GTFS.stopTimes.forEach(s=>{
+  if(s.dep && s.dep>=current){
+   res.push(s.dep);
+  }
+ });
+
+ res.sort();
+ return res.slice(0,10);
+}
+
+// ================= CLICK MAP =================
+map.on("click",async e=>{
+
+ let lat=e.latlng.lat;
+ let lon=e.latlng.lng;
+
+ document.getElementById("info").innerHTML="🔍 keresés...";
+
+ let query=`
  [out:json];
  (
   node(around:600,${lat},${lon})["highway"="bus_stop"];
@@ -102,79 +174,75 @@ map.on("click", async e => {
 
  try{
 
-  let data = await fetchOverpass(query);
-
-  if(!data.elements.length){
-    document.getElementById("info").innerHTML = "❌ nincs megálló";
-    return;
-  }
+  let data=await fetchOverpass(query);
 
   stopLayer.clearLayers();
 
-  let used = {};
-  let html = "<b>Közeli megállók:</b><br>";
+  let used={};
+  let html="<b>Közeli megállók:</b><br>";
 
   data.elements.forEach(s=>{
 
-    let name = s.tags?.name;
-    if(!name) return;
+   let name=s.tags?.name;
+   if(!name) return;
+   if(used[name]) return;
+   used[name]=true;
 
-    if(used[name]) return;
-    used[name] = true;
+   let dist=userLat
+    ? getDistance(userLat,userLon,s.lat,s.lon)+" m"
+    : "? m";
 
-    L.circleMarker([s.lat,s.lon],{
-      radius:9,
-      color:"yellow",
-      fillColor:"yellow",
-      fillOpacity:1
-    }).addTo(stopLayer);
+   L.circleMarker([s.lat,s.lon],{
+    radius:9,color:"yellow",fillColor:"yellow",fillOpacity:1
+   }).addTo(stopLayer);
 
-    html += `<div class="stop"
-      onclick="selectStop('${name}',${s.lat},${s.lon})">
-      🚏 ${name}
-    </div>`;
+   html+=`
+   <div class="stop"
+   onclick="selectStop('${name}',${s.lat},${s.lon},${s.id})">
+
+   🚏 ${name}<br>
+   📏 ${dist}<br>
+   🆔 ${s.id}
+
+   </div>`;
   });
 
-  document.getElementById("info").innerHTML = html;
+  document.getElementById("info").innerHTML=html;
 
- }catch(err){
-  document.getElementById("info").innerHTML =
-  "⚠️ hálózati hiba";
+ }catch(e){
+  document.getElementById("info").innerHTML="⚠️ hálózati hiba";
  }
 
 });
 
-// ================= MENETREND (DEMO) =================
-function getFakeDepartures(){
-
- let now = new Date();
- let list = [];
-
- for(let i=1;i<=5;i++){
-  let d = new Date(now.getTime() + i*600000);
-  list.push(d.toTimeString().slice(0,5));
- }
-
- return list;
-}
-
-// ================= SELECT STOP =================
-function selectStop(name,lat,lon){
+// ================= SELECT =================
+async function selectStop(name,lat,lon,id){
 
  map.setView([lat,lon],16);
 
- let times = getFakeDepartures();
+ let addr=await getAddress(lat,lon);
 
- let html = `<b>🚏 ${name}</b><br><br>`;
+ let times=getNextDepartures();
 
- html += "<b>Következő indulások:</b><br>";
+ let html=`<b>🚏 ${name}</b><br><br>`;
+ html+=`📍 ${addr}<br><br>`;
+ html+=`🆔 ${id}<br><br>`;
 
- times.forEach(t=>{
-  html += `🕒 ${t}<br>`;
- });
+ html+="<b>🕒 Indulások (GTFS):</b><br>";
 
- document.getElementById("info").innerHTML = html;
+ if(times.length===0){
+  html+="❌ nincs adat";
+ }else{
+  times.forEach(t=>html+="🕒 "+t+"<br>");
+ }
+
+ document.getElementById("info").innerHTML=html;
 }
+
+// ================= START =================
+window.onload=()=>{
+ loadGTFS();
+};
 
 </script>
 
