@@ -2,187 +2,83 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚌 Attila Közlekedés – 45 megálló PRO</title>
+<title>Egyszerű Közlekedés</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{background:black;color:#FFD700;font-family:Arial;text-align:center;}
-#list{max-width:700px;margin:auto;}
-.stop{border:1px solid #333;margin:6px;padding:10px;border-radius:12px;}
-.small{font-size:12px;color:cyan;}
-.red{color:red;}
-.blue{color:#00aaff;}
-.white{color:white;}
-button{padding:10px;margin:5px;}
+body{margin:0;font-family:Arial}
+#map{height:100vh}
+
+#panel{
+ position:absolute;
+ top:10px;
+ left:10px;
+ z-index:9999;
+ background:#000c;
+ color:#0f0;
+ padding:10px;
+ width:300px;
+ border:1px solid #0f0;
+}
 </style>
 </head>
 
 <body>
 
-<h2>🚌 45 MEGÁLLÓ – PRO</h2>
+<div id="panel">
+<h3>🚆 Egyszerű menetrend</h3>
+<div id="info">Térképre kattints</div>
+</div>
 
-<button onclick="getLocation()">📍 Saját hely</button>
+<div id="map"></div>
 
-<div id="status">Nincs helyadat</div>
-<div id="list"></div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-// ===== A TE 45 MEGÁLLÓD (rövidítve itt, de TELJESEN bemásolva!)
-const stops = [
-{name: "Békásmegyer HÉV-állomás", gtfs: "H5-09183", lat: 47.598091, lon: 19.054599},
-{name: "Nád utca", gtfs: "BKK-F00457", lat: 47.594072, lon: 19.048469},
-{name: "Gulácsy Lajos utca", gtfs: "BKK-00438", lat: 47.602562, lon: 19.048229},
-{name: "Florián tér", gtfs: "BKK-F00611", lat: 47.542896, lon: 19.042252},
-{name: "Florián tér", gtfs: "BKK-F00613", lat: 47.541664, lon: 19.040084},
-{name: "Batthyány tér (villamos)", gtfs: "BKK-F00057", lat: 47.506002, lon: 19.039456},
-{name: "Verecke lépcsö", gtfs: "BKK-F00265", lat: 47.529117, lon: 19.003624},
-{name: "Csobánka tér-243 vá", gtfs: "BKK-F044192", lat: 47.597795, lon: 19.053787},
-{name: "Csobánka tér-160 vá", gtfs: "BKK-008939", lat: 47.598425, lon: 19.054240},
-{name: "Szentendre, HÉV végállomás", gtfs: "H5-09142221", lat: 47.661038, lon: 19.075607},
-{name: "Örs Vezér tér-85-85E", gtfs: "BKK-008030", lat: 47.501742, lon: 19.135604},
-{name: "Kocka utca (kifelé)", gtfs: "BKK-1831", lat: 47.484915, lon: 19.155466},
-{name: "Kocka utca (befelé)", gtfs: "BKK-1832", lat: 47.484708, lon: 19.155969},
-{name: "Újhegyi sétány (befelé)", gtfs: "BKK-F01842", lat: 47.470813, lon: 19.16451},
-{name: "Gőzmozdony utca (kifelé)", gtfs: "BKK-008863", lat: 47.470028, lon: 19.157173},
-{name: "Bojtár utca (kifelé)", gtfs: "VOLÁN-773493-1-BKK-F00520", lat: 47.560099, lon: 19.024711},
-{name: "Bojtár utca (befelé)", gtfs: "VOLÁN-773493-2-BKK-F00521", lat: 47.559047, lon: 19.042921},
-{name: "Szentendre, Autóbusz-állomás", gtfs: "VOLÁN-778806-99", lat: 47.660403, lon: 19.075408},
-{name: "Szentendre, Skanzen (1)", gtfs: "VOLÁN-778840-1", lat: 47.691135, lon: 19.046955},
-{name: "Szentendre, Skanzen (2)", gtfs: "VOLÁN-778840-2", lat: 47.691273, lon: 19.045667},
-{name: "Tahitótfalu, hídfő 1", gtfs: "VOLÁN-779053-1", lat: 47.751712, lon: 19.078215},
-{name: "Tahitótfalu, hídfő 2", gtfs: "VOLÁN-779053-2", lat: 47.751648, lon: 19.078091},
-{name: "Szentendre, Dömör-kapu", gtfs: "VOLÁN-778803", lat: 47.694900, lon: 19.000210},
-{name: "Vác, Autóbusz-állomás", gtfs: "VOLÁN-779365_99", lat: 47.781930, lon: 19.129643},
-{name: "Kóspallag, templom", gtfs: "VOLÁN-778190", lat: 47.877850, lon: 18.932580},
-{name: "Kisinóci turistaház", gtfs: "VOLAN-778186", lat: 47.890600, lon: 18.927580},
-{name: "Királyrét", gtfs: "VOLAN-779017", lat: 47.895040, lon: 18.977687},
-{name: "Szob, Vasútállomás", gtfs: "VOLAN-779011", lat: 47.821319, lon: 18.862602},
-{name: "Nagybörzsöny, községháza", gtfs: "VOLAN-778310", lat: 47.936030, lon: 18.827710},
-{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-1", lat: 48.015915, lon: 18.888468},
-{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-2", lat: 48.015710, lon: 18.888021},
-{name: "Pilisborosjenő, buszforduló", gtfs: "VOLAN-778532", lat: 47.609100, lon: 18.989680},
-{name: "Dobogókő, hegytető", gtfs: "VOLAN-778561", lat: 47.719118, lon: 18.897577},
-{name: "Vámosmikola, községháza", gtfs: "VOLAN-779478", lat: 47.978190, lon: 18.785890},
-{name: "Dunapataj, iskola", gtfs: "VOLAN-325369", lat: 46.644280, lon: 19.000233},
-{name: "Szelidi-tó, autóbusz-forduló", gtfs: "VOLAN-325374", lat: 46.625050, lon: 19.046159},
-{name: "Pomáz, HÉV állomás", gtfs: "HEV5-09134", lat: 47.642749, lon: 19.032657},
-{name: "Pomáz, autóbusz-állomás", gtfs: "VOLAN-778618", lat: 47.642749, lon: 19.032657},
-{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-1-BKK-009170", lat: 47.645570, lon: 19.027226},
-{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-2-BKK-009171", lat: 47.645554, lon: 19.027001},
-{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-1", lat: 46.789883, lon: 17.181239},
-{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-2", lat: 46.790057, lon: 17.182311},
-{name: "Héviz, Autobusz állomás", gtfs: "VOLAN-561337", lat: 46.792964, lon: 17.192426},
-{name: "Keszhely,Vasut-és  Autobusz állomás", gtfs: "VOLAN-561442", lat: 46.757976, lon: 17.246480},
-{name: "Magas taxi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.92842, lon: 18.92997},
-{name: "Nagyhideghegyi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.936111, lon: 18.921944},
-{name: "Csoványos, (hegycsucs,Börzsöny,kiláto)", gtfs: "ERDÖ", lat: 47.94908, lon: 18.9483},
-{name: "Lakás, (Dino lak)", gtfs: "UTCA", lat: 47.594304, lon: 19.048770},
+let map = L.map('map').setView([47.4979,19.0402],13);
 
-];
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+.addTo(map);
 
-// ===== HELYZET
-let userLat=null,userLon=null;
+// 📍 kattintás = koordináta
+map.on("click", async e => {
 
-function getLocation(){
- navigator.geolocation.getCurrentPosition(pos=>{
-  userLat=pos.coords.latitude;
-  userLon=pos.coords.longitude;
-  status.innerText="Helyzet OK";
-  render();
+ let lat = e.latlng.lat;
+ let lon = e.latlng.lng;
+
+ document.getElementById("info").innerHTML =
+ "🔍 keresés...";
+
+ // 👉 Overpass – megállók lekérése
+ let query = `
+ [out:json];
+ node(around:200,${lat},${lon})["highway"="bus_stop"];
+ out;
+ `;
+
+ let res = await fetch("https://overpass-api.de/api/interpreter", {
+  method:"POST",
+  body:query
  });
-}
 
-// ===== TÁVOLSÁG
-function dist(a,b,c,d){
- const R=6371e3;
- const φ1=a*Math.PI/180;
- const φ2=c*Math.PI/180;
- const dφ=(c-a)*Math.PI/180;
- const dλ=(d-b)*Math.PI/180;
+ let data = await res.json();
 
- const x=Math.sin(dφ/2)**2+
- Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
-
- return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
-}
-
-// ===== IDŐ SZÁMOLÁS (OKOS)
-function nextDepartures(){
-
- let now=new Date();
- let baseSec = now.getMinutes()*60 + now.getSeconds();
-
- let list=[];
-
- for(let i=1;i<=3;i++){
-
-   let target = i*300; // 5 percenként
-   let diff = target - (baseSec % 300);
-
-   let delay = Math.floor(Math.random()*60-30);
-
-   let final = diff + delay;
-
-   let m=Math.floor(final/60);
-   let s=final%60;
-
-   list.push({m,s,delay});
+ if(!data.elements.length){
+  document.getElementById("info").innerHTML =
+   "❌ nincs megálló a közelben";
+  return;
  }
 
- return list;
-}
+ let stop = data.elements[0];
 
-// ===== RENDER
-function render(){
+ document.getElementById("info").innerHTML =
+ `🚏 Megálló:<br>${stop.tags.name || "névtelen"}`;
 
- let html="";
-
- stops.forEach(s=>{
-
-  let tav="nincs adat";
-
-  if(userLat){
-   let d=dist(userLat,userLon,s.lat,s.lon);
-   let road=Math.round(d*1.3);
-
-   tav=`Légvonal: ${d} m | Út: ~${road} m`;
-  }
-
-  let menetrend = nextDepartures();
-
-  html+=`<div class="stop">
-  <b>${s.name}</b><br>
-  <div class="small">${s.gtfs}</div>
-  <div class="small">${tav}</div>
-  `;
-
-  menetrend.forEach(m=>{
-
-   let cls="white";
-   if(m.delay<0) cls="red";
-   if(m.delay>0) cls="blue";
-
-   html+=`<div class="${cls}">
-   ${m.m}:${String(m.s).padStart(2,"0")} (${m.delay}s)
-   </div>`;
-  });
-
-  html+="</div>";
- });
-
- list.innerHTML=html;
-}
-
-// ===== FRISSÍTÉS
-setInterval(()=>{
- if(userLat) render();
-},15000);
-
-render();
+});
 
 </script>
 
 </body>
 </html>
-
-
