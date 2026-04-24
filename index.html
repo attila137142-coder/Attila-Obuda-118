@@ -3,25 +3,24 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROXY V7 SAFETY CORE</title>
+<title>ROXY SAFETY CORE FIX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body { margin:0; font-family:Arial; background:#0b0b0b; color:#0f0; }
-#map { height:100vh; }
+body { margin:0; font-family:Arial; }
+#map { height:100vh; width:100vw; }
 
 #panel{
  position:absolute;
  top:10px;
  left:10px;
- z-index:1000;
- background:rgba(0,0,0,0.92);
- border:1px solid #0f0;
+ z-index:9999;
+ background:rgba(0,0,0,0.85);
+ color:#0f0;
  padding:10px;
- width:340px;
- max-height:92vh;
- overflow:auto;
+ width:320px;
+ border:1px solid #0f0;
 }
 
 button{
@@ -35,30 +34,27 @@ button{
 }
 
 .status{
- border:1px solid #0f0;
- padding:6px;
- margin:5px 0;
  font-size:12px;
+ margin:5px 0;
+ border:1px solid #0f0;
+ padding:5px;
 }
-
-.small{font-size:11px;opacity:0.8;}
 </style>
 </head>
 
 <body>
 
 <div id="panel">
-<h3>🔐 ROXY SAFETY CORE</h3>
+<h3>🔐 ROXY SAFETY CORE FIX</h3>
 
 <div id="status" class="status">READY</div>
 <div id="loc" class="status">--</div>
 
-<button onclick="startGPS()">📍 GPS START</button>
-<button onclick="startTrack()">📡 TRACK ON</button>
+<button onclick="startGPS()">📍 GPS + CÍM</button>
+<button onclick="startTrack()">📡 TRACK</button>
 <button onclick="stopTrack()">⛔ STOP</button>
 <button onclick="goBack()">🔁 VISSZAÚT</button>
 <button onclick="resetAll()">🧹 RESET</button>
-
 </div>
 
 <div id="map"></div>
@@ -69,36 +65,50 @@ button{
 
 // ================= MAP =================
 let map = L.map('map').setView([47.5,19.04],13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ================= DATA =================
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+ attribution:'OSM'
+}).addTo(map);
+
 let trail = [];
-let line;
 let watchID = null;
-let lastPos = null;
-let accMin = 9999;
+let line;
+let lastMarker = null;
 
-// ================= GPS =================
-function startGPS(){
+// ================= GPS + ADDRESS =================
+async function startGPS(){
 
- navigator.geolocation.getCurrentPosition(p=>{
+ navigator.geolocation.getCurrentPosition(async p=>{
 
   let lat = p.coords.latitude;
   let lon = p.coords.longitude;
   let acc = p.coords.accuracy;
 
-  lastPos = [lat,lon];
-  accMin = Math.min(accMin, acc);
+  map.setView([lat,lon],16);
 
-  map.setView([lat,lon],15);
+  if(lastMarker) map.removeLayer(lastMarker);
 
-  L.marker([lat,lon]).addTo(map);
+  lastMarker = L.marker([lat,lon]).addTo(map);
 
   document.getElementById("status").innerText =
    "GPS OK | pontosság: "+Math.round(acc)+" m";
 
-  document.getElementById("loc").innerText =
-   lat.toFixed(5)+", "+lon.toFixed(5);
+  // 📍 REVERSE GEOCODING
+  try{
+   let r = await fetch(
+    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
+   );
+   let d = await r.json();
+
+   let a = d.address;
+
+   document.getElementById("loc").innerHTML =
+    (a.city || a.town || a.village || "") + "<br>" +
+    (a.road || "") + " " + (a.house_number || "");
+
+  }catch{
+   document.getElementById("loc").innerText = lat+","+lon;
+  }
 
  });
 
@@ -114,7 +124,6 @@ function startTrack(){
   let pt = [p.coords.latitude, p.coords.longitude];
 
   trail.push(pt);
-  lastPos = pt;
 
   L.circleMarker(pt,{radius:4,color:"lime"}).addTo(map);
 
@@ -122,7 +131,7 @@ function startTrack(){
   line = L.polyline(trail,{color:"lime"}).addTo(map);
 
   document.getElementById("status").innerText =
-   "TRACK: "+trail.length+" pont";
+   "TRACK: "+trail.length;
 
  });
 
@@ -133,17 +142,13 @@ function stopTrack(){
  if(watchID){
   navigator.geolocation.clearWatch(watchID);
   watchID = null;
-  document.getElementById("status").innerText = "TRACK OFF";
  }
 }
 
 // ================= VISSZAÚT =================
 function goBack(){
 
- if(trail.length < 2){
-  alert("Nincs elég adat");
-  return;
- }
+ if(trail.length < 2) return;
 
  let back = [...trail].reverse();
 
@@ -152,8 +157,7 @@ function goBack(){
  line = L.polyline(back,{color:"red"}).addTo(map);
 
  document.getElementById("status").innerText =
-  "VISSZAÚT AKTÍV 🔁";
-
+  "VISSZAÚT AKTÍV";
 }
 
 // ================= RESET =================
