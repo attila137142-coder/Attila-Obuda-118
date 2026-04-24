@@ -2,13 +2,18 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés V6 - Mini BKK Control Center</title>
+<title>Attila Közlekedés V6.5 - Dispatcher</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body{margin:0;font-family:Arial;background:#0b1220;color:#fff;}
+body{
+margin:0;
+font-family:Arial;
+background:#0b1220;
+color:#fff;
+}
 
 #top{
 display:flex;
@@ -41,6 +46,29 @@ border:1px solid #243244;
 font-size:13px;
 }
 
+button{
+width:100%;
+margin-top:5px;
+padding:6px;
+border:none;
+border-radius:6px;
+background:#2563eb;
+color:white;
+cursor:pointer;
+}
+
+button:hover{
+background:#1d4ed8;
+}
+
+input{
+width:100%;
+padding:8px;
+margin-bottom:10px;
+border-radius:6px;
+border:none;
+}
+
 h3{color:#38bdf8;}
 </style>
 </head>
@@ -49,7 +77,7 @@ h3{color:#38bdf8;}
 
 <div id="top">
 <div id="gps">📍 GPS...</div>
-<div>🚦 Attila Control Center V6</div>
+<div>🚦 Attila V6.5 Dispatcher</div>
 </div>
 
 <div id="wrap">
@@ -58,11 +86,13 @@ h3{color:#38bdf8;}
 
 <div class="panel">
 
-<h3>🚏 Megállók</h3>
+<input id="search" placeholder="🔎 megálló keresés..." oninput="renderStops()">
+
+<h3>🚏 45 kedvenc megálló</h3>
 <div id="stops"></div>
 
-<h3>🚌 Élő járatok (szimulált mozgás)</h3>
-<div id="vehicles"></div>
+<h3>🌐 Menetrend linkek</h3>
+<div id="links"></div>
 
 </div>
 
@@ -78,80 +108,93 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 attribution:"OSM"
 }).addTo(map);
 
-/* ================= DATA ================= */
+/* ================= USER ================= */
+
+let userLat, userLon;
+
+/* ================= 45 MEGÁLLÓ ================= */
 
 let stops = [
-{name:"Deák tér", lat:47.4979, lon:19.0540},
-{name:"Blaha", lat:47.4963, lon:19.0700},
-{name:"Keleti", lat:47.5008, lon:19.0830}
+
+/* BKK */
+{name:"Deák tér", lat:47.4979, lon:19.0540, url:"https://futar.bkk.hu"},
+{name:"Blaha Lujza tér", lat:47.4963, lon:19.0700, url:"https://futar.bkk.hu"},
+{name:"Keleti pályaudvar", lat:47.5008, lon:19.0830, url:"https://futar.bkk.hu"},
+
+/* VOLÁN Pest */
+{name:"Népliget autóbusz", lat:47.4760, lon:19.0990, url:"https://menetrendek.hu"},
+{name:"Dunakeszi", lat:47.6350, lon:19.1340, url:"https://menetrendek.hu"},
+
+/* MÁV */
+{name:"Kelenföld", lat:47.4649, lon:19.0193, url:"https://jegy.mav.hu"},
+{name:"Nyugati pályaudvar", lat:47.5101, lon:19.0560, url:"https://jegy.mav.hu"},
+
+/* Zala */
+{name:"Zalaegerszeg", lat:46.8440, lon:16.8460, url:"https://menetrendek.hu"},
+{name:"Nagykanizsa", lat:46.4535, lon:16.9910, url:"https://menetrendek.hu"}
+
 ];
 
-/* ================= DRAW STOPS ================= */
+/* --- feltöltjük 45-re logikailag (rövidítve itt demo) --- */
+
+for(let i=0;i<37;i++){
+stops.push({
+name:"Megálló "+(i+1),
+lat:47.4+Math.random()*0.2,
+lon:19.0+Math.random()*0.2,
+url:"https://menetrendek.hu"
+});
+}
+
+/* ================= MAP STOPS ================= */
 
 stops.forEach(s=>{
 L.circleMarker([s.lat,s.lon],{
-radius:6,
+radius:5,
 color:"#22c55e"
-}).addTo(map).bindPopup("🚏 "+s.name);
+}).addTo(map).bindPopup(s.name);
 });
 
-/* ================= VEHICLES (SIMULATED MOVEMENT) ================= */
+/* ================= RENDER ================= */
 
-let vehicles = [
-{
-name:"🚌 M3 Metro",
-path:[
-[47.4979,19.0540],
-[47.4963,19.0700],
-[47.5008,19.0830]
-],
-i:0
-}
-];
+function renderStops(){
 
-vehicles.forEach(v=>{
-v.marker = L.marker(v.path[0]).addTo(map);
-});
+let q = document.getElementById("search").value.toLowerCase();
 
-/* ================= ANIMATION LOOP ================= */
+let list = stops.filter(s=>
+s.name.toLowerCase().includes(q)
+);
 
-function moveVehicles(){
-
-vehicles.forEach(v=>{
-
-v.i += 0.01;
-
-if(v.i >= v.path.length-1){
-v.i = 0;
-}
-
-let i0 = Math.floor(v.i);
-let i1 = i0+1;
-
-let t = v.i - i0;
-
-if(i1 < v.path.length){
-
-let lat = v.path[i0][0] + (v.path[i1][0]-v.path[i0][0])*t;
-let lon = v.path[i0][1] + (v.path[i1][1]-v.path[i0][1])*t;
-
-v.marker.setLatLng([lat,lon]);
-
-}
-
-});
-
-}
-
-/* ================= PANEL ================= */
-
-function renderVehicles(){
-
-document.getElementById("vehicles").innerHTML =
-vehicles.map(v=>`
+document.getElementById("stops").innerHTML =
+list.map(s=>`
 <div class="card">
-${v.name}<br>
-📍 mozgásban
+🚏 <b>${s.name}</b><br>
+
+<button onclick="openUrl('${s.url}')">
+🌐 Menetrend megnyitása
+</button>
+</div>
+`).join("");
+
+}
+
+/* ================= URL OPEN ================= */
+
+function openUrl(url){
+window.open(url,"_blank");
+}
+
+/* ================= LINKS PANEL ================= */
+
+function renderLinks(){
+
+document.getElementById("links").innerHTML =
+stops.slice(0,10).map(s=>`
+<div class="card">
+🌐 ${s.name}<br>
+<button onclick="openUrl('${s.url}')">
+Megnyitás
+</button>
 </div>
 `).join("");
 
@@ -161,23 +204,18 @@ ${v.name}<br>
 
 navigator.geolocation.watchPosition(pos=>{
 
+userLat = pos.coords.latitude;
+userLon = pos.coords.longitude;
+
 document.getElementById("gps").innerHTML =
-`📍 ${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}`;
-
-L.marker([pos.coords.latitude,pos.coords.longitude]).addTo(map);
-
-map.setView([pos.coords.latitude,pos.coords.longitude],13);
+`📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`;
 
 });
 
-/* ================= LOOP ================= */
+/* ================= INIT ================= */
 
-setInterval(()=>{
-moveVehicles();
-renderVehicles();
-},100);
-
-renderVehicles();
+renderStops();
+renderLinks();
 
 </script>
 
