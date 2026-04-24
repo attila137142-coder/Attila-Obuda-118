@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V4 FULL</title>
+<title>ROXY V4 PRO GTFS</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -18,7 +18,7 @@ body{margin:0;font-family:Arial}
  background:#000c;
  color:#0f0;
  padding:10px;
- width:340px;
+ width:360px;
  border:1px solid #0f0;
  max-height:90vh;
  overflow:auto;
@@ -26,7 +26,7 @@ body{margin:0;font-family:Arial}
 
 .stop{
  cursor:pointer;
- padding:4px;
+ padding:6px;
  margin-bottom:5px;
  border-bottom:1px solid #0f0;
 }
@@ -34,15 +34,16 @@ body{margin:0;font-family:Arial}
  background:#0f0;
  color:#000;
 }
-.small{opacity:0.8;font-size:12px}
+
+.small{font-size:12px;opacity:0.8}
 </style>
 </head>
 
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY V4</h3>
-<div id="info">📍 Helyzet betöltése...</div>
+<h3>🚆 ROXY V4 PRO</h3>
+<div id="info">📍 GPS betöltés...</div>
 </div>
 
 <div id="map"></div>
@@ -58,13 +59,12 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let stopLayer = L.layerGroup().addTo(map);
 
-// ================= USER GPS =================
+// ================= USER =================
 let userLat=null,userLon=null;
-let userAddress="📍 ismeretlen hely";
+let userAddress="";
 
 function formatDistance(m){
- if(m<1000) return `${m} m`;
- return `${(m/1000).toFixed(2)} km`;
+ return m<1000 ? m+" m" : (m/1000).toFixed(2)+" km";
 }
 
 // ================= DIST =================
@@ -78,28 +78,23 @@ function getDistance(lat1,lon1,lat2,lon2){
   Math.cos(lat2*Math.PI/180)*
   Math.sin(dLon/2)**2;
 
- let c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
- return Math.round(R*c);
+ return Math.round(2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
 }
 
 // ================= ADDRESS =================
 async function getAddress(lat,lon){
  try{
-  let res=await fetch(
-   `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
-  );
+  let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
   let d=await res.json();
   let a=d.address;
 
-  return `${a.city || a.town || a.village || ""} 
-  ${a.road || ""} 
-  ${a.house_number || ""}`;
+  return `${a.city||a.town||a.village||""} ${a.road||""} ${a.house_number||""}`;
  }catch(e){
-  return "nincs adat";
+  return "nincs cím";
  }
 }
 
-// ================= USER LOCATION =================
+// ================= USER GPS =================
 navigator.geolocation.getCurrentPosition(async pos=>{
  userLat=pos.coords.latitude;
  userLon=pos.coords.longitude;
@@ -127,35 +122,71 @@ async function fetchOverpass(query){
    if(res.ok) return await res.json();
   }catch(e){}
  }
- throw "no server";
+ throw "overpass error";
 }
 
 // ================= GTFS =================
-let GTFS={stopTimes:[]};
+let GTFSStops = {};
+let GTFSTimes = [];
 
-async function loadGTFS(){
- try{
-  let res=await fetch("stop_times.txt");
-  let text=await res.text();
-  let lines=text.split("\n");
+// stops.txt
+async function loadStops(){
+ let res=await fetch("stops.txt");
+ let text=await res.text();
+ let lines=text.split("\n");
 
-  for(let i=1;i<lines.length;i++){
-   let c=lines[i].split(",");
+ for(let i=1;i<lines.length;i++){
+  let c=lines[i].split(",");
 
-   GTFS.stopTimes.push({
-    trip_id:c[0],
-    arr:c[1],
-    dep:c[2],
-    stop_id:c[3]
-   });
-  }
+  if(c.length<4) continue;
 
- }catch(e){
-  console.log("GTFS hiba");
+  GTFSStops[c[0]] = {
+   name:c[2],
+   lat:parseFloat(c[3]),
+   lon:parseFloat(c[4])
+  };
  }
 }
 
-// ================= NEXT DEPARTURES =================
+// stop_times.txt
+async function loadTimes(){
+ let res=await fetch("stop_times.txt");
+ let text=await res.text();
+ let lines=text.split("\n");
+
+ for(let i=1;i<lines.length;i++){
+  let c=lines[i].split(",");
+
+  if(c.length<4) continue;
+
+  GTFSTimes.push({
+   trip_id:c[0],
+   arr:c[1],
+   dep:c[2],
+   stop_id:c[3]
+  });
+ }
+}
+
+// ================= NEAREST STOP =================
+function findNearestStop(lat,lon){
+ let best=null;
+ let bestDist=999999;
+
+ for(let id in GTFSStops){
+  let s=GTFSStops[id];
+  let d=getDistance(lat,lon,s.lat,s.lon);
+
+  if(d<bestDist){
+   bestDist=d;
+   best=id;
+  }
+ }
+
+ return best;
+}
+
+// ================= DEPARTURES =================
 function getNextDepartures(stopId){
  let now=new Date();
  let current=
@@ -164,7 +195,7 @@ function getNextDepartures(stopId){
 
  let res=[];
 
- GTFS.stopTimes.forEach(s=>{
+ GTFSTimes.forEach(s=>{
   if(s.stop_id===stopId && s.dep>=current){
    res.push(s.dep);
   }
@@ -198,19 +229,18 @@ map.on("click",async e=>{
 
   stopLayer.clearLayers();
 
-  let used={};
-  let html="<b>🚏 Közeli megállók:</b><br><br>";
+  let html="<b>🚏 Megállók:</b><br><br>";
 
   data.elements.forEach(s=>{
 
    let name=s.tags?.name;
    if(!name) return;
-   if(used[name]) return;
-   used[name]=true;
 
    let dist=userLat
     ? getDistance(userLat,userLon,s.lat,s.lon)
     : null;
+
+   let nearestGTFS = findNearestStop(s.lat,s.lon);
 
    L.circleMarker([s.lat,s.lon],{
     radius:8,color:"yellow",fillColor:"yellow",fillOpacity:1
@@ -218,13 +248,11 @@ map.on("click",async e=>{
 
    html+=`
    <div class="stop"
-   onclick="selectStop('${name}',${s.lat},${s.lon},'${s.id}')">
+   onclick="selectStop('${name}',${s.lat},${s.lon},'${nearestGTFS}')">
 
    🚏 ${name}<br>
-   <span class="small">
-   📏 ${dist ? formatDistance(dist) : "?"}
-   </span><br>
-   🆔 ${s.id}
+   <span class="small">📏 ${dist?formatDistance(dist):"?"}</span><br>
+   <span class="small">GTFS: ${nearestGTFS||"nincs"}</span>
 
    </div>`;
   });
@@ -232,27 +260,27 @@ map.on("click",async e=>{
   document.getElementById("info").innerHTML=html;
 
  }catch(e){
-  document.getElementById("info").innerHTML="⚠️ hálózati hiba";
+  document.getElementById("info").innerHTML="⚠️ overpass hiba";
  }
 
 });
 
 // ================= SELECT STOP =================
-async function selectStop(name,lat,lon,id){
+async function selectStop(name,lat,lon,stopId){
 
  map.setView([lat,lon],16);
 
  let addr=await getAddress(lat,lon);
- let times=getNextDepartures(id);
+ let times=stopId ? getNextDepartures(stopId) : [];
 
  let html=`<b>🚏 ${name}</b><br><br>`;
  html+=`📍 ${addr}<br><br>`;
- html+=`🆔 ${id}<br><br>`;
+ html+=`🆔 GTFS stop: ${stopId||"nincs"}<br><br>`;
 
  html+="<b>🕒 Indulások:</b><br>";
 
  if(times.length===0){
-  html+="❌ nincs adat";
+  html+="❌ nincs GTFS adat";
  }else{
   times.forEach(t=>html+="🕒 "+t+"<br>");
  }
@@ -261,8 +289,9 @@ async function selectStop(name,lat,lon,id){
 }
 
 // ================= INIT =================
-window.onload=()=>{
- loadGTFS();
+window.onload=async()=>{
+ await loadStops();
+ await loadTimes();
 };
 
 </script>
