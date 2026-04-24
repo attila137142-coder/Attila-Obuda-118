@@ -2,29 +2,34 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V4.1 STABLE FIX</title>
+<title>ROXY Menetrend</title>
+
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body{margin:0;font-family:Arial}
 #map{height:100vh}
+
 #panel{
-position:absolute;top:10px;left:10px;z-index:9999;
-background:#000c;color:#0f0;padding:10px;width:340px;
-border:1px solid #0f0;
+ position:absolute;
+ top:10px;
+ left:10px;
+ z-index:9999;
+ background:#000c;
+ color:#0f0;
+ padding:10px;
+ width:300px;
+ border:1px solid #0f0;
 }
-button{width:100%;margin:3px 0}
+
 </style>
 </head>
 
 <body>
 
 <div id="panel">
-<h3>🧭 ROXY V4.1 FIX</h3>
-<div id="log">READY</div>
-
-<button onclick="loadDemo()">📦 LOAD DEMO GRAPH</button>
-<button onclick="runRoute('A','E')">🧠 ROUTE A → E</button>
+<h3>🚆 ROXY MENETREND</h3>
+<div id="info">Kattints egy megállóra</div>
 </div>
 
 <div id="map"></div>
@@ -39,98 +44,83 @@ let map = L.map('map').setView([47.5,19.04],13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
 .addTo(map);
 
-// ================= GRAPH =================
-let nodes = {};
-let edges = {};
+// ================= ADAT =================
+let stopsData = [];
+let stopTimes = [];
 
-// ================= LOG =================
-function log(t){
- document.getElementById("log").innerText = t;
- console.log(t);
-}
+// ================= STOPS =================
+async function loadStops(){
 
-// ================= SAFE DEMO GRAPH =================
-function loadDemo(){
+ let res = await fetch("stops.txt");
+ let text = await res.text();
 
- nodes = {
-  A:{lat:47.50,lon:19.00},
-  B:{lat:47.505,lon:19.01},
-  C:{lat:47.51,lon:19.02},
-  D:{lat:47.52,lon:19.03},
-  E:{lat:47.53,lon:19.04}
- };
+ let lines = text.split("\n");
 
- edges = {
-  A:["B"],
-  B:["C"],
-  C:["D"],
-  D:["E"]
- };
+ for(let i=1;i<lines.length;i++){
 
- log("🟢 DEMO GRAPH LOADED");
-}
+  let cols = lines[i].split(",");
 
-// ================= DIST =================
-function dist(a,b){
- let A=nodes[a],B=nodes[b];
- let dx=(A.lat-B.lat)*111000;
- let dy=(A.lon-B.lon)*111000;
- return Math.sqrt(dx*dx+dy*dy);
-}
+  let id = cols[0];
+  let name = cols[2];
+  let lat = parseFloat(cols[4]);
+  let lon = parseFloat(cols[5]);
 
-// ================= DIJKSTRA =================
-function runRoute(start,end){
+  if(!lat || !lon) continue;
 
- if(!nodes[start]||!nodes[end]){
-  log("❌ INVALID START/END");
-  return;
+  stopsData.push({id,name,lat,lon});
+
+  let m = L.circleMarker([lat,lon],{
+    radius:4,color:"yellow"
+  }).addTo(map);
+
+  m.on("click",()=>{
+    showTimes(id,name);
+  });
  }
 
- let Q=Object.keys(nodes);
- let d={},prev={};
-
- Q.forEach(n=>d[n]=Infinity);
- d[start]=0;
-
- while(Q.length){
-
-  Q.sort((a,b)=>d[a]-d[b]);
-  let u=Q.shift();
-
-  if(u===end) break;
-
-  for(let v of (edges[u]||[])){
-
-   let alt=d[u]+dist(u,v);
-
-   if(alt<d[v]){
-    d[v]=alt;
-    prev[v]=u;
-   }
-  }
- }
-
- let path=[];
- let cur=end;
-
- while(cur){
-  path.unshift(cur);
-  cur=prev[cur];
- }
-
- draw(path);
- log("🧠 ROUTE: "+path.join(" → "));
+ console.log("stops OK");
 }
 
-// ================= DRAW =================
-function draw(path){
+// ================= STOP TIMES =================
+async function loadTimes(){
 
- let c=path.map(p=>[nodes[p].lat,nodes[p].lon]);
+ let res = await fetch("stop_times.txt");
+ let text = await res.text();
 
- L.polyline(c,{color:"lime"}).addTo(map);
+ let lines = text.split("\n");
 
- map.fitBounds(L.polyline(c).getBounds());
+ for(let i=1;i<lines.length;i++){
+
+  let c = lines[i].split(",");
+
+  stopTimes.push({
+    stop:c[3],
+    dep:c[2]
+  });
+ }
+
+ console.log("times OK");
 }
+
+// ================= SHOW =================
+function showTimes(stopId,name){
+
+ let list = stopTimes.filter(s=>s.stop===stopId);
+
+ let html = "<b>"+name+"</b><br>";
+
+ list.slice(0,15).forEach(s=>{
+  html += "🕒 "+s.dep+"<br>";
+ });
+
+ document.getElementById("info").innerHTML = html;
+}
+
+// ================= START =================
+window.onload = () => {
+ loadStops();
+ loadTimes();
+};
 
 </script>
 
