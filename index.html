@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Transit V9 - A→B Route Engine</title>
+<title>Attila Közlekedés V3 - Control Room</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -37,17 +37,6 @@ border:none;
 border-radius:6px;
 }
 
-button{
-width:100%;
-padding:8px;
-margin-top:5px;
-border:none;
-border-radius:6px;
-background:#2563eb;
-color:white;
-cursor:pointer;
-}
-
 .card{
 background:#0f172a;
 padding:8px;
@@ -56,6 +45,21 @@ border-radius:8px;
 border:1px solid #243244;
 font-size:13px;
 }
+
+button{
+width:100%;
+padding:6px;
+margin-top:5px;
+border:none;
+border-radius:6px;
+color:white;
+cursor:pointer;
+}
+
+.bkk{background:#2563eb;}
+.mav{background:#16a34a;}
+.volan{background:#f59e0b;}
+.info{background:#a855f7;}
 
 h3{color:#38bdf8;}
 </style>
@@ -69,15 +73,23 @@ h3{color:#38bdf8;}
 
 <div class="panel">
 
-<h3>🚏 A → B útvonaltervező</h3>
+<h3>🔎 Megálló kereső</h3>
+<input id="search" oninput="renderStops()" placeholder="pl. Békásmegyer">
 
-<input id="from" placeholder="📍 Honnan? pl. Deák tér">
-<input id="to" placeholder="📍 Hova? pl. Kelenföld">
+<h3>🚏 Megállók + URL-ek</h3>
+<div id="stops"></div>
 
-<button onclick="planRoute()">🚆 Útvonal keresés</button>
+<h3>🧭 Útvonal</h3>
 
-<h3>📌 Eredmény</h3>
-<div id="result">Írj be két pontot</div>
+<input id="from" placeholder="Honnan?">
+<input id="to" placeholder="Hova?">
+
+<button class="bkk" onclick="route()">🚆 Útvonaltervezés</button>
+
+<div id="routeResult"></div>
+
+<h3>🌐 Közlekedési HUB</h3>
+<div id="links"></div>
 
 </div>
 
@@ -85,118 +97,160 @@ h3{color:#38bdf8;}
 
 <script>
 
-let map = L.map('map').setView([47.4979,19.0402], 12);
+let map = L.map('map').setView([47.4979,19.0402], 11);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
- attribution:"OSM"
+attribution:"OSM"
 }).addTo(map);
 
-/* ================= STOP ADATBÁZIS ================= */
+/* ================= MEGÁLLÓ ADATBÁZIS ================= */
 
 let stops = [
-{name:"Deák tér", lat:47.4979, lon:19.0540},
-{name:"Blaha Lujza tér", lat:47.4963, lon:19.0700},
-{name:"Kelenföld", lat:47.4649, lon:19.0193},
-{name:"Nyugati", lat:47.5101, lon:19.0560},
-{name:"Népliget", lat:47.4760, lon:19.0990},
-{name:"Kőbánya-Kispest", lat:47.4636, lon:19.1467}
+
+{name:"Nád utca", id:"F00457", lat:47.55, lon:19.04, url:"https://realtimenext.hu/embed/bkv/stops/F00457/schedule"},
+{name:"Buszgarázs (kifelé)", id:"F00678", lat:47.56, lon:19.05, url:"https://realtimenext.hu/embed/bkv/stops/F00678/schedule"},
+{name:"Buszgarázs (befelé)", id:"F00679", lat:47.565, lon:19.051, url:"https://realtimenext.hu/embed/bkv/stops/F00679/schedule"},
+{name:"Szépvölgyi dűlő", id:"064215", lat:47.53, lon:19.02, url:"https://realtimenext.hu/bkv/stops/064215/schedule"},
+{name:"Gulácsy Lajos (kifelé)", id:"F00438", lat:47.52, lon:19.01, url:"https://realtimenext.hu/embed/bkv/stops/F00438/schedule"},
+{name:"Gulácsy Lajos (befelé)", id:"F00439", lat:47.521, lon:19.012, url:"https://realtimenext.hu/embed/bkv/stops/F00439/schedule"},
+
+{name:"Békásmegyer 160", id:"008939", lat:47.596, lon:19.044, url:"https://realtimenext.hu/bkv/stops/008939/schedule"},
+{name:"Békásmegyer 243", id:"044192", lat:47.597, lon:19.046, url:"https://realtimenext.hu/embed/bkv/stops/044192/schedule"},
+{name:"Békásmegyer HÉV", id:"09183208", lat:47.5965, lon:19.042, url:"https://realtimenext.hu/embed/bkv/stops/09183208/schedule"},
+
+{name:"Szentendre HÉV", id:"09142223", lat:47.669, lon:19.075, url:"https://realtimenext.hu/embed/bkv/stops/09142223/schedule"},
+{name:"Szentendre Volán", id:"778806", lat:47.6695, lon:19.078, url:"https://utas.hu/stop/hkir_778806_0"},
+
+{name:"Aquincum", id:"CSF00667", lat:47.56, lon:19.04, url:"https://realtimenext.hu/embed/bkv/stops/CSF00667/schedule"},
+{name:"Óbuda vasút", id:"005501404", lat:47.54, lon:19.03, url:"https://realtimenext.hu/embed/bkv/stops/005501404/schedule"},
+
+{name:"Papírgyár kifelé", id:"008436", lat:47.66, lon:19.09, url:"https://realtimenext.hu/embed/bkv/stops/008436/schedule"},
+{name:"Papírgyár befelé", id:"008437", lat:47.661, lon:19.091, url:"https://realtimenext.hu/embed/bkv/stops/008437/schedule"}
+
 ];
 
-/* ================= SEGÉD ================= */
+/* ================= MAP MARKEREK ================= */
 
-function dist(a,b){
- return Math.sqrt(
-  Math.pow(a.lat-b.lat,2)+
-  Math.pow(a.lon-b.lon,2)
- );
-}
+stops.forEach(s=>{
 
-function findStop(name){
- return stops.find(s=>s.name.toLowerCase()===name.toLowerCase());
-}
+L.circleMarker([s.lat,s.lon],{
+radius:5,
+color:"#22c55e"
+}).addTo(map).bindPopup("🚏 "+s.name);
 
-function nearest(lat,lon){
- return stops.reduce((a,b)=>{
+});
 
-  let da = Math.hypot(lat-a.lat,lon-a.lon);
-  let db = Math.hypot(lat-b.lat,lon-b.lon);
+/* ================= RENDER LIST ================= */
 
-  return db<da ? b : a;
+function renderStops(){
 
- });
+let q=document.getElementById("search").value.toLowerCase();
+
+let list=stops.filter(s=>
+s.name.toLowerCase().includes(q)
+);
+
+document.getElementById("stops").innerHTML=
+list.map(s=>`
+
+<div class="card">
+🚏 <b>${s.name}</b><br>
+🆔 ${s.id}
+
+<button class="info" onclick="openUrl('${s.url}')">
+🌐 Menetrend megnyitása
+</button>
+
+</div>
+
+`).join("");
+
+renderLinks();
 }
 
 /* ================= ROUTE ENGINE ================= */
 
-function planRoute(){
-
- let fromName = document.getElementById("from").value;
- let toName = document.getElementById("to").value;
-
- let from = findStop(fromName);
- let to = findStop(toName);
-
- if(!from || !to){
-  document.getElementById("result").innerHTML =
-  "❌ nem található megálló";
-  return;
- }
-
- /* ===== LEGS ===== */
-
- let walk1 = nearest(from.lat,from.lon);
- let walk2 = nearest(to.lat,to.lon);
-
- let d1 = Math.hypot(from.lat-walk1.lat,from.lon-walk1.lon)*111000;
- let d2 = Math.hypot(to.lat-walk2.lat,to.lon-walk2.lon)*111000;
-
- let total = d1 + d2;
-
- /* ===== MAP DRAW ===== */
-
- map.eachLayer(l=>{
- if(l._path) map.removeLayer(l);
- });
-
- L.polyline([
- [from.lat,from.lon],
- [walk1.lat,walk1.lon],
- [walk2.lat,walk2.lon],
- [to.lat,to.lon]
- ],{
- color:"cyan"
- }).addTo(map);
-
- map.fitBounds([
- [from.lat,from.lon],
- [to.lat,to.lon]
- ]);
-
- /* ===== OUTPUT ===== */
-
- document.getElementById("result").innerHTML = `
- <div class="card">
-  🚶 Kiindulás: ${from.name}<br>
-  🚏 Gyaloglás: ${Math.round(d1)} m
- </div>
-
- <div class="card">
-  🚆 Átszállási zóna<br>
-  📍 ${walk1.name} → ${walk2.name}
- </div>
-
- <div class="card">
-  🚶 Érkezés: ${to.name}<br>
-  🚏 Gyaloglás: ${Math.round(d2)} m
- </div>
-
- <div class="card">
-  📏 Teljes távolság: ${(total/1000).toFixed(2)} km
- </div>
- `;
+function find(name){
+return stops.find(s=>s.name.toLowerCase()===name.toLowerCase());
 }
+
+function route(){
+
+let a=find(document.getElementById("from").value);
+let b=find(document.getElementById("to").value);
+
+if(!a||!b){
+document.getElementById("routeResult").innerHTML="❌ nem található";
+return;
+}
+
+let d=Math.hypot(a.lat-b.lat,a.lon-b.lon)*111;
+
+document.getElementById("routeResult").innerHTML=`
+<div class="card">
+🚏 ${a.name} → ${b.name}<br>
+📏 ~${d.toFixed(2)} km
+</div>
+`;
+}
+
+/* ================= HUB LINKS ================= */
+
+function renderLinks(){
+
+document.getElementById("links").innerHTML=`
+
+<div class="card">
+🚆 BKK térkép<br>
+<button class="bkk" onclick="openUrl('https://map.realtimenext.hu/')">Megnyitás</button>
+</div>
+
+<div class="card">
+🚌 FUTÁR<br>
+<button class="bkk" onclick="openUrl('https://futar.bkk.hu/?map=14/47.59658/19.04446')">Megnyitás</button>
+</div>
+
+<div class="card">
+🚇 GO BKK<br>
+<button class="bkk" onclick="openUrl('https://go.bkk.hu/?map=14/47.59793/19.05094')">Megnyitás</button>
+</div>
+
+<div class="card">
+🚆 MÁV<br>
+<button class="mav" onclick="openUrl('https://kozlekedesiklub.hu/vonatinfo/')">Megnyitás</button>
+</div>
+
+<div class="card">
+🚌 VOLÁN kereső<br>
+<button class="volan" onclick="openUrl('https://utas.hu/search/')">Megnyitás</button>
+</div>
+
+<div class="card">
+🗺️ Börzsöny térkép<br>
+<button class="volan" onclick="openUrl('https://utas.hu/?map=10/47.91054/18.93198')">Megnyitás</button>
+</div>
+
+<div class="card">
+🗺️ Pilis térkép<br>
+<button class="volan" onclick="openUrl('https://utas.hu/?map=10/47.70959/18.9351')">Megnyitás</button>
+</div>
+
+`;
+}
+
+/* ================= OPEN URL ================= */
+
+function openUrl(u){
+window.open(u,"_blank");
+}
+
+/* ================= INIT ================= */
+
+renderStops();
+renderLinks();
 
 </script>
 
 </body>
 </html>
+
