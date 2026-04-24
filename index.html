@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROXY ARCH PRO V6.3 FULL</title>
+<title>ROXY V7 SAFETY CORE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -36,7 +36,7 @@ button{
 
 .status{
  border:1px solid #0f0;
- padding:5px;
+ padding:6px;
  margin:5px 0;
  font-size:12px;
 }
@@ -48,19 +48,15 @@ button{
 <body>
 
 <div id="panel">
-<h3>🧭 ROXY V6.3 FULL</h3>
+<h3>🔐 ROXY SAFETY CORE</h3>
 
 <div id="status" class="status">READY</div>
+<div id="loc" class="status">--</div>
 
-<div id="loc">--</div>
-
-<hr>
-
-<button onclick="startGPS()">📍 GPS + CÍM</button>
-<button onclick="startTracking()">📡 AUTO TRACK</button>
-<button onclick="stopTracking()">⛔ STOP</button>
-<button onclick="calcStats()">📊 ELEMZÉS</button>
-<button onclick="loadStops()">🚏 MEGÁLLÓK</button>
+<button onclick="startGPS()">📍 GPS START</button>
+<button onclick="startTrack()">📡 TRACK ON</button>
+<button onclick="stopTrack()">⛔ STOP</button>
+<button onclick="goBack()">🔁 VISSZAÚT</button>
 <button onclick="resetAll()">🧹 RESET</button>
 
 </div>
@@ -73,56 +69,43 @@ button{
 
 // ================= MAP =================
 let map = L.map('map').setView([47.5,19.04],13);
-
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+// ================= DATA =================
 let trail = [];
+let line;
 let watchID = null;
+let lastPos = null;
 let accMin = 9999;
-let accMax = 0;
 
 // ================= GPS =================
-async function startGPS(){
+function startGPS(){
 
- navigator.geolocation.getCurrentPosition(async p=>{
+ navigator.geolocation.getCurrentPosition(p=>{
 
   let lat = p.coords.latitude;
   let lon = p.coords.longitude;
   let acc = p.coords.accuracy;
 
+  lastPos = [lat,lon];
+  accMin = Math.min(accMin, acc);
+
   map.setView([lat,lon],15);
 
   L.marker([lat,lon]).addTo(map);
 
-  accMin = Math.min(accMin, acc);
-  accMax = Math.max(accMax, acc);
+  document.getElementById("status").innerText =
+   "GPS OK | pontosság: "+Math.round(acc)+" m";
 
-  document.getElementById("status").innerHTML =
-   `📡 ${Math.round(acc)} m<br>Min:${Math.round(accMin)} Max:${Math.round(accMax)}`;
-
-  try{
-   let r = await fetch(
-    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
-   );
-   let d = await r.json();
-
-   let a = d.address;
-
-   document.getElementById("loc").innerHTML =
-    `${a.country || ""}<br>
-     ${a.city || a.town || a.village || ""}<br>
-     ${a.road || ""} ${a.house_number || ""}`;
-
-  }catch{
-   document.getElementById("loc").innerText = lat+","+lon;
-  }
+  document.getElementById("loc").innerText =
+   lat.toFixed(5)+", "+lon.toFixed(5);
 
  });
 
 }
 
 // ================= TRACK =================
-function startTracking(){
+function startTrack(){
 
  if(watchID) return;
 
@@ -131,92 +114,46 @@ function startTracking(){
   let pt = [p.coords.latitude, p.coords.longitude];
 
   trail.push(pt);
+  lastPos = pt;
 
   L.circleMarker(pt,{radius:4,color:"lime"}).addTo(map);
 
-  L.polyline(trail,{color:"lime"}).addTo(map);
+  if(line) map.removeLayer(line);
+  line = L.polyline(trail,{color:"lime"}).addTo(map);
 
   document.getElementById("status").innerText =
-   "TRACK: "+trail.length;
+   "TRACK: "+trail.length+" pont";
 
  });
 
 }
 
-function stopTracking(){
+// ================= STOP =================
+function stopTrack(){
  if(watchID){
   navigator.geolocation.clearWatch(watchID);
   watchID = null;
+  document.getElementById("status").innerText = "TRACK OFF";
  }
 }
 
-// ================= ELEMZÉS =================
-function calcStats(){
+// ================= VISSZAÚT =================
+function goBack(){
 
  if(trail.length < 2){
-  document.getElementById("status").innerText="Nincs adat";
+  alert("Nincs elég adat");
   return;
  }
 
- let total = 0;
- let gain = 0;
+ let back = [...trail].reverse();
 
- for(let i=1;i<trail.length;i++){
+ if(line) map.removeLayer(line);
 
-  let d = map.distance(trail[i-1],trail[i]);
-  total += d;
-
-  let h1 = Math.sin(i)*40 + 200;
-  let h2 = Math.sin(i+1)*40 + 200;
-
-  let diff = h2 - h1;
-
-  if(diff > 0) gain += diff;
- }
-
- document.getElementById("status").innerHTML =
-  "Táv: "+(total/1000).toFixed(2)+" km<br>"+
-  "Emelkedés: "+Math.round(gain)+" m";
-}
-
-// ================= MEGÁLLÓK (45 DB) =================
-function loadStops(){
-
- let stops = [
- {n:"Békásmegyer HÉV",lat:47.598,lon:19.054},
- {n:"Nád utca",lat:47.594,lon:19.048},
- {n:"Gulácsy Lajos utca",lat:47.602,lon:19.048},
- {n:"Flórián tér",lat:47.542,lon:19.042},
- {n:"Batthyány tér",lat:47.506,lon:19.039},
- {n:"Verecke lépcső",lat:47.529,lon:19.003},
- {n:"Csobánka tér",lat:47.597,lon:19.053},
- {n:"Örs vezér tér",lat:47.501,lon:19.135},
- {n:"Kocka utca",lat:47.484,lon:19.155},
- {n:"Újhegyi sétány",lat:47.470,lon:19.164},
- {n:"Gőzmozdony utca",lat:47.470,lon:19.157},
- {n:"Bojtár utca",lat:47.560,lon:19.024},
- {n:"Szentendre állomás",lat:47.660,lon:19.075},
- {n:"Skanzen",lat:47.691,lon:19.046},
- {n:"Tahitótfalu",lat:47.751,lon:19.078},
- {n:"Dömör-kapu",lat:47.694,lon:19.000},
- {n:"Vác állomás",lat:47.781,lon:19.129},
- {n:"Kóspallag",lat:47.877,lon:18.932},
- {n:"Kisinóci ház",lat:47.890,lon:18.927},
- {n:"Királyrét",lat:47.895,lon:18.977},
- {n:"Szob",lat:47.821,lon:18.862},
- {n:"Nagybörzsöny",lat:47.936,lon:18.827},
- {n:"Kemence",lat:48.015,lon:18.888},
- {n:"Pilisborosjenő",lat:47.609,lon:18.989},
- {n:"Dobogókő",lat:47.719,lon:18.897}
- ];
-
- stops.forEach(s=>{
-  L.marker([s.lat,s.lon]).addTo(map)
-   .bindPopup(s.n);
- });
+ line = L.polyline(back,{color:"red"}).addTo(map);
 
  document.getElementById("status").innerText =
-  "Megállók betöltve: "+stops.length;
+  "VISSZAÚT AKTÍV 🔁";
+
 }
 
 // ================= RESET =================
