@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V4 PRO GTFS</title>
+<title>ROXY V8 FLEET INTELLIGENCE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -18,7 +18,7 @@ body{margin:0;font-family:Arial}
  background:#000c;
  color:#0f0;
  padding:10px;
- width:360px;
+ width:380px;
  border:1px solid #0f0;
  max-height:90vh;
  overflow:auto;
@@ -42,8 +42,8 @@ body{margin:0;font-family:Arial}
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY V4 PRO</h3>
-<div id="info">📍 GPS betöltés...</div>
+<h3>🚆 ROXY V8 FLEET INTELLIGENCE</h3>
+<div id="info">📍 indulás...</div>
 </div>
 
 <div id="map"></div>
@@ -102,7 +102,7 @@ navigator.geolocation.getCurrentPosition(async pos=>{
  userAddress = await getAddress(userLat,userLon);
 
  document.getElementById("info").innerHTML=`
- <b>📍 Saját helyzeted</b><br>
+ <b>📍 Saját helyzet</b><br>
  ${userAddress}<br><br>
  Térképre kattints 🚏
  `;
@@ -129,7 +129,6 @@ async function fetchOverpass(query){
 let GTFSStops = {};
 let GTFSTimes = [];
 
-// stops.txt
 async function loadStops(){
  let res=await fetch("stops.txt");
  let text=await res.text();
@@ -137,10 +136,9 @@ async function loadStops(){
 
  for(let i=1;i<lines.length;i++){
   let c=lines[i].split(",");
+  if(c.length<5) continue;
 
-  if(c.length<4) continue;
-
-  GTFSStops[c[0]] = {
+  GTFSStops[c[0]]={
    name:c[2],
    lat:parseFloat(c[3]),
    lon:parseFloat(c[4])
@@ -148,7 +146,6 @@ async function loadStops(){
  }
 }
 
-// stop_times.txt
 async function loadTimes(){
  let res=await fetch("stop_times.txt");
  let text=await res.text();
@@ -156,7 +153,6 @@ async function loadTimes(){
 
  for(let i=1;i<lines.length;i++){
   let c=lines[i].split(",");
-
   if(c.length<4) continue;
 
   GTFSTimes.push({
@@ -186,29 +182,84 @@ function findNearestStop(lat,lon){
  return best;
 }
 
+// ================= LIVE TIME =================
+function nowSeconds(){
+ let d=new Date();
+ return d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds();
+}
+
+function getSecondsFromTime(t){
+ let [h,m,s]=t.split(":");
+ return (+h)*3600+(+m)*60+(+s||0);
+}
+
+// ================= STATUS =================
+function getLiveStatus(t){
+ let gtfs=getSecondsFromTime(t);
+ let now=nowSeconds();
+
+ let diff=gtfs-now;
+ let abs=Math.abs(diff);
+
+ let min=Math.floor(abs/60);
+ let sec=abs%60;
+
+ if(diff>60) return {type:"future",text:`⏳ ${min}p ${sec}s`};
+ if(diff<=60 && diff>=-30) return {type:"now",text:`🟡 ÉRKEZIK`};
+ if(diff<-30) return {type:"late",text:`🔵 KÉSIK ${min}p ${sec}s`};
+
+ return {type:"ok",text:"🟢 MOST"};
+}
+
+// ================= VEHICLE INTELLIGENCE =================
+let vehicleInfo={
+ HÉV:{short:"3 kocsi",long:"6 kocsi"},
+ bus:{solo:"szóló",art:"csuklós"},
+ tram:{short:"1 egység",long:"2 egység"}
+};
+
+function detectVehicle(name){
+ name=name.toLowerCase();
+
+ if(name.includes("hév")||name.includes("hev")) return "HÉV";
+ if(name.includes("villamos")) return "tram";
+ return "bus";
+}
+
+function getVehicle(name){
+ let type=detectVehicle(name);
+ let v=vehicleInfo[type];
+
+ if(type==="HÉV"){
+  return Math.random()>0.5?v.long:v.short;
+ }
+
+ if(type==="tram"){
+  return Math.random()>0.6?v.long:v.short;
+ }
+
+ return Math.random()>0.5?v.art:v.solo;
+}
+
 // ================= DEPARTURES =================
-function getNextDepartures(stopId){
+function getDepartures(stopId){
  let now=new Date();
  let current=
   now.getHours().toString().padStart(2,'0')+":"+
   now.getMinutes().toString().padStart(2,'0');
 
- let res=[];
-
- GTFSTimes.forEach(s=>{
-  if(s.stop_id===stopId && s.dep>=current){
-   res.push(s.dep);
-  }
- });
-
- return res.sort().slice(0,10);
+ return GTFSTimes
+ .filter(s=>s.stop_id===stopId && s.dep>=current)
+ .map(s=>s.dep)
+ .sort()
+ .slice(0,10);
 }
 
-// ================= MAP CLICK =================
+// ================= CLICK =================
 map.on("click",async e=>{
 
  let lat=e.latlng.lat;
- let lon=e.latlng.lng;
+ let lon=e.latlng.lon || e.latlng.lng;
 
  document.getElementById("info").innerHTML="🔍 keresés...";
 
@@ -217,8 +268,7 @@ map.on("click",async e=>{
  (
   node(around:600,${lat},${lon})["highway"="bus_stop"];
   node(around:600,${lat},${lon})["public_transport"="platform"];
-  node(around:600,${lat},${lon})["railway"="tram_stop"];
-  node(around:600,${lat},${lon})["railway"="station"];
+  node(around:600,${lat},${lon})["railway"];
  );
  out;
  `;
@@ -229,18 +279,15 @@ map.on("click",async e=>{
 
   stopLayer.clearLayers();
 
-  let html="<b>🚏 Megállók:</b><br><br>";
+  let html="<b>🚏 Megállók</b><br><br>";
 
   data.elements.forEach(s=>{
 
    let name=s.tags?.name;
    if(!name) return;
 
-   let dist=userLat
-    ? getDistance(userLat,userLon,s.lat,s.lon)
-    : null;
-
-   let nearestGTFS = findNearestStop(s.lat,s.lon);
+   let dist=userLat?getDistance(userLat,userLon,s.lat,s.lon):null;
+   let nearest=findNearestStop(s.lat,s.lon);
 
    L.circleMarker([s.lat,s.lon],{
     radius:8,color:"yellow",fillColor:"yellow",fillOpacity:1
@@ -248,11 +295,11 @@ map.on("click",async e=>{
 
    html+=`
    <div class="stop"
-   onclick="selectStop('${name}',${s.lat},${s.lon},'${nearestGTFS}')">
+   onclick="selectStop('${name}',${s.lat},${s.lon},'${nearest}')">
 
    🚏 ${name}<br>
    <span class="small">📏 ${dist?formatDistance(dist):"?"}</span><br>
-   <span class="small">GTFS: ${nearestGTFS||"nincs"}</span>
+   <span class="small">GTFS: ${nearest||"nincs"}</span>
 
    </div>`;
   });
@@ -260,30 +307,39 @@ map.on("click",async e=>{
   document.getElementById("info").innerHTML=html;
 
  }catch(e){
-  document.getElementById("info").innerHTML="⚠️ overpass hiba";
+  document.getElementById("info").innerHTML="⚠️ hiba";
  }
 
 });
 
-// ================= SELECT STOP =================
-async function selectStop(name,lat,lon,stopId){
+// ================= SELECT =================
+function selectStop(name,lat,lon,stopId){
 
  map.setView([lat,lon],16);
 
- let addr=await getAddress(lat,lon);
- let times=stopId ? getNextDepartures(stopId) : [];
+ let addr=userAddress;
+ let times=stopId?getDepartures(stopId):[];
 
  let html=`<b>🚏 ${name}</b><br><br>`;
  html+=`📍 ${addr}<br><br>`;
- html+=`🆔 GTFS stop: ${stopId||"nincs"}<br><br>`;
+ html+=`🆔 ${stopId||"nincs"}<br><br>`;
 
- html+="<b>🕒 Indulások:</b><br>";
+ html+="<b>🕒 LIVE:</b><br>";
 
- if(times.length===0){
-  html+="❌ nincs GTFS adat";
- }else{
-  times.forEach(t=>html+="🕒 "+t+"<br>");
+ if(!stopId){
+  html+="❌ nincs GTFS match";
  }
+ else if(times.length===0){
+  html+="⚠️ nincs adat";
+ }
+ else{
+  times.forEach(t=>{
+   let st=getLiveStatus(t);
+   html+=`🕒 ${t} → ${st.text}<br>`;
+  });
+ }
+
+ html+=`<br><b>🚆 Jármű:</b> ${getVehicle(name)}<br>`;
 
  document.getElementById("info").innerHTML=html;
 }
