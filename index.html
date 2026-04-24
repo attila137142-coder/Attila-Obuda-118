@@ -2,225 +2,220 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila PRO NAV v1</title>
+<title>Attila Közlekedés V5 - GTFS Dispatcher</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body{margin:0;background:#000;color:#0f0;font-family:Arial}
-#map{height:60vh;}
-#panel{padding:10px}
-button{padding:10px;margin:5px;background:#111;color:#0f0;border:1px solid #0f0}
-input{padding:10px;width:70%}
-.card{background:#111;margin-top:10px;padding:10px;border-radius:10px}
+body { margin:0; font-family:Arial; background:#0b1220; color:#fff; }
+
+#topbar{
+ display:flex;
+ justify-content:space-between;
+ padding:10px;
+ background:#111827;
+ font-size:13px;
+}
+
+#container{
+ display:grid;
+ grid-template-columns: 2fr 1fr;
+ height: calc(100vh - 40px);
+}
+
+#map{ height:100%; }
+
+.panel{
+ background:#1f2937;
+ padding:10px;
+ overflow:auto;
+}
+
+.card{
+ background:#0f172a;
+ padding:8px;
+ margin-bottom:8px;
+ border-radius:8px;
+ border:1px solid #243244;
+ font-size:13px;
+}
+
+input{
+ width:100%;
+ padding:8px;
+ margin-bottom:10px;
+ border-radius:6px;
+ border:none;
+}
+
+h3{ color:#38bdf8; }
 </style>
 </head>
 
 <body>
 
-<div id="map"></div>
+<div id="topbar">
+ <div id="gps">📍 GPS...</div>
+ <div id="status">🟢 GTFS CORE READY</div>
+</div>
 
-<div id="panel">
-<button onclick="getLocation()">📍 Helyzet</button>
-<input id="search" placeholder="Keresés...">
-<button onclick="search()">🔎</button>
+<div id="container">
 
-<div id="info"></div>
-<div id="stops"></div>
+ <div id="map"></div>
+
+ <div class="panel">
+
+  <input id="search" placeholder="🔎 megálló keresés..." oninput="searchStops()">
+
+  <h3>🚏 Legközelebbi megállók</h3>
+  <div id="stops">--</div>
+
+  <h3>🚌 Következő indulások</h3>
+  <div id="departures">--</div>
+
+ </div>
+
 </div>
 
 <script>
 
-let map = L.map('map').setView([47.5,19.0],13);
+/* ================= MAP ================= */
 
-let osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-let topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
-let rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:1});
+let map = L.map('map').setView([47.4979,19.0402], 12);
 
-osm.addTo(map);
-
-L.control.layers({
- "Alap": osm,
- "Topo": topo
-},{
- "Vasút": rail
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+ attribution:'OSM'
 }).addTo(map);
 
-let marker;
+/* ================= USER ================= */
+
 let userLat, userLon;
 
-let stopLayer = L.layerGroup().addTo(map);
-let routeLayer = L.layerGroup().addTo(map);
+/* ================= GTFS-LIKE DATA (SIMPLIFIED CORE) ================= */
 
-// ==== MEGÁLLÓK (rövid lista – bővíthető)
 let stops = [
-{name:"Békásmegyer HÉV",lat:47.598091,lon:19.054599},
-{name:"Nád utca",lat:47.594072,lon:19.048469},
-{name:"Flórián tér",lat:47.542896,lon:19.042252},
-{name:"Batthyány tér",lat:47.506002,lon:19.039456},
-{name:"Pomáz HÉV",lat:47.642749,lon:19.032657},
-{name:"Szentendre",lat:47.661038,lon:19.075607}
+{ id:"S1", type:"BKK", name:"Deák Ferenc tér", lat:47.4979, lon:19.0540 },
+{ id:"S2", type:"MÁV", name:"Kelenföld", lat:47.4649, lon:19.0193 },
+{ id:"S3", type:"VOLÁN", name:"Népliget", lat:47.4760, lon:19.0990 },
+{ id:"S4", type:"VOLÁN", name:"Zalaegerszeg autóbusz-állomás", lat:46.8440, lon:16.8460 }
 ];
 
-// ===== GPS
-async function getLocation(){
+/* ================= SIMULATED GTFS stop_times ================= */
 
- navigator.geolocation.getCurrentPosition(async pos=>{
+let stopTimes = [
+{ stop_id:"S1", route:"M3", time:"12:10" },
+{ stop_id:"S1", route:"M3", time:"12:25" },
+{ stop_id:"S2", route:"100a", time:"12:15" },
+{ stop_id:"S3", route:"260", time:"12:20" },
+{ stop_id:"S4", route:"8", time:"12:30" }
+];
 
-  userLat = pos.coords.latitude;
-  userLon = pos.coords.longitude;
+/* ================= UTIL ================= */
 
-  if(marker) map.removeLayer(marker);
-
-  marker = L.circleMarker([userLat,userLon],{
-   radius:8,color:'red'
-  }).addTo(map);
-
-  map.setView([userLat,userLon],15);
-
-  let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLat}&lon=${userLon}`);
-  let d = await res.json();
-  let a = d.address || {};
-
-  document.getElementById("info").innerHTML=`
-  🌍 ${a.country||""}<br>
-  🏙️ ${a.city||a.town||""}<br>
-  🛣️ ${a.road||""} ${a.house_number||""}<br>
-  🎯 ±${Math.round(pos.coords.accuracy)} m
-  `;
-
-  showStops();
- });
+function dist(a,b){
+ return map.distance(a,b);
 }
 
-// ===== KÖZÚTI ÚTVONAL (VALÓDI)
-async function routeTo(lat,lon){
-
- routeLayer.clearLayers();
-
- let url = `https://router.project-osrm.org/route/v1/driving/${userLon},${userLat};${lon},${lat}?overview=full&geometries=geojson`;
-
- let res = await fetch(url);
- let data = await res.json();
-
- let route = data.routes[0];
-
- let coords = route.geometry.coordinates.map(c=>[c[1],c[0]]);
-
- L.polyline(coords,{color:'lime'}).addTo(routeLayer);
-
- let dist = (route.distance/1000).toFixed(2);
- let time = Math.round(route.duration/60);
-
- alert(`🚗 ${dist} km | ⏱ ${time} perc`);
+function format(m){
+ return m<1000 ? Math.round(m)+" m" : (m/1000).toFixed(2)+" km";
 }
 
-// ===== MEGÁLLÓK
-function showStops(){
-function showDepartures(stopName){
+/* ================= NEAREST ================= */
 
- let stop = GTFS.stops.find(s=>s.stop_name === stopName);
+function getNearest(){
 
- if(!stop){
-  alert("Nincs GTFS megálló");
+ return stops.map(s=>({
+  ...s,
+  d: dist([userLat,userLon],[s.lat,s.lon])
+ }))
+ .sort((a,b)=>a.d-b.d)
+ .slice(0,8);
+
+}
+
+/* ================= RENDER STOPS ================= */
+
+function renderStops(list){
+
+ let data = list || getNearest();
+
+ document.getElementById("stops").innerHTML =
+ data.map(s=>`
+  <div class="card" onclick="showDepartures('${s.id}')">
+   🚏 <b>${s.name}</b><br>
+   🏷 ${s.type}<br>
+   📏 ${format(s.d)}
+  </div>
+ `).join("");
+}
+
+/* ================= SEARCH ================= */
+
+function searchStops(){
+
+ let q = document.getElementById("search").value.toLowerCase();
+
+ if(!q){
+  renderStops();
   return;
  }
+
+ let filtered = stops.filter(s =>
+  s.name.toLowerCase().includes(q) ||
+  s.type.toLowerCase().includes(q)
+ );
+
+ renderStops(filtered);
+}
+
+/* ================= GTFS CORE LOGIC ================= */
+
+function showDepartures(stopId){
 
  let now = new Date();
- let nowSec = now.getHours()*3600 + now.getMinutes()*60;
+ let current = now.getHours()*60 + now.getMinutes();
 
- let times = GTFS.stopTimes
-  .filter(t=>t.stop_id === stop.stop_id)
-  .map(t=>{
-    let parts = t.departure_time.split(":");
-    let sec = parts[0]*3600 + parts[1]*60;
-    return {...t,sec};
-  })
-  .filter(t=>t.sec > nowSec)
-  .sort((a,b)=>a.sec-b.sec)
-  .slice(0,5);
+ let deps = stopTimes
+ .filter(t => t.stop_id === stopId)
+ .map(t=>{
+  let [h,m] = t.time.split(":").map(Number);
+  let mins = h*60 + m;
+  return { ...t, mins, diff: mins - current };
+ })
+ .filter(t => t.diff >= 0)
+ .sort((a,b)=>a.diff-b.diff)
+ .slice(0,5);
 
- let html = `<h3>🕒 ${stopName}</h3>`;
-
- times.forEach(t=>{
-
-  let min = Math.round((t.sec - nowSec)/60);
-
-  let trip = GTFS.trips.find(tr=>tr.trip_id === t.trip_id);
-
-  html+=`
-  <div>
-   🚍 ${trip.route_id || "?"}
-   → ${trip.trip_headsign || ""}
-   | ${min} perc
-  </div>
-  `;
- });
-
- document.getElementById("stops").innerHTML = html;
-}
- 
- stopLayer.clearLayers();
-
- let arr = stops.map(s=>{
-  let d = map.distance([userLat,userLon],[s.lat,s.lon]);
-  return {...s,dist:d};
- });
-
- arr.sort((a,b)=>a.dist-b.dist);
-
- let html="<h3>🚏 Megállók</h3>";
-
- arr.slice(0,10).forEach(s=>{
-
-  let air = s.dist<1000 ? Math.round(s.dist)+" m" : (s.dist/1000).toFixed(2)+" km";
-
-  html+=`
-  <div class="card">
-   <b>${s.name}</b><br>
-   📏 ${air}<br>
-   <button onclick="routeTo(${s.lat},${s.lon})">Útvonal</button>
-  </div>
-  `;
-
-  L.marker([s.lat,s.lon]).addTo(stopLayer)
-   .bindPopup(`<b>${s.name}</b><br><button onclick="routeTo(${s.lat},${s.lon})">Menj ide</button>`);
- });
-
- document.getElementById("stops").innerHTML = html;
+ document.getElementById("departures").innerHTML =
+ `<div class="card">
+ <b>🚏 Indulások</b><br><br>
+ ` +
+ deps.map(d=>`
+ 🚌 ${d.route} → ${d.time} (+${d.diff} perc)<br>
+ `).join("")
+ + "</div>";
 }
 
-// ===== OKOS KERESŐ
-async function search(){
+/* ================= GPS ================= */
 
- let q = document.getElementById("search").value;
+function update(pos){
 
- let found = stops.find(s=>s.name.toLowerCase().includes(q.toLowerCase()));
+ userLat = pos.coords.latitude;
+ userLon = pos.coords.longitude;
 
- if(found){
-  map.setView([found.lat,found.lon],16);
-  L.marker([found.lat,found.lon]).addTo(stopLayer)
-   .bindPopup(found.name).openPopup();
-  return;
- }
+ document.getElementById("gps").innerHTML =
+ `📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`;
 
- let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let data = await res.json();
+ L.marker([userLat,userLon]).addTo(map);
+ map.setView([userLat,userLon],13);
 
- if(data.length>0){
-
-  let p = data[0];
-
-  map.setView([p.lat,p.lon],16);
-
-  L.marker([p.lat,p.lon]).addTo(stopLayer)
-   .bindPopup(p.display_name).openPopup();
-
- }else{
-  alert("Nincs találat");
- }
+ renderStops();
 }
+
+/* ================= START ================= */
+
+navigator.geolocation.watchPosition(update);
 
 </script>
 
