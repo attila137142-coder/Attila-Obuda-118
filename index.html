@@ -2,58 +2,29 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROXY V4 REAL ROUTE GRAPH</title>
-
+<title>ROXY V4.1 STABLE FIX</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body { margin:0; font-family:Arial; }
-#map { height:100vh; }
-
+body{margin:0;font-family:Arial}
+#map{height:100vh}
 #panel{
- position:absolute;
- top:10px;
- left:10px;
- z-index:9999;
- background:rgba(0,0,0,0.85);
- color:#0f0;
- padding:10px;
- width:380px;
- border:1px solid #0f0;
+position:absolute;top:10px;left:10px;z-index:9999;
+background:#000c;color:#0f0;padding:10px;width:340px;
+border:1px solid #0f0;
 }
-
-button{
- width:100%;
- margin:3px 0;
- padding:6px;
- background:black;
- color:#0f0;
- border:1px solid #0f0;
- cursor:pointer;
-}
-
-.status{
- font-size:12px;
- margin:5px 0;
- border:1px solid #0f0;
- padding:5px;
-}
+button{width:100%;margin:3px 0}
 </style>
 </head>
 
 <body>
 
 <div id="panel">
-<h3>🌍 ROXY V4 REAL GRAPH</h3>
+<h3>🧭 ROXY V4.1 FIX</h3>
+<div id="log">READY</div>
 
-<div id="status" class="status">READY</div>
-
-<button onclick="loadGraph()">📦 LOAD OSM GRAPH</button>
-<button onclick="runRoute()">🧠 ROUTE (Dijkstra)</button>
-<button onclick="touristMode()">🌲 TOURIST MODE</button>
-<button onclick="resetAll()">🧹 RESET</button>
-
+<button onclick="loadDemo()">📦 LOAD DEMO GRAPH</button>
+<button onclick="runRoute('A','E')">🧠 ROUTE A → E</button>
 </div>
 
 <div id="map"></div>
@@ -65,120 +36,82 @@ button{
 // ================= MAP =================
 let map = L.map('map').setView([47.5,19.04],13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+.addTo(map);
 
 // ================= GRAPH =================
 let nodes = {};
 let edges = {};
 
-// ================= LOAD OSM DATA =================
-// Overpass API (Budapest környék példa)
-
-async function loadGraph(){
-
- document.getElementById("status").innerText =
- "📦 LOADING OSM GRAPH...";
-
- let query = `
- [out:json];
- (
-  way["highway"](47.45,18.95,47.6,19.2);
- );
- (._;>;);
- out body;
- `;
-
- let res = await fetch("https://overpass-api.de/api/interpreter", {
-  method:"POST",
-  body: query
- });
-
- let data = await res.json();
-
- nodes = {};
- edges = {};
-
- // nodes build
- data.elements.forEach(el=>{
-  if(el.type==="node"){
-   nodes[el.id]={
-    lat:el.lat,
-    lon:el.lon
-   };
-  }
- });
-
- // edges build (ways)
- data.elements.forEach(el=>{
-  if(el.type==="way"){
-   let n = el.nodes;
-
-   for(let i=0;i<n.length-1;i++){
-
-    let a = n[i];
-    let b = n[i+1];
-
-    if(!edges[a]) edges[a]=[];
-    if(!edges[b]) edges[b]=[];
-
-    edges[a].push(b);
-    edges[b].push(a);
-   }
-  }
- });
-
- document.getElementById("status").innerText =
- "🟢 OSM GRAPH READY";
+// ================= LOG =================
+function log(t){
+ document.getElementById("log").innerText = t;
+ console.log(t);
 }
 
-// ================= DISTANCE =================
+// ================= SAFE DEMO GRAPH =================
+function loadDemo(){
+
+ nodes = {
+  A:{lat:47.50,lon:19.00},
+  B:{lat:47.505,lon:19.01},
+  C:{lat:47.51,lon:19.02},
+  D:{lat:47.52,lon:19.03},
+  E:{lat:47.53,lon:19.04}
+ };
+
+ edges = {
+  A:["B"],
+  B:["C"],
+  C:["D"],
+  D:["E"]
+ };
+
+ log("🟢 DEMO GRAPH LOADED");
+}
+
+// ================= DIST =================
 function dist(a,b){
-
- let A = nodes[a];
- let B = nodes[b];
-
- if(!A || !B) return 999999;
-
- let dx = (A.lat-B.lat)*111000;
- let dy = (A.lon-B.lon)*111000;
-
+ let A=nodes[a],B=nodes[b];
+ let dx=(A.lat-B.lat)*111000;
+ let dy=(A.lon-B.lon)*111000;
  return Math.sqrt(dx*dx+dy*dy);
 }
 
 // ================= DIJKSTRA =================
-function runRoute(startId,endId){
+function runRoute(start,end){
 
- let distMap = {};
- let prev = {};
- let Q = Object.keys(nodes);
+ if(!nodes[start]||!nodes[end]){
+  log("❌ INVALID START/END");
+  return;
+ }
 
- Q.forEach(n=>distMap[n]=Infinity);
- distMap[startId]=0;
+ let Q=Object.keys(nodes);
+ let d={},prev={};
+
+ Q.forEach(n=>d[n]=Infinity);
+ d[start]=0;
 
  while(Q.length){
 
-  Q.sort((a,b)=>distMap[a]-distMap[b]);
-  let u = Q.shift();
+  Q.sort((a,b)=>d[a]-d[b]);
+  let u=Q.shift();
 
-  if(u===endId) break;
+  if(u===end) break;
 
-  let neighbors = edges[u] || [];
+  for(let v of (edges[u]||[])){
 
-  for(let v of neighbors){
+   let alt=d[u]+dist(u,v);
 
-   let cost = dist(u,v);
-
-   let alt = distMap[u] + cost;
-
-   if(alt < distMap[v]){
-    distMap[v]=alt;
+   if(alt<d[v]){
+    d[v]=alt;
     prev[v]=u;
    }
   }
  }
 
  let path=[];
- let cur=endId;
+ let cur=end;
 
  while(cur){
   path.unshift(cur);
@@ -186,42 +119,17 @@ function runRoute(startId,endId){
  }
 
  draw(path);
-
- document.getElementById("status").innerText =
- "🧠 ROUTE READY";
+ log("🧠 ROUTE: "+path.join(" → "));
 }
 
 // ================= DRAW =================
 function draw(path){
 
- let coords = path.map(id=>[
-  nodes[id].lat,
-  nodes[id].lon
- ]);
+ let c=path.map(p=>[nodes[p].lat,nodes[p].lon]);
 
- L.polyline(coords,{color:"lime"}).addTo(map);
+ L.polyline(c,{color:"lime"}).addTo(map);
 
- map.fitBounds(L.polyline(coords).getBounds());
-}
-
-// ================= TOURIST =================
-function touristMode(){
-
- document.getElementById("status").innerText =
- "🌲 TOURIST MODE";
-
- navigator.geolocation.getCurrentPosition(p=>{
-
-  let from=[p.coords.latitude,p.coords.longitude];
-  let to=[47.55,19.1];
-
-  L.polyline([from,to],{color:"orange"}).addTo(map);
- });
-}
-
-// ================= RESET =================
-function resetAll(){
- location.reload();
+ map.fitBounds(L.polyline(c).getBounds());
 }
 
 </script>
