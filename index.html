@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROXY CORE MASTER FULL</title>
+<title>ROXY CORE + GTFS + ROUTE AI</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body { margin:0; font-family:Arial; }
-#map { height:100vh; width:100vw; }
+#map { height:100vh; }
 
 #panel{
  position:absolute;
@@ -19,7 +19,7 @@ body { margin:0; font-family:Arial; }
  background:rgba(0,0,0,0.85);
  color:#0f0;
  padding:10px;
- width:340px;
+ width:360px;
  border:1px solid #0f0;
 }
 
@@ -45,19 +45,15 @@ button{
 <body>
 
 <div id="panel">
-<h3>🧭 ROXY CORE MASTER</h3>
+<h3>🧭 ROXY ROUTE AI CORE</h3>
 
 <div id="status" class="status">READY</div>
 
 <button onclick="startGPS()">📍 GPS</button>
-<button onclick="startTrack()">📡 TRACK</button>
-<button onclick="stopTrack()">⛔ STOP</button>
-
-<hr style="border:1px solid #0f0;">
-
-<button onclick="toggleModule('gtfs')">🚉 GTFS</button>
-<button onclick="toggleModule('forest')">🌲 ERDŐ NAV</button>
-<button onclick="toggleModule('road')">🛣️ ROAD NAV</button>
+<button onclick="loadGTFS()">🚉 GTFS LOAD</button>
+<button onclick="runDijkstra()">🧠 ROUTE AI</button>
+<button onclick="touristMode()">🌲 TOURIST MODE</button>
+<button onclick="resetAll()">🧹 RESET</button>
 
 </div>
 
@@ -67,37 +63,16 @@ button{
 
 <script>
 
-//
-// ================= MAP CORE =================
-//
+// ================= MAP =================
 let map = L.map('map').setView([47.5,19.04],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
- attribution:'ROXY CORE'
-}).addTo(map);
+// ================= DATA =================
+let stops = [];     // GTFS megállók
+let graph = {};     // útgráf
+let markers = [];
 
-let watchID = null;
-let trail = [];
-let line = null;
-
-//
-// ================= MODULE SYSTEM =================
-//
-const modules = {
- gtfs: false,
- forest: false,
- road: false
-};
-
-function toggleModule(name){
- modules[name] = !modules[name];
- document.getElementById("status").innerText =
-  name.toUpperCase() + " = " + modules[name];
-}
-
-//
 // ================= GPS =================
-//
 function startGPS(){
  navigator.geolocation.getCurrentPosition(p=>{
   map.setView([p.coords.latitude,p.coords.longitude],15);
@@ -105,53 +80,106 @@ function startGPS(){
  });
 }
 
-//
-// ================= TRACK =================
-//
-function startTrack(){
+// ================= GTFS ENGINE (DEMO) =================
+// (valós rendszerben CSV / JSON GTFS jön ide)
 
- if(watchID) return;
+function loadGTFS(){
 
- watchID = navigator.geolocation.watchPosition(p=>{
+ // DEMO 45 megálló helyett 5 pont
+ stops = [
+  {id:"A",lat:47.5,lon:19.0},
+  {id:"B",lat:47.51,lon:19.01},
+  {id:"C",lat:47.52,lon:19.03},
+  {id:"D",lat:47.53,lon:19.05},
+  {id:"E",lat:47.54,lon:19.06}
+ ];
 
-  let pt = [p.coords.latitude, p.coords.longitude];
-  trail.push(pt);
+ // graph build
+ graph = {
+  A:["B"],
+  B:["A","C"],
+  C:["B","D"],
+  D:["C","E"],
+  E:["D"]
+ };
 
-  L.circleMarker(pt,{radius:4,color:"lime"}).addTo(map);
-
-  if(line) map.removeLayer(line);
-  line = L.polyline(trail,{color:"lime"}).addTo(map);
-
-  // MODULE HOOK
-  runModules(pt);
-
+ // kirajzolás
+ stops.forEach(s=>{
+  let m = L.marker([s.lat,s.lon]).addTo(map);
+  markers.push(m);
  });
+
+ document.getElementById("status").innerText =
+ "🚉 GTFS LOADED";
 }
 
-function stopTrack(){
- if(watchID){
-  navigator.geolocation.clearWatch(watchID);
-  watchID = null;
+// ================= DIJKSTRA AI =================
+function runDijkstra(){
+
+ let start = "A";
+ let goal = "E";
+
+ let dist = {};
+ let prev = {};
+ let Q = Object.keys(graph);
+
+ Q.forEach(n=>dist[n]=Infinity);
+ dist[start]=0;
+
+ while(Q.length){
+
+  Q.sort((a,b)=>dist[a]-dist[b]);
+  let u = Q.shift();
+
+  if(u===goal) break;
+
+  for(let v of (graph[u]||[])){
+   let alt = dist[u] + 1;
+   if(alt < dist[v]){
+    dist[v]=alt;
+    prev[v]=u;
+   }
+  }
  }
+
+ let path = [];
+ let cur = goal;
+
+ while(cur){
+  path.unshift(cur);
+  cur = prev[cur];
+ }
+
+ document.getElementById("status").innerText =
+ "🧠 ROUTE: " + path.join(" → ");
+
+ // draw route
+ let coords = path.map(id=>{
+  let s = stops.find(x=>x.id===id);
+  return [s.lat,s.lon];
+ });
+
+ L.polyline(coords,{color:"lime"}).addTo(map);
 }
 
-//
-// ================= MODULE ENGINE =================
-//
-function runModules(point){
+// ================= TOURIST MODE =================
+function touristMode(){
 
- if(modules.gtfs){
-  console.log("GTFS active:", point);
- }
+ document.getElementById("status").innerText =
+ "🌲 TOURIST MODE (légvonal)";
 
- if(modules.forest){
-  console.log("FOREST NAV active:", point);
- }
+ navigator.geolocation.getCurrentPosition(p=>{
+  let from = [p.coords.latitude,p.coords.longitude];
+  let to = [47.54,19.06];
 
- if(modules.road){
-  console.log("ROAD NAV active:", point);
- }
+  L.polyline([from,to],{color:"orange"}).addTo(map);
+ });
 
+}
+
+// ================= RESET =================
+function resetAll(){
+ location.reload();
 }
 
 </script>
