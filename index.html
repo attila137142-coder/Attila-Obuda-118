@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY Stable</title>
+<title>ROXY V3</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -20,6 +20,17 @@ body{margin:0;font-family:Arial}
  padding:10px;
  width:320px;
  border:1px solid #0f0;
+ max-height:90vh;
+ overflow:auto;
+}
+
+.stop{
+ cursor:pointer;
+ padding:3px;
+}
+.stop:hover{
+ background:#0f0;
+ color:#000;
 }
 </style>
 </head>
@@ -27,7 +38,7 @@ body{margin:0;font-family:Arial}
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY STABLE</h3>
+<h3>🚆 ROXY V3</h3>
 <div id="info">Térképre kattints</div>
 </div>
 
@@ -45,7 +56,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
 
 let stopLayer = L.layerGroup().addTo(map);
 
-// ================= OVERPASS FALLBACK =================
+// ================= OVERPASS =================
 async function fetchOverpass(query){
 
  let urls = [
@@ -62,16 +73,12 @@ async function fetchOverpass(query){
     });
 
     if(res.ok){
-      console.log("OK:",url);
       return await res.json();
     }
-
-  }catch(e){
-    console.log("HIBA:",url);
-  }
+  }catch(e){}
  }
 
- throw "Nincs válasz egyik szervertől sem";
+ throw "nincs szerver";
 }
 
 // ================= CLICK =================
@@ -98,20 +105,23 @@ map.on("click", async e => {
   let data = await fetchOverpass(query);
 
   if(!data.elements.length){
-    document.getElementById("info").innerHTML =
-    "❌ nincs megálló a közelben";
+    document.getElementById("info").innerHTML = "❌ nincs megálló";
     return;
   }
 
   stopLayer.clearLayers();
 
+  let used = {};
   let html = "<b>Közeli megállók:</b><br>";
 
-  data.elements.slice(0,10).forEach(s=>{
+  data.elements.forEach(s=>{
 
-    let name = s.tags?.name || "névtelen";
+    let name = s.tags?.name;
+    if(!name) return;
 
-    // marker
+    if(used[name]) return;
+    used[name] = true;
+
     L.circleMarker([s.lat,s.lon],{
       radius:9,
       color:"yellow",
@@ -119,19 +129,53 @@ map.on("click", async e => {
       fillOpacity:1
     }).addTo(stopLayer);
 
-    html += "🚏 " + name + "<br>";
+    html += `<div class="stop"
+      onclick="selectStop('${name}',${s.lat},${s.lon})">
+      🚏 ${name}
+    </div>`;
   });
 
   document.getElementById("info").innerHTML = html;
 
  }catch(err){
-
   document.getElementById("info").innerHTML =
-  "⚠️ hálózat lassú / szerver túlterhelt";
-
+  "⚠️ hálózati hiba";
  }
 
 });
+
+// ================= MENETREND (DEMO) =================
+function getFakeDepartures(){
+
+ let now = new Date();
+ let list = [];
+
+ for(let i=1;i<=5;i++){
+  let d = new Date(now.getTime() + i*600000);
+  list.push(d.toTimeString().slice(0,5));
+ }
+
+ return list;
+}
+
+// ================= SELECT STOP =================
+function selectStop(name,lat,lon){
+
+ map.setView([lat,lon],16);
+
+ let times = getFakeDepartures();
+
+ let html = `<b>🚏 ${name}</b><br><br>`;
+
+ html += "<b>Következő indulások:</b><br>";
+
+ times.forEach(t=>{
+  html += `🕒 ${t}<br>`;
+ });
+
+ document.getElementById("info").innerHTML = html;
+}
+
 </script>
 
 </body>
