@@ -1,9 +1,11 @@
+ezt a SAFETY CORE helyett használd / vagy ráépítésként
+
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ROXY SAFETY CORE FIX</title>
+<title>ROXY V7-B UPGRADE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -19,7 +21,7 @@ body { margin:0; font-family:Arial; }
  background:rgba(0,0,0,0.85);
  color:#0f0;
  padding:10px;
- width:320px;
+ width:340px;
  border:1px solid #0f0;
 }
 
@@ -45,15 +47,14 @@ button{
 <body>
 
 <div id="panel">
-<h3>🔐 ROXY SAFETY CORE FIX</h3>
+<h3>🌲 ROXY V7-B UPGRADE</h3>
 
 <div id="status" class="status">READY</div>
-<div id="loc" class="status">--</div>
+<div id="info" class="status">--</div>
 
-<button onclick="startGPS()">📍 GPS + CÍM</button>
+<button onclick="startGPS()">📍 GPS</button>
 <button onclick="startTrack()">📡 TRACK</button>
-<button onclick="stopTrack()">⛔ STOP</button>
-<button onclick="goBack()">🔁 VISSZAÚT</button>
+<button onclick="calcStats()">📊 ANALYZE</button>
 <button onclick="resetAll()">🧹 RESET</button>
 </div>
 
@@ -65,53 +66,18 @@ button{
 
 // ================= MAP =================
 let map = L.map('map').setView([47.5,19.04],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
- attribution:'OSM'
-}).addTo(map);
-
+// ================= DATA =================
 let trail = [];
 let watchID = null;
 let line;
-let lastMarker = null;
 
-// ================= GPS + ADDRESS =================
-async function startGPS(){
-
- navigator.geolocation.getCurrentPosition(async p=>{
-
-  let lat = p.coords.latitude;
-  let lon = p.coords.longitude;
-  let acc = p.coords.accuracy;
-
-  map.setView([lat,lon],16);
-
-  if(lastMarker) map.removeLayer(lastMarker);
-
-  lastMarker = L.marker([lat,lon]).addTo(map);
-
-  document.getElementById("status").innerText =
-   "GPS OK | pontosság: "+Math.round(acc)+" m";
-
-  // 📍 REVERSE GEOCODING
-  try{
-   let r = await fetch(
-    `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
-   );
-   let d = await r.json();
-
-   let a = d.address;
-
-   document.getElementById("loc").innerHTML =
-    (a.city || a.town || a.village || "") + "<br>" +
-    (a.road || "") + " " + (a.house_number || "");
-
-  }catch{
-   document.getElementById("loc").innerText = lat+","+lon;
-  }
-
+// ================= GPS =================
+function startGPS(){
+ navigator.geolocation.getCurrentPosition(p=>{
+  map.setView([p.coords.latitude,p.coords.longitude],15);
  });
-
 }
 
 // ================= TRACK =================
@@ -121,43 +87,60 @@ function startTrack(){
 
  watchID = navigator.geolocation.watchPosition(p=>{
 
-  let pt = [p.coords.latitude, p.coords.longitude];
+  let pt = {
+   lat: p.coords.latitude,
+   lon: p.coords.longitude,
+   acc: p.coords.accuracy,
+   alt: p.coords.altitude || 0
+  };
 
   trail.push(pt);
 
-  L.circleMarker(pt,{radius:4,color:"lime"}).addTo(map);
+  L.circleMarker([pt.lat,pt.lon],{radius:4,color:"lime"}).addTo(map);
 
   if(line) map.removeLayer(line);
-  line = L.polyline(trail,{color:"lime"}).addTo(map);
 
-  document.getElementById("status").innerText =
-   "TRACK: "+trail.length;
+  line = L.polyline(trail.map(t=>[t.lat,t.lon]),{color:"lime"}).addTo(map);
 
  });
 
 }
 
-// ================= STOP =================
-function stopTrack(){
- if(watchID){
-  navigator.geolocation.clearWatch(watchID);
-  watchID = null;
+// ================= ANALYZE =================
+function calcStats(){
+
+ if(trail.length < 2){
+  alert("Nincs elég adat");
+  return;
  }
-}
 
-// ================= VISSZAÚT =================
-function goBack(){
+ let total = 0;
+ let maxSlope = 0;
 
- if(trail.length < 2) return;
+ for(let i=1;i<trail.length;i++){
 
- let back = [...trail].reverse();
+  let a = trail[i-1];
+  let b = trail[i];
 
- if(line) map.removeLayer(line);
+  let dx = (b.lon - a.lon)*111000;
+  let dy = (b.lat - a.lat)*111000;
 
- line = L.polyline(back,{color:"red"}).addTo(map);
+  let dist = Math.sqrt(dx*dx + dy*dy);
+
+  let dz = (b.alt - a.alt);
+
+  let slope = dist ? (dz/dist)*100 : 0;
+
+  total += dist;
+  maxSlope = Math.max(maxSlope, slope);
+ }
+
+ document.getElementById("info").innerHTML =
+  "📏 Táv: "+Math.round(total)+" m<br>"+
+  "⛰️ Max meredekség: "+maxSlope.toFixed(1)+"%";
 
  document.getElementById("status").innerText =
-  "VISSZAÚT AKTÍV";
+  "ANALYZED";
 }
 
 // ================= RESET =================
