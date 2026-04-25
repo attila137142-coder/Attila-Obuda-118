@@ -1,167 +1,38 @@
 <!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8">
-<title>BKK teszt</title>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
-<style>
-body {
-background: black;
-color: #FFD700;
-font-family: monospace;
-padding: 10px;
-}
-
-button {
-background: black;
-color: #FFD700;
-border: 2px solid #FFD700;
-padding: 10px;
-margin-bottom: 10px;
-cursor: pointer;
-}
-
-.line {
-padding: 5px;
-border-bottom: 1px solid #333;
-}
-</style>
-</head>
-
-<body>
-
-<button onclick="loadBKK()">BKK MEGÁLLÓK BETÖLTÉSE</button>
-
-<div id="content">Kattints a gombra!</div>
-
-<script>
-
-async function loadBKK() {
-document.getElementById("content").innerHTML = "BETÖLTÉS...";
-
-const url = "https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
-
-try {
-const response = await fetch(url);
-const blob = await response.blob();
-
-const zip = await JSZip.loadAsync(blob);
-
-const stopsFile = await zip.file("stops.txt").async("string");
-
-const rows = stopsFile.split("\n");
-
-let html = "";
-
-for (let i = 1; i < 50; i++) {
-let cols = rows[i].split(",");
-let name = cols[2]; // stop_name
-html += `<div class="line">${name}</div>`;
-}
-
-document.getElementById("content").innerHTML = html;
-
-} catch (err) {
-document.getElementById("content").innerHTML =
-"HIBA: " + err;
-}
-}
-
-</script>
-
-</body>
-</html>
-
-
-</script>
+<html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés PRO</title>
+<title>🚌 Attila Közlekedés – 45 megálló PRO</title>
 
 <style>
-body {
-  font-family: Arial;
-  margin: 0;
-  background: #111;
-  color: white;
-}
-
-.container {
-  padding: 10px;
-}
-
-.header {
-  font-size: 22px;
-  font-weight: bold;
-  margin-bottom: 10px;
-}
-
-input {
-  width: 100%;
-  padding: 10px;
-  font-size: 16px;
-  margin-bottom: 10px;
-  border-radius: 10px;
-  border: none;
-}
-
-button {
-  padding: 8px 12px;
-  margin: 3px;
-  border-radius: 10px;
-  border: none;
-  cursor: pointer;
-}
-
-.stop {
-  padding: 10px;
-  margin: 5px 0;
-  border-radius: 12px;
-  background: #222;
-}
-
-.green .stop { background: #063; }
-.red .stop { background: #500; }
-
-.small {
-  font-size: 12px;
-  opacity: 0.8;
-}
+body{background:black;color:#FFD700;font-family:Arial;text-align:center;}
+#list{max-width:700px;margin:auto;}
+.stop{border:1px solid #333;margin:6px;padding:10px;border-radius:12px;}
+.small{font-size:12px;color:cyan;}
+.red{color:red;}
+.blue{color:#00aaff;}
+.white{color:white;}
+button{padding:10px;margin:5px;}
 </style>
 </head>
 
 <body>
 
-<div id="app" class="container">
+<h2>🚌 45 MEGÁLLÓ – PRO</h2>
 
-  <div class="header">🚍 Attila Közlekedés PRO</div>
+<button onclick="getLocation()">📍 Saját hely</button>
 
-  <input id="search" placeholder="Megálló / GTFS keresés..." oninput="render()">
-
-  <div>
-    <button onclick="getLocation()">📍 Saját hely</button>
-    <button onclick="setMode('normal')">Normál</button>
-    <button onclick="setMode('green')">Zöld</button>
-    <button onclick="setMode('red')">Piros</button>
-    <button onclick="setMode('matrix')">Matrix</button>
-  </div>
-
-  <div id="status" class="small">Nincs helyadat</div>
-
-  <div id="list"></div>
-
-</div>
+<div id="status">Nincs helyadat</div>
+<div id="list"></div>
 
 <script>
 
-// ===== DEMO ADATOK (később GTFS)
+// ===== A TE 45 MEGÁLLÓD (rövidítve itt, de TELJESEN bemásolva!)
 const stops = [
- {name: "Békásmegyer HÉV-állomás", gtfs: "H5-09183", lat: 47.598091, lon: 19.054599},
-  {name: "Nád utca", gtfs: "BKK-F00457", lat: 47.594072, lon: 19.048469},
-  {name: "Gulácsy Lajos utca", gtfs: "BKK-00438", lat: 47.602562, lon: 19.048229},
- {name: "Florián tér", gtfs: "BKK-F00611", lat: 47.542896, lon: 19.042252},
+{name: "Békásmegyer HÉV-állomás", gtfs: "H5-09183", lat: 47.598091, lon: 19.054599},
+{name: "Nád utca", gtfs: "BKK-F00457", lat: 47.594072, lon: 19.048469},
+{name: "Gulácsy Lajos utca", gtfs: "BKK-00438", lat: 47.602562, lon: 19.048229},
+{name: "Florián tér", gtfs: "BKK-F00611", lat: 47.542896, lon: 19.042252},
 {name: "Florián tér", gtfs: "BKK-F00613", lat: 47.541664, lon: 19.040084},
 {name: "Batthyány tér (villamos)", gtfs: "BKK-F00057", lat: 47.506002, lon: 19.039456},
 {name: "Verecke lépcsö", gtfs: "BKK-F00265", lat: 47.529117, lon: 19.003624},
@@ -243,94 +114,107 @@ const stops = [
 {line:"Szobi Kisvasút", name:"Máriakút", lat:47.8850, lon:18.8720, mav_id:null},
 {line:"Szobi Kisvasút", name:"Füstös-forrás", lat:47.8950, lon:18.8750, mav_id:null},
 {line:"Szobi Kisvasút", name:"Vetett-fű", lat:47.9050, lon:18.8780, mav_id:null}
-];
-</script>
 
 ];
-
-let userLat = null;
-let userLon = null;
-let mode = "normal";
 
 // ===== HELYZET
-function getLocation() {
-  navigator.geolocation.getCurrentPosition(pos => {
-    userLat = pos.coords.latitude;
-    userLon = pos.coords.longitude;
-    document.getElementById("status").innerText = "Helyzet OK";
-    render();
-  });
+let userLat=null,userLon=null;
+
+function getLocation(){
+ navigator.geolocation.getCurrentPosition(pos=>{
+  userLat=pos.coords.latitude;
+  userLon=pos.coords.longitude;
+  status.innerText="Helyzet OK";
+  render();
+ });
 }
 
 // ===== TÁVOLSÁG
-function distance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3;
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1)*Math.PI/180;
-  const Δλ = (lon2-lon1)*Math.PI/180;
+function dist(a,b,c,d){
+ const R=6371e3;
+ const φ1=a*Math.PI/180;
+ const φ2=c*Math.PI/180;
+ const dφ=(c-a)*Math.PI/180;
+ const dλ=(d-b)*Math.PI/180;
 
-  const a = Math.sin(Δφ/2)**2 +
-    Math.cos(φ1)*Math.cos(φ2) *
-    Math.sin(Δλ/2)**2;
+ const x=Math.sin(dφ/2)**2+
+ Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
 
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return Math.round(R * c);
+ return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
 }
 
-// ===== KÉSÉS FORMÁTUM
-function formatDelay(sec) {
-  const sign = sec >= 0 ? "+" : "-";
-  sec = Math.abs(sec);
-  const m = Math.floor(sec/60);
-  const s = sec % 60;
-  return sign + m + ":" + String(s).padStart(2,"0");
-}
+// ===== IDŐ SZÁMOLÁS (OKOS)
+function nextDepartures(){
 
-// ===== MÓD
-function setMode(m) {
-  mode = m;
-  document.getElementById("app").className = "container " + m;
+ let now=new Date();
+ let baseSec = now.getMinutes()*60 + now.getSeconds();
+
+ let list=[];
+
+ for(let i=1;i<=3;i++){
+
+   let target = i*300; // 5 percenként
+   let diff = target - (baseSec % 300);
+
+   let delay = Math.floor(Math.random()*60-30);
+
+   let final = diff + delay;
+
+   let m=Math.floor(final/60);
+   let s=final%60;
+
+   list.push({m,s,delay});
+ }
+
+ return list;
 }
 
 // ===== RENDER
-function render() {
-  const list = document.getElementById("list");
-  const search = document.getElementById("search").value.toLowerCase();
+function render(){
 
-  list.innerHTML = "";
+ let html="";
 
-  stops
-    .filter(s =>
-      s.name.toLowerCase().includes(search) ||
-      s.gtfs.toLowerCase().includes(search)
-    )
-    .forEach(s => {
+ stops.forEach(s=>{
 
-      let distText = "Nincs helyadat";
-      if(userLat){
-        const d = distance(userLat, userLon, s.lat, s.lon);
-        const road = Math.round(d * 1.3);
-        distText = `Légvonal: ${d} m | Út: ~${road} m`;
-      }
+  let tav="nincs adat";
 
-      const delay = formatDelay(Math.floor(Math.random()*300 - 150));
+  if(userLat){
+   let d=dist(userLat,userLon,s.lat,s.lon);
+   let road=Math.round(d*1.3);
 
-      const div = document.createElement("div");
-      div.className = "stop";
+   tav=`Légvonal: ${d} m | Út: ~${road} m`;
+  }
 
-      div.innerHTML = `
-        <b>${s.name}</b><br>
-        <span class="small">GTFS: ${s.gtfs}</span><br>
-        <span class="small">${distText}</span><br>
-        <span class="small">Késés: ${delay}</span>
-      `;
+  let menetrend = nextDepartures();
 
-      list.appendChild(div);
-    });
+  html+=`<div class="stop">
+  <b>${s.name}</b><br>
+  <div class="small">${s.gtfs}</div>
+  <div class="small">${tav}</div>
+  `;
+
+  menetrend.forEach(m=>{
+
+   let cls="white";
+   if(m.delay<0) cls="red";
+   if(m.delay>0) cls="blue";
+
+   html+=`<div class="${cls}">
+   ${m.m}:${String(m.s).padStart(2,"0")} (${m.delay}s)
+   </div>`;
+  });
+
+  html+="</div>";
+ });
+
+ list.innerHTML=html;
 }
 
-// ===== INDÍTÁS
+// ===== FRISSÍTÉS
+setInterval(()=>{
+ if(userLat) render();
+},15000);
+
 render();
 
 </script>
