@@ -2,220 +2,266 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚌 Attila Közlekedés – 45 megálló PRO</title>
+<title>ROXY V17 – FULL MULTI GTFS</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{background:black;color:#FFD700;font-family:Arial;text-align:center;}
-#list{max-width:700px;margin:auto;}
-.stop{border:1px solid #333;margin:6px;padding:10px;border-radius:12px;}
-.small{font-size:12px;color:cyan;}
-.red{color:red;}
-.blue{color:#00aaff;}
-.white{color:white;}
-button{padding:10px;margin:5px;}
+body{margin:0;font-family:Arial}
+#map{height:100vh}
+
+#panel{
+position:absolute;
+top:10px;
+left:10px;
+z-index:9999;
+background:#000d;
+color:#0f0;
+padding:10px;
+width:420px;
+max-height:90vh;
+overflow:auto;
+border:1px solid #0f0;
+}
 </style>
 </head>
 
 <body>
 
-<h2>🚌 45 MEGÁLLÓ – PRO</h2>
+<div id="panel">
+<h3>🚆 ROXY V17 – MULTI GTFS</h3>
+<div id="info">Betöltés...</div>
 
-<button onclick="getLocation()">📍 Saját hely</button>
+<input id="search" placeholder="cél">
+<button onclick="search()">Keres</button>
+<button onclick="route()">Útvonal</button>
 
-<div id="status">Nincs helyadat</div>
-<div id="list"></div>
+<div id="stops"></div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-// ===== A TE 45 MEGÁLLÓD (rövidítve itt, de TELJESEN bemásolva!)
-const stops = [
-{name: "Békásmegyer HÉV-állomás", gtfs: "H5-09183", lat: 47.598091, lon: 19.054599},
-{name: "Nád utca", gtfs: "BKK-F00457", lat: 47.594072, lon: 19.048469},
-{name: "Gulácsy Lajos utca", gtfs: "BKK-00438", lat: 47.602562, lon: 19.048229},
-{name: "Florián tér", gtfs: "BKK-F00611", lat: 47.542896, lon: 19.042252},
-{name: "Florián tér", gtfs: "BKK-F00613", lat: 47.541664, lon: 19.040084},
-{name: "Batthyány tér (villamos)", gtfs: "BKK-F00057", lat: 47.506002, lon: 19.039456},
-{name: "Verecke lépcsö", gtfs: "BKK-F00265", lat: 47.529117, lon: 19.003624},
-{name: "Csobánka tér-243 vá", gtfs: "BKK-F044192", lat: 47.597795, lon: 19.053787},
-{name: "Csobánka tér-160 vá", gtfs: "BKK-008939", lat: 47.598425, lon: 19.054240},
-{name: "Szentendre, HÉV végállomás", gtfs: "H5-09142221", lat: 47.661038, lon: 19.075607},
-{name: "Örs Vezér tér-85-85E", gtfs: "BKK-008030", lat: 47.501742, lon: 19.135604},
-{name: "Kocka utca (kifelé)", gtfs: "BKK-1831", lat: 47.484915, lon: 19.155466},
-{name: "Kocka utca (befelé)", gtfs: "BKK-1832", lat: 47.484708, lon: 19.155969},
-{name: "Újhegyi sétány (befelé)", gtfs: "BKK-F01842", lat: 47.470813, lon: 19.16451},
-{name: "Gőzmozdony utca (kifelé)", gtfs: "BKK-008863", lat: 47.470028, lon: 19.157173},
-{name: "Bojtár utca (kifelé)", gtfs: "VOLÁN-773493-1-BKK-F00520", lat: 47.560099, lon: 19.024711},
-{name: "Bojtár utca (befelé)", gtfs: "VOLÁN-773493-2-BKK-F00521", lat: 47.559047, lon: 19.042921},
-{name: "Szentendre, Autóbusz-állomás", gtfs: "VOLÁN-778806-99", lat: 47.660403, lon: 19.075408},
-{name: "Szentendre, Skanzen (1)", gtfs: "VOLÁN-778840-1", lat: 47.691135, lon: 19.046955},
-{name: "Szentendre, Skanzen (2)", gtfs: "VOLÁN-778840-2", lat: 47.691273, lon: 19.045667},
-{name: "Tahitótfalu, hídfő 1", gtfs: "VOLÁN-779053-1", lat: 47.751712, lon: 19.078215},
-{name: "Tahitótfalu, hídfő 2", gtfs: "VOLÁN-779053-2", lat: 47.751648, lon: 19.078091},
-{name: "Szentendre, Dömör-kapu", gtfs: "VOLÁN-778803", lat: 47.694900, lon: 19.000210},
-{name: "Vác, Autóbusz-állomás", gtfs: "VOLÁN-779365_99", lat: 47.781930, lon: 19.129643},
-{name: "Kóspallag, templom", gtfs: "VOLÁN-778190", lat: 47.877850, lon: 18.932580},
-{name: "Kisinóci turistaház", gtfs: "VOLAN-778186", lat: 47.890600, lon: 18.927580},
-{name: "Királyrét", gtfs: "VOLAN-779017", lat: 47.895040, lon: 18.977687},
-{name: "Szob, Vasútállomás", gtfs: "VOLAN-779011", lat: 47.821319, lon: 18.862602},
-{name: "Nagybörzsöny, községháza", gtfs: "VOLAN-778310", lat: 47.936030, lon: 18.827710},
-{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-1", lat: 48.015915, lon: 18.888468},
-{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-2", lat: 48.015710, lon: 18.888021},
-{name: "Pilisborosjenő, buszforduló", gtfs: "VOLAN-778532", lat: 47.609100, lon: 18.989680},
-{name: "Dobogókő, hegytető", gtfs: "VOLAN-778561", lat: 47.719118, lon: 18.897577},
-{name: "Vámosmikola, községháza", gtfs: "VOLAN-779478", lat: 47.978190, lon: 18.785890},
-{name: "Dunapataj, iskola", gtfs: "VOLAN-325369", lat: 46.644280, lon: 19.000233},
-{name: "Szelidi-tó, autóbusz-forduló", gtfs: "VOLAN-325374", lat: 46.625050, lon: 19.046159},
-{name: "Pomáz, HÉV állomás", gtfs: "HEV5-09134", lat: 47.642749, lon: 19.032657},
-{name: "Pomáz, autóbusz-állomás", gtfs: "VOLAN-778618", lat: 47.642749, lon: 19.032657},
-{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-1-BKK-009170", lat: 47.645570, lon: 19.027226},
-{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-2-BKK-009171", lat: 47.645554, lon: 19.027001},
-{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-1", lat: 46.789883, lon: 17.181239},
-{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-2", lat: 46.790057, lon: 17.182311},
-{name: "Héviz, Autobusz állomás", gtfs: "VOLAN-561337", lat: 46.792964, lon: 17.192426},
-{name: "Keszhely,Vasut-és  Autobusz állomás", gtfs: "VOLAN-561442", lat: 46.757976, lon: 17.246480},
-{name: "Magas taxi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.92842, lon: 18.92997},
-{name: "Nagyhideghegyi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.936111, lon: 18.921944},
-{name: "Csoványos, (hegycsucs,Börzsöny,kiláto)", gtfs: "ERDÖ", lat: 47.94908, lon: 18.9483},
-{name: "Lakás, (Dino lak)", gtfs: "UTCA", lat: 47.594304, lon: 19.048770},
-/* ================= GYERMEKVASÚT ================= */
-{line:"Gyermekvasút", name:"Széchenyi-hegy", lat:47.5007, lon:18.9653, mav_id:"005546912"},
-{line:"Gyermekvasút", name:"Normafa", lat:47.5070, lon:18.9630, mav_id:"005546904"},
-{line:"Gyermekvasút", name:"Csillebérc", lat:47.5109, lon:18.9659, mav_id:"005546896"},
-{line:"Gyermekvasút", name:"Virágvölgy", lat:47.5185, lon:18.9672, mav_id:"005546888"},
-{line:"Gyermekvasút", name:"Jánoshegy", lat:47.5207, lon:18.9646, mav_id:"005546870"},
-{line:"Gyermekvasút", name:"Vadaspark mh.", lat:47.5365, lon:18.9695, mav_id:null},
-{line:"Gyermekvasút", name:"Szépjuhászné", lat:47.5287, lon:18.9683, mav_id:"005546862"},
-{line:"Gyermekvasút", name:"Hárs-hegy", lat:47.5315, lon:18.9712, mav_id:"005546854"},
-{line:"Gyermekvasút", name:"Hűvösvölgy", lat:47.5412, lon:18.9640, mav_id:"005546847"},
+// ================= MAP =================
+let map=L.map('map').setView([47.5,19.04],13);
 
-/* ================= KIRÁLYRÉT ================= */
-{line:"Királyréti Erdei Vasút", name:"Kismaros", lat:47.8270, lon:19.0150, mav_id:null},
-{line:"Királyréti Erdei Vasút", name:"Morgó", lat:47.8440, lon:19.0020, mav_id:null},
-{line:"Királyréti Erdei Vasút", name:"Börzsönyliget", lat:47.8605, lon:18.9940, mav_id:null},
-{line:"Királyréti Erdei Vasút", name:"Pap-hegy", lat:47.8830, lon:18.9840, mav_id:null},
-{line:"Királyréti Erdei Vasút", name:"Királyrét", lat:47.9100, lon:18.9730, mav_id:null},
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png').addTo(map);
 
-/* ================= KEMENCE ================= */
-{line:"Kemencei Erdei Múzeumvasút", name:"Kemence", lat:47.9980, lon:18.8910, mav_id:null},
-{line:"Kemencei Erdei Múzeumvasút", name:"Godóvár", lat:47.9905, lon:18.8875, mav_id:null},
-{line:"Kemencei Erdei Múzeumvasút", name:"Feketevölgy", lat:47.9830, lon:18.8830, mav_id:null},
-{line:"Kemencei Erdei Múzeumvasút", name:"Hajagos", lat:47.9750, lon:18.8790, mav_id:null},
-{line:"Kemencei Erdei Múzeumvasút", name:"Rózsa-forrás", lat:47.9670, lon:18.8750, mav_id:null},
+let stopLayer=L.layerGroup().addTo(map);
+let routeLayer=L.layerGroup().addTo(map);
 
-/* ================= NAGYBÖRZSÖNY ================= */
-{line:"Nagybörzsönyi Erdei Vasút", name:"Nagybörzsöny", lat:47.9360, lon:18.8320, mav_id:null},
-{line:"Nagybörzsönyi Erdei Vasút", name:"Nagybörzsöny-Észak", lat:47.9430, lon:18.8280, mav_id:null},
-{line:"Nagybörzsönyi Erdei Vasút", name:"Kisirtáspuszta", lat:47.9500, lon:18.8220, mav_id:null},
-{line:"Nagybörzsönyi Erdei Vasút", name:"Nagyirtáspuszta", lat:47.9555, lon:18.8185, mav_id:null},
+// ================= GLOBAL =================
+let STOPS=[];
+let STOP_TIMES=[];
+let user, target;
 
-/* ================= SZOBI KISVASÚT (KIEGÉSZÍTVE!) ================= */
-{line:"Szobi Kisvasút", name:"Szob", lat:47.8190, lon:18.8680, mav_id:null},
-{line:"Szobi Kisvasút", name:"Márianosztra", lat:47.8730, lon:18.8700, mav_id:null},
-{line:"Szobi Kisvasút", name:"Máriakút", lat:47.8850, lon:18.8720, mav_id:null},
-{line:"Szobi Kisvasút", name:"Füstös-forrás", lat:47.8950, lon:18.8750, mav_id:null},
-{line:"Szobi Kisvasút", name:"Vetett-fű", lat:47.9050, lon:18.8780, mav_id:null}
-
-];
-
-// ===== HELYZET
-let userLat=null,userLon=null;
-
-function getLocation(){
- navigator.geolocation.getCurrentPosition(pos=>{
-  userLat=pos.coords.latitude;
-  userLon=pos.coords.longitude;
-  status.innerText="Helyzet OK";
-  render();
- });
+// ================= CSV =================
+function parseCSV(row){
+ return row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
 }
 
-// ===== TÁVOLSÁG
-function dist(a,b,c,d){
- const R=6371e3;
- const φ1=a*Math.PI/180;
- const φ2=c*Math.PI/180;
- const dφ=(c-a)*Math.PI/180;
- const dλ=(d-b)*Math.PI/180;
+// ================= LOAD STOPS =================
+async function loadStops(files){
 
- const x=Math.sin(dφ/2)**2+
- Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
+ for(let f of files){
 
- return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
-}
+  let r=await fetch(f);
+  let t=await r.text();
 
-// ===== IDŐ SZÁMOLÁS (OKOS)
-function nextDepartures(){
+  let lines=t.split("\n");
 
- let now=new Date();
- let baseSec = now.getMinutes()*60 + now.getSeconds();
+  for(let i=1;i<lines.length;i++){
 
- let list=[];
+   let c=parseCSV(lines[i]);
+   if(!c) continue;
 
- for(let i=1;i<=3;i++){
+   let lat=parseFloat(c[4]);
+   let lon=parseFloat(c[5]);
 
-   let target = i*300; // 5 percenként
-   let diff = target - (baseSec % 300);
+   if(isNaN(lat)) continue;
 
-   let delay = Math.floor(Math.random()*60-30);
+   STOPS.push({
+    id:c[0],
+    name:c[2].replace(/"/g,""),
+    lat,lon
+   });
 
-   let final = diff + delay;
-
-   let m=Math.floor(final/60);
-   let s=final%60;
-
-   list.push({m,s,delay});
- }
-
- return list;
-}
-
-// ===== RENDER
-function render(){
-
- let html="";
-
- stops.forEach(s=>{
-
-  let tav="nincs adat";
-
-  if(userLat){
-   let d=dist(userLat,userLon,s.lat,s.lon);
-   let road=Math.round(d*1.3);
-
-   tav=`Légvonal: ${d} m | Út: ~${road} m`;
   }
 
-  let menetrend = nextDepartures();
+ }
 
-  html+=`<div class="stop">
-  <b>${s.name}</b><br>
-  <div class="small">${s.gtfs}</div>
-  <div class="small">${tav}</div>
-  `;
+ // dedupe
+ STOPS = STOPS.filter((v,i,a)=>
+  a.findIndex(x=>Math.abs(x.lat-v.lat)<0.0001 && Math.abs(x.lon-v.lon)<0.0001)==i
+ );
 
-  menetrend.forEach(m=>{
-
-   let cls="white";
-   if(m.delay<0) cls="red";
-   if(m.delay>0) cls="blue";
-
-   html+=`<div class="${cls}">
-   ${m.m}:${String(m.s).padStart(2,"0")} (${m.delay}s)
-   </div>`;
-  });
-
-  html+="</div>";
- });
-
- list.innerHTML=html;
+ console.log("Stops:",STOPS.length);
 }
 
-// ===== FRISSÍTÉS
-setInterval(()=>{
- if(userLat) render();
-},15000);
+// ================= LOAD TIMES =================
+async function loadTimes(files){
 
-render();
+ for(let f of files){
+
+  let r=await fetch(f);
+  let t=await r.text();
+
+  let lines=t.split("\n");
+
+  for(let i=1;i<lines.length;i++){
+
+   let c=parseCSV(lines[i]);
+   if(!c) continue;
+
+   STOP_TIMES.push({
+    trip:c[0],
+    time:c[1],
+    stop:c[3]
+   });
+
+  }
+
+ }
+
+ console.log("Times:",STOP_TIMES.length);
+}
+
+// ================= DIST =================
+function dist(a,b,c,d){
+ let R=6371000;
+ let dLat=(c-a)*Math.PI/180;
+ let dLon=(d-b)*Math.PI/180;
+ let x=Math.sin(dLat/2)**2+
+ Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
+ Math.sin(dLon/2)**2;
+ return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// ================= NEAREST =================
+function nearest(lat,lon){
+
+ let best=null,min=1e9;
+
+ STOPS.forEach(s=>{
+  let d=dist(lat,lon,s.lat,s.lon);
+  if(d<min){min=d;best=s;}
+ });
+
+ return {best,min};
+}
+
+// ================= DEPARTURES =================
+function getDepartures(stopId){
+
+ let list = STOP_TIMES.filter(t=>t.stop==stopId);
+
+ if(list.length==0){
+  return ["nincs adat"];
+ }
+
+ return list.slice(0,5).map(t=>t.time);
+}
+
+// ================= DRAW =================
+function drawStops(){
+
+ stopLayer.clearLayers();
+
+ STOPS.slice(0,500).forEach(s=>{
+
+  L.circleMarker([s.lat,s.lon],{radius:4,color:"#0f0"})
+   .addTo(stopLayer)
+   .bindPopup(s.name);
+
+ });
+
+}
+
+// ================= GPS =================
+navigator.geolocation.getCurrentPosition(pos=>{
+
+ user=[pos.coords.latitude,pos.coords.longitude];
+
+ map.setView(user,14);
+ L.marker(user).addTo(map);
+
+});
+
+// ================= CLICK =================
+map.on("click",e=>{
+
+ let n=nearest(e.latlng.lat,e.latlng.lng);
+
+ let deps=getDepartures(n.best.id);
+
+ document.getElementById("info").innerHTML=`
+ <b>${n.best.name}</b><br>
+ ${Math.round(n.min)} m<br>
+ Indulások:<br>${deps.join("<br>")}
+ `;
+
+});
+
+// ================= SEARCH =================
+async function search(){
+
+ let q=document.getElementById("search").value;
+
+ let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+ let d=await r.json();
+
+ target=[parseFloat(d[0].lat),parseFloat(d[0].lon)];
+
+ L.marker(target).addTo(map);
+ map.setView(target,15);
+}
+
+// ================= ROUTE =================
+async function route(){
+
+ if(!target) return;
+
+ let url=`https://router.project-osrm.org/route/v1/driving/${user[1]},${user[0]};${target[1]},${target[0]}?overview=full&geometries=geojson`;
+
+ let r=await fetch(url);
+ let data=await r.json();
+
+ let coords=data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+
+ routeLayer.clearLayers();
+ L.polyline(coords,{color:"blue"}).addTo(routeLayer);
+
+ let air = dist(user[0],user[1],target[0],target[1]);
+
+ document.getElementById("info").innerHTML+=`
+ <br>Légvonal: ${(air/1000).toFixed(2)} km
+ `;
+}
+
+// ================= INIT =================
+window.onload=async()=>{
+
+ await loadStops([
+  "bkk_stops.txt",
+  "mav_stops.txt",
+  "volan_stops.txt"
+ ]);
+
+ await loadTimes([
+  "bkk_stop_times.txt",
+  "mav_stop_times.txt",
+  "volan_stop_times.txt"
+ ]);
+
+ drawStops();
+
+ document.getElementById("info").innerHTML="✅ FULL MULTI GTFS READY";
+
+};
 
 </script>
 
