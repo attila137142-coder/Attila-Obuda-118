@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V16 REAL FEED CONNECTOR</title>
+<title>ROXY V16.5 MULTI-GTFS FULL MERGE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -18,21 +18,25 @@ body{margin:0;font-family:Arial}
  background:#000d;
  color:#0f0;
  padding:10px;
- width:480px;
+ width:520px;
  max-height:90vh;
  overflow:auto;
  border:1px solid #0f0;
 }
 
-.small{font-size:12px;opacity:0.7}
+.tag{padding:2px 6px;margin:2px;display:inline-block;font-size:12px}
+.bkk{background:#1e90ff;color:#fff}
+.volan{background:#f4c542;color:#000}
+.mav{background:#ccc;color:#000}
+.fallback{background:#444;color:#fff}
 </style>
 </head>
 
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY V16 – REAL FEED CONNECTOR</h3>
-<div id="info">📡 feed inicializálás...</div>
+<h3>🚆 ROXY V16.5 – MULTI-GTFS MERGE</h3>
+<div id="info">📡 inicializálás...</div>
 </div>
 
 <div id="map"></div>
@@ -47,86 +51,65 @@ let map=L.map('map').setView([47.4979,19.0402],13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let stopLayer=L.layerGroup().addTo(map);
-let vehicleLayer=L.layerGroup().addTo(map);
 
-// ================= FEED STATE =================
-let FEED = {
- gtfsStops:[],
- gtfsTrips:[],
- gtfsTimes:[],
- realtime:false
-};
-
-// ================= MASTER STOPS (LOCAL DB) =================
+// ================= MASTER STOPS =================
 let MASTER_STOPS=[
  {name:"Békásmegyer",gtfs:"H5",lat:47.598091,lon:19.054599},
  {name:"Flórián tér",gtfs:"BKK",lat:47.542896,lon:19.042252},
  {name:"Örs vezér tér",gtfs:"BKK",lat:47.501742,lon:19.135604},
  {name:"Vác",gtfs:"VOLAN",lat:47.781930,lon:19.129643},
- {name:"Dobogókő",gtfs:"VOLAN",lat:47.719118,lon:18.897577}
+ {name:"Királyrét",gtfs:"VOLAN",lat:47.895040,lon:18.977687}
 ];
 
-// ================= SAFE FETCH =================
-async function safeFetch(url){
+// ================= FEEDS =================
+let FEEDS={
+ bkk:null,
+ volan:null,
+ mav:null
+};
+
+// ================= SAFE LOAD =================
+async function loadGTFS(name,file){
 
  try{
-  let r=await fetch(url);
+
+  let r=await fetch(file);
   if(!r.ok) throw "no file";
-  return await r.text();
+
+  let text=await r.text();
+
+  let lines=text.split("\n");
+
+  let data={stopTimes:[]};
+
+  for(let i=1;i<lines.length;i++){
+
+   let c=lines[i].split(",");
+   if(c.length<4) continue;
+
+   data.stopTimes.push({
+    trip:c[0],
+    time:c[2],
+    stop:c[3],
+    feed:name
+   });
+
+  }
+
+  return data;
+
  }catch(e){
   return null;
  }
 
 }
 
-// ================= GTFS LOADER =================
-async function loadGTFS(){
+// ================= INIT FEEDS =================
+async function initFeeds(){
 
- let txt=await safeFetch("stop_times.txt");
-
- if(!txt){
-  console.log("⚠️ GTFS fallback");
-  FEED.realtime=false;
-  return;
- }
-
- let lines=txt.split("\n");
-
- FEED.gtfsTimes=[];
-
- for(let i=1;i<lines.length;i++){
-
-  let c=lines[i].split(",");
-
-  if(c.length<4) continue;
-
-  FEED.gtfsTimes.push({
-   trip:c[0],
-   time:c[2],
-   stop:c[3]
-  });
-
- }
-
- FEED.realtime=true;
-
-}
-
-// ================= GTFS-RT (OPTIONAL) =================
-async function loadRealtime(){
-
- // ha nincs endpoint → fallback
- let data=await safeFetch("vehicle_positions.json");
-
- if(!data){
-  console.log("no realtime feed");
-  return;
- }
-
- try{
-  let json=JSON.parse(data);
-  console.log("realtime OK",json);
- }catch(e){}
+ FEEDS.bkk=await loadGTFS("bkk","bkk_stop_times.txt");
+ FEEDS.volan=await loadGTFS("volan","volan_stop_times.txt");
+ FEEDS.mav=await loadGTFS("mav","mav_stop_times.txt");
 
 }
 
@@ -146,10 +129,9 @@ function dist(a,b,c,d){
 }
 
 // ================= FIND STOP =================
-function nearestStop(lat,lon){
+function nearest(lat,lon){
 
- let best=null;
- let min=999999;
+ let best=null,min=999999;
 
  MASTER_STOPS.forEach(s=>{
 
@@ -163,62 +145,77 @@ function nearestStop(lat,lon){
  });
 
  return {best,min};
+
 }
 
-// ================= DEPARTURES =================
-function departures(stop){
+// ================= MERGED DEPARTURES =================
+function getDepartures(stopId){
 
- if(FEED.realtime){
+ let out=[];
 
-  return FEED.gtfsTimes
-   .filter(t=>t.stop==stop.gtfs)
-   .slice(0,10)
-   .map(t=>({
-    time:t.time,
-    trip:t.trip,
-    status:"GTFS"
-   }));
+ for(let f in FEEDS){
 
- }
+  let feed=FEEDS[f];
 
- // fallback
- let list=[];
+  if(!feed) continue;
 
- for(let i=0;i<5;i++){
+  feed.stopTimes.forEach(t=>{
 
-  list.push({
-   time:new Date(Date.now()+i*60000).toLocaleTimeString(),
-   trip:"FALLBACK-"+i,
-   status:"no feed"
+   if(t.stop==stopId){
+    out.push({...t,feed:f});
+   }
+
   });
 
  }
 
- return list;
+ if(out.length==0){
+
+  for(let i=0;i<5;i++){
+
+   out.push({
+    time:new Date(Date.now()+i*60000).toLocaleTimeString(),
+    trip:"FALLBACK",
+    feed:"fallback"
+   });
+
+  }
+
+ }
+
+ return out.sort((a,b)=>a.time.localeCompare(b.time));
+
 }
 
 // ================= CLICK =================
 map.on("click",e=>{
 
  let lat=e.latlng.lat;
- let lon=e.latlng.lng;
+ let lon=e.latlng.lon;
 
- let n=nearestStop(lat,lon);
+ let n=nearest(lat,lon);
 
- let deps=departures(n.best);
+ let deps=getDepartures(n.best.gtfs);
 
  let html=`<b>🚏 ${n.best.name}</b><br>
  📏 ${n.min} m<br>
- 🆔 ${n.best.gtfs}<br>
- 📡 ${FEED.realtime?"REAL FEED":"FALLBACK"}<br><br>
+ 🆔 ${n.best.gtfs}<br><br>
 
- <b>🕒 Indulások</b><br>`;
+ <b>🕒 Indulások (MULTI FEED)</b><br>`;
 
  deps.forEach(d=>{
+
+  let cls="fallback";
+
+  if(d.feed=="bkk") cls="bkk";
+  if(d.feed=="volan") cls="volan";
+  if(d.feed=="mav") cls="mav";
+
   html+=`
+  <span class="tag ${cls}">${d.feed}</span>
   🕒 ${d.time}<br>
-  🧾 ${d.trip}<br>
-  📡 ${d.status}<br><br>`;
+  🚍 ${d.trip}<br><br>`;
+
  });
 
  document.getElementById("info").innerHTML=html;
@@ -228,22 +225,20 @@ map.on("click",e=>{
 // ================= INIT =================
 window.onload=async()=>{
 
- await loadGTFS();
- await loadRealtime();
+ await initFeeds();
 
  MASTER_STOPS.forEach(s=>{
+
   L.circleMarker([s.lat,s.lon],{
    radius:5,
    color:"#0f0",
    fillColor:"#0f0",
    fillOpacity:1
   }).addTo(stopLayer);
+
  });
 
- document.getElementById("info").innerHTML=
- FEED.realtime
- ? "✅ GTFS FEED aktív"
- : "⚠️ fallback mód (nincs feed)";
+ document.getElementById("info").innerHTML="✅ MULTI-GTFS READY";
 
 };
 
