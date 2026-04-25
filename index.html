@@ -1,79 +1,37 @@
-// 🚀 ROXY TRANSIT CORE V1 — Google Maps + FUTÁR HYBRID ENGINE
-    );
-  }
-}
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>ROXY TEST</title>
+</head>
 
-// =========================
-// 4. ROUTE CORE (FUTÁR-like logic base)
-// =========================
-export class RoxyRouteCore {
-  constructor(parser){ this.parser = parser; }
+<body>
+  <h1>ROXY TRANSIT CORE</h1>
 
-  // find all trips for a stop
-  async getDepartures(stopId){
-    const stopTimes = await this.parser.getStopTimes();
-    return stopTimes.filter(st=>st.stop_id===stopId);
-  }
+  <button onclick="runApp()">GTFS indítás</button>
 
-  // simple connection finder (prototype)
-  async findDirectConnections(fromStop, toStop){
-    const stopTimes = await this.parser.getStopTimes();
+  <pre id="out"></pre>
 
-    const fromTrips = new Set(stopTimes.filter(s=>s.stop_id===fromStop).map(s=>s.trip_id));
+  <script type="module">
+    import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js";
 
-    return stopTimes.filter(s=>
-      s.stop_id===toStop && fromTrips.has(s.trip_id)
-    );
-  }
-}
+    class RoxyGTFSLoader {
+      async load() {
+        const res = await fetch("https://bkk.hu/gtfs/budapest_gtfs.zip");
+        const buf = await res.arrayBuffer();
+        return await JSZip.loadAsync(buf);
+      }
+    }
 
-// =========================
-// 5. FULL SYSTEM WRAPPER (GOOGLE MAPS + FUTÁR HYBRID)
-// =========================
-export class RoxyTransitCore {
-  constructor(){
-    this.loader = new RoxyGTFSLoader();
-    this.zip=null;
-    this.parser=null;
-    this.search=null;
-    this.router=null;
-  }
+    window.runApp = async function () {
+      const out = document.getElementById("out");
+      out.textContent = "Loading...";
 
-  async init(){
-    this.zip = await this.loader.load();
-    this.parser = new RoxyGTFSParser(this.zip);
-    this.search = new RoxySearchEngine(this.parser);
-    this.router = new RoxyRouteCore(this.parser);
-  }
+      const loader = new RoxyGTFSLoader();
+      const zip = await loader.load();
 
-  // 🧠 Google Maps style search
-  async searchAll(query){
-    return {
-      stops: await this.search.searchStops(query),
-      routes: await this.search.searchRoutes(query)
-    };
-  }
-
-  // 🚇 FUTÁR style departures
-  async departures(stopId){
-    return await this.router.getDepartures(stopId);
-  }
-
-  // 🧭 simple routing prototype
-  async direct(fromStop,toStop){
-    return await this.router.findDirectConnections(fromStop,toStop);
-  }
-}
-
-// =========================
-// USAGE
-// =========================
-/*
-const app = new RoxyTransitCore();
-
-await app.init();
-
-console.log(await app.searchAll("Békásmegyer"));
-console.log(await app.departures("STOP_ID"));
-console.log(await app.direct("STOP_A","STOP_B"));
-*/
+      out.textContent = "ZIP OK\nFiles: " + Object.keys(zip.files).length;
+    }
+  </script>
+</body>
+</html>
