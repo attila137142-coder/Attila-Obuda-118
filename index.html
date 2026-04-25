@@ -1,7 +1,8 @@
+<!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V12 LIVE DISPATCH CENTER</title>
+<title>ROXY V12.1 ZERO ERROR BUILD</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -29,10 +30,7 @@ body{margin:0;font-family:Arial}
  margin-bottom:5px;
  border-bottom:1px solid #0f0;
 }
-.stop:hover{
- background:#0f0;
- color:#000;
-}
+.stop:hover{background:#0f0;color:#000}
 
 .small{font-size:12px;opacity:0.8}
 </style>
@@ -41,7 +39,7 @@ body{margin:0;font-family:Arial}
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY V12 DISPATCH CENTER</h3>
+<h3>🚆 ROXY V12.1 ZERO ERROR</h3>
 <div id="info">📍 indulás...</div>
 </div>
 
@@ -61,10 +59,6 @@ let stopLayer=L.layerGroup().addTo(map);
 // ================= USER =================
 let userLat=null,userLon=null;
 let userAddress="";
-
-function formatDistance(m){
- return m<1000?m+" m":(m/1000).toFixed(2)+" km";
-}
 
 // ================= DIST =================
 function getDistance(lat1,lon1,lat2,lon2){
@@ -88,7 +82,6 @@ async function getAddress(lat,lon){
   );
   let d=await res.json();
   let a=d.address;
-
   return `${a.city||a.town||a.village||""} ${a.road||""} ${a.house_number||""}`;
  }catch(e){
   return "nincs cím";
@@ -99,37 +92,35 @@ async function getAddress(lat,lon){
 navigator.geolocation.getCurrentPosition(async pos=>{
  userLat=pos.coords.latitude;
  userLon=pos.coords.longitude;
-
  userAddress=await getAddress(userLat,userLon);
 
  document.getElementById("info").innerHTML=`
- <b>📍 Saját hely</b><br>
- ${userAddress}<br><br>
- Térképre kattints 🚏
+ <b>📍 Saját hely</b><br>${userAddress}<br><br>Térképre kattints 🚏
  `;
 });
 
-// ================= MASTER DB =================
-const MASTER_STOPS=[
- {
-  name:"Békásmegyer H",
-  lat:47.5951,
-  lon:19.0452,
-  gtfs:"BKK_1001"
- },
- {
-  name:"Nád utca",
-  lat:47.5002,
-  lon:19.0301,
-  gtfs:"BKK_2002"
- }
-];
+// ================= OVERPASS FIX =================
+async function fetchOverpass(query){
+ let urls=[
+  "https://overpass-api.de/api/interpreter",
+  "https://lz4.overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter"
+ ];
 
-// ================= GTFS =================
+ for(let url of urls){
+  try{
+   let res=await fetch(url,{method:"POST",body:query});
+   if(res.ok) return await res.json();
+  }catch(e){}
+ }
+
+ throw "Overpass error";
+}
+
+// ================= GTFS SAFE =================
 let GTFSStops={};
 let GTFSTimes=[];
 
-// SAFE CSV
 function parseCSV(line){
  let r=[],c="",q=false;
  for(let ch of line){
@@ -142,39 +133,51 @@ function parseCSV(line){
 }
 
 async function loadStops(){
- let res=await fetch("stops.txt");
- let text=await res.text();
- let lines=text.split("\n");
+ try{
+  let res=await fetch("./stops.txt");
+  let text=await res.text();
+  let lines=text.split("\n");
 
- for(let i=1;i<lines.length;i++){
-  let c=parseCSV(lines[i]);
-  if(c.length<5) continue;
+  for(let i=1;i<lines.length;i++){
+   let c=parseCSV(lines[i]);
+   if(c.length<5) continue;
 
-  GTFSStops[c[0]]={
-   name:c[2],
-   lat:parseFloat(c[3]),
-   lon:parseFloat(c[4])
-  };
+   GTFSStops[c[0]]={
+    name:c[2],
+    lat:parseFloat(c[3]),
+    lon:parseFloat(c[4])
+   };
+  }
+ }catch(e){
+  console.log("GTFS stops hiányzik (404)");
  }
 }
 
 async function loadTimes(){
- let res=await fetch("stop_times.txt");
- let text=await res.text();
- let lines=text.split("\n");
+ try{
+  let res=await fetch("./stop_times.txt");
+  let text=await res.text();
+  let lines=text.split("\n");
 
- for(let i=1;i<lines.length;i++){
-  let c=parseCSV(lines[i]);
-  if(c.length<4) continue;
+  for(let i=1;i<lines.length;i++){
+   let c=parseCSV(lines[i]);
+   if(c.length<4) continue;
 
-  GTFSTimes.push({
-   trip_id:c[0],
-   arr:c[1],
-   dep:c[2],
-   stop_id:c[3]
-  });
+   GTFSTimes.push({
+    dep:c[2],
+    stop_id:c[3]
+   });
+  }
+ }catch(e){
+  console.log("GTFS times hiányzik (404)");
  }
 }
+
+// ================= MASTER =================
+const MASTER_STOPS=[
+ {name:"Békásmegyer H",lat:47.5951,lon:19.0452,gtfs:"BKK_1001"},
+ {name:"Nád utca",lat:47.5002,lon:19.0301,gtfs:"BKK_2002"}
+];
 
 // ================= MASTER MATCH =================
 function findMaster(lat,lon){
@@ -189,65 +192,24 @@ function findMaster(lat,lon){
 }
 
 // ================= DECISION =================
-function chooseStop(osm,master){
+function choose(osm,master){
  if(master.stop && master.dist<150){
   return {type:"MASTER",data:master.stop};
  }
  return {type:"OSM",data:osm};
 }
 
-// ================= LIVE TIME =================
-function nowSec(){
- let d=new Date();
- return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
-}
-
-function getSec(t){
- let [h,m,s]=t.split(":");
- return (+h)*3600+(+m)*60+(+s||0);
-}
-
-function getStatus(t){
- let d=getSec(t)-nowSec();
- let a=Math.abs(d);
- let m=Math.floor(a/60);
- let s=a%60;
-
- if(d>60) return `⏳ ${m}p ${s}s`;
- if(d<=60&&d>=-30) return `🟡 ÉRKEZIK`;
- if(d<-30) return `🔵 KÉSIK ${m}p ${s}s`;
- return `🟢 MOST`;
-}
-
-// ================= VEHICLE =================
-function getVehicle(name){
- name=name.toLowerCase();
- if(name.includes("hév")) return Math.random()>0.5?"6 kocsi":"3 kocsi";
- if(name.includes("vill")) return "csatolt";
- return Math.random()>0.5?"csuklós":"szóló";
-}
-
-// ================= GTFS =================
-function getDepartures(id){
- let now=new Date();
- let cur=now.getHours().toString().padStart(2,'0')+":"+now.getMinutes().toString().padStart(2,'0');
-
- return GTFSTimes
- .filter(t=>t.stop_id===id && t.dep>=cur)
- .map(t=>t.dep)
- .sort()
- .slice(0,10);
-}
-
-// ================= CLICK =================
+// ================= CLICK DEBUG =================
 map.on("click",async e=>{
+
+ console.log("CLICK OK",e.latlng);
 
  let lat=e.latlng.lat;
  let lon=e.latlng.lng;
 
  let master=findMaster(lat,lon);
 
- let q=`
+ let query=`
  [out:json];
  (
   node(around:600,${lat},${lon})["highway"="bus_stop"];
@@ -256,18 +218,18 @@ map.on("click",async e=>{
  out;
  `;
 
- let osm=await fetchOverpass(q);
+ let osm=await fetchOverpass(query);
 
  stopLayer.clearLayers();
 
- let html="<b>🚏 DISPATCH GRID</b><br><br>";
+ let html="<b>🚏 DISPATCH</b><br><br>";
 
  osm.elements.forEach(s=>{
 
   let name=s.tags?.name;
   if(!name) return;
 
-  let chosen=chooseStop(s,master);
+  let chosen=choose(s,master);
   let dist=getDistance(lat,lon,s.lat,s.lon);
 
   html+=`
@@ -290,30 +252,36 @@ function selectStop(name,lat,lon,gtfs){
 
  map.setView([lat,lon],16);
 
- let addr=userAddress;
- let times=gtfs?getDepartures(gtfs):[];
+ let times=[];
+
+ if(gtfs){
+  let now=new Date();
+  let cur=now.getHours().toString().padStart(2,'0')+":"+now.getMinutes().toString().padStart(2,'0');
+
+  times=GTFSTimes
+  .filter(t=>t.stop_id===gtfs && t.dep>=cur)
+  .map(t=>t.dep)
+  .slice(0,10);
+ }
 
  let html=`<b>🚏 ${name}</b><br><br>`;
- html+=`📍 ${addr}<br><br>`;
- html+=`🚌 Jármű: ${getVehicle(name)}<br>`;
+ html+=`📍 ${userAddress}<br><br>`;
  html+=`🆔 ${gtfs||"OSM"}<br><br>`;
 
- html+="<b>🕒 LIVE:</b><br>";
+ html+="<b>🕒 indulások:</b><br>";
 
  if(!gtfs){
-  html+="⚠️ nincs GTFS";
+  html+="⚠️ OSM-only";
  }
  else if(times.length===0){
   html+="❌ nincs adat";
  }
  else{
-  times.forEach(t=>{
-   html+=`🕒 ${t} → ${getStatus(t)}<br>`;
-  });
+  times.forEach(t=>html+=`🕒 ${t}<br>`);
  }
 
  document.getElementById("info").innerHTML=html;
-}
+});
 
 // ================= INIT =================
 window.onload=async()=>{
