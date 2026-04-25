@@ -1,94 +1,80 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>GTFS Megálló menetrend</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+// ROXY PRO GTFS LOADER 🚀
+        await new Promise(r => setTimeout(r, this.retryDelay));
+        return this.fetchWithRetry(url, attempt + 1);
+      }
 
-<style>
-body { font-family: Arial; padding: 10px; }
-button { padding: 6px; }
-table { border-collapse: collapse; width: 100%; margin-top: 10px;}
-td, th { border: 1px solid black; padding: 4px; text-align: center;}
-th { background: #ddd; }
-</style>
-</head>
-<body>
+      throw err;
+    }
+  }
 
-<h2>GTFS Megálló menetrend (FIX)</h2>
+  async tryAllSources() {
+    const allUrls = [this.primaryUrl, ...this.fallbackUrls];
 
-<input type="file" id="zipFile">
-<input type="text" id="stopName" placeholder="Megálló neve (pl. Hűvösvölgy)">
-<button onclick="loadGTFS()">Betöltés</button>
+    let lastError;
 
-<table id="table">
-<tr><th>Idő</th><th>Trip</th></tr>
-</table>
-
-<script>
-let stops = [], stopTimes = [];
-
-async function loadGTFS() {
-  try {
-    const file = document.getElementById('zipFile').files[0];
-    if (!file) return alert("Nincs fájl kiválasztva!");
-
-    const zip = await JSZip.loadAsync(file);
-
-    if (!zip.file("stops.txt") || !zip.file("stop_times.txt")) {
-      alert("HIBÁS GTFS! stops.txt vagy stop_times.txt hiányzik!");
-      return;
+    for (const url of allUrls) {
+      try {
+        const data = await this.fetchWithRetry(url);
+        this.log("Success source:", url);
+        return data;
+      } catch (err) {
+        this.log("Source failed:", url);
+        lastError = err;
+      }
     }
 
-    const stopsText = await zip.file("stops.txt").async("string");
-    const stopTimesText = await zip.file("stop_times.txt").async("string");
+    throw lastError || new Error("All GTFS sources failed");
+  }
 
-    stops = Papa.parse(stopsText, {header:true}).data;
-    stopTimes = Papa.parse(stopTimesText, {header:true}).data;
+  async loadGTFS() {
+    this.log("Starting GTFS load...");
 
-    console.log("Stops:", stops.length);
-    console.log("StopTimes:", stopTimes.length);
+    const buffer = await this.tryAllSources();
 
-    render();
-  } catch (e) {
-    alert("Hiba betöltéskor: " + e);
-    console.error(e);
+    this.log("Loading ZIP with JSZip...");
+
+    const zip = await JSZip.loadAsync(buffer);
+
+    const files = Object.keys(zip.files);
+
+    this.log("GTFS loaded successfully!");
+    this.log("File count:", files.length);
+
+    // Validate core GTFS files
+    const required = ["stops.txt", "routes.txt", "trips.txt", "stop_times.txt"];
+    const missing = required.filter(f => !zip.files[f]);
+
+    if (missing.length) {
+      this.log("WARNING missing files:", missing);
+    }
+
+    return {
+      zip,
+      files,
+      missing
+    };
   }
 }
 
-function render() {
-  const input = document.getElementById('stopName').value.toLowerCase();
+// -------------------------
+// USAGE EXAMPLE
+// -------------------------
 
-  const stop = stops.find(s =>
-    s.stop_name && s.stop_name.toLowerCase().includes(input)
-  );
+/*
+const loader = new RoxyProGTFSLoader({
+  primaryUrl: "https://bkk.hu/gtfs/budapest_gtfs.zip",
+  fallbackUrls: [
+    "https://mirror1.example.com/bkk_gtfs.zip",
+    "https://mirror2.example.com/bkk_gtfs.zip"
+  ],
+  debug: true
+});
 
-  if (!stop) {
-    alert("Megálló nem található!");
-    return;
-  }
-
-  let list = stopTimes
-    .filter(st => st.stop_id === stop.stop_id && st.departure_time)
-    .map(st => ({
-      time: st.departure_time,
-      trip: st.trip_id
-    }));
-
-  list.sort((a,b)=> a.time.localeCompare(b.time));
-
-  const table = document.getElementById("table");
-  table.innerHTML = "<tr><th>Idő</th><th>Trip</th></tr>";
-
-  list.slice(0,200).forEach(r=>{
-    table.innerHTML += `<tr>
-      <td>${r.time}</td>
-      <td>${r.trip}</td>
-    </tr>`;
+loader.loadGTFS()
+  .then(data => {
+    console.log("READY GTFS:", data);
+  })
+  .catch(err => {
+    console.error("GTFS LOAD FAILED:", err);
   });
-}
-</script>
-
-</body>
-</html>
+*/
