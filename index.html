@@ -3,78 +3,88 @@
 <head>
 <meta charset="UTF-8">
 <title>GTFS Megálló menetrend</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
 <style>
 body { font-family: Arial; padding: 10px; }
-button { padding: 6px 10px; margin: 5px; }
+button { padding: 6px; }
 table { border-collapse: collapse; width: 100%; margin-top: 10px;}
-td, th { border: 1px solid #000; padding: 4px; text-align: center;}
+td, th { border: 1px solid black; padding: 4px; text-align: center;}
 th { background: #ddd; }
 </style>
 </head>
 <body>
 
-<h2>Megálló menetrend (egyszerű)</h2>
+<h2>GTFS Megálló menetrend (FIX)</h2>
 
 <input type="file" id="zipFile">
-<br>
 <input type="text" id="stopName" placeholder="Megálló neve (pl. Hűvösvölgy)">
 <button onclick="loadGTFS()">Betöltés</button>
 
 <table id="table">
-<tr><th>Idő</th><th>Trip</th><th>Típus</th></tr>
+<tr><th>Idő</th><th>Trip</th></tr>
 </table>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
 <script>
-let stopTimes = [], stops = [];
+let stops = [], stopTimes = [];
 
 async function loadGTFS() {
-  const file = document.getElementById('zipFile').files[0];
-  const zip = await JSZip.loadAsync(file);
+  try {
+    const file = document.getElementById('zipFile').files[0];
+    if (!file) return alert("Nincs fájl kiválasztva!");
 
-  stops = await parseCSV(await zip.file("stops.txt").async("string"));
-  stopTimes = await parseCSV(await zip.file("stop_times.txt").async("string"));
+    const zip = await JSZip.loadAsync(file);
 
-  render();
-}
+    if (!zip.file("stops.txt") || !zip.file("stop_times.txt")) {
+      alert("HIBÁS GTFS! stops.txt vagy stop_times.txt hiányzik!");
+      return;
+    }
 
-function parseCSV(text) {
-  const rows = text.split("\n").map(r => r.split(","));
-  const headers = rows[0];
-  return rows.slice(1).map(r => {
-    let obj = {};
-    headers.forEach((h,i)=>obj[h]=r[i]);
-    return obj;
-  });
+    const stopsText = await zip.file("stops.txt").async("string");
+    const stopTimesText = await zip.file("stop_times.txt").async("string");
+
+    stops = Papa.parse(stopsText, {header:true}).data;
+    stopTimes = Papa.parse(stopTimesText, {header:true}).data;
+
+    console.log("Stops:", stops.length);
+    console.log("StopTimes:", stopTimes.length);
+
+    render();
+  } catch (e) {
+    alert("Hiba betöltéskor: " + e);
+    console.error(e);
+  }
 }
 
 function render() {
-  const name = document.getElementById('stopName').value.toLowerCase();
-  const stop = stops.find(s => s.stop_name.toLowerCase().includes(name));
+  const input = document.getElementById('stopName').value.toLowerCase();
+
+  const stop = stops.find(s =>
+    s.stop_name && s.stop_name.toLowerCase().includes(input)
+  );
 
   if (!stop) {
-    alert("Nincs ilyen megálló!");
+    alert("Megálló nem található!");
     return;
   }
 
   let list = stopTimes
-    .filter(st => st.stop_id === stop.stop_id)
+    .filter(st => st.stop_id === stop.stop_id && st.departure_time)
     .map(st => ({
       time: st.departure_time,
-      trip: st.trip_id,
-      type: "INDUL"
+      trip: st.trip_id
     }));
 
   list.sort((a,b)=> a.time.localeCompare(b.time));
 
   const table = document.getElementById("table");
-  table.innerHTML = "<tr><th>Idő</th><th>Trip</th><th>Típus</th></tr>";
+  table.innerHTML = "<tr><th>Idő</th><th>Trip</th></tr>";
 
-  list.forEach(r=>{
+  list.slice(0,200).forEach(r=>{
     table.innerHTML += `<tr>
       <td>${r.time}</td>
       <td>${r.trip}</td>
-      <td>${r.type}</td>
     </tr>`;
   });
 }
