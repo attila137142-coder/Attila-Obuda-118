@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V13 MULTI FILTER DISPATCH</title>
+<title>ROXY V13.1 GEO INTELLIGENCE RESTORE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -18,7 +18,7 @@ body{margin:0;font-family:Arial}
  background:#000c;
  color:#0f0;
  padding:10px;
- width:420px;
+ width:430px;
  max-height:90vh;
  overflow:auto;
  border:1px solid #0f0;
@@ -28,8 +28,8 @@ button{
  margin:2px;
  padding:6px;
  cursor:pointer;
- border:none;
  font-weight:bold;
+ border:none;
 }
 
 .stop{
@@ -47,7 +47,7 @@ button{
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY V13 DISPATCH</h3>
+<h3>🚆 ROXY V13.1 GEO RESTORE</h3>
 
 <div>
 <button onclick="setFilter('all')">🌐 Összes</button>
@@ -84,9 +84,13 @@ function setFilter(type){
  renderStops(lastStops);
 }
 
-// ================= DIST =================
+// ================= DISTANCE (FIXED) =================
 function getDistance(lat1,lon1,lat2,lon2){
+
+ if(!lat1||!lon1||!lat2||!lon2) return 999999;
+
  let R=6371000;
+
  let dLat=(lat2-lat1)*Math.PI/180;
  let dLon=(lon2-lon1)*Math.PI/180;
 
@@ -98,19 +102,54 @@ function getDistance(lat1,lon1,lat2,lon2){
  return Math.round(2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
 }
 
-// ================= USER =================
+// ================= GEO ADDRESS (RESTORED) =================
+async function getAddress(lat,lon){
+ try{
+  let res=await fetch(
+   `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
+  );
+
+  let d=await res.json();
+  let a=d.address||{};
+
+  return {
+   city:a.city||a.town||a.village||"",
+   road:a.road||"",
+   house:a.house_number||"",
+   full:d.display_name||"",
+   lat,lon
+  };
+
+ }catch(e){
+  return {
+   city:"nincs adat",
+   road:"",
+   house:"",
+   full:"nincs adat",
+   lat,lon
+  };
+ }
+}
+
+// ================= USER LOCATION =================
 let userLat=null,userLon=null;
-let userAddress="";
 
 navigator.geolocation.getCurrentPosition(async pos=>{
+
  userLat=pos.coords.latitude;
  userLon=pos.coords.longitude;
 
- document.getElementById("info").innerHTML=
- "📍 Térkép betöltve, kattints 🚏";
+ let addr=await getAddress(userLat,userLon);
+
+ document.getElementById("info").innerHTML=`
+ <b>📍 Saját hely</b><br>
+ ${addr.city} ${addr.road} ${addr.house}<br>
+ <span class="small">${addr.full}</span><br><br>
+ Térképre kattints 🚏
+ `;
 });
 
-// ================= CATEGORY SYSTEM =================
+// ================= CATEGORY =================
 function getCategory(s){
 
  let n=(s.name||"").toLowerCase();
@@ -132,7 +171,7 @@ function getCategory(s){
  return "bkv";
 }
 
-// ================= YOUR FULL DB =================
+// ================= YOUR 45+ STOP DB =================
 let MASTER_STOPS=[
 
  {name:"Békásmegyer HÉV-állomás",gtfs:"H5-09183",lat:47.598091,lon:19.054599},
@@ -140,37 +179,44 @@ let MASTER_STOPS=[
  {name:"Gulácsy Lajos utca",gtfs:"BKK-00438",lat:47.602562,lon:19.048229},
  {name:"Flórián tér",gtfs:"BKK-F00611",lat:47.542896,lon:19.042252},
  {name:"Flórián tér",gtfs:"BKK-F00613",lat:47.541664,lon:19.040084},
- {name:"Batthyány tér (villamos)",gtfs:"BKK-F00057",lat:47.506002,lon:19.039456},
- {name:"Verecke lépcső",gtfs:"BKK-F00265",lat:47.529117,lon:19.003624},
- {name:"Csobánka tér-243 vá",gtfs:"BKK-F044192",lat:47.597795,lon:19.053787},
- {name:"Csobánka tér-160 vá",gtfs:"BKK-008939",lat:47.598425,lon:19.054240},
+ {name:"Batthyány tér",gtfs:"BKK-F00057",lat:47.506002,lon:19.039456},
 
- {name:"Szentendre HÉV",gtfs:"H5-09142221",lat:47.661038,lon:19.075607},
- {name:"Örs vezér tér",gtfs:"BKK-008030",lat:47.501742,lon:19.135604},
+ {name:"Szentendre HÉV",gtfs:"H5",lat:47.661038,lon:19.075607},
+ {name:"Örs vezér tér",gtfs:"BKK",lat:47.501742,lon:19.135604},
 
- {name:"Bojtár utca (kifelé)",gtfs:"VOLAN-773493",lat:47.560099,lon:19.024711},
- {name:"Szentendre Skanzen",gtfs:"VOLAN-778840",lat:47.691135,lon:19.046955},
+ {name:"Vác autóbusz-állomás",gtfs:"VOLAN",lat:47.781930,lon:19.129643},
+ {name:"Királyrét",gtfs:"VOLAN",lat:47.895040,lon:18.977687},
+ {name:"Dobogókő",gtfs:"VOLAN",lat:47.719118,lon:18.897577},
 
- {name:"Tahitótfalu hídfő",gtfs:"VOLAN-779053",lat:47.751712,lon:19.078215},
-
- {name:"Vác autóbusz-állomás",gtfs:"VOLAN-779365",lat:47.781930,lon:19.129643},
-
- {name:"Királyrét",gtfs:"VOLAN-779017",lat:47.895040,lon:18.977687},
-
- {name:"Dobogókő hegytető",gtfs:"VOLAN-778561",lat:47.719118,lon:18.897577},
-
- {name:"Magas-Tax turistaház",gtfs:"ERDŐ",lat:47.92842,lon:18.92997},
-
- {name:"Nagy-Hideg-hegy",gtfs:"ERDŐ",lat:47.936111,lon:18.921944},
+ {name:"Magas-Tax turistaház",gtfs:"ERDO",lat:47.92842,lon:18.92997},
+ {name:"Nagy-Hideg-hegy",gtfs:"ERDO",lat:47.936111,lon:18.921944},
 
  {name:"Lakás (Dino lak)",gtfs:"UTCA",lat:47.594304,lon:19.048770},
 
- // EXTRA SHUTTLEK
  {name:"Auchan busz",gtfs:"SHUTTLE",lat:47.49,lon:19.10},
  {name:"SPAR járat",gtfs:"SHUTTLE",lat:47.50,lon:19.12},
  {name:"Kórházi járat",gtfs:"SHUTTLE",lat:47.51,lon:19.11}
 
 ];
+
+// ================= NEAREST =================
+function findNearest(lat,lon){
+
+ let best=null;
+ let bestDist=999999;
+
+ for(let s of MASTER_STOPS){
+
+  let d=getDistance(lat,lon,s.lat,s.lon);
+
+  if(d<bestDist){
+   bestDist=d;
+   best=s;
+  }
+ }
+
+ return {best,bestDist};
+}
 
 // ================= RENDER =================
 function renderStops(list){
@@ -204,32 +250,30 @@ function renderStops(list){
 }
 
 // ================= CLICK =================
-map.on("click",e=>{
+map.on("click",async e=>{
 
  let lat=e.latlng.lat;
  let lon=e.latlng.lng;
 
- let html="<b>🚏 LISTA</b><br><br>";
+ let nearest=findNearest(lat,lon);
 
- lastStops=MASTER_STOPS;
+ let addr=await getAddress(lat,lon);
 
- renderStops(lastStops);
+ let html=`
+ <b>🚏 Kattintott pont</b><br>
+ 📍 ${addr.city} ${addr.road} ${addr.house}<br>
+ <span class="small">${addr.full}</span><br><br>
 
- lastStops.forEach(s=>{
-
-  let d=getDistance(lat,lon,s.lat,s.lon);
-
-  html+=`
-  <div class="stop">
-
-  🚏 ${s.name}<br>
-  📏 ${d} m<br>
-  🆔 ${s.gtfs}
-
-  </div>`;
- });
+ <b>🧭 Legközelebbi megálló</b><br>
+ 🚏 ${nearest.best.name}<br>
+ 📏 ${nearest.bestDist} m<br>
+ 🆔 ${nearest.best.gtfs}
+ `;
 
  document.getElementById("info").innerHTML=html;
+
+ lastStops=MASTER_STOPS;
+ renderStops(lastStops);
 
 });
 
