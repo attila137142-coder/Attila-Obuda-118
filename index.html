@@ -1,80 +1,79 @@
-// ROXY PRO GTFS LOADER 🚀
-        await new Promise(r => setTimeout(r, this.retryDelay));
-        return this.fetchWithRetry(url, attempt + 1);
-      }
-
-      throw err;
-    }
-  }
-
-  async tryAllSources() {
-    const allUrls = [this.primaryUrl, ...this.fallbackUrls];
-
-    let lastError;
-
-    for (const url of allUrls) {
-      try {
-        const data = await this.fetchWithRetry(url);
-        this.log("Success source:", url);
-        return data;
-      } catch (err) {
-        this.log("Source failed:", url);
-        lastError = err;
-      }
-    }
-
-    throw lastError || new Error("All GTFS sources failed");
-  }
-
-  async loadGTFS() {
-    this.log("Starting GTFS load...");
-
-    const buffer = await this.tryAllSources();
-
-    this.log("Loading ZIP with JSZip...");
-
-    const zip = await JSZip.loadAsync(buffer);
-
-    const files = Object.keys(zip.files);
-
-    this.log("GTFS loaded successfully!");
-    this.log("File count:", files.length);
-
-    // Validate core GTFS files
-    const required = ["stops.txt", "routes.txt", "trips.txt", "stop_times.txt"];
-    const missing = required.filter(f => !zip.files[f]);
-
-    if (missing.length) {
-      this.log("WARNING missing files:", missing);
-    }
-
-    return {
-      zip,
-      files,
-      missing
-    };
+// 🚀 ROXY TRANSIT CORE V1 — Google Maps + FUTÁR HYBRID ENGINE
+    );
   }
 }
 
-// -------------------------
-// USAGE EXAMPLE
-// -------------------------
+// =========================
+// 4. ROUTE CORE (FUTÁR-like logic base)
+// =========================
+export class RoxyRouteCore {
+  constructor(parser){ this.parser = parser; }
 
+  // find all trips for a stop
+  async getDepartures(stopId){
+    const stopTimes = await this.parser.getStopTimes();
+    return stopTimes.filter(st=>st.stop_id===stopId);
+  }
+
+  // simple connection finder (prototype)
+  async findDirectConnections(fromStop, toStop){
+    const stopTimes = await this.parser.getStopTimes();
+
+    const fromTrips = new Set(stopTimes.filter(s=>s.stop_id===fromStop).map(s=>s.trip_id));
+
+    return stopTimes.filter(s=>
+      s.stop_id===toStop && fromTrips.has(s.trip_id)
+    );
+  }
+}
+
+// =========================
+// 5. FULL SYSTEM WRAPPER (GOOGLE MAPS + FUTÁR HYBRID)
+// =========================
+export class RoxyTransitCore {
+  constructor(){
+    this.loader = new RoxyGTFSLoader();
+    this.zip=null;
+    this.parser=null;
+    this.search=null;
+    this.router=null;
+  }
+
+  async init(){
+    this.zip = await this.loader.load();
+    this.parser = new RoxyGTFSParser(this.zip);
+    this.search = new RoxySearchEngine(this.parser);
+    this.router = new RoxyRouteCore(this.parser);
+  }
+
+  // 🧠 Google Maps style search
+  async searchAll(query){
+    return {
+      stops: await this.search.searchStops(query),
+      routes: await this.search.searchRoutes(query)
+    };
+  }
+
+  // 🚇 FUTÁR style departures
+  async departures(stopId){
+    return await this.router.getDepartures(stopId);
+  }
+
+  // 🧭 simple routing prototype
+  async direct(fromStop,toStop){
+    return await this.router.findDirectConnections(fromStop,toStop);
+  }
+}
+
+// =========================
+// USAGE
+// =========================
 /*
-const loader = new RoxyProGTFSLoader({
-  primaryUrl: "https://bkk.hu/gtfs/budapest_gtfs.zip",
-  fallbackUrls: [
-    "https://mirror1.example.com/bkk_gtfs.zip",
-    "https://mirror2.example.com/bkk_gtfs.zip"
-  ],
-  debug: true
-});
+const app = new RoxyTransitCore();
 
-loader.loadGTFS()
-  .then(data => {
-    console.log("READY GTFS:", data);
-  })
-  .catch(err => {
-    console.error("GTFS LOAD FAILED:", err);
-  });
+await app.init();
+
+console.log(await app.searchAll("Békásmegyer"));
+console.log(await app.departures("STOP_ID"));
+console.log(await app.direct("STOP_A","STOP_B"));
 */
