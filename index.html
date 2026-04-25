@@ -2,13 +2,13 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V17 – FULL MULTI GTFS</title>
+<title>ROXY ALL-IN-ONE MAP</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{margin:0;font-family:Arial}
-#map{height:100vh}
+body{margin:0;background:#000;color:#0f0;font-family:Arial;}
+#map{height:100vh;}
 
 #panel{
 position:absolute;
@@ -16,27 +16,39 @@ top:10px;
 left:10px;
 z-index:9999;
 background:#000d;
-color:#0f0;
 padding:10px;
-width:420px;
+width:380px;
 max-height:90vh;
 overflow:auto;
 border:1px solid #0f0;
 }
+button{margin:2px;}
 </style>
 </head>
 
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY V17 – MULTI GTFS</h3>
-<div id="info">Betöltés...</div>
+<h3>🗺 ROXY – MAP + FUTÁR + TÚRA</h3>
 
-<input id="search" placeholder="cél">
+<button onclick="setMap('osm')">🌍</button>
+<button onclick="setMap('rail')">🚆</button>
+<button onclick="setMap('topo')">⛰</button>
+
+<br><br>
+
+<input id="search" placeholder="Cím">
 <button onclick="search()">Keres</button>
 <button onclick="route()">Útvonal</button>
 
+<br><br>
+
+<button onclick="loadStops()">🚍 Megállók</button>
+<button onclick="calcRoadStops()">🛣 Távolság</button>
+
+<div id="info">GPS...</div>
 <div id="stops"></div>
+
 </div>
 
 <div id="map"></div>
@@ -45,92 +57,28 @@ border:1px solid #0f0;
 
 <script>
 
-// ================= MAP =================
+// MAP
 let map=L.map('map').setView([47.5,19.04],13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png').addTo(map);
+let layers={
+osm:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
+rail:L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png'),
+topo:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
+};
 
-let stopLayer=L.layerGroup().addTo(map);
+layers.osm.addTo(map);
+
+function setMap(t){
+ map.eachLayer(l=>map.removeLayer(l));
+ layers[t].addTo(map);
+}
+
+// GLOBAL
+let user,target;
 let routeLayer=L.layerGroup().addTo(map);
+let stopLayer=L.layerGroup().addTo(map);
 
-// ================= GLOBAL =================
-let STOPS=[];
-let STOP_TIMES=[];
-let user, target;
-
-// ================= CSV =================
-function parseCSV(row){
- return row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
-}
-
-// ================= LOAD STOPS =================
-async function loadStops(files){
-
- for(let f of files){
-
-  let r=await fetch(f);
-  let t=await r.text();
-
-  let lines=t.split("\n");
-
-  for(let i=1;i<lines.length;i++){
-
-   let c=parseCSV(lines[i]);
-   if(!c) continue;
-
-   let lat=parseFloat(c[4]);
-   let lon=parseFloat(c[5]);
-
-   if(isNaN(lat)) continue;
-
-   STOPS.push({
-    id:c[0],
-    name:c[2].replace(/"/g,""),
-    lat,lon
-   });
-
-  }
-
- }
-
- // dedupe
- STOPS = STOPS.filter((v,i,a)=>
-  a.findIndex(x=>Math.abs(x.lat-v.lat)<0.0001 && Math.abs(x.lon-v.lon)<0.0001)==i
- );
-
- console.log("Stops:",STOPS.length);
-}
-
-// ================= LOAD TIMES =================
-async function loadTimes(files){
-
- for(let f of files){
-
-  let r=await fetch(f);
-  let t=await r.text();
-
-  let lines=t.split("\n");
-
-  for(let i=1;i<lines.length;i++){
-
-   let c=parseCSV(lines[i]);
-   if(!c) continue;
-
-   STOP_TIMES.push({
-    trip:c[0],
-    time:c[1],
-    stop:c[3]
-   });
-
-  }
-
- }
-
- console.log("Times:",STOP_TIMES.length);
-}
-
-// ================= DIST =================
+// DIST
 function dist(a,b,c,d){
  let R=6371000;
  let dLat=(c-a)*Math.PI/180;
@@ -141,86 +89,42 @@ function dist(a,b,c,d){
  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ================= NEAREST =================
-function nearest(lat,lon){
-
- let best=null,min=1e9;
-
- STOPS.forEach(s=>{
-  let d=dist(lat,lon,s.lat,s.lon);
-  if(d<min){min=d;best=s;}
- });
-
- return {best,min};
-}
-
-// ================= DEPARTURES =================
-function getDepartures(stopId){
-
- let list = STOP_TIMES.filter(t=>t.stop==stopId);
-
- if(list.length==0){
-  return ["nincs adat"];
- }
-
- return list.slice(0,5).map(t=>t.time);
-}
-
-// ================= DRAW =================
-function drawStops(){
-
- stopLayer.clearLayers();
-
- STOPS.slice(0,500).forEach(s=>{
-
-  L.circleMarker([s.lat,s.lon],{radius:4,color:"#0f0"})
-   .addTo(stopLayer)
-   .bindPopup(s.name);
-
- });
-
-}
-
-// ================= GPS =================
-navigator.geolocation.getCurrentPosition(pos=>{
+// GPS + CÍM
+navigator.geolocation.getCurrentPosition(async pos=>{
 
  user=[pos.coords.latitude,pos.coords.longitude];
 
  map.setView(user,14);
+
  L.marker(user).addTo(map);
 
-});
-
-// ================= CLICK =================
-map.on("click",e=>{
-
- let n=nearest(e.latlng.lat,e.latlng.lng);
-
- let deps=getDepartures(n.best.id);
+ let addr="...";
+ try{
+  let r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user[0]}&lon=${user[1]}`);
+  let d=await r.json();
+  let a=d.address||{};
+  addr=`${a.country||""}<br>${a.city||a.town||""}<br>${a.road||""} ${a.house_number||""}`;
+ }catch{}
 
  document.getElementById("info").innerHTML=`
- <b>${n.best.name}</b><br>
- ${Math.round(n.min)} m<br>
- Indulások:<br>${deps.join("<br>")}
+ 📍 ${user[0].toFixed(5)}, ${user[1].toFixed(5)}<br>
+ 🏠 ${addr}<br>
+ 🎯 ±${Math.round(pos.coords.accuracy)} m
  `;
 
 });
 
-// ================= SEARCH =================
+// SEARCH
 async function search(){
-
  let q=document.getElementById("search").value;
-
  let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
  let d=await r.json();
-
  target=[parseFloat(d[0].lat),parseFloat(d[0].lon)];
-
  L.marker(target).addTo(map);
  map.setView(target,15);
 }
 
-// ================= ROUTE =================
+// ROUTE
 async function route(){
 
  if(!target) return;
@@ -230,108 +134,152 @@ async function route(){
  let r=await fetch(url);
  let data=await r.json();
 
- let coords=data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+ let route=data.routes[0];
+
+ let coords=route.geometry.coordinates.map(c=>[c[1],c[0]]);
 
  routeLayer.clearLayers();
  L.polyline(coords,{color:"blue"}).addTo(routeLayer);
 
- let air = dist(user[0],user[1],target[0],target[1]);
+ let air=dist(user[0],user[1],target[0],target[1]);
 
  document.getElementById("info").innerHTML+=`
- <br>// légvonal
-map.distance([lat1,lon1],[lat2,lon2]);
-
-// formázás
-function format(m){
- if(m < 1000) return Math.round(m)+" m";
- return (m/1000).toFixed(2)+" km";
-}
-</code>
-</div>
-
-<div class="box">
-<h2>🚗 VALÓDI ÚTVONAL (OSRM)</h2>
-<code>
-let url = `
-https://router.project-osrm.org/route/v1/driving/
-${lon1},${lat1};${lon2},${lat2}?overview=full&geometries=geojson
-`;
-
-let res = await fetch(url);
-let data = await res.json();
-
-let dist = data.routes[0].distance;
-let time = data.routes[0].duration;
-</code>
-</div>
-
-<div class="box">
-<h2>🌲 TURISTA ÚT</h2>
-<code>
-/foot/
-</code>
-</div>
-
-<div class="box">
-<h2>📍 100 MÉTER PONTOK</h2>
-<code>
-coords.forEach((c,i)=>{
- if(i%5==0){
-  L.circleMarker(c).addTo(map);
-  
- }
-});
-</code>
-</div>
-
-<div class="box">
-<h2>⛰ EMELKEDÉS %</h2>
-<code>
-let slope = (heightDiff / distance) * 100;
-</code>
-</div>
-
-<div class="box">
-<h2>🔎 KERESŐ (OKOS)</h2>
-<code>
-let res = await fetch(
- `https://nominatim.openstreetmap.org/search?format=json&q=${q}`
-);
-</code>
-</div>
-
-<div class="box">
-<h2>🚏 MEGÁLLÓ TÁVOLSÁG</h2>
-<code>
-let d = map.distance(
- [userLat,userLon],
- [stop.lat,stop.lon]
-);
-</code>
-</div>
-
+ <hr>
+ ✈ ${(air/1000).toFixed(2)} km<br>
+ 🛣 ${(route.distance/1000).toFixed(2)} km<br>
+ ⏱ ${Math.round(route.duration/60)} perc
  `;
 }
 
-// ================= INIT =================
-window.onload=async()=>{
+// STOPS
+let STOPS=[];
+async function loadStops(){
 
- await loadStops([
-  "bkk_stops.txt",
-  "mav_stops.txt",
-  "volan_stops.txt"
- ]);
+ let r=await fetch("bkk_stops.txt");
+ let t=await r.text();
 
- await loadTimes([
-  "bkk_stop_times.txt",
-  "mav_stop_times.txt",
-  "volan_stop_times.txt"
- ]);
+ let lines=t.split("\n");
+ STOPS=[];
 
+ for(let i=1;i<lines.length;i++){
+
+  let c=lines[i].match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
+  if(!c) continue;
+
+  let lat=parseFloat(c[4]);
+  let lon=parseFloat(c[5]);
+
+  if(isNaN(lat)) continue;
+
+  let d=dist(user[0],user[1],lat,lon);
+
+  STOPS.push({
+   id:c[0],
+   name:c[2].replace(/"/g,""),
+   lat,lon,
+   air:d
+  });
+
+ }
+
+ STOPS.sort((a,b)=>a.air-b.air);
  drawStops();
+}
 
- document.getElementById("info").innerHTML="✅ FULL MULTI GTFS READY";
+// DRAW
+function drawStops(){
 
+ stopLayer.clearLayers();
+
+ let html="";
+
+ STOPS.slice(0,20).forEach(s=>{
+
+  html+=`${s.name} – ${Math.round(s.air)} m<br>`;
+
+  let m=L.circleMarker([s.lat,s.lon],{radius:6,color:"yellow"})
+   .addTo(stopLayer);
+
+  m.on("click",()=>showDepartures(s));
+
+ });
+
+ document.getElementById("stops").innerHTML=html;
+}
+
+// ROAD DIST
+async function calcRoadStops(){
+
+ for(let i=0;i<10;i++){
+
+  let s=STOPS[i];
+
+  let url=`https://router.project-osrm.org/route/v1/driving/${user[1]},${user[0]};${s.lon},${s.lat}?overview=false`;
+
+  let r=await fetch(url);
+  let d=await r.json();
+
+  s.road=d.routes[0].distance;
+
+ }
+
+ let html="";
+
+ STOPS.slice(0,10).forEach(s=>{
+
+  html+=`
+  ${s.name}<br>
+  ✈ ${Math.round(s.air)} m |
+  🛣 ${s.road ? Math.round(s.road) : "..."} m<br><br>
+  `;
+
+ });
+
+ document.getElementById("stops").innerHTML=html;
+}
+
+// TIMES
+let TIMES=[];
+async function loadTimes(){
+
+ let r=await fetch("bkk_stop_times.txt");
+ let t=await r.text();
+
+ let lines=t.split("\n");
+
+ for(let i=1;i<lines.length;i++){
+
+  let c=lines[i].match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
+  if(!c) continue;
+
+  TIMES.push({
+   trip:c[0],
+   time:c[1],
+   stop:c[3]
+  });
+
+ }
+}
+
+// DEPARTURES
+function showDepartures(stop){
+
+ let list=TIMES.filter(t=>t.stop==stop.id).slice(0,5);
+
+ let html=`<b>${stop.name}</b><br>${Math.round(stop.air)} m<br><br>`;
+
+ if(list.length==0){
+  html+="nincs adat";
+ }else{
+  list.forEach(t=> html+=t.time+"<br>");
+ }
+
+ document.getElementById("info").innerHTML=html;
+}
+
+// INIT
+window.onload=async()=>{
+ await loadTimes();
 };
 
 </script>
