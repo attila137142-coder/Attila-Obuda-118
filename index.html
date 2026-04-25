@@ -1,37 +1,72 @@
 <!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <title>ROXY TEST</title>
-</head>
+    headers.forEach((h,i)=>obj[h]=cols[i]);
+    return obj;
+  });
+}
 
-<body>
-  <h1>ROXY TRANSIT CORE</h1>
+async function loadGTFS(){
+  try {
+    log("🚀 GTFS letöltés...");
 
-  <button onclick="runApp()">GTFS indítás</button>
+    const res = await fetch("https://bkk.hu/gtfs/budapest_gtfs.zip");
+    const buf = await res.arrayBuffer();
 
-  <pre id="out"></pre>
+    zipData = await JSZip.loadAsync(buf);
 
-  <script type="module">
-    import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js";
+    log("ZIP OK");
 
-    class RoxyGTFSLoader {
-      async load() {
-        const res = await fetch("https://bkk.hu/gtfs/budapest_gtfs.zip");
-        const buf = await res.arrayBuffer();
-        return await JSZip.loadAsync(buf);
-      }
+    const file = zipData.files["stops.txt"];
+
+    if(!file){
+      log("❌ stops.txt hiányzik");
+      return;
     }
 
-    window.runApp = async function () {
-      const out = document.getElementById("out");
-      out.textContent = "Loading...";
+    const text = await file.async("string");
+    stops = parseCSV(text);
 
-      const loader = new RoxyGTFSLoader();
-      const zip = await loader.load();
+    log("📍 Stops betöltve: " + stops.length);
 
-      out.textContent = "ZIP OK\nFiles: " + Object.keys(zip.files).length;
-    }
-  </script>
+    drawStops();
+
+  } catch(e){
+    log("❌ HIBA: " + e.message);
+  }
+}
+
+function drawStops(){
+  log("🗺️ Megállók kirajzolása...");
+
+  stops.slice(0, 500).forEach(s=>{
+    const lat = parseFloat(s.stop_lat);
+    const lon = parseFloat(s.stop_lon);
+
+    if(!lat || !lon) return;
+
+    L.circleMarker([lat,lon],{
+      radius:3
+    }).addTo(map).bindPopup(s.stop_name);
+  });
+
+  log("✅ Megállók kirajzolva (első 500)");
+}
+
+function searchStops(){
+  const q = document.getElementById("search").value.toLowerCase();
+
+  log("🔍 Keresés: " + q);
+
+  const results = stops.filter(s=>
+    (s.stop_name||"").toLowerCase().includes(q)
+  ).slice(0,10);
+
+  log("Találatok: " + results.length);
+
+  results.forEach(r=>{
+    log("➡ " + r.stop_name);
+  });
+}
+</script>
+
 </body>
 </html>
