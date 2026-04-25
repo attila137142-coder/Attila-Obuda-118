@@ -2,286 +2,82 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY ALL-IN-ONE MAP</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
+<title>GTFS Megálló menetrend</title>
 <style>
-body{margin:0;background:#000;color:#0f0;font-family:Arial;}
-#map{height:100vh;}
-
-#panel{
-position:absolute;
-top:10px;
-left:10px;
-z-index:9999;
-background:#000d;
-padding:10px;
-width:380px;
-max-height:90vh;
-overflow:auto;
-border:1px solid #0f0;
-}
-button{margin:2px;}
+body { font-family: Arial; padding: 10px; }
+button { padding: 6px 10px; margin: 5px; }
+table { border-collapse: collapse; width: 100%; margin-top: 10px;}
+td, th { border: 1px solid #000; padding: 4px; text-align: center;}
+th { background: #ddd; }
 </style>
 </head>
-
 <body>
 
-<div id="panel">
-<h3>🗺 ROXY – MAP + FUTÁR + TÚRA</h3>
+<h2>Megálló menetrend (egyszerű)</h2>
 
-<button onclick="setMap('osm')">🌍</button>
-<button onclick="setMap('rail')">🚆</button>
-<button onclick="setMap('topo')">⛰</button>
+<input type="file" id="zipFile">
+<br>
+<input type="text" id="stopName" placeholder="Megálló neve (pl. Hűvösvölgy)">
+<button onclick="loadGTFS()">Betöltés</button>
 
-<br><br>
+<table id="table">
+<tr><th>Idő</th><th>Trip</th><th>Típus</th></tr>
+</table>
 
-<input id="search" placeholder="Cím">
-<button onclick="search()">Keres</button>
-<button onclick="route()">Útvonal</button>
-
-<br><br>
-
-<button onclick="loadStops()">🚍 Megállók</button>
-<button onclick="calcRoadStops()">🛣 Távolság</button>
-
-<div id="info">GPS...</div>
-<div id="stops"></div>
-
-</div>
-
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.7.1/jszip.min.js"></script>
 <script>
+let stopTimes = [], stops = [];
 
-// MAP
-let map=L.map('map').setView([47.5,19.04],13);
+async function loadGTFS() {
+  const file = document.getElementById('zipFile').files[0];
+  const zip = await JSZip.loadAsync(file);
 
-let layers={
-osm:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
-rail:L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png'),
-topo:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
-};
+  stops = await parseCSV(await zip.file("stops.txt").async("string"));
+  stopTimes = await parseCSV(await zip.file("stop_times.txt").async("string"));
 
-layers.osm.addTo(map);
-
-function setMap(t){
- map.eachLayer(l=>map.removeLayer(l));
- layers[t].addTo(map);
+  render();
 }
 
-// GLOBAL
-let user,target;
-let routeLayer=L.layerGroup().addTo(map);
-let stopLayer=L.layerGroup().addTo(map);
-
-// DIST
-function dist(a,b,c,d){
- let R=6371000;
- let dLat=(c-a)*Math.PI/180;
- let dLon=(d-b)*Math.PI/180;
- let x=Math.sin(dLat/2)**2+
- Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
- Math.sin(dLon/2)**2;
- return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-// GPS + CÍM
-navigator.geolocation.getCurrentPosition(async pos=>{
-
- user=[pos.coords.latitude,pos.coords.longitude];
-
- map.setView(user,14);
-
- L.marker(user).addTo(map);
-
- let addr="...";
- try{
-  let r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${user[0]}&lon=${user[1]}`);
-  let d=await r.json();
-  let a=d.address||{};
-  addr=`${a.country||""}<br>${a.city||a.town||""}<br>${a.road||""} ${a.house_number||""}`;
- }catch{}
-
- document.getElementById("info").innerHTML=`
- 📍 ${user[0].toFixed(5)}, ${user[1].toFixed(5)}<br>
- 🏠 ${addr}<br>
- 🎯 ±${Math.round(pos.coords.accuracy)} m
- `;
-
-});
-
-// SEARCH
-async function search(){
- let q=document.getElementById("search").value;
- let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let d=await r.json();
- target=[parseFloat(d[0].lat),parseFloat(d[0].lon)];
- L.marker(target).addTo(map);
- map.setView(target,15);
-}
-
-// ROUTE
-async function route(){
-
- if(!target) return;
-
- let url=`https://router.project-osrm.org/route/v1/driving/${user[1]},${user[0]};${target[1]},${target[0]}?overview=full&geometries=geojson`;
-
- let r=await fetch(url);
- let data=await r.json();
-
- let route=data.routes[0];
-
- let coords=route.geometry.coordinates.map(c=>[c[1],c[0]]);
-
- routeLayer.clearLayers();
- L.polyline(coords,{color:"blue"}).addTo(routeLayer);
-
- let air=dist(user[0],user[1],target[0],target[1]);
-
- document.getElementById("info").innerHTML+=`
- <hr>
- ✈ ${(air/1000).toFixed(2)} km<br>
- 🛣 ${(route.distance/1000).toFixed(2)} km<br>
- ⏱ ${Math.round(route.duration/60)} perc
- `;
-}
-
-// STOPS
-let STOPS=[];
-async function loadStops(){
-
- let r=await fetch("bkk_stops.txt");
- let t=await r.text();
-
- let lines=t.split("\n");
- STOPS=[];
-
- for(let i=1;i<lines.length;i++){
-
-  let c=lines[i].match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
-  if(!c) continue;
-
-  let lat=parseFloat(c[4]);
-  let lon=parseFloat(c[5]);
-
-  if(isNaN(lat)) continue;
-
-  let d=dist(user[0],user[1],lat,lon);
-
-  STOPS.push({
-   id:c[0],
-   name:c[2].replace(/"/g,""),
-   lat,lon,
-   air:d
+function parseCSV(text) {
+  const rows = text.split("\n").map(r => r.split(","));
+  const headers = rows[0];
+  return rows.slice(1).map(r => {
+    let obj = {};
+    headers.forEach((h,i)=>obj[h]=r[i]);
+    return obj;
   });
-
- }
-
- STOPS.sort((a,b)=>a.air-b.air);
- drawStops();
 }
 
-// DRAW
-function drawStops(){
+function render() {
+  const name = document.getElementById('stopName').value.toLowerCase();
+  const stop = stops.find(s => s.stop_name.toLowerCase().includes(name));
 
- stopLayer.clearLayers();
+  if (!stop) {
+    alert("Nincs ilyen megálló!");
+    return;
+  }
 
- let html="";
+  let list = stopTimes
+    .filter(st => st.stop_id === stop.stop_id)
+    .map(st => ({
+      time: st.departure_time,
+      trip: st.trip_id,
+      type: "INDUL"
+    }));
 
- STOPS.slice(0,20).forEach(s=>{
+  list.sort((a,b)=> a.time.localeCompare(b.time));
 
-  html+=`${s.name} – ${Math.round(s.air)} m<br>`;
+  const table = document.getElementById("table");
+  table.innerHTML = "<tr><th>Idő</th><th>Trip</th><th>Típus</th></tr>";
 
-  let m=L.circleMarker([s.lat,s.lon],{radius:6,color:"yellow"})
-   .addTo(stopLayer);
-
-  m.on("click",()=>showDepartures(s));
-
- });
-
- document.getElementById("stops").innerHTML=html;
-}
-
-// ROAD DIST
-async function calcRoadStops(){
-
- for(let i=0;i<10;i++){
-
-  let s=STOPS[i];
-
-  let url=`https://router.project-osrm.org/route/v1/driving/${user[1]},${user[0]};${s.lon},${s.lat}?overview=false`;
-
-  let r=await fetch(url);
-  let d=await r.json();
-
-  s.road=d.routes[0].distance;
-
- }
-
- let html="";
-
- STOPS.slice(0,10).forEach(s=>{
-
-  html+=`
-  ${s.name}<br>
-  ✈ ${Math.round(s.air)} m |
-  🛣 ${s.road ? Math.round(s.road) : "..."} m<br><br>
-  `;
-
- });
-
- document.getElementById("stops").innerHTML=html;
-}
-
-// TIMES
-let TIMES=[];
-async function loadTimes(){
-
- let r=await fetch("bkk_stop_times.txt");
- let t=await r.text();
-
- let lines=t.split("\n");
-
- for(let i=1;i<lines.length;i++){
-
-  let c=lines[i].match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
-  if(!c) continue;
-
-  TIMES.push({
-   trip:c[0],
-   time:c[1],
-   stop:c[3]
+  list.forEach(r=>{
+    table.innerHTML += `<tr>
+      <td>${r.time}</td>
+      <td>${r.trip}</td>
+      <td>${r.type}</td>
+    </tr>`;
   });
-
- }
 }
-
-// DEPARTURES
-function showDepartures(stop){
-
- let list=TIMES.filter(t=>t.stop==stop.id).slice(0,5);
-
- let html=`<b>${stop.name}</b><br>${Math.round(stop.air)} m<br><br>`;
-
- if(list.length==0){
-  html+="nincs adat";
- }else{
-  list.forEach(t=> html+=t.time+"<br>");
- }
-
- document.getElementById("info").innerHTML=html;
-}
-
-// INIT
-window.onload=async()=>{
- await loadTimes();
-};
-
 </script>
 
 </body>
