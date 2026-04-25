@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V16.5 MULTI-GTFS FULL MERGE</title>
+<title>ROXY V13 MULTI FILTER DISPATCH</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -15,28 +15,51 @@ body{margin:0;font-family:Arial}
  top:10px;
  left:10px;
  z-index:9999;
- background:#000d;
+ background:#000c;
  color:#0f0;
  padding:10px;
- width:520px;
+ width:420px;
  max-height:90vh;
  overflow:auto;
  border:1px solid #0f0;
 }
 
-.tag{padding:2px 6px;margin:2px;display:inline-block;font-size:12px}
-.bkk{background:#1e90ff;color:#fff}
-.volan{background:#f4c542;color:#000}
-.mav{background:#ccc;color:#000}
-.fallback{background:#444;color:#fff}
+button{
+ margin:2px;
+ padding:6px;
+ cursor:pointer;
+ border:none;
+ font-weight:bold;
+}
+
+.stop{
+ cursor:pointer;
+ padding:6px;
+ margin-bottom:5px;
+ border-bottom:1px solid #0f0;
+}
+.stop:hover{background:#0f0;color:#000}
+
+.small{font-size:12px;opacity:0.8}
 </style>
 </head>
 
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY V16.5 – MULTI-GTFS MERGE</h3>
-<div id="info">📡 inicializálás...</div>
+<h3>🚆 ROXY V13 DISPATCH</h3>
+
+<div>
+<button onclick="setFilter('all')">🌐 Összes</button>
+<button onclick="setFilter('bkv')" style="background:#2196F3;color:#fff">🟦 BKV</button>
+<button onclick="setFilter('volan')" style="background:#FFC107">🟨 VOLÁN</button>
+<button onclick="setFilter('train')" style="background:#9E9E9E;color:#fff">⬜ HÉV / VONAT</button>
+<button onclick="setFilter('internal')" style="background:#000;color:#fff">⬛ Belső</button>
+</div>
+
+<hr>
+
+<div id="info">📍 indulás...</div>
 </div>
 
 <div id="map"></div>
@@ -52,138 +75,131 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let stopLayer=L.layerGroup().addTo(map);
 
-// ================= MASTER STOPS =================
-let MASTER_STOPS=[
- {name:"Békásmegyer",gtfs:"H5",lat:47.598091,lon:19.054599},
- {name:"Flórián tér",gtfs:"BKK",lat:47.542896,lon:19.042252},
- {name:"Örs vezér tér",gtfs:"BKK",lat:47.501742,lon:19.135604},
- {name:"Vác",gtfs:"VOLAN",lat:47.781930,lon:19.129643},
- {name:"Királyrét",gtfs:"VOLAN",lat:47.895040,lon:18.977687}
-];
+// ================= FILTER =================
+let currentFilter="all";
+let lastStops=[];
 
-// ================= FEEDS =================
-let FEEDS={
- bkk:null,
- volan:null,
- mav:null
-};
-
-// ================= SAFE LOAD =================
-async function loadGTFS(name,file){
-
- try{
-
-  let r=await fetch(file);
-  if(!r.ok) throw "no file";
-
-  let text=await r.text();
-
-  let lines=text.split("\n");
-
-  let data={stopTimes:[]};
-
-  for(let i=1;i<lines.length;i++){
-
-   let c=lines[i].split(",");
-   if(c.length<4) continue;
-
-   data.stopTimes.push({
-    trip:c[0],
-    time:c[2],
-    stop:c[3],
-    feed:name
-   });
-
-  }
-
-  return data;
-
- }catch(e){
-  return null;
- }
-
-}
-
-// ================= INIT FEEDS =================
-async function initFeeds(){
-
- FEEDS.bkk=await loadGTFS("bkk","bkk_stop_times.txt");
- FEEDS.volan=await loadGTFS("volan","volan_stop_times.txt");
- FEEDS.mav=await loadGTFS("mav","mav_stop_times.txt");
-
+function setFilter(type){
+ currentFilter=type;
+ renderStops(lastStops);
 }
 
 // ================= DIST =================
-function dist(a,b,c,d){
-
+function getDistance(lat1,lon1,lat2,lon2){
  let R=6371000;
- let dLat=(c-a)*Math.PI/180;
- let dLon=(d-b)*Math.PI/180;
+ let dLat=(lat2-lat1)*Math.PI/180;
+ let dLon=(lon2-lon1)*Math.PI/180;
 
- let x=Math.sin(dLat/2)**2+
- Math.cos(a*Math.PI/180)*
- Math.cos(c*Math.PI/180)*
- Math.sin(dLon/2)**2;
+ let a=Math.sin(dLat/2)**2+
+  Math.cos(lat1*Math.PI/180)*
+  Math.cos(lat2*Math.PI/180)*
+  Math.sin(dLon/2)**2;
 
- return Math.round(2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
+ return Math.round(2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
 }
 
-// ================= FIND STOP =================
-function nearest(lat,lon){
+// ================= USER =================
+let userLat=null,userLon=null;
+let userAddress="";
 
- let best=null,min=999999;
+navigator.geolocation.getCurrentPosition(async pos=>{
+ userLat=pos.coords.latitude;
+ userLon=pos.coords.longitude;
 
- MASTER_STOPS.forEach(s=>{
+ document.getElementById("info").innerHTML=
+ "📍 Térkép betöltve, kattints 🚏";
+});
 
-  let d=dist(lat,lon,s.lat,s.lon);
+// ================= CATEGORY SYSTEM =================
+function getCategory(s){
 
-  if(d<min){
-   min=d;
-   best=s;
+ let n=(s.name||"").toLowerCase();
+
+ if(n.includes("bkk") || n.includes("vill")) return "bkv";
+ if(n.includes("volán") || n.includes("volan")) return "volan";
+ if(n.includes("hév") || n.includes("vasút") || n.includes("állomás")) return "train";
+
+ if(
+  n.includes("auchan") ||
+  n.includes("spar") ||
+  n.includes("kórház") ||
+  n.includes("korház") ||
+  n.includes("shuttle")
+ ){
+  return "internal";
+ }
+
+ return "bkv";
+}
+
+// ================= YOUR FULL DB =================
+let MASTER_STOPS=[
+
+ {name:"Békásmegyer HÉV-állomás",gtfs:"H5-09183",lat:47.598091,lon:19.054599},
+ {name:"Nád utca",gtfs:"BKK-F00457",lat:47.594072,lon:19.048469},
+ {name:"Gulácsy Lajos utca",gtfs:"BKK-00438",lat:47.602562,lon:19.048229},
+ {name:"Flórián tér",gtfs:"BKK-F00611",lat:47.542896,lon:19.042252},
+ {name:"Flórián tér",gtfs:"BKK-F00613",lat:47.541664,lon:19.040084},
+ {name:"Batthyány tér (villamos)",gtfs:"BKK-F00057",lat:47.506002,lon:19.039456},
+ {name:"Verecke lépcső",gtfs:"BKK-F00265",lat:47.529117,lon:19.003624},
+ {name:"Csobánka tér-243 vá",gtfs:"BKK-F044192",lat:47.597795,lon:19.053787},
+ {name:"Csobánka tér-160 vá",gtfs:"BKK-008939",lat:47.598425,lon:19.054240},
+
+ {name:"Szentendre HÉV",gtfs:"H5-09142221",lat:47.661038,lon:19.075607},
+ {name:"Örs vezér tér",gtfs:"BKK-008030",lat:47.501742,lon:19.135604},
+
+ {name:"Bojtár utca (kifelé)",gtfs:"VOLAN-773493",lat:47.560099,lon:19.024711},
+ {name:"Szentendre Skanzen",gtfs:"VOLAN-778840",lat:47.691135,lon:19.046955},
+
+ {name:"Tahitótfalu hídfő",gtfs:"VOLAN-779053",lat:47.751712,lon:19.078215},
+
+ {name:"Vác autóbusz-állomás",gtfs:"VOLAN-779365",lat:47.781930,lon:19.129643},
+
+ {name:"Királyrét",gtfs:"VOLAN-779017",lat:47.895040,lon:18.977687},
+
+ {name:"Dobogókő hegytető",gtfs:"VOLAN-778561",lat:47.719118,lon:18.897577},
+
+ {name:"Magas-Tax turistaház",gtfs:"ERDŐ",lat:47.92842,lon:18.92997},
+
+ {name:"Nagy-Hideg-hegy",gtfs:"ERDŐ",lat:47.936111,lon:18.921944},
+
+ {name:"Lakás (Dino lak)",gtfs:"UTCA",lat:47.594304,lon:19.048770},
+
+ // EXTRA SHUTTLEK
+ {name:"Auchan busz",gtfs:"SHUTTLE",lat:47.49,lon:19.10},
+ {name:"SPAR járat",gtfs:"SHUTTLE",lat:47.50,lon:19.12},
+ {name:"Kórházi járat",gtfs:"SHUTTLE",lat:47.51,lon:19.11}
+
+];
+
+// ================= RENDER =================
+function renderStops(list){
+
+ stopLayer.clearLayers();
+
+ list.forEach(s=>{
+
+  let cat=getCategory(s);
+
+  if(currentFilter!=="all" && cat!==currentFilter){
+   return;
   }
+
+  let color="#000";
+
+  if(cat==="bkv") color="#2196F3";
+  if(cat==="volan") color="#FFC107";
+  if(cat==="train") color="#9E9E9E";
+  if(cat==="internal") color="#000";
+
+  L.circleMarker([s.lat,s.lon],{
+   radius:7,
+   color:color,
+   fillColor:color,
+   fillOpacity:1
+  }).addTo(stopLayer);
 
  });
-
- return {best,min};
-
-}
-
-// ================= MERGED DEPARTURES =================
-function getDepartures(stopId){
-
- let out=[];
-
- for(let f in FEEDS){
-
-  let feed=FEEDS[f];
-
-  if(!feed) continue;
-
-  feed.stopTimes.forEach(t=>{
-
-   if(t.stop==stopId){
-    out.push({...t,feed:f});
-   }
-
-  });
-
- }
-
- if(out.length==0){
-
-  for(let i=0;i<5;i++){
-
-   out.push({
-    time:new Date(Date.now()+i*60000).toLocaleTimeString(),
-    trip:"FALLBACK",
-    feed:"fallback"
-   });
-
-  }
-
- }
-
- return out.sort((a,b)=>a.time.localeCompare(b.time));
 
 }
 
@@ -191,58 +207,34 @@ function getDepartures(stopId){
 map.on("click",e=>{
 
  let lat=e.latlng.lat;
- let lon=e.latlng.lon;
+ let lon=e.latlng.lng;
 
- let n=nearest(lat,lon);
+ let html="<b>🚏 LISTA</b><br><br>";
 
- let deps=getDepartures(n.best.gtfs);
+ lastStops=MASTER_STOPS;
 
- let html=`<b>🚏 ${n.best.name}</b><br>
- 📏 ${n.min} m<br>
- 🆔 ${n.best.gtfs}<br><br>
+ renderStops(lastStops);
 
- <b>🕒 Indulások (MULTI FEED)</b><br>`;
+ lastStops.forEach(s=>{
 
- deps.forEach(d=>{
-
-  let cls="fallback";
-
-  if(d.feed=="bkk") cls="bkk";
-  if(d.feed=="volan") cls="volan";
-  if(d.feed=="mav") cls="mav";
+  let d=getDistance(lat,lon,s.lat,s.lon);
 
   html+=`
-  <span class="tag ${cls}">${d.feed}</span>
-  🕒 ${d.time}<br>
-  🚍 ${d.trip}<br><br>`;
+  <div class="stop">
 
+  🚏 ${s.name}<br>
+  📏 ${d} m<br>
+  🆔 ${s.gtfs}
+
+  </div>`;
  });
 
  document.getElementById("info").innerHTML=html;
 
 });
 
-// ================= INIT =================
-window.onload=async()=>{
-
- await initFeeds();
-
- MASTER_STOPS.forEach(s=>{
-
-  L.circleMarker([s.lat,s.lon],{
-   radius:5,
-   color:"#0f0",
-   fillColor:"#0f0",
-   fillOpacity:1
-  }).addTo(stopLayer);
-
- });
-
- document.getElementById("info").innerHTML="✅ MULTI-GTFS READY";
-
-};
-
 </script>
 
 </body>
 </html>
+
