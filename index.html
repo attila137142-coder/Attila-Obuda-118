@@ -1,71 +1,77 @@
 <!DOCTYPE html>
-    headers.forEach((h,i)=>obj[h]=cols[i]);
-    return obj;
-  });
-}
-
-async function loadGTFS(){
-  try {
-    log("🚀 GTFS letöltés...");
-
-    const res = await fetch("https://bkk.hu/gtfs/budapest_gtfs.zip");
-    const buf = await res.arrayBuffer();
-
-    zipData = await JSZip.loadAsync(buf);
-
-    log("ZIP OK");
 
     const file = zipData.files["stops.txt"];
 
     if(!file){
-      log("❌ stops.txt hiányzik");
+      log("❌ stops.txt nincs!");
       return;
     }
 
     const text = await file.async("string");
     stops = parseCSV(text);
 
-    log("📍 Stops betöltve: " + stops.length);
+    log("📍 Stops: " + stops.length);
 
     drawStops();
 
-  } catch(e){
+  }catch(e){
     log("❌ HIBA: " + e.message);
   }
 }
 
+// DRAW STOPS
 function drawStops(){
-  log("🗺️ Megállók kirajzolása...");
+  log("🗺️ Rajzolás...");
 
-  stops.slice(0, 500).forEach(s=>{
+  markersLayer.clearLayers();
+
+  stops.slice(0, 800).forEach(s=>{
     const lat = parseFloat(s.stop_lat);
     const lon = parseFloat(s.stop_lon);
 
     if(!lat || !lon) return;
 
-    L.circleMarker([lat,lon],{
-      radius:3
-    }).addTo(map).bindPopup(s.stop_name);
+    const m = L.circleMarker([lat,lon],{radius:4})
+      .bindPopup(`<b>${s.stop_name}</b><br><button onclick="showStop('${s.stop_id}')">Indulások</button>`)
+      .on("click", ()=>showStop(s.stop_id));
+
+    markersLayer.addLayer(m);
   });
 
-  log("✅ Megállók kirajzolva (első 500)");
+  log("✅ Megállók kész (800)");
 }
 
+// STOP CLICK = "GÁZPEDÁL"
+function showStop(id){
+  const stop = stops.find(s=>s.stop_id===id);
+
+  if(!stop) return;
+
+  map.setView([stop.stop_lat, stop.stop_lon], 15);
+
+  log("🚏 Stop: " + stop.stop_name);
+  log("🚇 (itt jönne FUTÁR indulás lista - következő lépés)");
+}
+
+// SEARCH
 function searchStops(){
   const q = document.getElementById("search").value.toLowerCase();
 
-  log("🔍 Keresés: " + q);
-
-  const results = stops.filter(s=>
+  const res = stops.filter(s=>
     (s.stop_name||"").toLowerCase().includes(q)
   ).slice(0,10);
 
-  log("Találatok: " + results.length);
+  log("🔍 Találatok: " + res.length);
 
-  results.forEach(r=>{
-    log("➡ " + r.stop_name);
-  });
+  res.forEach(r=>log("➡ " + r.stop_name));
+
+  if(res[0]){
+    map.setView([res[0].stop_lat, res[0].stop_lon], 15);
+  }
 }
+
+// INIT
+initMap();
 </script>
 
 </body>
