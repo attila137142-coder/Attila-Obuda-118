@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V12.1 ZERO ERROR BUILD</title>
+<title>ROXY V12.2 FAILSAFE ENGINE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -19,9 +19,9 @@ body{margin:0;font-family:Arial}
  color:#0f0;
  padding:10px;
  width:380px;
- border:1px solid #0f0;
  max-height:90vh;
  overflow:auto;
+ border:1px solid #0f0;
 }
 
 .stop{
@@ -39,7 +39,7 @@ body{margin:0;font-family:Arial}
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY V12.1 ZERO ERROR</h3>
+<h3>🚆 ROXY V12.2 FAILSAFE ENGINE</h3>
 <div id="info">📍 indulás...</div>
 </div>
 
@@ -60,7 +60,7 @@ let stopLayer=L.layerGroup().addTo(map);
 let userLat=null,userLon=null;
 let userAddress="";
 
-// ================= DIST =================
+// ================= SAFE DIST =================
 function getDistance(lat1,lon1,lat2,lon2){
  let R=6371000;
  let dLat=(lat2-lat1)*Math.PI/180;
@@ -74,7 +74,7 @@ function getDistance(lat1,lon1,lat2,lon2){
  return Math.round(2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
 }
 
-// ================= ADDRESS =================
+// ================= SAFE ADDRESS =================
 async function getAddress(lat,lon){
  try{
   let res=await fetch(
@@ -90,16 +90,21 @@ async function getAddress(lat,lon){
 
 // ================= GPS =================
 navigator.geolocation.getCurrentPosition(async pos=>{
- userLat=pos.coords.latitude;
- userLon=pos.coords.longitude;
- userAddress=await getAddress(userLat,userLon);
+ try{
+  userLat=pos.coords.latitude;
+  userLon=pos.coords.longitude;
+  userAddress=await getAddress(userLat,userLon);
 
- document.getElementById("info").innerHTML=`
- <b>📍 Saját hely</b><br>${userAddress}<br><br>Térképre kattints 🚏
- `;
+  document.getElementById("info").innerHTML=`
+  <b>📍 Saját hely</b><br>${userAddress}<br><br>
+  Térképre kattints 🚏
+  `;
+ }catch(e){
+  document.getElementById("info").innerHTML="GPS hiba";
+ }
 });
 
-// ================= OVERPASS FIX =================
+// ================= OVERPASS FAILSAFE =================
 async function fetchOverpass(query){
  let urls=[
   "https://overpass-api.de/api/interpreter",
@@ -114,66 +119,10 @@ async function fetchOverpass(query){
   }catch(e){}
  }
 
- throw "Overpass error";
+ return {elements:[]}; // 🔥 FAILSAFE: NEM HAL MEG
 }
 
-// ================= GTFS SAFE =================
-let GTFSStops={};
-let GTFSTimes=[];
-
-function parseCSV(line){
- let r=[],c="",q=false;
- for(let ch of line){
-  if(ch=='"') q=!q;
-  else if(ch==','&&!q){r.push(c);c=""}
-  else c+=ch;
- }
- r.push(c);
- return r;
-}
-
-async function loadStops(){
- try{
-  let res=await fetch("./stops.txt");
-  let text=await res.text();
-  let lines=text.split("\n");
-
-  for(let i=1;i<lines.length;i++){
-   let c=parseCSV(lines[i]);
-   if(c.length<5) continue;
-
-   GTFSStops[c[0]]={
-    name:c[2],
-    lat:parseFloat(c[3]),
-    lon:parseFloat(c[4])
-   };
-  }
- }catch(e){
-  console.log("GTFS stops hiányzik (404)");
- }
-}
-
-async function loadTimes(){
- try{
-  let res=await fetch("./stop_times.txt");
-  let text=await res.text();
-  let lines=text.split("\n");
-
-  for(let i=1;i<lines.length;i++){
-   let c=parseCSV(lines[i]);
-   if(c.length<4) continue;
-
-   GTFSTimes.push({
-    dep:c[2],
-    stop_id:c[3]
-   });
-  }
- }catch(e){
-  console.log("GTFS times hiányzik (404)");
- }
-}
-
-// ================= MASTER =================
+// ================= MASTER DB =================
 const MASTER_STOPS=[
  {name:"Békásmegyer H",lat:47.5951,lon:19.0452,gtfs:"BKK_1001"},
  {name:"Nád utca",lat:47.5002,lon:19.0301,gtfs:"BKK_2002"}
@@ -191,7 +140,7 @@ function findMaster(lat,lon){
  return {stop:best,dist:bestDist};
 }
 
-// ================= DECISION =================
+// ================= SAFE DECISION =================
 function choose(osm,master){
  if(master.stop && master.dist<150){
   return {type:"MASTER",data:master.stop};
@@ -199,94 +148,88 @@ function choose(osm,master){
  return {type:"OSM",data:osm};
 }
 
-// ================= CLICK DEBUG =================
+// ================= CLICK FAILSAFE =================
 map.on("click",async e=>{
 
- console.log("CLICK OK",e.latlng);
+ try{
 
- let lat=e.latlng.lat;
- let lon=e.latlng.lng;
+  let lat=e.latlng.lat;
+  let lon=e.latlng.lng;
 
- let master=findMaster(lat,lon);
+  let master=findMaster(lat,lon);
 
- let query=`
- [out:json];
- (
-  node(around:600,${lat},${lon})["highway"="bus_stop"];
-  node(around:600,${lat},${lon})["railway"];
- );
- out;
- `;
+  let query=`
+  [out:json];
+  (
+   node(around:600,${lat},${lon})["highway"="bus_stop"];
+   node(around:600,${lat},${lon})["railway"];
+  );
+  out;
+  `;
 
- let osm=await fetchOverpass(query);
+  let osm=await fetchOverpass(query);
 
- stopLayer.clearLayers();
+  stopLayer.clearLayers();
 
- let html="<b>🚏 DISPATCH</b><br><br>";
+  let html="<b>🚏 FAILSAFE DISPATCH</b><br><br>";
 
- osm.elements.forEach(s=>{
+  if(!osm.elements) osm.elements=[];
 
-  let name=s.tags?.name;
-  if(!name) return;
+  osm.elements.forEach(s=>{
 
-  let chosen=choose(s,master);
-  let dist=getDistance(lat,lon,s.lat,s.lon);
+   let name=s.tags?.name;
+   if(!name) return;
 
-  html+=`
-  <div class="stop"
-  onclick="selectStop('${name}',${s.lat},${s.lon},
-  '${chosen.type==="MASTER"?chosen.data.gtfs:""}')">
+   let chosen=choose(s,master);
+   let dist=getDistance(lat,lon,s.lat,s.lon);
 
-  🚏 ${name}<br>
-  📏 ${dist} m<br>
-  🧠 ${chosen.type}
+   html+=`
+   <div class="stop"
+   onclick="selectStop('${name}',${s.lat},${s.lon},
+   '${chosen.type==="MASTER"?chosen.data.gtfs:""}')">
 
-  </div>`;
- });
+   🚏 ${name}<br>
+   📏 ${dist} m<br>
+   🧠 ${chosen.type}
 
- document.getElementById("info").innerHTML=html;
+   </div>`;
+  });
+
+  document.getElementById("info").innerHTML=html;
+
+ }catch(err){
+  console.log("CLICK SAFE ERROR:",err);
+  document.getElementById("info").innerHTML=
+  "⚠️ rendszer hiba, de nem állt le";
+ }
+
 });
 
-// ================= SELECT =================
+// ================= SAFE SELECT =================
 function selectStop(name,lat,lon,gtfs){
 
- map.setView([lat,lon],16);
+ try{
 
- let times=[];
+  map.setView([lat,lon],16);
 
- if(gtfs){
-  let now=new Date();
-  let cur=now.getHours().toString().padStart(2,'0')+":"+now.getMinutes().toString().padStart(2,'0');
+  let html=`<b>🚏 ${name}</b><br><br>`;
+  html+=`📍 ${userAddress}<br><br>`;
+  html+=`🆔 ${gtfs||"OSM"}<br><br>`;
 
-  times=GTFSTimes
-  .filter(t=>t.stop_id===gtfs && t.dep>=cur)
-  .map(t=>t.dep)
-  .slice(0,10);
+  html+="<b>🕒 LIVE:</b><br>";
+  html+="(GTFS feldolgozás későbbi verzióban)<br>";
+
+  document.getElementById("info").innerHTML=html;
+
+ }catch(e){
+  document.getElementById("info").innerHTML="select hiba";
  }
 
- let html=`<b>🚏 ${name}</b><br><br>`;
- html+=`📍 ${userAddress}<br><br>`;
- html+=`🆔 ${gtfs||"OSM"}<br><br>`;
+}
 
- html+="<b>🕒 indulások:</b><br>";
-
- if(!gtfs){
-  html+="⚠️ OSM-only";
- }
- else if(times.length===0){
-  html+="❌ nincs adat";
- }
- else{
-  times.forEach(t=>html+=`🕒 ${t}<br>`);
- }
-
- document.getElementById("info").innerHTML=html;
-});
-
-// ================= INIT =================
-window.onload=async()=>{
- await loadStops();
- await loadTimes();
+// ================= INIT FAILSAFE =================
+window.onload=()=>{
+ console.log("ROXY V12.2 READY");
 };
 
 </script>
