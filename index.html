@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V16.5 MULTI-GTFS FULL MERGE</title>
+<title>ROXY V17 – FULL MULTI GTFS</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -18,25 +18,25 @@ z-index:9999;
 background:#000d;
 color:#0f0;
 padding:10px;
-width:520px;
+width:420px;
 max-height:90vh;
 overflow:auto;
 border:1px solid #0f0;
 }
-
-.tag{padding:2px 6px;margin:2px;display:inline-block;font-size:12px}
-.bkk{background:#1e90ff;color:#fff}
-.volan{background:#f4c542;color:#000}
-.mav{background:#ccc;color:#000}
-.fallback{background:#444;color:#fff}
 </style>
 </head>
 
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY V16.5 – MULTI-GTFS MERGE</h3>
-<div id="info">📡 inicializálás...</div>
+<h3>🚆 ROXY V17 – MULTI GTFS</h3>
+<div id="info">Betöltés...</div>
+
+<input id="search" placeholder="cél">
+<button onclick="search()">Keres</button>
+<button onclick="route()">Útvonal</button>
+
+<div id="stops"></div>
 </div>
 
 <div id="map"></div>
@@ -46,200 +46,224 @@ border:1px solid #0f0;
 <script>
 
 // ================= MAP =================
-let map=L.map('map').setView([47.4979,19.0402],13);
+let map=L.map('map').setView([47.5,19.04],13);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png').addTo(map);
 
 let stopLayer=L.layerGroup().addTo(map);
+let routeLayer=L.layerGroup().addTo(map);
 
-// ================= MASTER STOPS =================
-let MASTER_STOPS=[
-{name:"Békásmegyer",gtfs:"H5",lat:47.598091,lon:19.054599},
-{name:"Flórián tér",gtfs:"BKK",lat:47.542896,lon:19.042252},
-{name:"Örs vezér tér",gtfs:"BKK",lat:47.501742,lon:19.135604},
-{name:"Vác",gtfs:"VOLAN",lat:47.781930,lon:19.129643},
-{name:"Királyrét",gtfs:"VOLAN",lat:47.895040,lon:18.977687}
-];
+// ================= GLOBAL =================
+let STOPS=[];
+let STOP_TIMES=[];
+let user, target;
 
-// ================= FEEDS =================
-let FEEDS={
-bkk:null,
-volan:null,
-mav:null
-};
-
-// ================= SAFE LOAD =================
-async function loadGTFS(name,file){
-
-try{
-
-let r=await fetch(file);
-if(!r.ok) throw "no file";
-
-let text=await r.text();
-
-let lines=text.split("\n");
-
-let data={stopTimes:[]};
-
-for(let i=1;i<lines.length;i++){
-
-let c=lines[i].split(",");
-if(c.length<4) continue;
-
-data.stopTimes.push({
-trip:c[0],
-time:c[2],
-stop:c[3],
-feed:name
-});
-
+// ================= CSV =================
+function parseCSV(row){
+ return row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
 }
 
-return data;
+// ================= LOAD STOPS =================
+async function loadStops(files){
 
-}catch(e){
-return null;
+ for(let f of files){
+
+  let r=await fetch(f);
+  let t=await r.text();
+
+  let lines=t.split("\n");
+
+  for(let i=1;i<lines.length;i++){
+
+   let c=parseCSV(lines[i]);
+   if(!c) continue;
+
+   let lat=parseFloat(c[4]);
+   let lon=parseFloat(c[5]);
+
+   if(isNaN(lat)) continue;
+
+   STOPS.push({
+    id:c[0],
+    name:c[2].replace(/"/g,""),
+    lat,lon
+   });
+
+  }
+
+ }
+
+ // dedupe
+ STOPS = STOPS.filter((v,i,a)=>
+  a.findIndex(x=>Math.abs(x.lat-v.lat)<0.0001 && Math.abs(x.lon-v.lon)<0.0001)==i
+ );
+
+ console.log("Stops:",STOPS.length);
 }
 
-}
+// ================= LOAD TIMES =================
+async function loadTimes(files){
 
-// ================= INIT FEEDS =================
-async function initFeeds(){
+ for(let f of files){
 
-FEEDS.bkk=await loadGTFS("bkk","bkk_stop_times.txt");
-FEEDS.volan=await loadGTFS("volan","volan_stop_times.txt");
-FEEDS.mav=await loadGTFS("mav","mav_stop_times.txt");
+  let r=await fetch(f);
+  let t=await r.text();
 
+  let lines=t.split("\n");
+
+  for(let i=1;i<lines.length;i++){
+
+   let c=parseCSV(lines[i]);
+   if(!c) continue;
+
+   STOP_TIMES.push({
+    trip:c[0],
+    time:c[1],
+    stop:c[3]
+   });
+
+  }
+
+ }
+
+ console.log("Times:",STOP_TIMES.length);
 }
 
 // ================= DIST =================
 function dist(a,b,c,d){
-
-let R=6371000;
-let dLat=(c-a)*Math.PI/180;
-let dLon=(d-b)*Math.PI/180;
-
-let x=Math.sin(dLat/2)**2+
-Math.cos(a*Math.PI/180)*
-Math.cos(c*Math.PI/180)*
-Math.sin(dLon/2)**2;
-
-return Math.round(2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
+ let R=6371000;
+ let dLat=(c-a)*Math.PI/180;
+ let dLon=(d-b)*Math.PI/180;
+ let x=Math.sin(dLat/2)**2+
+ Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
+ Math.sin(dLon/2)**2;
+ return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ================= FIND STOP =================
+// ================= NEAREST =================
 function nearest(lat,lon){
 
-let best=null,min=999999;
+ let best=null,min=1e9;
 
-MASTER_STOPS.forEach(s=>{
+ STOPS.forEach(s=>{
+  let d=dist(lat,lon,s.lat,s.lon);
+  if(d<min){min=d;best=s;}
+ });
 
-let d=dist(lat,lon,s.lat,s.lon);
-
-if(d<min){
-min=d;
-best=s;
+ return {best,min};
 }
 
-});
-
-return {best,min};
-
-}
-
-// ================= MERGED DEPARTURES =================
+// ================= DEPARTURES =================
 function getDepartures(stopId){
 
-let out=[];
+ let list = STOP_TIMES.filter(t=>t.stop==stopId);
 
-for(let f in FEEDS){
+ if(list.length==0){
+  return ["nincs adat"];
+ }
 
-let feed=FEEDS[f];
-
-if(!feed) continue;
-
-feed.stopTimes.forEach(t=>{
-
-if(t.stop==stopId){
-out.push({...t,feed:f});
+ return list.slice(0,5).map(t=>t.time);
 }
+
+// ================= DRAW =================
+function drawStops(){
+
+ stopLayer.clearLayers();
+
+ STOPS.slice(0,500).forEach(s=>{
+
+  L.circleMarker([s.lat,s.lon],{radius:4,color:"#0f0"})
+   .addTo(stopLayer)
+   .bindPopup(s.name);
+
+ });
+
+}
+
+// ================= GPS =================
+navigator.geolocation.getCurrentPosition(pos=>{
+
+ user=[pos.coords.latitude,pos.coords.longitude];
+
+ map.setView(user,14);
+ L.marker(user).addTo(map);
 
 });
-
-}
-
-if(out.length==0){
-
-for(let i=0;i<5;i++){
-
-out.push({
-time:new Date(Date.now()+i*60000).toLocaleTimeString(),
-trip:"FALLBACK",
-feed:"fallback"
-});
-
-}
-
-}
-
-return out.sort((a,b)=>a.time.localeCompare(b.time));
-
-}
 
 // ================= CLICK =================
 map.on("click",e=>{
 
-let lat=e.latlng.lat;
-let lon=e.latlng.lon;
+ let n=nearest(e.latlng.lat,e.latlng.lng);
 
-let n=nearest(lat,lon);
+ let deps=getDepartures(n.best.id);
 
-let deps=getDepartures(n.best.gtfs);
-
-let html=`<b>🚏 ${n.best.name}</b><br>
-📏 ${n.min} m<br>
-🆔 ${n.best.gtfs}<br><br>
-
-<b>🕒 Indulások (MULTI FEED)</b><br>`;
-
-deps.forEach(d=>{
-
-let cls="fallback";
-
-if(d.feed=="bkk") cls="bkk";
-if(d.feed=="volan") cls="volan";
-if(d.feed=="mav") cls="mav";
-
-html+=`
-<span class="tag ${cls}">${d.feed}</span>
-🕒 ${d.time}<br>
-🚍 ${d.trip}<br><br>`;
+ document.getElementById("info").innerHTML=`
+ <b>${n.best.name}</b><br>
+ ${Math.round(n.min)} m<br>
+ Indulások:<br>${deps.join("<br>")}
+ `;
 
 });
 
-document.getElementById("info").innerHTML=html;
+// ================= SEARCH =================
+async function search(){
 
-});
+ let q=document.getElementById("search").value;
+
+ let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+ let d=await r.json();
+
+ target=[parseFloat(d[0].lat),parseFloat(d[0].lon)];
+
+ L.marker(target).addTo(map);
+ map.setView(target,15);
+}
+
+// ================= ROUTE =================
+async function route(){
+
+ if(!target) return;
+
+ let url=`https://router.project-osrm.org/route/v1/driving/${user[1]},${user[0]};${target[1]},${target[0]}?overview=full&geometries=geojson`;
+
+ let r=await fetch(url);
+ let data=await r.json();
+
+ let coords=data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+
+ routeLayer.clearLayers();
+ L.polyline(coords,{color:"blue"}).addTo(routeLayer);
+
+ let air = dist(user[0],user[1],target[0],target[1]);
+
+ document.getElementById("info").innerHTML+=`
+ <br>Légvonal: ${(air/1000).toFixed(2)} km
+ `;
+}
 
 // ================= INIT =================
 window.onload=async()=>{
 
-await initFeeds();
+ await loadStops([
+  "bkk_stops.txt",
+  "mav_stops.txt",
+  "volan_stops.txt"
+ ]);
 
-MASTER_STOPS.forEach(s=>{
+ await loadTimes([
+  "bkk_stop_times.txt",
+  "mav_stop_times.txt",
+  "volan_stop_times.txt"
+ ]);
 
-L.circleMarker([s.lat,s.lon],{
-radius:5,
-color:"#0f0",
-fillColor:"#0f0",
-fillOpacity:1
-}).addTo(stopLayer);
+ drawStops();
 
-});
-
-document.getElementById("info").innerHTML="✅ MULTI-GTFS READY";
+ document.getElementById("info").innerHTML="✅ FULL MULTI GTFS READY";
 
 };
 
 </script>
+
+</body>
+</html>
