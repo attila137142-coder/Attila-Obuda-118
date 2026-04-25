@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V13 MULTI FILTER DISPATCH</title>
+<title>ROXY V12.2 FAILSAFE ENGINE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -18,18 +18,10 @@ body{margin:0;font-family:Arial}
  background:#000c;
  color:#0f0;
  padding:10px;
- width:420px;
+ width:380px;
  max-height:90vh;
  overflow:auto;
  border:1px solid #0f0;
-}
-
-button{
- margin:2px;
- padding:6px;
- cursor:pointer;
- border:none;
- font-weight:bold;
 }
 
 .stop{
@@ -47,18 +39,7 @@ button{
 <body>
 
 <div id="panel">
-<h3>🚆 ROXY V13 DISPATCH</h3>
-
-<div>
-<button onclick="setFilter('all')">🌐 Összes</button>
-<button onclick="setFilter('bkv')" style="background:#2196F3;color:#fff">🟦 BKV</button>
-<button onclick="setFilter('volan')" style="background:#FFC107">🟨 VOLÁN</button>
-<button onclick="setFilter('train')" style="background:#9E9E9E;color:#fff">⬜ HÉV / VONAT</button>
-<button onclick="setFilter('internal')" style="background:#000;color:#fff">⬛ Belső</button>
-</div>
-
-<hr>
-
+<h3>🚆 ROXY V12.2 FAILSAFE ENGINE</h3>
 <div id="info">📍 indulás...</div>
 </div>
 
@@ -75,16 +56,11 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let stopLayer=L.layerGroup().addTo(map);
 
-// ================= FILTER =================
-let currentFilter="all";
-let lastStops=[];
+// ================= USER =================
+let userLat=null,userLon=null;
+let userAddress="";
 
-function setFilter(type){
- currentFilter=type;
- renderStops(lastStops);
-}
-
-// ================= DIST =================
+// ================= SAFE DIST =================
 function getDistance(lat1,lon1,lat2,lon2){
  let R=6371000;
  let dLat=(lat2-lat1)*Math.PI/180;
@@ -98,143 +74,165 @@ function getDistance(lat1,lon1,lat2,lon2){
  return Math.round(2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
 }
 
-// ================= USER =================
-let userLat=null,userLon=null;
-let userAddress="";
+// ================= SAFE ADDRESS =================
+async function getAddress(lat,lon){
+ try{
+  let res=await fetch(
+   `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
+  );
+  let d=await res.json();
+  let a=d.address;
+  return `${a.city||a.town||a.village||""} ${a.road||""} ${a.house_number||""}`;
+ }catch(e){
+  return "nincs cím";
+ }
+}
 
+// ================= GPS =================
 navigator.geolocation.getCurrentPosition(async pos=>{
- userLat=pos.coords.latitude;
- userLon=pos.coords.longitude;
+ try{
+  userLat=pos.coords.latitude;
+  userLon=pos.coords.longitude;
+  userAddress=await getAddress(userLat,userLon);
 
- document.getElementById("info").innerHTML=
- "📍 Térkép betöltve, kattints 🚏";
+  document.getElementById("info").innerHTML=`
+  <b>📍 Saját hely</b><br>${userAddress}<br><br>
+  Térképre kattints 🚏
+  `;
+ }catch(e){
+  document.getElementById("info").innerHTML="GPS hiba";
+ }
 });
 
-// ================= CATEGORY SYSTEM =================
-function getCategory(s){
+// ================= OVERPASS FAILSAFE =================
+async function fetchOverpass(query){
+ let urls=[
+  "https://overpass-api.de/api/interpreter",
+  "https://lz4.overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter"
+ ];
 
- let n=(s.name||"").toLowerCase();
-
- if(n.includes("bkk") || n.includes("vill")) return "bkv";
- if(n.includes("volán") || n.includes("volan")) return "volan";
- if(n.includes("hév") || n.includes("vasút") || n.includes("állomás")) return "train";
-
- if(
-  n.includes("auchan") ||
-  n.includes("spar") ||
-  n.includes("kórház") ||
-  n.includes("korház") ||
-  n.includes("shuttle")
- ){
-  return "internal";
+ for(let url of urls){
+  try{
+   let res=await fetch(url,{method:"POST",body:query});
+   if(res.ok) return await res.json();
+  }catch(e){}
  }
 
- return "bkv";
+ return {elements:[]}; // 🔥 FAILSAFE: NEM HAL MEG
 }
 
-// ================= YOUR FULL DB =================
-let MASTER_STOPS=[
-
- {name:"Békásmegyer HÉV-állomás",gtfs:"H5-09183",lat:47.598091,lon:19.054599},
- {name:"Nád utca",gtfs:"BKK-F00457",lat:47.594072,lon:19.048469},
- {name:"Gulácsy Lajos utca",gtfs:"BKK-00438",lat:47.602562,lon:19.048229},
- {name:"Flórián tér",gtfs:"BKK-F00611",lat:47.542896,lon:19.042252},
- {name:"Flórián tér",gtfs:"BKK-F00613",lat:47.541664,lon:19.040084},
- {name:"Batthyány tér (villamos)",gtfs:"BKK-F00057",lat:47.506002,lon:19.039456},
- {name:"Verecke lépcső",gtfs:"BKK-F00265",lat:47.529117,lon:19.003624},
- {name:"Csobánka tér-243 vá",gtfs:"BKK-F044192",lat:47.597795,lon:19.053787},
- {name:"Csobánka tér-160 vá",gtfs:"BKK-008939",lat:47.598425,lon:19.054240},
-
- {name:"Szentendre HÉV",gtfs:"H5-09142221",lat:47.661038,lon:19.075607},
- {name:"Örs vezér tér",gtfs:"BKK-008030",lat:47.501742,lon:19.135604},
-
- {name:"Bojtár utca (kifelé)",gtfs:"VOLAN-773493",lat:47.560099,lon:19.024711},
- {name:"Szentendre Skanzen",gtfs:"VOLAN-778840",lat:47.691135,lon:19.046955},
-
- {name:"Tahitótfalu hídfő",gtfs:"VOLAN-779053",lat:47.751712,lon:19.078215},
-
- {name:"Vác autóbusz-állomás",gtfs:"VOLAN-779365",lat:47.781930,lon:19.129643},
-
- {name:"Királyrét",gtfs:"VOLAN-779017",lat:47.895040,lon:18.977687},
-
- {name:"Dobogókő hegytető",gtfs:"VOLAN-778561",lat:47.719118,lon:18.897577},
-
- {name:"Magas-Tax turistaház",gtfs:"ERDŐ",lat:47.92842,lon:18.92997},
-
- {name:"Nagy-Hideg-hegy",gtfs:"ERDŐ",lat:47.936111,lon:18.921944},
-
- {name:"Lakás (Dino lak)",gtfs:"UTCA",lat:47.594304,lon:19.048770},
-
- // EXTRA SHUTTLEK
- {name:"Auchan busz",gtfs:"SHUTTLE",lat:47.49,lon:19.10},
- {name:"SPAR járat",gtfs:"SHUTTLE",lat:47.50,lon:19.12},
- {name:"Kórházi járat",gtfs:"SHUTTLE",lat:47.51,lon:19.11}
-
+// ================= MASTER DB =================
+const MASTER_STOPS=[
+ {name:"Békásmegyer H",lat:47.5951,lon:19.0452,gtfs:"BKK_1001"},
+ {name:"Nád utca",lat:47.5002,lon:19.0301,gtfs:"BKK_2002"}
 ];
 
-// ================= RENDER =================
-function renderStops(list){
+// ================= MASTER MATCH =================
+function findMaster(lat,lon){
+ let best=null,bestDist=999999;
 
- stopLayer.clearLayers();
+ for(let s of MASTER_STOPS){
+  let d=getDistance(lat,lon,s.lat,s.lon);
+  if(d<bestDist){bestDist=d;best=s;}
+ }
 
- list.forEach(s=>{
+ return {stop:best,dist:bestDist};
+}
 
-  let cat=getCategory(s);
+// ================= SAFE DECISION =================
+function choose(osm,master){
+ if(master.stop && master.dist<150){
+  return {type:"MASTER",data:master.stop};
+ }
+ return {type:"OSM",data:osm};
+}
 
-  if(currentFilter!=="all" && cat!==currentFilter){
-   return;
-  }
+// ================= CLICK FAILSAFE =================
+map.on("click",async e=>{
 
-  let color="#000";
+ try{
 
-  if(cat==="bkv") color="#2196F3";
-  if(cat==="volan") color="#FFC107";
-  if(cat==="train") color="#9E9E9E";
-  if(cat==="internal") color="#000";
+  let lat=e.latlng.lat;
+  let lon=e.latlng.lng;
 
-  L.circleMarker([s.lat,s.lon],{
-   radius:7,
-   color:color,
-   fillColor:color,
-   fillOpacity:1
-  }).addTo(stopLayer);
+  let master=findMaster(lat,lon);
 
- });
+  let query=`
+  [out:json];
+  (
+   node(around:600,${lat},${lon})["highway"="bus_stop"];
+   node(around:600,${lat},${lon})["railway"];
+  );
+  out;
+  `;
+
+  let osm=await fetchOverpass(query);
+
+  stopLayer.clearLayers();
+
+  let html="<b>🚏 FAILSAFE DISPATCH</b><br><br>";
+
+  if(!osm.elements) osm.elements=[];
+
+  osm.elements.forEach(s=>{
+
+   let name=s.tags?.name;
+   if(!name) return;
+
+   let chosen=choose(s,master);
+   let dist=getDistance(lat,lon,s.lat,s.lon);
+
+   html+=`
+   <div class="stop"
+   onclick="selectStop('${name}',${s.lat},${s.lon},
+   '${chosen.type==="MASTER"?chosen.data.gtfs:""}')">
+
+   🚏 ${name}<br>
+   📏 ${dist} m<br>
+   🧠 ${chosen.type}
+
+   </div>`;
+  });
+
+  document.getElementById("info").innerHTML=html;
+
+ }catch(err){
+  console.log("CLICK SAFE ERROR:",err);
+  document.getElementById("info").innerHTML=
+  "⚠️ rendszer hiba, de nem állt le";
+ }
+
+});
+
+// ================= SAFE SELECT =================
+function selectStop(name,lat,lon,gtfs){
+
+ try{
+
+  map.setView([lat,lon],16);
+
+  let html=`<b>🚏 ${name}</b><br><br>`;
+  html+=`📍 ${userAddress}<br><br>`;
+  html+=`🆔 ${gtfs||"OSM"}<br><br>`;
+
+  html+="<b>🕒 LIVE:</b><br>";
+  html+="(GTFS feldolgozás későbbi verzióban)<br>";
+
+  document.getElementById("info").innerHTML=html;
+
+ }catch(e){
+  document.getElementById("info").innerHTML="select hiba";
+ }
 
 }
 
-// ================= CLICK =================
-map.on("click",e=>{
-
- let lat=e.latlng.lat;
- let lon=e.latlng.lng;
-
- let html="<b>🚏 LISTA</b><br><br>";
-
- lastStops=MASTER_STOPS;
-
- renderStops(lastStops);
-
- lastStops.forEach(s=>{
-
-  let d=getDistance(lat,lon,s.lat,s.lon);
-
-  html+=`
-  <div class="stop">
-
-  🚏 ${s.name}<br>
-  📏 ${d} m<br>
-  🆔 ${s.gtfs}
-
-  </div>`;
- });
-
- document.getElementById("info").innerHTML=html;
-
-});
+// ================= INIT FAILSAFE =================
+window.onload=()=>{
+ console.log("ROXY V12.2 READY");
+};
 
 </script>
 
 </body>
 </html>
-
