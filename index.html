@@ -3,43 +3,44 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GTFS FULL REAL ENGINE v6</title>
+<title>GTFS SMART COCKPIT v6.1</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body { margin:0; font-family: Arial; background:#0f0f0f; color:#fff; }
-#map { height: 58vh; }
-.panel { padding:10px; }
-button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
-.box { background:#1e1e1e; padding:10px; border-radius:8px; font-size:13px; }
-.list { max-height:30vh; overflow:auto; }
-.item { padding:6px 0; border-bottom:1px solid #333; }
-input { width:100%; padding:8px; margin-top:6px; }
+#map { height: 55vh; }
+.container { display:flex; }
+.panel { width:40%; padding:10px; }
+.detail { width:60%; padding:10px; background:#151515; }
+input { width:100%; padding:10px; margin-bottom:10px; }
+.item { padding:6px; border-bottom:1px solid #333; cursor:pointer; }
+.item:hover { background:#222; }
+.box { background:#1e1e1e; padding:10px; border-radius:8px; }
 </style>
 </head>
 
 <body>
 
+<div id="map"></div>
+
+<div class="container">
+
+<!-- LEFT -->
 <div class="panel">
 
-<button onclick="loadCore()">📦 GTFS CORE LOAD</button>
-<button onclick="filter('all')">🌍 ALL</button>
-<button onclick="filter('bkk')">🚍 BKK</button>
-<button onclick="filter('volan')">🚌 VOLÁN</button>
-<button onclick="filter('mav')">🚆 MÁV</button>
-<button onclick="filter('hev')">🚈 HÉV</button>
-<button onclick="filter('forest')">🌲 KISVASÚT / TÚRA</button>
+<input id="search" placeholder="🔎 keresés..." oninput="smartSearch()"/>
 
-<input id="search" placeholder="🔎 megálló keresés..." oninput="search()"/>
-
-<div id="info" class="box">GTFS ENGINE v6 READY</div>
-
-<div id="list" class="box list"></div>
+<div id="list" class="box"></div>
 
 </div>
 
-<div id="map"></div>
+<!-- RIGHT -->
+<div class="detail box" id="detail">
+  📍 válassz egy megállót
+</div>
+
+</div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
@@ -47,110 +48,104 @@ input { width:100%; padding:8px; margin-top:6px; }
 let map = L.map('map').setView([47.3,19.3],7);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let markers = L.layerGroup().addTo(map);
+let user = null;
+let selected = null;
 
-let state = {
-  stops: [],
-  filter: "all"
-};
+let stops = [
+  {name:"Nád utca", gtfs:"BKK-F00457", lat:47.594072, lng:19.048469},
+  {name:"Flórián tér", gtfs:"BKK-F00611", lat:47.542896, lng:19.042252},
+  {name:"Batthyány tér", gtfs:"BKK-F00057", lat:47.506002, lng:19.039456},
+  {name:"Békásmegyer HÉV", gtfs:"H5-09183", lat:47.598091, lng:19.054599},
+  {name:"Szentendre HÉV", gtfs:"H5-09142221", lat:47.661038, lng:19.075607},
+  {name:"Dobogókő", gtfs:"VOL-778561", lat:47.719118, lng:18.897577},
+  {name:"Keleti pályaudvar", gtfs:"MAV-KELETI", lat:47.5009, lng:19.0836},
+  {name:"Királyrét", gtfs:"KISVASUT", lat:47.9100, lng:18.9730},
+  {name:"Csóványos", gtfs:"TURA", lat:47.94908, lng:18.9483}
+];
 
-// ---------------- CORE LOAD ----------------
-function loadCore(){
+// ---------------- GPS ----------------
+navigator.geolocation.watchPosition(p=>{
+  user = {lat:p.coords.latitude,lng:p.coords.longitude};
+});
 
-  state.stops = [
+// ---------------- SMART SEARCH ----------------
+function smartSearch(){
 
-    /* ===== BUDAPEST ===== */
-    {id:"BKK-F00457", name:"Nád utca", type:"bkk", lat:47.594072, lng:19.048469},
-    {id:"BKK-00438", name:"Gulácsy Lajos utca", type:"bkk", lat:47.602562, lng:19.048229},
-    {id:"BKK-F00611", name:"Flórián tér A", type:"bkk", lat:47.542896, lng:19.042252},
-    {id:"BKK-F00613", name:"Flórián tér B", type:"bkk", lat:47.541664, lng:19.040084},
-    {id:"BKK-F00057", name:"Batthyány tér", type:"bkk", lat:47.506002, lng:19.039456},
-
-    /* ===== HÉV ===== */
-    {id:"H5-09183", name:"Békásmegyer HÉV", type:"hev", lat:47.598091, lng:19.054599},
-    {id:"H5-09142221", name:"Szentendre HÉV", type:"hev", lat:47.661038, lng:19.075607},
-    {id:"HEV-POMAZ", name:"Pomáz HÉV", type:"hev", lat:47.642749, lng:19.032657},
-
-    /* ===== VOLÁN ===== */
-    {id:"VOL-SZENTENDRE", name:"Szentendre busz", type:"volan", lat:47.660403, lng:19.075408},
-    {id:"VOL-VAC", name:"Vác buszállomás", type:"volan", lat:47.781930, lng:19.129643},
-    {id:"VOL-DOBOGOKO", name:"Dobogókő", type:"volan", lat:47.719118, lng:18.897577},
-
-    /* ===== MÁV ===== */
-    {id:"MAV-KELETI", name:"Keleti pályaudvar", type:"mav", lat:47.5009, lng:19.0836},
-    {id:"MAV-SZOB", name:"Szob vasútállomás", type:"mav", lat:47.8213, lng:18.8626},
-
-    /* ===== KISVASÚT ===== */
-    {id:"GYV-NORM", name:"Normafa (Gyermekvasút)", type:"forest", lat:47.5070, lng:18.9630},
-    {id:"GYV-HUV", name:"Hűvösvölgy", type:"forest", lat:47.5412, lng:18.9640},
-    {id:"KIRALYRET", name:"Királyrét", type:"forest", lat:47.9100, lng:18.9730},
-    {id:"KEMENCE", name:"Kemence kisvasút", type:"forest", lat:47.9980, lng:18.8910},
-
-    /* ===== TÚRA PONTOK ===== */
-    {id:"CSOVANYOS", name:"Csóványos", type:"forest", lat:47.94908, lng:18.9483},
-    {id:"DOBOKO", name:"Dobogókő", type:"forest", lat:47.719118, lng:18.897577}
-
-  ];
-
-  render();
-  info("GTFS CORE betöltve ✔");
-}
-
-// ---------------- FILTER ----------------
-function filter(t){
-  state.filter = t;
-  render();
-}
-
-// ---------------- SEARCH ----------------
-function search(){
   let q = document.getElementById("search").value.toLowerCase();
 
-  let res = state.stops.filter(s =>
+  let res = stops.filter(s =>
     s.name.toLowerCase().includes(q)
   );
 
-  render(res);
+  renderList(res);
 }
 
-// ---------------- RENDER ----------------
-function render(custom=null){
-
-  markers.clearLayers();
-
-  let list = custom || state.stops;
-
-  if(state.filter !== "all" && !custom){
-    list = list.filter(s => s.type === state.filter);
-  }
-
-  list.forEach(s=>{
-    L.marker([s.lat,s.lng])
-      .addTo(markers)
-      .bindPopup(`
-        🚏 ${s.name}<br>
-        🆔 ${s.id}<br>
-        📊 ${s.type}
-      `);
-  });
+// ---------------- LIST ----------------
+function renderList(list){
 
   document.getElementById("list").innerHTML =
     list.map(s=>`
-      <div class="item">
-        🚏 ${s.name}<br>
-        🆔 ${s.id}<br>
-        📊 ${s.type}
+      <div class="item" onclick="selectStop('${s.gtfs}')">
+        🚏 ${s.name}
       </div>
     `).join("");
-
-  info(list.length + " elem aktív");
 }
 
-// ---------------- INFO ----------------
-function info(t){
-  document.getElementById("info").innerHTML = t;
+// ---------------- SELECT ----------------
+function selectStop(id){
+
+  let s = stops.find(x=>x.gtfs===id);
+  selected = s;
+
+  let d = getDistance(s);
+
+  document.getElementById("detail").innerHTML = `
+    <h3>🚏 ${s.name}</h3>
+
+    🆔 GTFS: <b>${s.gtfs}</b><br><br>
+
+    📍 Koordináta:<br>
+    ${s.lat.toFixed(6)}, ${s.lng.toFixed(6)}<br><br>
+
+    📏 Légvonal: <b>${d.air} m</b><br>
+    🛣️ Közút (becsült): <b>${d.road} m</b>
+  `;
 }
 
+// ---------------- DISTANCE ----------------
+function getDistance(s){
+
+  if(!user) return {air:0,road:0};
+
+  let air = hav(user.lat,user.lng,s.lat,s.lng);
+
+  // egyszerűsített közút (x1.3–1.8 szorzó)
+  let road = air * 1.4;
+
+  return {
+    air: Math.round(air),
+    road: Math.round(road)
+  };
+}
+
+// ---------------- HAVERSINE ----------------
+function hav(lat1,lon1,lat2,lon2){
+
+  const R=6371000;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLon=(lon2-lon1)*Math.PI/180;
+
+  const a=
+    Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180) *
+    Math.cos(lat2*Math.PI/180) *
+    Math.sin(dLon/2)**2;
+
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// INIT
+renderList(stops);
 </script>
 
 </body>
