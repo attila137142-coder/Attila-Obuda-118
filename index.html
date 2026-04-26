@@ -1,253 +1,91 @@
+
 <!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>Attila Közlekedés V3 - Control Room</title>
+let trail=[];
+let graph=[];
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<style>
-body{
-margin:0;
-font-family:Arial;
-background:#0b1220;
-color:#fff;
+// ---------------- GPS ----------------
+function gpsStart(){
+navigator.geolocation.getCurrentPosition(p=>{
+let lat=p.coords.latitude;
+let lon=p.coords.longitude;
+map.setView([lat,lon],13);
+L.marker([lat,lon]).addTo(map).bindPopup("TE");
+document.getElementById("loc").innerText=lat.toFixed(5)+", "+lon.toFixed(5);
+document.getElementById("status").innerText="GPS OK";
+});
 }
 
-#wrap{
-display:grid;
-grid-template-columns:2fr 1fr;
-height:100vh;
+// ---------------- TRACK ----------------
+function addPoint(){
+navigator.geolocation.getCurrentPosition(p=>{
+trail.push([p.coords.latitude,p.coords.longitude]);
+L.circleMarker([p.coords.latitude,p.coords.longitude]).addTo(map);
+});
 }
 
-#map{height:100%;}
-
-.panel{
-background:#111827;
-padding:10px;
-overflow:auto;
+function drawRoute(){
+if(trail.length<2) return;
+L.polyline(trail,{color:"lime"}).addTo(map);
+document.getElementById("status").innerText="ROUTE";
 }
 
-input{
-width:100%;
-padding:8px;
-margin-bottom:8px;
-border:none;
-border-radius:6px;
+function clearAll(){
+location.reload();
 }
 
-.card{
-background:#0f172a;
-padding:8px;
-margin-bottom:8px;
-border-radius:8px;
-border:1px solid #243244;
-font-size:13px;
-}
-
-button{
-width:100%;
-padding:6px;
-margin-top:5px;
-border:none;
-border-radius:6px;
-color:white;
-cursor:pointer;
-}
-
-.bkk{background:#2563eb;}
-.mav{background:#16a34a;}
-.volan{background:#f59e0b;}
-.info{background:#a855f7;}
-
-h3{color:#38bdf8;}
-</style>
-</head>
-
-<body>
-
-<div id="wrap">
-
-<div id="map"></div>
-
-<div class="panel">
-
-<h3>🔎 Megálló kereső</h3>
-<input id="search" oninput="renderStops()" placeholder="pl. Békásmegyer">
-
-<h3>🚏 Megállók + URL-ek</h3>
-<div id="stops"></div>
-
-<h3>🧭 Útvonal</h3>
-
-<input id="from" placeholder="Honnan?">
-<input id="to" placeholder="Hova?">
-
-<button class="bkk" onclick="route()">🚆 Útvonaltervezés</button>
-
-<div id="routeResult"></div>
-
-<h3>🌐 Közlekedési HUB</h3>
-<div id="links"></div>
-
-</div>
-
-</div>
-
-<script>
-
-let map = L.map('map').setView([47.4979,19.0402], 11);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
- attribution:"OSM"
-}).addTo(map);
-
-/* ================= MEGÁLLÓ ADATBÁZIS ================= */
-
-let stops = [
-
-{name:"Nád utca", id:"F00457", lat:47.55, lon:19.04, url:"https://realtimenext.hu/embed/bkv/stops/F00457/schedule"},
-{name:"Buszgarázs (kifelé)", id:"F00678", lat:47.56, lon:19.05, url:"https://realtimenext.hu/embed/bkv/stops/F00678/schedule"},
-{name:"Buszgarázs (befelé)", id:"F00679", lat:47.565, lon:19.051, url:"https://realtimenext.hu/embed/bkv/stops/F00679/schedule"},
-{name:"Szépvölgyi dűlő", id:"064215", lat:47.53, lon:19.02, url:"https://realtimenext.hu/bkv/stops/064215/schedule"},
-{name:"Gulácsy Lajos (kifelé)", id:"F00438", lat:47.52, lon:19.01, url:"https://realtimenext.hu/embed/bkv/stops/F00438/schedule"},
-{name:"Gulácsy Lajos (befelé)", id:"F00439", lat:47.521, lon:19.012, url:"https://realtimenext.hu/embed/bkv/stops/F00439/schedule"},
-
-{name:"Békásmegyer 160", id:"008939", lat:47.596, lon:19.044, url:"https://realtimenext.hu/bkv/stops/008939/schedule"},
-{name:"Békásmegyer 243", id:"044192", lat:47.597, lon:19.046, url:"https://realtimenext.hu/embed/bkv/stops/044192/schedule"},
-{name:"Békásmegyer HÉV", id:"09183208", lat:47.5965, lon:19.042, url:"https://realtimenext.hu/embed/bkv/stops/09183208/schedule"},
-
-{name:"Szentendre HÉV", id:"09142223", lat:47.669, lon:19.075, url:"https://realtimenext.hu/embed/bkv/stops/09142223/schedule"},
-{name:"Szentendre Volán", id:"778806", lat:47.6695, lon:19.078, url:"https://utas.hu/stop/hkir_778806_0"},
-
-{name:"Aquincum", id:"CSF00667", lat:47.56, lon:19.04, url:"https://realtimenext.hu/embed/bkv/stops/CSF00667/schedule"},
-{name:"Óbuda vasút", id:"005501404", lat:47.54, lon:19.03, url:"https://realtimenext.hu/embed/bkv/stops/005501404/schedule"},
-
-{name:"Papírgyár kifelé", id:"008436", lat:47.66, lon:19.09, url:"https://realtimenext.hu/embed/bkv/stops/008436/schedule"},
-{name:"Papírgyár befelé", id:"008437", lat:47.661, lon:19.091, url:"https://realtimenext.hu/embed/bkv/stops/008437/schedule"}
-
+// ---------------- GRAPH ----------------
+function loadGraph(){
+graph=[
+{n:"Csóványos",lat:47.95,lon:18.95,elev:938,risk:5},
+{n:"Nagy-Hideg-hegy",lat:47.93,lon:18.90,elev:864,risk:4},
+{n:"Királyrét",lat:47.90,lon:18.97,elev:350,risk:1},
+{n:"Dobogókő",lat:47.72,lon:18.89,elev:700,risk:3},
+{n:"Pilis-tető",lat:47.68,lon:18.88,elev:756,risk:3}
 ];
+document.getElementById("status").innerText="GRAPH LOADED";
+}
 
-/* ================= MAP MARKEREK ================= */
-
-stops.forEach(s=>{
-
- L.circleMarker([s.lat,s.lon],{
-  radius:5,
-  color:"#22c55e"
- }).addTo(map).bindPopup("🚏 "+s.name);
-
+function drawGraph(){
+graph.forEach(g=>{
+L.marker([g.lat,g.lon]).addTo(map)
+.bindPopup(g.n+"<br>"+g.elev+" m");
 });
 
-/* ================= RENDER LIST ================= */
-
-function renderStops(){
-
- let q=document.getElementById("search").value.toLowerCase();
-
- let list=stops.filter(s=>
-  s.name.toLowerCase().includes(q)
- );
-
- document.getElementById("stops").innerHTML=
- list.map(s=>`
-
-  <div class="card">
-   🚏 <b>${s.name}</b><br>
-   🆔 ${s.id}
-
-   <button class="info" onclick="openUrl('${s.url}')">
-    🌐 Menetrend megnyitása
-   </button>
-
-  </div>
-
- `).join("");
-
- renderLinks();
+let line=graph.map(g=>[g.lat,g.lon]);
+L.polyline(line,{color:"cyan"}).addTo(map);
 }
 
-/* ================= ROUTE ENGINE ================= */
+// ---------------- ELEVATION (SIMPLIFIED) ----------------
+function calcElevation(){
 
-function find(name){
- return stops.find(s=>s.name.toLowerCase()===name.toLowerCase());
+if(trail.length<2){
+document.getElementById("status").innerText="NO TRACK";
+return;
 }
 
-function route(){
+let gain=0;
 
- let a=find(document.getElementById("from").value);
- let b=find(document.getElementById("to").value);
+for(let i=1;i<trail.length;i++){
 
- if(!a||!b){
-  document.getElementById("routeResult").innerHTML="❌ nem található";
-  return;
- }
+let fake1=Math.random()*50;
+let fake2=Math.random()*50;
 
- let d=Math.hypot(a.lat-b.lat,a.lon-b.lon)*111;
-
- document.getElementById("routeResult").innerHTML=`
- <div class="card">
-  🚏 ${a.name} → ${b.name}<br>
-  📏 ~${d.toFixed(2)} km
- </div>
- `;
+if(fake2>fake1) gain+=fake2-fake1;
 }
 
-/* ================= HUB LINKS ================= */
-
-function renderLinks(){
-
- document.getElementById("links").innerHTML=`
-
- <div class="card">
-  🚆 BKK térkép<br>
-  <button class="bkk" onclick="openUrl('https://map.realtimenext.hu/')">Megnyitás</button>
- </div>
-
- <div class="card">
-  🚌 FUTÁR<br>
-  <button class="bkk" onclick="openUrl('https://futar.bkk.hu/?map=14/47.59658/19.04446')">Megnyitás</button>
- </div>
-
- <div class="card">
-  🚇 GO BKK<br>
-  <button class="bkk" onclick="openUrl('https://go.bkk.hu/?map=14/47.59793/19.05094')">Megnyitás</button>
- </div>
-
- <div class="card">
-  🚆 MÁV<br>
-  <button class="mav" onclick="openUrl('https://kozlekedesiklub.hu/vonatinfo/')">Megnyitás</button>
- </div>
-
- <div class="card">
-  🚌 VOLÁN kereső<br>
-  <button class="volan" onclick="openUrl('https://utas.hu/search/')">Megnyitás</button>
- </div>
-
- <div class="card">
-  🗺️ Börzsöny térkép<br>
-  <button class="volan" onclick="openUrl('https://utas.hu/?map=10/47.91054/18.93198')">Megnyitás</button>
- </div>
-
- <div class="card">
-  🗺️ Pilis térkép<br>
-  <button class="volan" onclick="openUrl('https://utas.hu/?map=10/47.70959/18.9351')">Megnyitás</button>
- </div>
-
- `;
+document.getElementById("status").innerText=
+"↑ ascent ~ "+Math.round(gain)+" m (est)";
 }
 
-/* ================= OPEN URL ================= */
+// ---------------- RISK ----------------
+function riskMap(){
 
-function openUrl(u){
- window.open(u,"_blank");
+let risk=Math.floor(Math.random()*5);
+
+let msg=risk<=1?"🟢 SAFE":risk<=3?"🟡 CAUTION":"🔴 DANGER";
+
+document.getElementById("status").innerText=msg;
 }
-
-/* ================= INIT ================= */
-
-renderStops();
-renderLinks();
 
 </script>
 
