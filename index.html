@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Budapest Transit + Túra v4 PRO</title>
+<title>Hungary Transit + Forest Rail Cockpit PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -11,7 +11,7 @@
 body { margin:0; font-family: Arial; background:#111; color:#fff; }
 #map { height: 60vh; }
 .panel { padding:10px; }
-button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
+button { margin:3px; padding:8px; border:0; border-radius:6px; }
 .box { background:#1e1e1e; padding:10px; border-radius:8px; font-size:13px; }
 </style>
 </head>
@@ -20,15 +20,14 @@ button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
 
 <div class="panel">
 
-  <button onclick="setMode('gps')">🧭 GPS</button>
-  <button onclick="setMode('bkk')">🚍 BKK</button>
-  <button onclick="setMode('volan')">🚌 VOLÁN</button>
-  <button onclick="setMode('mav')">🚆 MÁV</button>
-  <button onclick="setMode('tura')">🥾 Túra</button>
+<button onclick="setMode('gps')">🧭 GPS</button>
+<button onclick="toggleStops()">🚏 Megállók</button>
+<button onclick="filter('bkk')">🚍 BKK</button>
+<button onclick="filter('volan')">🚌 VOLÁN</button>
+<button onclick="filter('mav')">🚆 MÁV</button>
+<button onclick="filter('forest')">🌲 Kisvasút</button>
 
-  <button onclick="searchStops()">📍 Megállók</button>
-
-  <div id="info" class="box">Indítás...</div>
+<div id="info" class="box">Indítás...</div>
 
 </div>
 
@@ -37,83 +36,94 @@ button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-let map = L.map('map').setView([47.4979,19.0402],13);
+let map = L.map('map').setView([47.4979,19.0402],8);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let mode = "gps";
-let track = [];
-let marker;
-let polyline;
-let stopLayer = L.layerGroup().addTo(map);
+let showStops = false;
+let userPos = null;
+let markers = L.layerGroup().addTo(map);
+
+// ---------------- DEMO GTFS LITE ADAT ----------------
+// (EZT később a te GTFS exportjaid töltik fel automatikusan)
+let stops = [
+  {id:"BKK_001", name:"Deák Ferenc tér", lat:47.4975, lng:19.0550, type:"bkk"},
+  {id:"BKK_002", name:"Blaha Lujza tér", lat:47.4970, lng:19.0700, type:"bkk"},
+  {id:"MAV_010", name:"Keleti pályaudvar", lat:47.5009, lng:19.0836, type:"mav"},
+  {id:"VOL_120", name:"Érd autóbusz-állomás", lat:47.3840, lng:18.9300, type:"volan"},
+  {id:"KIS_001", name:"Szob kisvasút", lat:47.8190, lng:18.8670, type:"forest"},
+];
+
+// ---------------- GPS ----------------
+navigator.geolocation.watchPosition(pos=>{
+  userPos = {lat:pos.coords.latitude,lng:pos.coords.longitude};
+
+  render();
+});
 
 // ---------------- MODE ----------------
 function setMode(m){
   mode = m;
-  render(`Mód: ${m.toUpperCase()}`);
+  render();
 }
 
-// ---------------- GPS ----------------
-function startGPS(){
-  navigator.geolocation.watchPosition(pos=>{
-    let lat = pos.coords.latitude;
-    let lng = pos.coords.longitude;
-
-    track.push([lat,lng]);
-    if(track.length>80) track.shift();
-
-    if(!marker){
-      marker = L.marker([lat,lng]).addTo(map);
-      map.setView([lat,lng],15);
-    } else marker.setLatLng([lat,lng]);
-
-    if(polyline) polyline.setLatLngs(track);
-    else polyline = L.polyline(track,{color:'red'}).addTo(map);
-
-    render(`
-      🧭 MODE: ${mode}<br><br>
-      📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br><br>
-      🧩 Track pontok: ${track.length}
-    `);
-
-  },err=>console.log(err),{enableHighAccuracy:true});
+// ---------------- TOGGLE ----------------
+function toggleStops(){
+  showStops = !showStops;
+  render();
 }
 
-// ---------------- GTFS SIMULÁLT MEGÁLLÓ KERESÉS ----------------
-// (ez lesz majd összekötve a feltöltött GTFS fájljaiddal)
-function searchStops(){
+// ---------------- FILTER ----------------
+function filter(type){
+  markers.clearLayers();
 
-  stopLayer.clearLayers();
+  stops.filter(s=>s.type===type).forEach(s=>{
+    addStop(s);
+  });
 
-  let c = map.getCenter();
+  render();
+}
 
-  // DEMO: OSM busz/vasút node-ok (GTFS placeholder)
-  let q = `
-  [out:json];
-  node(around:1200,${c.lat},${c.lng})[highway=bus_stop];
-  out;
+// ---------------- STOP RENDER ----------------
+function addStop(s){
+  let m = L.marker([s.lat,s.lng]).addTo(markers);
+
+  let dist = userPos ? haversine(userPos.lat,userPos.lng,s.lat,s.lng) : 0;
+
+  m.bindPopup(`
+    🚏 ${s.name}<br>
+    🆔 ${s.id}<br>
+    📏 ${dist.toFixed(0)} m
+  `);
+}
+
+// ---------------- DISTANCE ----------------
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371000;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+
+    Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+    Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ---------------- MAIN RENDER ----------------
+function render(){
+
+  if(showStops){
+    markers.clearLayers();
+    stops.forEach(s=>addStop(s));
+  }
+
+  let text = `
+    🧭 MODE: ${mode}<br>
+    📍 User: ${userPos ? userPos.lat.toFixed(5)+", "+userPos.lng.toFixed(5) : "no GPS"}<br>
+    🚏 Stops loaded: ${stops.length}<br>
   `;
 
-  fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q))
-  .then(r=>r.json())
-  .then(d=>{
-
-    d.elements.forEach(s=>{
-      L.marker([s.lat,s.lon])
-        .addTo(stopLayer)
-        .bindPopup("🚏 Megálló");
-    });
-
-    render("📍 Megállók betöltve (BKK/VOLÁN/MÁV alap layer)");
-  });
+  document.getElementById("info").innerHTML = text;
 }
-
-// ---------------- UI ----------------
-function render(html){
-  document.getElementById("info").innerHTML = html;
-}
-
-// START
-startGPS();
 
 </script>
 
