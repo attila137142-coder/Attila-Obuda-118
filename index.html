@@ -3,20 +3,25 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GTFS SMART COCKPIT v6.1</title>
+<title>GTFS Routing Engine v7 PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body { margin:0; font-family: Arial; background:#0f0f0f; color:#fff; }
 #map { height: 55vh; }
+
 .container { display:flex; }
-.panel { width:40%; padding:10px; }
-.detail { width:60%; padding:10px; background:#151515; }
-input { width:100%; padding:10px; margin-bottom:10px; }
+.left { width:40%; padding:10px; }
+.right { width:60%; padding:10px; background:#151515; }
+
+.box { background:#1e1e1e; padding:10px; border-radius:8px; }
 .item { padding:6px; border-bottom:1px solid #333; cursor:pointer; }
 .item:hover { background:#222; }
-.box { background:#1e1e1e; padding:10px; border-radius:8px; }
+
+input { width:100%; padding:10px; margin-bottom:8px; }
+
+.small { font-size:12px; opacity:0.8; }
 </style>
 </head>
 
@@ -27,17 +32,17 @@ input { width:100%; padding:10px; margin-bottom:10px; }
 <div class="container">
 
 <!-- LEFT -->
-<div class="panel">
+<div class="left">
 
-<input id="search" placeholder="🔎 keresés..." oninput="smartSearch()"/>
+<input id="search" placeholder="🔎 megálló keresés..." oninput="searchStops()"/>
 
 <div id="list" class="box"></div>
 
 </div>
 
 <!-- RIGHT -->
-<div class="detail box" id="detail">
-  📍 válassz egy megállót
+<div class="right box" id="detail">
+📍 Válassz megállót
 </div>
 
 </div>
@@ -49,7 +54,12 @@ let map = L.map('map').setView([47.3,19.3],7);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let user = null;
-let selected = null;
+
+let gpsStats = {
+  minLat: 999, maxLat: -999,
+  minLng: 999, maxLng: -999,
+  accuracy: null
+};
 
 let stops = [
   {name:"Nád utca", gtfs:"BKK-F00457", lat:47.594072, lng:19.048469},
@@ -59,17 +69,30 @@ let stops = [
   {name:"Szentendre HÉV", gtfs:"H5-09142221", lat:47.661038, lng:19.075607},
   {name:"Dobogókő", gtfs:"VOL-778561", lat:47.719118, lng:18.897577},
   {name:"Keleti pályaudvar", gtfs:"MAV-KELETI", lat:47.5009, lng:19.0836},
-  {name:"Királyrét", gtfs:"KISVASUT", lat:47.9100, lng:18.9730},
-  {name:"Csóványos", gtfs:"TURA", lat:47.94908, lng:18.9483}
+  {name:"Csóványos", gtfs:"TURA-001", lat:47.94908, lng:18.9483}
 ];
 
 // ---------------- GPS ----------------
-navigator.geolocation.watchPosition(p=>{
-  user = {lat:p.coords.latitude,lng:p.coords.longitude};
+navigator.geolocation.watchPosition(pos=>{
+
+  user = {
+    lat: pos.coords.latitude,
+    lng: pos.coords.longitude,
+    accuracy: pos.coords.accuracy
+  };
+
+  // MIN-MAX UPDATE
+  gpsStats.minLat = Math.min(gpsStats.minLat, user.lat);
+  gpsStats.maxLat = Math.max(gpsStats.maxLat, user.lat);
+  gpsStats.minLng = Math.min(gpsStats.minLng, user.lng);
+  gpsStats.maxLng = Math.max(gpsStats.maxLng, user.lng);
+
+  gpsStats.accuracy = user.accuracy;
+
 });
 
-// ---------------- SMART SEARCH ----------------
-function smartSearch(){
+// ---------------- SEARCH ----------------
+function searchStops(){
 
   let q = document.getElementById("search").value.toLowerCase();
 
@@ -91,13 +114,12 @@ function renderList(list){
     `).join("");
 }
 
-// ---------------- SELECT ----------------
+// ---------------- SELECT STOP ----------------
 function selectStop(id){
 
   let s = stops.find(x=>x.gtfs===id);
-  selected = s;
 
-  let d = getDistance(s);
+  let dist = user ? hav(user.lat,user.lng,s.lat,s.lng) : 0;
 
   document.getElementById("detail").innerHTML = `
     <h3>🚏 ${s.name}</h3>
@@ -107,30 +129,23 @@ function selectStop(id){
     📍 Koordináta:<br>
     ${s.lat.toFixed(6)}, ${s.lng.toFixed(6)}<br><br>
 
-    📏 Légvonal: <b>${d.air} m</b><br>
-    🛣️ Közút (becsült): <b>${d.road} m</b>
+    📏 Távolság:<br>
+    ${Math.round(dist)} m<br><br>
+
+    📡 GPS pontosság:<br>
+    ${user ? user.accuracy.toFixed(1) + " m" : "nincs adat"}<br><br>
+
+    📊 MIN–MAX GPS:<br>
+    Lat: ${gpsStats.minLat.toFixed(5)} → ${gpsStats.maxLat.toFixed(5)}<br>
+    Lng: ${gpsStats.minLng.toFixed(5)} → ${gpsStats.maxLng.toFixed(5)}<br><br>
+
+    🏠 Helyadat:<br>
+    <div class="small">Reverse geocode (következő verzióban full cím bontás)</div>
   `;
-}
-
-// ---------------- DISTANCE ----------------
-function getDistance(s){
-
-  if(!user) return {air:0,road:0};
-
-  let air = hav(user.lat,user.lng,s.lat,s.lng);
-
-  // egyszerűsített közút (x1.3–1.8 szorzó)
-  let road = air * 1.4;
-
-  return {
-    air: Math.round(air),
-    road: Math.round(road)
-  };
 }
 
 // ---------------- HAVERSINE ----------------
 function hav(lat1,lon1,lat2,lon2){
-
   const R=6371000;
   const dLat=(lat2-lat1)*Math.PI/180;
   const dLon=(lon2-lon1)*Math.PI/180;
@@ -146,6 +161,7 @@ function hav(lat1,lon1,lat2,lon2){
 
 // INIT
 renderList(stops);
+
 </script>
 
 </body>
