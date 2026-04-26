@@ -1,205 +1,71 @@
 <!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>V10 GTFS REAL CORE</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
-<style>
-body { margin:0; font-family: Arial; background:#0f0f0f; color:#fff; }
-#map { height:55vh; }
-
-.container { display:flex; }
-.left { width:40%; padding:10px; }
-.right { width:60%; padding:10px; background:#151515; }
-
-.box { background:#1e1e1e; padding:10px; border-radius:8px; max-height:40vh; overflow:auto; }
-
-.item { padding:6px; border-bottom:1px solid #333; cursor:pointer; }
-.item:hover { background:#222; }
-
-input { width:100%; padding:10px; margin-bottom:10px; }
-</style>
-</head>
-
-<body>
-
-<div id="map"></div>
-
-<div class="container">
-
-<div class="left">
-
-<input id="search" placeholder="🔎 2km GTFS radar..." oninput="search()"/>
-
-<div id="list" class="box"></div>
-
-</div>
-
-<div class="right box" id="detail">
-📍 GTFS V10 READY
-</div>
-
-</div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<script>
-let map = L.map('map').setView([47.5,19.0],11);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-let user = null;
-
-/* ================= REAL GTFS + BKK + TÚRA MIX ================= */
-let stops = [
-
-/* ===== BKK CORE ===== */
-{name:"Deák Ferenc tér", gtfs:"BKK-001", lat:47.4979, lng:19.0556},
-{name:"Kálvin tér", gtfs:"BKK-002", lat:47.4892, lng:19.0614},
-{name:"Oktogon", gtfs:"BKK-003", lat:47.5059, lng:19.0647},
-{name:"Nyugati", gtfs:"BKK-004", lat:47.5101, lng:19.0568},
-{name:"Keleti", gtfs:"BKK-005", lat:47.5009, lng:19.0836},
-{name:"Széll Kálmán", gtfs:"BKK-006", lat:47.5074, lng:19.0245},
-
-/* ===== HÉV ===== */
-{name:"Békásmegyer HÉV", gtfs:"H5-001", lat:47.598091, lng:19.054599},
-{name:"Szentendre", gtfs:"H5-002", lat:47.661038, lng:19.075607},
-
-/* ===== TÚRA ===== */
-{name:"Hedvig utca", gtfs:"T-001", lat:47.5395, lng:19.0282},
-{name:"Táborhegyi barlang", gtfs:"T-002", lat:47.5462, lng:19.0201},
-{name:"Hármashatárhegy", gtfs:"T-003", lat:47.5549, lng:19.0315},
-{name:"Dobogókő", gtfs:"T-004", lat:47.719118, lng:18.897577},
-{name:"Csóványos", gtfs:"T-005", lat:47.94908, lng:18.9483}
-
-];
-
-/* ================= SPATIAL HASH INDEX ================= */
-let grid = {};
-
-function buildIndex(){
-
-grid = {};
-
-for(let s of stops){
-
-let key = keyGen(s.lat,s.lng);
-
-if(!grid[key]) grid[key]=[];
-
-grid[key].push(s);
-
+  renderList(stops);
+  renderMarkers(stops);
 }
 
+// -----------------------------
+// 3. LISTA + KERESŐ
+// -----------------------------
+function renderList(data) {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  data.slice(0, 200).forEach(s => {
+    const div = document.createElement('div');
+    div.className = 'stop';
+    div.innerText = s.name;
+
+    div.onclick = () => {
+      map.setView([s.lat, s.lon], 16);
+      L.popup()
+        .setLatLng([s.lat, s.lon])
+        .setContent(`<b>${s.name}</b>`)
+        .openOn(map);
+    };
+
+    list.appendChild(div);
+  });
 }
 
-function keyGen(lat,lng){
-return Math.floor(lat*10)+"_"+Math.floor(lng*10);
+// -----------------------------
+// 4. TÉRKÉP MARKEREK
+// -----------------------------
+function renderMarkers(data) {
+  markers.forEach(m => map.removeLayer(m));
+  markers = [];
+
+  data.forEach(s => {
+    if (!s.lat || !s.lon) return;
+
+    const marker = L.marker([s.lat, s.lon])
+      .addTo(map)
+      .bindPopup(`<b>${s.name}</b>`);
+
+    markers.push(marker);
+  });
 }
 
-/* ================= GPS ================= */
-navigator.geolocation.watchPosition(pos=>{
+// -----------------------------
+// 5. KERESÉS
+// -----------------------------
+const search = document.getElementById('search');
 
-user = {
-  lat: pos.coords.latitude,
-  lng: pos.coords.longitude
-};
+search.addEventListener('input', e => {
+  const q = e.target.value.toLowerCase();
 
-map.setView([user.lat,user.lng],13);
+  const filtered = stops.filter(s =>
+    s.name.toLowerCase().includes(q)
+  );
 
-update();
-
+  renderList(filtered);
+  renderMarkers(filtered);
 });
 
-/* ================= 2KM SEARCH ================= */
-function update(){
-
-if(!user) return;
-
-let results = [];
-
-for(let s of stops){
-
-let d = hav(user.lat,user.lng,s.lat,s.lng);
-
-if(d <= 2000){
-  results.push({...s,dist:d});
-}
-
-}
-
-results.sort((a,b)=>a.dist-b.dist);
-
-render(results);
-
-}
-
-/* ================= SEARCH ================= */
-function search(){
-
-let q = document.getElementById("search").value.toLowerCase();
-
-let results = stops.filter(s=>
-s.name.toLowerCase().includes(q)
-);
-
-render(results);
-
-}
-
-/* ================= RENDER ================= */
-function render(list){
-
-document.getElementById("list").innerHTML =
-list.map(s=>`
-  <div class="item" onclick="select('${s.gtfs}')">
-    🚏 ${s.name}<br>
-    🆔 ${s.gtfs}<br>
-    📏 ${s.dist ? Math.round(s.dist)+" m" : ""}
-  </div>
-`).join("");
-
-}
-
-/* ================= SELECT ================= */
-function select(id){
-
-let s = stops.find(x=>x.gtfs===id);
-
-let d = user ? hav(user.lat,user.lng,s.lat,s.lng) : 0;
-
-document.getElementById("detail").innerHTML = `
-<h3>🚏 ${s.name}</h3>
-
-🆔 ${s.gtfs}<br><br>
-
-📍 ${s.lat}, ${s.lng}<br><br>
-
-📏 ${Math.round(d)} m<br>
-`;
-
-}
-
-/* ================= HAVERSINE ================= */
-function hav(lat1,lon1,lat2,lon2){
-
-const R=6371000;
-const dLat=(lat2-lat1)*Math.PI/180;
-const dLon=(lon2-lon1)*Math.PI/180;
-
-const a=
-Math.sin(dLat/2)**2 +
-Math.cos(lat1*Math.PI/180)*
-Math.cos(lat2*Math.PI/180)*
-Math.sin(dLon/2)**2;
-
-return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
-
-/* INIT */
-buildIndex();
+// -----------------------------
+// START
+// -----------------------------
+loadStops();
 
 </script>
 
