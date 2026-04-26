@@ -1,4 +1,142 @@
 <!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8" />
+  <title>GTFS Kereső + Térkép + Menetrend (A+B+C)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+  <style>
+    body { margin:0; font-family: Arial; display:flex; height:100vh; }
+    #sidebar {
+      width: 340px;
+      padding: 10px;
+      border-right: 1px solid #ddd;
+      overflow:auto;
+    }
+    #map { flex:1; }
+    input {
+      width: 100%;
+      padding: 8px;
+      margin-bottom: 10px;
+    }
+    .stop {
+      padding: 6px;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+    }
+    .stop:hover { background:#f0f0f0; }
+    .small { font-size:12px; color:#555; }
+  </style>
+</head>
+<body>
+
+<div id="sidebar">
+  <h3>🚏 GTFS Kereső</h3>
+  <input id="search" placeholder="Keresés megállóra..." />
+  <div id="list"></div>
+</div>
+
+<div id="map"></div>
+
+<script>
+
+// -----------------------------
+// MAP
+// -----------------------------
+const map = L.map('map').setView([47.4979, 19.0402], 12);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap'
+}).addTo(map);
+
+let markers = [];
+let stops = [];
+let stopTimesIndex = {}; // stop_id -> departures
+
+// -----------------------------
+// LOAD STOPS
+// -----------------------------
+async function loadStops() {
+  const res = await fetch("stops.txt");
+  const text = await res.text();
+
+  const lines = text.split('\n');
+  const header = lines[0].split(',');
+
+  const idIndex = header.indexOf('stop_id');
+  const nameIndex = header.indexOf('stop_name');
+  const latIndex = header.indexOf('stop_lat');
+  const lonIndex = header.indexOf('stop_lon');
+
+  stops = lines.slice(1).map(l => {
+    const cols = l.split(',');
+    if (cols.length < 4) return null;
+
+    return {
+      id: cols[idIndex],
+      name: cols[nameIndex],
+      lat: parseFloat(cols[latIndex]),
+      lon: parseFloat(cols[lonIndex])
+    };
+  }).filter(Boolean);
+
+  renderList(stops);
+  renderMarkers(stops);
+}
+
+// -----------------------------
+// LOAD STOP TIMES (C)
+// -----------------------------
+async function loadStopTimes() {
+  try {
+    const res = await fetch("stop_times.txt");
+    const text = await res.text();
+
+    const lines = text.split('\n');
+    const header = lines[0].split(',');
+
+    const stopIdIndex = header.indexOf('stop_id');
+    const timeIndex = header.indexOf('departure_time');
+    const tripIndex = header.indexOf('trip_id');
+
+    stopTimesIndex = {};
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(',');
+      if (cols.length < 3) continue;
+
+      const stopId = cols[stopIdIndex];
+      const time = cols[timeIndex];
+      const trip = cols[tripIndex];
+
+      if (!stopId || !time) continue;
+
+      if (!stopTimesIndex[stopId]) stopTimesIndex[stopId] = [];
+
+      stopTimesIndex[stopId].push({ time, trip });
+    }
+
+    // sort times
+    for (let id in stopTimesIndex) {
+      stopTimesIndex[id].sort((a,b) => a.time.localeCompare(b.time));
+    }
+
+  } catch (e) {
+    console.log("stop_times.txt not found or error", e);
+  }
+}
+
+// -----------------------------
+// LIST
+// -----------------------------
+function renderList(data) {
+  const list = document.getElementById('list');
+  list.innerHTML = '';
+
+  data.slice(0, 200).forEach(s => {
     const div = document.createElement('div');
     div.className = 'stop';
     div.innerHTML = `<b>${s.name}</b><div class='small'>ID: ${s.id}</div>`;
@@ -80,4 +218,3 @@ init();
 
 </body>
 </html>
-
