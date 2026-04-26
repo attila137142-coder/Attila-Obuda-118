@@ -1,35 +1,16 @@
 <!DOCTYPE html>
-
-  renderList(stops);
-  renderMarkers(stops);
-}
-
-// -----------------------------
-// 3. LISTA + KERESŐ
-// -----------------------------
-function renderList(data) {
-  const list = document.getElementById('list');
-  list.innerHTML = '';
-
-  data.slice(0, 200).forEach(s => {
     const div = document.createElement('div');
     div.className = 'stop';
-    div.innerText = s.name;
+    div.innerHTML = `<b>${s.name}</b><div class='small'>ID: ${s.id}</div>`;
 
-    div.onclick = () => {
-      map.setView([s.lat, s.lon], 16);
-      L.popup()
-        .setLatLng([s.lat, s.lon])
-        .setContent(`<b>${s.name}</b>`)
-        .openOn(map);
-    };
+    div.onclick = () => openStop(s);
 
     list.appendChild(div);
   });
 }
 
 // -----------------------------
-// 4. TÉRKÉP MARKEREK
+// MARKERS
 // -----------------------------
 function renderMarkers(data) {
   markers.forEach(m => map.removeLayer(m));
@@ -40,14 +21,37 @@ function renderMarkers(data) {
 
     const marker = L.marker([s.lat, s.lon])
       .addTo(map)
-      .bindPopup(`<b>${s.name}</b>`);
+      .on('click', () => openStop(s));
 
     markers.push(marker);
   });
 }
 
 // -----------------------------
-// 5. KERESÉS
+// STOP POPUP + MENETREND
+// -----------------------------
+function openStop(stop) {
+  const times = stopTimesIndex[stop.id] || [];
+
+  let html = `<b>${stop.name}</b><br><br>`;
+
+  if (times.length === 0) {
+    html += "<i>Nincs menetrendi adat</i>";
+  } else {
+    html += "<b>Következő indulások:</b><br>";
+    html += times.slice(0, 10).map(t =>
+      `🚌 ${t.time} <span class='small'>(trip: ${t.trip})</span>`
+    ).join('<br>');
+  }
+
+  L.popup()
+    .setLatLng([stop.lat, stop.lon])
+    .setContent(html)
+    .openOn(map);
+}
+
+// -----------------------------
+// SEARCH
 // -----------------------------
 const search = document.getElementById('search');
 
@@ -63,11 +67,17 @@ search.addEventListener('input', e => {
 });
 
 // -----------------------------
-// START
+// INIT
 // -----------------------------
-loadStops();
+async function init() {
+  await loadStopTimes();
+  await loadStops();
+}
+
+init();
 
 </script>
 
 </body>
 </html>
+
