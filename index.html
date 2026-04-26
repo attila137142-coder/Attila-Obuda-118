@@ -1,67 +1,121 @@
-import { useEffect, useMemo, useState } from "react";
-              className="mt-2 w-full bg-yellow-500 text-black p-2 rounded"
-            >
-              📍 GPS bekapcsolás
-            </button>
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Budapest Transit + Túra v4 PRO</title>
 
-            <div className="mt-3">
-              <h3 className="font-bold">Megállók</h3>
-              {filteredStops.map(s => (
-                <div
-                  key={s.id}
-                  className="p-2 border-b border-gray-700 cursor-pointer"
-                  onClick={() => setSelectedStop(s)}
-                >
-                  {s.name}
-                </div>
-              ))}
-            </div>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
-            {gps && selectedStop && (
-              <div className="mt-3 bg-gray-800 p-2">
-                Távolság: {distance(
-                  { lat: gps[0], lng: gps[1] },
-                  selectedStop
-                ).toFixed(2)} km
-              </div>
-            )}
-          </div>
-        )}
+<style>
+body { margin:0; font-family: Arial; background:#111; color:#fff; }
+#map { height: 60vh; }
+.panel { padding:10px; }
+button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
+.box { background:#1e1e1e; padding:10px; border-radius:8px; font-size:13px; }
+</style>
+</head>
 
-        {/* MAP */}
-        <div className="flex-1 relative">
-          {!menuOpen && (
-            <button
-              onClick={() => setMenuOpen(true)}
-              className="absolute top-2 left-2 z-[999] bg-blue-600 text-white px-3 py-1 rounded"
-            >
-              ☰ Menü
-            </button>
-          )}
+<body>
 
-          <MapContainer center={center} zoom={12} className="h-full w-full">
-            <TileLayer
-              attribution="&copy; OpenStreetMap"
-              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            />
+<div class="panel">
 
-            {SAMPLE_STOPS.map(s => (
-              <Marker key={s.id} position={[s.lat, s.lng]}>
-                <Popup>
-                  <b>{s.name}</b><br />
-                  Mode: {mode}
-                </Popup>
-              </Marker>
-            ))}
+  <button onclick="setMode('gps')">🧭 GPS</button>
+  <button onclick="setMode('bkk')">🚍 BKK</button>
+  <button onclick="setMode('volan')">🚌 VOLÁN</button>
+  <button onclick="setMode('mav')">🚆 MÁV</button>
+  <button onclick="setMode('tura')">🥾 Túra</button>
 
-            {gps && (
-              <Marker position={gps}>
-                <Popup>📍 Saját pozíció</Popup>
-              </Marker>
-            )}
+  <button onclick="searchStops()">📍 Megállók</button>
 
-            {gps && <FlyToLocation position={gps} />}
-          </MapContainer>
-        </div>
-      </div>
-    </div>
+  <div id="info" class="box">Indítás...</div>
+
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+let map = L.map('map').setView([47.4979,19.0402],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let mode = "gps";
+let track = [];
+let marker;
+let polyline;
+let stopLayer = L.layerGroup().addTo(map);
+
+// ---------------- MODE ----------------
+function setMode(m){
+  mode = m;
+  render(`Mód: ${m.toUpperCase()}`);
+}
+
+// ---------------- GPS ----------------
+function startGPS(){
+  navigator.geolocation.watchPosition(pos=>{
+    let lat = pos.coords.latitude;
+    let lng = pos.coords.longitude;
+
+    track.push([lat,lng]);
+    if(track.length>80) track.shift();
+
+    if(!marker){
+      marker = L.marker([lat,lng]).addTo(map);
+      map.setView([lat,lng],15);
+    } else marker.setLatLng([lat,lng]);
+
+    if(polyline) polyline.setLatLngs(track);
+    else polyline = L.polyline(track,{color:'red'}).addTo(map);
+
+    render(`
+      🧭 MODE: ${mode}<br><br>
+      📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br><br>
+      🧩 Track pontok: ${track.length}
+    `);
+
+  },err=>console.log(err),{enableHighAccuracy:true});
+}
+
+// ---------------- GTFS SIMULÁLT MEGÁLLÓ KERESÉS ----------------
+// (ez lesz majd összekötve a feltöltött GTFS fájljaiddal)
+function searchStops(){
+
+  stopLayer.clearLayers();
+
+  let c = map.getCenter();
+
+  // DEMO: OSM busz/vasút node-ok (GTFS placeholder)
+  let q = `
+  [out:json];
+  node(around:1200,${c.lat},${c.lng})[highway=bus_stop];
+  out;
+  `;
+
+  fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q))
+  .then(r=>r.json())
+  .then(d=>{
+
+    d.elements.forEach(s=>{
+      L.marker([s.lat,s.lon])
+        .addTo(stopLayer)
+        .bindPopup("🚏 Megálló");
+    });
+
+    render("📍 Megállók betöltve (BKK/VOLÁN/MÁV alap layer)");
+  });
+}
+
+// ---------------- UI ----------------
+function render(html){
+  document.getElementById("info").innerHTML = html;
+}
+
+// START
+startGPS();
+
+</script>
+
+</body>
+</html>
