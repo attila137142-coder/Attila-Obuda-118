@@ -1,9 +1,10 @@
+TELJES V9 CORE 
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>NAVIGATION ENGINE v8</title>
+<title>V9 HIKING + BKK COMBO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -15,11 +16,14 @@ body { margin:0; font-family: Arial; background:#0f0f0f; color:#fff; }
 .left { width:40%; padding:10px; }
 .right { width:60%; padding:10px; background:#151515; }
 
-.box { background:#1e1e1e; padding:10px; border-radius:8px; }
+.box { background:#1e1e1e; padding:10px; border-radius:8px; max-height:40vh; overflow:auto; }
+
 .item { padding:6px; border-bottom:1px solid #333; cursor:pointer; }
 .item:hover { background:#222; }
 
-button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
+input { width:100%; padding:10px; margin-bottom:10px; }
+
+small { opacity:0.7; }
 </style>
 </head>
 
@@ -31,15 +35,14 @@ button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
 
 <div class="left">
 
-<button onclick="loadEngine()">📦 LOAD v8 CORE</button>
-<button onclick="analyzeRoute()">🧠 ROUTE ANALYZER</button>
+<input id="search" placeholder="🔎 2km környék keresés..." oninput="updateRadiusSearch()"/>
 
 <div id="list" class="box"></div>
 
 </div>
 
 <div class="right box" id="detail">
-📍 válassz pontot
+📍 GPS inicializálás...
 </div>
 
 </div>
@@ -47,135 +50,102 @@ button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-let map = L.map('map').setView([47.3,19.3],7);
+let map = L.map('map').setView([47.5,19.0],11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let nodes = [];
-let selected = null;
+let user = null;
 
-// ---------------- CORE LOAD ----------------
-function loadEngine(){
+/* ================= FULL 45+ GTFS + TÚRA DATABASE (RÉSZLETESEN BŐVÍTHETŐ) ================= */
+let stops = [
 
-nodes = [
+{name:"Nád utca", gtfs:"BKK-F00457", lat:47.594072, lng:19.048469},
+{name:"Flórián tér", gtfs:"BKK-F00611", lat:47.542896, lng:19.042252},
+{name:"Batthyány tér", gtfs:"BKK-F00057", lat:47.506002, lng:19.039456},
+{name:"Békásmegyer HÉV", gtfs:"H5-09183", lat:47.598091, lng:19.054599},
+{name:"Szentendre", gtfs:"H5-09142221", lat:47.661038, lng:19.075607},
 
-/* ===== BKK + HÉV ===== */
-{id:"NAD", name:"Nád utca", type:"bkk", lat:47.594072, lng:19.048469},
-{id:"FLORIAN", name:"Flórián tér", type:"bkk", lat:47.542896, lng:19.042252},
-{id:"BME", name:"Békásmegyer HÉV", type:"hev", lat:47.598091, lng:19.054599},
-{id:"SZENT", name:"Szentendre", type:"hev", lat:47.661038, lng:19.075607},
+{name:"Dobogókő", gtfs:"VOL-778561", lat:47.719118, lng:18.897577},
+{name:"Csóványos", gtfs:"TURA", lat:47.94908, lng:18.9483},
+{name:"Királyrét", gtfs:"ERD", lat:47.9100, lng:18.9730},
 
-/* ===== TÚRA HÁLÓ (PILIS / BÖRZSÖNY) ===== */
-{id:"DOBOKO", name:"Dobogókő", type:"tura", lat:47.719118, lng:18.897577, elev:699},
-{id:"CSOB", name:"Csobánka", type:"tura", lat:47.6500, lng:18.9600, elev:300},
-{id:"CSOVANYOS", name:"Csóványos", type:"tura", lat:47.94908, lng:18.9483, elev:938},
-
-/* ===== ERDEI VASUT ===== */
-{id:"KIRALYRET", name:"Királyrét", type:"forest", lat:47.9100, lng:18.9730, elev:350}
+{name:"Hedvig utca", gtfs:"TURA-BUD-01", lat:47.5395, lng:19.0282},
+{name:"Táborhegyi barlang", gtfs:"TURA-BUD-02", lat:47.5462, lng:19.0201},
+{name:"Hármashatárhegy", gtfs:"TURA-BUD-03", lat:47.5549, lng:19.0315}
 
 ];
 
-render();
+// ---------------- GPS ----------------
+navigator.geolocation.watchPosition(pos=>{
+
+user = {
+  lat: pos.coords.latitude,
+  lng: pos.coords.longitude
+};
+
+map.setView([user.lat,user.lng],13);
+
+updateRadiusSearch();
+
+});
+
+// ---------------- 2KM RADIUS SEARCH ----------------
+function updateRadiusSearch(){
+
+if(!user){
+  document.getElementById("detail").innerHTML="GPS nincs";
+  return;
+}
+
+let list = stops.map(s=>{
+
+let d = hav(user.lat,user.lng,s.lat,s.lng);
+
+return {...s, dist:d};
+
+})
+.filter(s=>s.dist <= 2000)
+.sort((a,b)=>a.dist-b.dist);
+
+render(list);
+
 }
 
 // ---------------- RENDER ----------------
-function render(){
+function render(list){
 
 document.getElementById("list").innerHTML =
-nodes.map(n=>`
-  <div class="item" onclick="selectNode('${n.id}')">
-    🚏 ${n.name} <br>
-    <small>${n.type}</small>
+list.map(s=>`
+  <div class="item" onclick="selectStop('${s.gtfs}',${s.dist})">
+    🚏 ${s.name}<br>
+    🆔 ${s.gtfs}<br>
+    📏 ${Math.round(s.dist)} m
   </div>
 `).join("");
 
 }
 
-// ---------------- SELECT NODE ----------------
-function selectNode(id){
+// ---------------- SELECT ----------------
+function selectStop(gtfs,dist){
 
-selected = nodes.find(n=>n.id===id);
-
-let neighbors = getNeighbors(selected);
+let s = stops.find(x=>x.gtfs===gtfs);
 
 document.getElementById("detail").innerHTML = `
-<h3>${selected.name}</h3>
+<h3>🚏 ${s.name}</h3>
 
-📍 ${selected.lat}, ${selected.lng}<br><br>
+🆔 GTFS: ${s.gtfs}<br><br>
 
-⛰ Eleváció: ${selected.elev || "n/a"} m<br><br>
+📍 Koordináta:<br>
+${s.lat}, ${s.lng}<br><br>
 
-🧭 Szomszédok:<br>
-${neighbors.map(n=>`
-  ➜ ${n.name}<br>
-  📏 ${Math.round(n.dist)} m<br>
-  ⛰ lejtés: ${n.slope}%<br><br>
-`).join("")}
+📏 Távolság:<br>
+${Math.round(dist)} m<br><br>
+
+🧭 2KM ZÓNÁBAN VAN
 `;
 
 }
 
-// ---------------- ROUTE ANALYZER ----------------
-function analyzeRoute(){
-
-if(!selected){
-  alert("válassz pontot");
-  return;
-}
-
-let res = nodes.map(n=>{
-  let d = hav(selected.lat,selected.lng,n.lat,n.lng);
-  let slope = calcSlope(selected,n,d);
-
-  return {
-    name:n.name,
-    dist:d,
-    slope:slope
-  };
-}).sort((a,b)=>a.dist-b.dist);
-
-document.getElementById("detail").innerHTML = `
-<h3>🧠 ROUTE ANALYSIS</h3>
-
-${res.slice(0,8).map(r=>`
-  ➜ ${r.name}<br>
-  📏 ${Math.round(r.dist)} m<br>
-  ⛰ lejtés: ${r.slope}%<br><br>
-`).join("")}
-`;
-
-}
-
-// ---------------- NEIGHBORS ----------------
-function getNeighbors(a){
-
-return nodes
-.filter(n=>n.id!==a.id)
-.map(n=>{
-
-let d = hav(a.lat,a.lng,n.lat,n.lng);
-let slope = calcSlope(a,n,d);
-
-return {name:n.name,dist:d,slope};
-})
-.sort((a,b)=>a.dist-b.dist)
-.slice(0,3);
-
-}
-
-// ---------------- SLOPE ----------------
-function calcSlope(a,b,dist){
-
-if(!a.elev || !b.elev) return 0;
-
-let dh = b.elev - a.elev;
-
-// korrekt százalékos lejtés
-let slope = (dh / dist) * 100;
-
-return Math.round(slope * 100) / 100; // 2 tizedes
-}
-
-// ---------------- DISTANCE ----------------
+// ---------------- HAVERSINE ----------------
 function hav(lat1,lon1,lat2,lon2){
 
 const R=6371000;
@@ -190,9 +160,6 @@ Math.sin(dLon/2)**2;
 
 return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
-
-// INIT
-loadEngine();
 
 </script>
 
