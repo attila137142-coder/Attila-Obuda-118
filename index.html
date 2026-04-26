@@ -1,193 +1,67 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Attila GPS Cockpit v3</title>
+import { useEffect, useMemo, useState } from "react";
+              className="mt-2 w-full bg-yellow-500 text-black p-2 rounded"
+            >
+              📍 GPS bekapcsolás
+            </button>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+            <div className="mt-3">
+              <h3 className="font-bold">Megállók</h3>
+              {filteredStops.map(s => (
+                <div
+                  key={s.id}
+                  className="p-2 border-b border-gray-700 cursor-pointer"
+                  onClick={() => setSelectedStop(s)}
+                >
+                  {s.name}
+                </div>
+              ))}
+            </div>
 
-<style>
-body { margin:0; font-family: Arial; background:#111; color:#fff; }
-#map { height: 60vh; }
-.panel { padding:10px; }
-button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
-.box { background:#1e1e1e; padding:10px; border-radius:8px; font-size:13px; }
-</style>
-</head>
+            {gps && selectedStop && (
+              <div className="mt-3 bg-gray-800 p-2">
+                Távolság: {distance(
+                  { lat: gps[0], lng: gps[1] },
+                  selectedStop
+                ).toFixed(2)} km
+              </div>
+            )}
+          </div>
+        )}
 
-<body>
+        {/* MAP */}
+        <div className="flex-1 relative">
+          {!menuOpen && (
+            <button
+              onClick={() => setMenuOpen(true)}
+              className="absolute top-2 left-2 z-[999] bg-blue-600 text-white px-3 py-1 rounded"
+            >
+              ☰ Menü
+            </button>
+          )}
 
-<div class="panel">
+          <MapContainer center={center} zoom={12} className="h-full w-full">
+            <TileLayer
+              attribution="&copy; OpenStreetMap"
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            />
 
-  <button onclick="setMode('gps')">🧭 GPS</button>
-  <button onclick="setMode('tura')">🥾 Túra</button>
-  <button onclick="loadPOI()">📌 POI</button>
-  <button onclick="loadRail()">🚆 Vasút</button>
-  <button onclick="resetTrack()">🔄 Reset</button>
+            {SAMPLE_STOPS.map(s => (
+              <Marker key={s.id} position={[s.lat, s.lng]}>
+                <Popup>
+                  <b>{s.name}</b><br />
+                  Mode: {mode}
+                </Popup>
+              </Marker>
+            ))}
 
-  <div id="info" class="box">Indítás...</div>
+            {gps && (
+              <Marker position={gps}>
+                <Popup>📍 Saját pozíció</Popup>
+              </Marker>
+            )}
 
-</div>
-
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<script>
-let map = L.map('map').setView([47.4979,19.0402],13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-let mode = "gps";
-let track = [];
-let polyline;
-let marker;
-
-let poiLayer = L.layerGroup().addTo(map);
-
-let minLat=999,maxLat=-999,minLng=999,maxLng=-999;
-
-// ---------------- MODE ----------------
-function setMode(m){
-  mode = m;
-  render("Mód: " + m.toUpperCase());
-}
-
-// ---------------- GPS ----------------
-function startGPS(){
-  navigator.geolocation.watchPosition(async pos=>{
-    let lat = pos.coords.latitude;
-    let lng = pos.coords.longitude;
-
-    track.push([lat,lng]);
-    if(track.length>60) track.shift();
-
-    // MIN-MAX FIX
-    minLat=Math.min(minLat,lat);
-    maxLat=Math.max(maxLat,lat);
-    minLng=Math.min(minLng,lng);
-    maxLng=Math.max(maxLng,lng);
-
-    if(!marker){
-      marker = L.marker([lat,lng]).addTo(map);
-      map.setView([lat,lng],15);
-    } else marker.setLatLng([lat,lng]);
-
-    if(polyline) polyline.setLatLngs(track);
-    else polyline = L.polyline(track,{color:'red'}).addTo(map);
-
-    let addr = await reverse(lat,lng);
-
-    renderUI(lat,lng,addr);
-
-  },err=>console.log(err),{enableHighAccuracy:true});
-}
-
-// ---------------- UI ----------------
-function renderUI(lat,lng,addr){
-
-  let coords = track.slice(-6).map(p =>
-    `📍 ${p[0].toFixed(5)}, ${p[1].toFixed(5)}`
-  ).join("<br>");
-
-  render(`
-    🧭 MODE: ${mode}<br><br>
-
-    📍 Aktuális:<br>
-    ${lat.toFixed(5)}, ${lng.toFixed(5)}<br><br>
-
-    📊 MIN–MAX:<br>
-    🔻 ${minLat.toFixed(5)} / 🔺 ${maxLat.toFixed(5)}<br>
-    🔻 ${minLng.toFixed(5)} / 🔺 ${maxLng.toFixed(5)}<br><br>
-
-    🗺️ Track:<br>
-    ${coords}<br><br>
-
-    🏠 Cím:<br>
-    ${addr}
-  `);
-}
-
-// ---------------- REVERSE GEOCODE ----------------
-async function reverse(lat,lng){
-  try{
-    let r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${lat}&lon=${lng}`);
-    let d=await r.json();
-    let a=d.address||{};
-
-    return `
-    🌍 ${a.country||"-"}<br>
-    🏙️ ${a.city||a.town||a.village||"-"}<br>
-    📍 ${a.suburb||"-"}<br>
-    🛣️ ${a.road||"-"}<br>
-    🏠 ${a.house_number||"-"}
-    `;
-  }catch(e){return "nincs adat";}
-}
-
-// ---------------- POI (BKV / városi / túra) ----------------
-async function loadPOI(){
-  poiLayer.clearLayers();
-
-  let c = map.getCenter();
-
-  let q = `
-  [out:json];
-  node(around:1200,${c.lat},${c.lng})[amenity];
-  out;
-  `;
-
-  let r = await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q));
-  let d = await r.json();
-
-  d.elements.slice(0,20).forEach(p=>{
-    let m = L.marker([p.lat,p.lon]).addTo(poiLayer);
-    m.bindPopup(p.tags.name || "POI");
-  });
-
-  render("📌 POI betöltve (BKV / szolgáltatások / városi pontok)");
-}
-
-// ---------------- VASÚT ----------------
-async function loadRail(){
-  poiLayer.clearLayers();
-
-  let c = map.getCenter();
-
-  let q = `
-  [out:json];
-  node(around:4000,${c.lat},${c.lng})[railway=station];
-  out;
-  `;
-
-  let r = await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q));
-  let d = await r.json();
-
-  d.elements.forEach(p=>{
-    let m = L.marker([p.lat,p.lon]).addTo(poiLayer);
-    m.bindPopup("🚆 " + (p.tags.name || "Állomás"));
-  });
-
-  render("🚆 Vasútállomások betöltve (4km)");
-}
-
-// ---------------- RESET ----------------
-function resetTrack(){
-  track=[];
-  if(polyline) map.removeLayer(polyline);
-  polyline=null;
-  render("Reset kész");
-}
-
-// ---------------- UI ----------------
-function render(html){
-  document.getElementById("info").innerHTML=html;
-}
-
-// START GPS
-startGPS();
-
-</script>
-
-</body>
-</html>
+            {gps && <FlyToLocation position={gps} />}
+          </MapContainer>
+        </div>
+      </div>
+    </div>
