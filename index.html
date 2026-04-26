@@ -2,296 +2,190 @@
 <html lang="hu">
 <head>
   <meta charset="UTF-8" />
-  <title>GTFS Kereső + Térkép + Menetrend + Közel Hozzám (A+B+C+D FIX)</title>
+  <title>GTFS ZIP PRO PANEL (Drag & Drop)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
   <style>
     body { margin:0; font-family: Arial; display:flex; height:100vh; }
-    #sidebar {
-      width: 380px;
-      padding: 10px;
-      border-right: 1px solid #ddd;
-      overflow:auto;
-    }
+    #sidebar { width:380px; padding:10px; border-right:1px solid #ddd; overflow:auto; background:#fafafa; }
     #map { flex:1; }
-    input, button {
-      width: 100%;
-      padding: 8px;
-      margin-bottom: 10px;
+
+    #dropzone {
+      border:2px dashed #888;
+      padding:10px;
+      text-align:center;
+      margin-bottom:10px;
+      background:white;
+      cursor:pointer;
     }
-    .stop {
-      padding: 6px;
-      border-bottom: 1px solid #eee;
-      cursor: pointer;
-    }
+
+    input { width:100%; padding:8px; margin-bottom:10px; }
+
+    .stop { padding:6px; border-bottom:1px solid #eee; cursor:pointer; background:white; }
     .stop:hover { background:#f0f0f0; }
+
     .small { font-size:12px; color:#555; }
-    .section-title { margin-top:10px; font-weight:bold; }
-    #status { font-size:12px; color:#b00; margin-bottom:10px; }
+    #status { font-size:12px; padding:6px; background:#e7f3ff; border:1px solid #b3d7ff; margin-bottom:10px; }
   </style>
 </head>
 <body>
 
 <div id="sidebar">
-  <h3>🚏 GTFS Rendszer</h3>
+  <h3>📦 GTFS ZIP PRO</h3>
 
-  <div id="status">Betöltés...</div>
+  <div id="status">Dobd be a GTFS ZIP-et</div>
 
-  <input id="search" placeholder="Keresés megállóra..." />
+  <div id="dropzone">📁 IDE húzd a budapest_gtfs.zip fájlt</div>
+  <input type="file" id="fileInput" accept=".zip" />
 
-  <button onclick="getLocation()">📍 Közel hozzám</button>
+  <input id="search" placeholder="Keresés..." />
 
-  <div class="section-title">🔎 Találatok</div>
   <div id="list"></div>
-
-  <div class="section-title">📍 Közelemben</div>
-  <div id="nearby"></div>
 </div>
 
 <div id="map"></div>
 
 <script>
 
-const statusEl = document.getElementById('status');
+const map = L.map('map').setView([47.4979,19.0402],12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OSM' }).addTo(map);
 
-// -----------------------------
-// MAP
-// -----------------------------
-const map = L.map('map').setView([47.4979, 19.0402], 12);
+let stops=[];
+let markers=[];
+let stopTimesIndex={};
+const status=document.getElementById('status');
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap'
-}).addTo(map);
-
-let markers = [];
-let stops = [];
-let stopTimesIndex = {};
-let userMarker = null;
-
-// -----------------------------
-// DISTANCE
-// -----------------------------
-function getDistance(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2-lat1) * Math.PI/180;
-  const dLon = (lon2-lon1) * Math.PI/180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+// ---------------- CSV ----------------
+function parseCSV(text){
+  const lines=text.split(/\r?\n/).filter(Boolean);
+  const header=lines[0].split(',');
+  return {lines,header};
 }
 
-// -----------------------------
-// GPS
-// -----------------------------
-function getLocation() {
-  if (!navigator.geolocation) return alert("Nincs GPS támogatás");
+// ---------------- LOAD FROM ZIP ----------------
+async function loadZip(file){
+  const zip=await JSZip.loadAsync(file);
 
-  navigator.geolocation.getCurrentPosition(pos => {
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
+  const stopsFile=zip.file("stops.txt");
+  const stopTimesFile=zip.file("stop_times.txt");
 
-    map.setView([lat, lon], 14);
+  if(!stopsFile){status.innerText="❌ nincs stops.txt"; return;}
 
-    if (userMarker) map.removeLayer(userMarker);
+  const stopsText=await stopsFile.async("string");
+  const {lines,header}=parseCSV(stopsText);
 
-    userMarker = L.marker([lat, lon])
-      .addTo(map)
-      .bindPopup("📍 Te itt vagy")
-      .openPopup();
+  const idIndex=header.indexOf('stop_id');
+  const nameIndex=header.indexOf('stop_name');
+  const latIndex=header.indexOf('stop_lat');
+  const lonIndex=header.indexOf('stop_lon');
 
-    showNearby(lat, lon);
-  });
-}
+  stops=lines.slice(1).map(l=>{
+    const c=l.split(',');
+    return {
+      id:c[idIndex],
+      name:c[nameIndex],
+      lat:parseFloat(c[latIndex]),
+      lon:parseFloat(c[lonIndex])
+    };
+  }).filter(s=>s.id && s.name && !isNaN(s.lat));
 
-// -----------------------------
-// NEARBY
-// -----------------------------
-function showNearby(lat, lon) {
-  const nearby = stops
-    .map(s => ({...s, dist: getDistance(lat, lon, s.lat, s.lon)}))
-    .sort((a,b) => a.dist - b.dist)
-    .slice(0, 15);
+  status.innerText=`✔ Betöltve: ${stops.length} megálló`;
 
-  const box = document.getElementById('nearby');
-  box.innerHTML = '';
+  render();
 
-  nearby.forEach(s => {
-    const div = document.createElement('div');
-    div.className = 'stop';
-    div.innerHTML = `<b>${s.name}</b><div class='small'>${s.dist.toFixed(2)} km</div>`;
-    div.onclick = () => openStop(s);
-    box.appendChild(div);
-  });
-}
+  // STOP TIMES
+  if(stopTimesFile){
+    const stText=await stopTimesFile.async("string");
+    const stLines=stText.split(/\r?\n/).filter(Boolean);
+    const stHeader=stLines[0].split(',');
 
-// -----------------------------
-// CSV SAFE PARSE (FIX)
-// -----------------------------
-function parseCSV(text) {
-  const lines = text.split(/\r?\n/).filter(Boolean);
-  const header = lines[0].split(',');
+    const sid=stHeader.indexOf('stop_id');
+    const time=stHeader.indexOf('departure_time');
+    const trip=stHeader.indexOf('trip_id');
 
-  return { lines, header };
-}
+    stopTimesIndex={};
 
-// -----------------------------
-// LOAD STOPS
-// -----------------------------
-async function loadStops() {
-  try {
-    const res = await fetch("stops.txt");
-    const text = await res.text();
-
-    const { lines, header } = parseCSV(text);
-
-    const idIndex = header.indexOf('stop_id');
-    const nameIndex = header.indexOf('stop_name');
-    const latIndex = header.indexOf('stop_lat');
-    const lonIndex = header.indexOf('stop_lon');
-
-    stops = lines.slice(1).map(l => {
-      const cols = l.split(',');
-      return {
-        id: cols[idIndex],
-        name: cols[nameIndex],
-        lat: parseFloat(cols[latIndex]),
-        lon: parseFloat(cols[lonIndex])
-      };
-    }).filter(s => s.id && s.name && !isNaN(s.lat));
-
-    statusEl.innerText = `✔ Megállók betöltve: ${stops.length}`;
-
-    renderList(stops);
-    renderMarkers(stops);
-
-  } catch (e) {
-    console.error(e);
-    statusEl.innerText = "❌ Hiba: stops.txt nem tölthető be (futtasd szerverről, ne file://)";
-  }
-}
-
-// -----------------------------
-// STOP TIMES
-// -----------------------------
-async function loadStopTimes() {
-  try {
-    const res = await fetch("stop_times.txt");
-    const text = await res.text();
-
-    const lines = text.split(/\r?\n/).filter(Boolean);
-    const header = lines[0].split(',');
-
-    const stopIdIndex = header.indexOf('stop_id');
-    const timeIndex = header.indexOf('departure_time');
-    const tripIndex = header.indexOf('trip_id');
-
-    stopTimesIndex = {};
-
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(',');
-      const stopId = cols[stopIdIndex];
-      const time = cols[timeIndex];
-      const trip = cols[tripIndex];
-
-      if (!stopId || !time) continue;
-
-      if (!stopTimesIndex[stopId]) stopTimesIndex[stopId] = [];
-      stopTimesIndex[stopId].push({ time, trip });
+    for(let i=1;i<stLines.length;i++){
+      const c=stLines[i].split(',');
+      const id=c[sid];
+      if(!stopTimesIndex[id]) stopTimesIndex[id]=[];
+      stopTimesIndex[id].push({time:c[time],trip:c[trip]});
     }
-
-  } catch(e) {
-    console.log("stop_times hiányzik", e);
   }
 }
 
-// -----------------------------
-// LIST
-// -----------------------------
-function renderList(data) {
-  const list = document.getElementById('list');
-  list.innerHTML = '';
+// ---------------- RENDER ----------------
+function render(){
+  renderList(stops);
+  renderMarkers(stops);
+}
 
-  data.slice(0, 200).forEach(s => {
-    const div = document.createElement('div');
-    div.className = 'stop';
-    div.innerHTML = `<b>${s.name}</b><div class='small'>${s.id}</div>`;
-    div.onclick = () => openStop(s);
+function renderList(data){
+  const list=document.getElementById('list');
+  list.innerHTML='';
+
+  data.slice(0,200).forEach(s=>{
+    const div=document.createElement('div');
+    div.className='stop';
+    div.innerHTML=`<b>${s.name}</b><div class='small'>${s.id}</div>`;
+    div.onclick=()=>openStop(s);
     list.appendChild(div);
   });
 }
 
-// -----------------------------
-// MARKERS
-// -----------------------------
-function renderMarkers(data) {
-  markers.forEach(m => map.removeLayer(m));
-  markers = [];
+function renderMarkers(data){
+  markers.forEach(m=>map.removeLayer(m));
+  markers=[];
 
-  data.forEach(s => {
-    if (!s.lat || !s.lon) return;
-
-    const marker = L.marker([s.lat, s.lon])
-      .addTo(map)
-      .on('click', () => openStop(s));
-
-    markers.push(marker);
+  data.forEach(s=>{
+    if(!s.lat||!s.lon) return;
+    const m=L.marker([s.lat,s.lon]).addTo(map).on('click',()=>openStop(s));
+    markers.push(m);
   });
 }
 
-// -----------------------------
-// STOP POPUP
-// -----------------------------
-function openStop(stop) {
-  const times = stopTimesIndex[stop.id] || [];
+// ---------------- STOP ----------------
+function openStop(stop){
+  const times=stopTimesIndex[stop.id]||[];
 
-  let html = `<b>${stop.name}</b><br><br>`;
+  let html=`<b>${stop.name}</b><br><br>`;
 
-  if (times.length === 0) {
-    html += "<i>Nincs menetrend adat</i>";
-  } else {
-    html += "<b>Következő indulások:</b><br>";
-    html += times.slice(0, 10).map(t => `🚌 ${t.time}`).join('<br>');
-  }
+  if(!times.length) html+="<i>Nincs menetrend</i>";
+  else html+=times.slice(0,10).map(t=>"🚌 "+t.time).join("<br>");
 
-  L.popup()
-    .setLatLng([stop.lat, stop.lon])
-    .setContent(html)
-    .openOn(map);
+  L.popup().setLatLng([stop.lat,stop.lon]).setContent(html).openOn(map);
 }
 
-// -----------------------------
-// SEARCH FIX
-// -----------------------------
-const search = document.getElementById('search');
-
-search.addEventListener('input', e => {
-  const q = e.target.value.toLowerCase();
-
-  if (!stops.length) return;
-
-  const filtered = stops.filter(s =>
-    s.name && s.name.toLowerCase().includes(q)
-  );
-
-  renderList(filtered);
-  renderMarkers(filtered);
+// ---------------- SEARCH ----------------
+const search=document.getElementById('search');
+search.addEventListener('input',e=>{
+  const q=e.target.value.toLowerCase();
+  const f=stops.filter(s=>s.name&&s.name.toLowerCase().includes(q));
+  renderList(f);
+  renderMarkers(f);
 });
 
-// -----------------------------
-// INIT
-// -----------------------------
-async function init() {
-  await loadStopTimes();
-  await loadStops();
-}
+// ---------------- DROPZONE ----------------
+const drop=document.getElementById('dropzone');
+const fileInput=document.getElementById('fileInput');
 
-init();
+drop.addEventListener('dragover',e=>{e.preventDefault();drop.style.background="#ddd"});
+drop.addEventListener('dragleave',()=>drop.style.background="white");
+drop.addEventListener('drop',e=>{
+  e.preventDefault();drop.style.background="white";
+  loadZip(e.dataTransfer.files[0]);
+});
+
+fileInput.addEventListener('change',e=>loadZip(e.target.files[0]));
 
 </script>
 
 </body>
 </html>
+
 
 
