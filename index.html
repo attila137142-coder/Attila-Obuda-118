@@ -1,9 +1,11 @@
+COCKPIT v5 – REAL SYSTEM CORE (1 FILE)
+
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Hungary Transit + Forest Rail Cockpit PRO</title>
+<title>Hungary Transit Cockpit REAL v5</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -11,8 +13,9 @@
 body { margin:0; font-family: Arial; background:#111; color:#fff; }
 #map { height: 60vh; }
 .panel { padding:10px; }
-button { margin:3px; padding:8px; border:0; border-radius:6px; }
+button { margin:3px; padding:8px; border-radius:6px; border:0; }
 .box { background:#1e1e1e; padding:10px; border-radius:8px; font-size:13px; }
+input { padding:8px; width:100%; margin-top:6px; }
 </style>
 </head>
 
@@ -20,14 +23,16 @@ button { margin:3px; padding:8px; border:0; border-radius:6px; }
 
 <div class="panel">
 
-<button onclick="setMode('gps')">🧭 GPS</button>
-<button onclick="toggleStops()">🚏 Megállók</button>
+<button onclick="loadGTFS()">📦 GTFS LOAD (demo)</button>
+<button onclick="filter('all')">🌍 ALL</button>
 <button onclick="filter('bkk')">🚍 BKK</button>
 <button onclick="filter('volan')">🚌 VOLÁN</button>
 <button onclick="filter('mav')">🚆 MÁV</button>
-<button onclick="filter('forest')">🌲 Kisvasút</button>
+<button onclick="filter('forest')">🌲 KISVASÚT</button>
 
-<div id="info" class="box">Indítás...</div>
+<input id="search" placeholder="🔎 megálló keresés..." oninput="searchStops()"/>
+
+<div id="info" class="box">GTFS rendszer készen áll</div>
 
 </div>
 
@@ -36,65 +41,75 @@ button { margin:3px; padding:8px; border:0; border-radius:6px; }
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-let map = L.map('map').setView([47.4979,19.0402],8);
+let map = L.map('map').setView([47.2,19.5],7);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let mode = "gps";
-let showStops = false;
 let userPos = null;
+let stops = [];
 let markers = L.layerGroup().addTo(map);
-
-// ---------------- DEMO GTFS LITE ADAT ----------------
-// (EZT később a te GTFS exportjaid töltik fel automatikusan)
-let stops = [
-  {id:"BKK_001", name:"Deák Ferenc tér", lat:47.4975, lng:19.0550, type:"bkk"},
-  {id:"BKK_002", name:"Blaha Lujza tér", lat:47.4970, lng:19.0700, type:"bkk"},
-  {id:"MAV_010", name:"Keleti pályaudvar", lat:47.5009, lng:19.0836, type:"mav"},
-  {id:"VOL_120", name:"Érd autóbusz-állomás", lat:47.3840, lng:18.9300, type:"volan"},
-  {id:"KIS_001", name:"Szob kisvasút", lat:47.8190, lng:18.8670, type:"forest"},
-];
 
 // ---------------- GPS ----------------
 navigator.geolocation.watchPosition(pos=>{
-  userPos = {lat:pos.coords.latitude,lng:pos.coords.longitude};
-
-  render();
+  userPos = {
+    lat:pos.coords.latitude,
+    lng:pos.coords.longitude
+  };
 });
 
-// ---------------- MODE ----------------
-function setMode(m){
-  mode = m;
-  render();
+// ---------------- GTFS LOAD (SIMULÁLT CORE) ----------------
+function loadGTFS(){
+
+  // EZ KÉSŐBB: valódi GTFS JSON import
+  stops = [
+    {id:"BKK_001",name:"Deák tér",lat:47.4979,lng:19.0550,type:"bkk"},
+    {id:"BKK_002",name:"Astoria",lat:47.4959,lng:19.0615,type:"bkk"},
+    {id:"MAV_01",name:"Keleti",lat:47.5009,lng:19.0836,type:"mav"},
+    {id:"VOL_01",name:"Székesfehérvár busz",lat:47.1860,lng:18.4221,type:"volan"},
+    {id:"FOREST_1",name:"Szob kisvasút",lat:47.8190,lng:18.8670,type:"forest"},
+  ];
+
+  renderStops(stops);
+  render("GTFS betöltve (CORE ENGINE READY)");
 }
 
-// ---------------- TOGGLE ----------------
-function toggleStops(){
-  showStops = !showStops;
-  render();
+// ---------------- RENDER ----------------
+function renderStops(list){
+  markers.clearLayers();
+
+  list.forEach(s=>{
+    let m = L.marker([s.lat,s.lng]).addTo(markers);
+
+    let dist = userPos ? haversine(userPos.lat,userPos.lng,s.lat,s.lng) : 0;
+
+    m.bindPopup(`
+      🚏 ${s.name}<br>
+      🆔 ${s.id}<br>
+      📊 ${s.type}<br>
+      📏 ${dist.toFixed(0)} m
+    `);
+  });
 }
 
 // ---------------- FILTER ----------------
 function filter(type){
-  markers.clearLayers();
 
-  stops.filter(s=>s.type===type).forEach(s=>{
-    addStop(s);
-  });
+  if(type==="all"){
+    renderStops(stops);
+    return;
+  }
 
-  render();
+  renderStops(stops.filter(s=>s.type===type));
 }
 
-// ---------------- STOP RENDER ----------------
-function addStop(s){
-  let m = L.marker([s.lat,s.lng]).addTo(markers);
+// ---------------- SEARCH ----------------
+function searchStops(){
+  let q = document.getElementById("search").value.toLowerCase();
 
-  let dist = userPos ? haversine(userPos.lat,userPos.lng,s.lat,s.lng) : 0;
+  let res = stops.filter(s =>
+    s.name.toLowerCase().includes(q)
+  );
 
-  m.bindPopup(`
-    🚏 ${s.name}<br>
-    🆔 ${s.id}<br>
-    📏 ${dist.toFixed(0)} m
-  `);
+  renderStops(res);
 }
 
 // ---------------- DISTANCE ----------------
@@ -108,21 +123,9 @@ function haversine(lat1,lon1,lat2,lon2){
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// ---------------- MAIN RENDER ----------------
-function render(){
-
-  if(showStops){
-    markers.clearLayers();
-    stops.forEach(s=>addStop(s));
-  }
-
-  let text = `
-    🧭 MODE: ${mode}<br>
-    📍 User: ${userPos ? userPos.lat.toFixed(5)+", "+userPos.lng.toFixed(5) : "no GPS"}<br>
-    🚏 Stops loaded: ${stops.length}<br>
-  `;
-
-  document.getElementById("info").innerHTML = text;
+// ---------------- UI ----------------
+function render(txt){
+  document.getElementById("info").innerHTML = txt;
 }
 
 </script>
