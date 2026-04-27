@@ -66,21 +66,29 @@ async function hashBuffer(buffer){
   return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-async function saveZip(name,data){
-  const hash = await hashBuffer(data);
+async function loadFromDB(){
+  stopsMap = new Map();
 
-  return new Promise((res)=>{
-    const tx = db.transaction("zips","readwrite");
-    const store = tx.objectStore("zips");
+  const files = await getZips();
 
-    const req = store.get(hash);
+  console.log("BETÖLTÖTT ZIP-ek:", files.length);
 
-    req.onsuccess = () => {
-      if(!req.result){
-        store.put({hash,name,data});
-      }
-    };
+  if(files.length === 0){
+    console.warn("NINCS ADAT A DB-BEN");
+    return;
+  }
 
+  for(const f of files){
+    try{
+      await loadZip(new File([f.data], f.name));
+    }catch(e){
+      console.error("ZIP hiba:", f.name, e);
+    }
+  }
+
+  // 💥 CSAK ITT renderelünk
+  render();
+}
     tx.oncomplete = () => res();
   });
 }
