@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>GTFS PRO ULTRA + BACKUP</title>
+<title>GTFS PRO FINAL STABLE</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -14,135 +14,104 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body { margin:0; font-family: Arial; display:flex; height:100vh; }
-#sidebar { width:400px; padding:10px; border-right:1px solid #ddd; overflow:auto; }
+body { margin:0; display:flex; height:100vh; font-family:Arial; }
+#sidebar { width:380px; padding:10px; border-right:1px solid #ccc; overflow:auto; }
 #map { flex:1; }
-.stop { padding:6px; border-bottom:1px solid #eee; cursor:pointer; }
-input,button { width:100%; padding:8px; margin-bottom:8px; }
+input,button { width:100%; margin-bottom:8px; padding:8px; }
+.stop { padding:6px; border-bottom:1px solid #eee; }
 </style>
 </head>
 <body>
 
 <div id="sidebar">
-<h3>🚌 GTFS ULTRA + BACKUP</h3>
+<h3>🚌 GTFS FINAL STABLE</h3>
 <button onclick="clearDB()">🗑 CLEAR</button>
 <button onclick="exportDB()">💾 EXPORT</button>
 <input type="file" id="importFile" />
 <button onclick="importDB()">📥 IMPORT</button>
 
-<input id="search" placeholder="Megálló keresés" />
+<input id="search" placeholder="Keresés" />
 <div id="list"></div>
 </div>
 
 <div id="map"></div>
 
 <script>
-const map = L.map('map').setView([47.4979,19.0402],12);
+const map = L.map('map').setView([47.49,19.04],12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let cluster = L.markerClusterGroup();
 map.addLayer(cluster);
 
 let stopsMap = new Map();
-let stops=[];
+let stops = [];
 
 let db;
 
+// DB INIT
 function initDB(){
   return new Promise(res=>{
-    const req=indexedDB.open("GTFS_DB",3);
-    req.onupgradeneeded=e=>{
-      db=e.target.result;
+    const req = indexedDB.open("GTFS_DB", 5);
+
+    req.onupgradeneeded = e => {
+      db = e.target.result;
       if(!db.objectStoreNames.contains("zips")){
-        db.createObjectStore("zips",{keyPath:"hash"});
+        db.createObjectStore("zips", { keyPath: "hash" });
       }
     };
-    req.onsuccess=e=>{db=e.target.result; res();};
+
+    req.onsuccess = e => {
+      db = e.target.result;
+      res();
+    };
   });
 }
 
+// HASH
 async function hashBuffer(buffer){
   const hash = await crypto.subtle.digest('SHA-256', buffer);
   return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
 }
 
-async function loadFromDB(){
-  stopsMap = new Map();
+// SAVE ZIP (FIXED)
+async function saveZip(name,data){
+  const hash = await hashBuffer(data);
 
-  const files = await getZips();
+  return new Promise(res=>{
+    const tx = db.transaction("zips","readwrite");
+    const store = tx.objectStore("zips");
 
-  console.log("BETÖLTÖTT ZIP-ek:", files.length);
+    const getReq = store.get(hash);
 
-  if(files.length === 0){
-    console.warn("NINCS ADAT A DB-BEN");
-    return;
-  }
+    getReq.onsuccess = () => {
+      if(!getReq.result){
+        store.put({hash,name,data});
+      }
+    };
 
-  for(const f of files){
-    try{
-      await loadZip(new File([f.data], f.name));
-    }catch(e){
-      console.error("ZIP hiba:", f.name, e);
-    }
-  }
-
-  // 💥 CSAK ITT renderelünk
-  render();
-}
-    tx.oncomplete = () => res();
+    tx.oncomplete = ()=>res();
   });
 }
 
 function getZips(){
-  return new Promise(r=>{
-    const tx=db.transaction("zips","readonly");
-    const req=tx.objectStore("zips").getAll();
-    req.onsuccess=()=>r(req.result);
+  return new Promise(res=>{
+    const tx = db.transaction("zips","readonly");
+    const req = tx.objectStore("zips").getAll();
+    req.onsuccess = ()=>res(req.result);
   });
 }
 
 function clearDB(){
-  const tx=db.transaction("zips","readwrite");
+  const tx = db.transaction("zips","readwrite");
   tx.objectStore("zips").clear();
   location.reload();
 }
 
-// EXPORT
-async function exportDB(){
-  const files = await getZips();
-
-  const zip = new JSZip();
-
-  files.forEach(f=>{
-    zip.file(f.name, f.data);
-  });
-
-  const blob = await zip.generateAsync({type:"blob"});
-
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = "GTFS_BACKUP.zip";
-  a.click();
-}
-
-// IMPORT
-async function importDB(){
-  const file = document.getElementById('importFile').files[0];
-  if(!file) return;
-
-  const zip = await JSZip.loadAsync(file);
-
-  for(const name of Object.keys(zip.files)){
-    const data = await zip.file(name).async("arraybuffer");
-    await saveZip(name, data);
-    await loadZip(new File([data], name));
-  }
-}
-
+// CSV SAFE PARSE
 function parseCSV(text){
-  const lines=text.split(/\r?\n/);
-  const header=lines[0].split(',');
-  const data=[];
+  const lines = text.split(/\r?\n/);
+  const header = lines[0].split(',');
+  const data = [];
 
   for(let i=1;i<lines.length;i++){
     let row=[],cur='',q=false;
@@ -157,50 +126,68 @@ function parseCSV(text){
   return {header,data};
 }
 
+// LOAD ZIP SAFE
 async function loadZip(file){
-  const zip=await JSZip.loadAsync(file);
+  try{
+    const zip = await JSZip.loadAsync(file);
 
-  if(zip.file("stops.txt")){
-    const {header,data}=parseCSV(await zip.file("stops.txt").async("string"));
-    const idI=header.indexOf('stop_id');
-    const nI=header.indexOf('stop_name');
-    const laI=header.indexOf('stop_lat');
-    const loI=header.indexOf('stop_lon');
+    if(zip.file("stops.txt")){
+      const {header,data} = parseCSV(await zip.file("stops.txt").async("string"));
 
-    data.forEach(r=>{
-      const s={id:r[idI],name:r[nI],lat:+r[laI],lon:+r[loI]};
-      if(!stopsMap.has(s.id)) stopsMap.set(s.id,s);
-    });
+      const idI=header.indexOf('stop_id');
+      const nI=header.indexOf('stop_name');
+      const laI=header.indexOf('stop_lat');
+      const loI=header.indexOf('stop_lon');
+
+      data.forEach(r=>{
+        const lat = +r[laI];
+        const lon = +r[loI];
+
+        if(!isNaN(lat) && !isNaN(lon)){
+          const s = {id:r[idI], name:r[nI], lat, lon};
+          if(!stopsMap.has(s.id)) stopsMap.set(s.id,s);
+        }
+      });
+    }
+
+  }catch(e){
+    console.error("ZIP HIBA:", file.name, e);
+  }
+}
+
+// LOAD FROM DB (FIXED)
+async function loadFromDB(){
+  stopsMap = new Map();
+
+  const files = await getZips();
+  console.log("BETÖLTÖTT ZIP-ek:", files.length);
+
+  for(const f of files){
+    await loadZip(new File([f.data], f.name));
   }
 
   render();
 }
 
-async function loadFromDB(){
-  stopsMap=new Map();
-
-  const files=await getZips();
-
-  console.log("BETÖLTÖTT ZIP-ek:", files.length);
-
-  for(const f of files){
-    await loadZip(new File([f.data],f.name));
-  }
-}
-
+// RENDER SAFE
 function render(){
-  stops=Array.from(stopsMap.values());
+  stops = Array.from(stopsMap.values());
+
+  console.log("STOP DB MÉRET:", stops.length);
+
+  if(stops.length === 0){
+    console.warn("NINCS ADAT");
+    return;
+  }
 
   cluster.clearLayers();
 
   stops.forEach(s=>{
-    if(!isNaN(s.lat)&&!isNaN(s.lon)){
-      cluster.addLayer(L.marker([s.lat,s.lon]));
-    }
+    cluster.addLayer(L.marker([s.lat,s.lon]));
   });
 
-  const list=document.getElementById('list');
-  list.innerHTML='';
+  const list = document.getElementById('list');
+  list.innerHTML = '';
 
   stops.slice(0,200).forEach(s=>{
     const d=document.createElement('div');
@@ -210,8 +197,37 @@ function render(){
   });
 }
 
+// EXPORT
+async function exportDB(){
+  const files = await getZips();
+  const zip = new JSZip();
+
+  files.forEach(f=> zip.file(f.name, f.data));
+
+  const blob = await zip.generateAsync({type:"blob"});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download="GTFS_BACKUP.zip";
+  a.click();
+}
+
+// IMPORT
+async function importDB(){
+  const file = document.getElementById('importFile').files[0];
+  if(!file) return;
+
+  const zip = await JSZip.loadAsync(file);
+
+  for(const name of Object.keys(zip.files)){
+    const data = await zip.file(name).async("arraybuffer");
+    await saveZip(name,data);
+  }
+
+  await loadFromDB();
+}
+
 // FILE INPUT
-const input=document.createElement('input');
+const input = document.createElement('input');
 input.type='file';
 input.multiple=true;
 input.accept='.zip';
@@ -222,20 +238,21 @@ input.onchange=e=>{
     const r=new FileReader();
     r.onload=async ev=>{
       await saveZip(f.name,ev.target.result);
-      await loadZip(new File([ev.target.result],f.name));
+      await loadFromDB();
     };
     r.readAsArrayBuffer(f);
   }
 };
 
+// INIT
 (async()=>{
   await initDB();
   await loadFromDB();
 })();
 
 </script>
-
 </body>
 </html>
+
 
 
