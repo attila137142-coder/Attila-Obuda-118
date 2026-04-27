@@ -1,13 +1,13 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<title>GTFS PRO FINAL STABLE</title>
+<meta charset="UTF-8">
+<title>GTFS PRO ULTRA FINAL</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css">
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
@@ -24,13 +24,14 @@ input,button { width:100%; margin-bottom:8px; padding:8px; }
 <body>
 
 <div id="sidebar">
-<h3>🚌 GTFS FINAL STABLE</h3>
+<h3>🚌 GTFS ULTRA FINAL</h3>
+
 <button onclick="clearDB()">🗑 CLEAR</button>
 <button onclick="exportDB()">💾 EXPORT</button>
-<input type="file" id="importFile" />
+<input type="file" id="importFile">
 <button onclick="importDB()">📥 IMPORT</button>
 
-<input id="search" placeholder="Keresés" />
+<input id="search" placeholder="Keresés">
 <div id="list"></div>
 </div>
 
@@ -51,16 +52,16 @@ let db;
 // DB INIT
 function initDB(){
   return new Promise(res=>{
-    const req = indexedDB.open("GTFS_DB", 5);
+    const req = indexedDB.open("GTFS_DB", 10);
 
-    req.onupgradeneeded = e => {
+    req.onupgradeneeded = e=>{
       db = e.target.result;
       if(!db.objectStoreNames.contains("zips")){
-        db.createObjectStore("zips", { keyPath: "hash" });
+        db.createObjectStore("zips",{keyPath:"hash"});
       }
     };
 
-    req.onsuccess = e => {
+    req.onsuccess = e=>{
       db = e.target.result;
       res();
     };
@@ -70,10 +71,12 @@ function initDB(){
 // HASH
 async function hashBuffer(buffer){
   const hash = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
+  return Array.from(new Uint8Array(hash))
+    .map(b=>b.toString(16).padStart(2,'0'))
+    .join('');
 }
 
-// SAVE ZIP (FIXED)
+// SAVE ZIP
 async function saveZip(name,data){
   const hash = await hashBuffer(data);
 
@@ -81,10 +84,10 @@ async function saveZip(name,data){
     const tx = db.transaction("zips","readwrite");
     const store = tx.objectStore("zips");
 
-    const getReq = store.get(hash);
+    const req = store.get(hash);
 
-    getReq.onsuccess = () => {
-      if(!getReq.result){
+    req.onsuccess = ()=>{
+      if(!req.result){
         store.put({hash,name,data});
       }
     };
@@ -93,6 +96,7 @@ async function saveZip(name,data){
   });
 }
 
+// GET ZIPS
 function getZips(){
   return new Promise(res=>{
     const tx = db.transaction("zips","readonly");
@@ -101,13 +105,14 @@ function getZips(){
   });
 }
 
+// CLEAR
 function clearDB(){
   const tx = db.transaction("zips","readwrite");
   tx.objectStore("zips").clear();
   location.reload();
 }
 
-// CSV SAFE PARSE
+// CSV PARSE
 function parseCSV(text){
   const lines = text.split(/\r?\n/);
   const header = lines[0].split(',');
@@ -116,7 +121,7 @@ function parseCSV(text){
   for(let i=1;i<lines.length;i++){
     let row=[],cur='',q=false;
     for(let c of lines[i]){
-      if(c==='"') q=!q;
+      if(c==='\"') q=!q;
       else if(c===','&&!q){row.push(cur);cur='';}
       else cur+=c;
     }
@@ -126,36 +131,49 @@ function parseCSV(text){
   return {header,data};
 }
 
-// LOAD ZIP SAFE
+// LOAD ZIP (SMART)
 async function loadZip(file){
   try{
     const zip = await JSZip.loadAsync(file);
 
-    if(zip.file("stops.txt")){
-      const {header,data} = parseCSV(await zip.file("stops.txt").async("string"));
+    let stopsFile = null;
 
-      const idI=header.indexOf('stop_id');
-      const nI=header.indexOf('stop_name');
-      const laI=header.indexOf('stop_lat');
-      const loI=header.indexOf('stop_lon');
-
-      data.forEach(r=>{
-        const lat = +r[laI];
-        const lon = +r[loI];
-
-        if(!isNaN(lat) && !isNaN(lon)){
-          const s = {id:r[idI], name:r[nI], lat, lon};
-          if(!stopsMap.has(s.id)) stopsMap.set(s.id,s);
-        }
-      });
+    for(const name of Object.keys(zip.files)){
+      if(name.toLowerCase().endsWith("stops.txt")){
+        stopsFile = zip.files[name];
+        break;
+      }
     }
+
+    if(!stopsFile){
+      console.warn("NINCS stops.txt:", file.name);
+      return;
+    }
+
+    const text = await stopsFile.async("string");
+    const {header,data} = parseCSV(text);
+
+    const idI=header.indexOf('stop_id');
+    const nI=header.indexOf('stop_name');
+    const laI=header.indexOf('stop_lat');
+    const loI=header.indexOf('stop_lon');
+
+    data.forEach(r=>{
+      const lat = +r[laI];
+      const lon = +r[loI];
+
+      if(!isNaN(lat) && !isNaN(lon)){
+        const s = {id:r[idI], name:r[nI], lat, lon};
+        if(!stopsMap.has(s.id)) stopsMap.set(s.id,s);
+      }
+    });
 
   }catch(e){
     console.error("ZIP HIBA:", file.name, e);
   }
 }
 
-// LOAD FROM DB (FIXED)
+// LOAD FROM DB
 async function loadFromDB(){
   stopsMap = new Map();
 
@@ -169,7 +187,7 @@ async function loadFromDB(){
   render();
 }
 
-// RENDER SAFE
+// RENDER
 function render(){
   stops = Array.from(stopsMap.values());
 
@@ -187,7 +205,7 @@ function render(){
   });
 
   const list = document.getElementById('list');
-  list.innerHTML = '';
+  list.innerHTML='';
 
   stops.slice(0,200).forEach(s=>{
     const d=document.createElement('div');
@@ -202,7 +220,7 @@ async function exportDB(){
   const files = await getZips();
   const zip = new JSZip();
 
-  files.forEach(f=> zip.file(f.name, f.data));
+  files.forEach(f=>zip.file(f.name,f.data));
 
   const blob = await zip.generateAsync({type:"blob"});
   const a=document.createElement('a');
@@ -249,10 +267,7 @@ input.onchange=e=>{
   await initDB();
   await loadFromDB();
 })();
-
 </script>
+
 </body>
 </html>
-
-
-
