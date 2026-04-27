@@ -233,12 +233,78 @@ drop.addEventListener('drop',e=>{
 
 fileInput.addEventListener('change',e=>handleFiles(e.target.files));
 
+// ---------------- VEHICLE SIMULATION ----------------
+let vehicles = [];
+let vehicleMarkers = [];
+
+function buildVehicles(){
+  vehicles = [];
+
+  const grouped = {};
+
+  stopTimes.forEach(st=>{
+    if(!grouped[st.trip]) grouped[st.trip]=[];
+    const parts = st.time.split(':');
+    const sec = +parts[0]*3600 + +parts[1]*60;
+    grouped[st.trip].push({...st, sec});
+  });
+
+  for(const tripId in grouped){
+    const seq = grouped[tripId].sort((a,b)=>a.sec-b.sec);
+    if(seq.length < 2) continue;
+
+    vehicles.push({ tripId, seq });
+  }
+}
+
+function updateVehicles(){
+  const now = new Date();
+  const current = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+
+  // clear old
+  vehicleMarkers.forEach(m=>map.removeLayer(m));
+  vehicleMarkers = [];
+
+  vehicles.forEach(v=>{
+    for(let i=0;i<v.seq.length-1;i++){
+      const a = v.seq[i];
+      const b = v.seq[i+1];
+
+      if(current >= a.sec && current <= b.sec){
+
+        const stopA = stops.find(s=>s.id===a.stop);
+        const stopB = stops.find(s=>s.id===b.stop);
+        if(!stopA || !stopB) return;
+
+        const ratio = (current - a.sec) / (b.sec - a.sec);
+
+        const lat = stopA.lat + (stopB.lat - stopA.lat)*ratio;
+        const lon = stopA.lon + (stopB.lon - stopA.lon)*ratio;
+
+        const trip = tripsMap[v.tripId];
+        const label = trip ? trip.route : "?";
+
+        const marker = L.circleMarker([lat,lon],{
+          radius:6
+        }).addTo(map).bindPopup(`🚌 ${label}`);
+
+        vehicleMarkers.push(marker);
+        break;
+      }
+    }
+  });
+}
+
+setInterval(updateVehicles, 5000);
+
 // START
 (async()=>{
   await initDB();
   await loadFromDB();
-})();
 
-</script>
-</body>
-</html>
+  // wait a bit then build vehicles
+  setTimeout(()=>{
+    buildVehicles();
+    updateVehicles();
+  },2000);
+})();
