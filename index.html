@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
   <meta charset="UTF-8" />
-  <title>GTFS ZIP PRO PANEL (Drag & Drop)</title>
+  <title>MULTI GTFS PRO RENDSZER (BKK + REGIONÁLIS)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -29,18 +29,23 @@
     .stop:hover { background:#f0f0f0; }
 
     .small { font-size:12px; color:#555; }
+
     #status { font-size:12px; padding:6px; background:#e7f3ff; border:1px solid #b3d7ff; margin-bottom:10px; }
+
+    #info { font-size:12px; padding:6px; background:#fff3cd; border:1px solid #ffeeba; margin-bottom:10px; }
   </style>
 </head>
 <body>
 
 <div id="sidebar">
-  <h3>📦 GTFS ZIP PRO</h3>
 
-  <div id="status">Dobd be a GTFS ZIP-et</div>
+  <h3>🌍 MULTI GTFS PRO</h3>
 
-  <div id="dropzone">📁 IDE húzd a budapest_gtfs.zip fájlt</div>
-  <input type="file" id="fileInput" accept=".zip" />
+  <div id="status">📦 Dobd be 1 vagy több GTFS ZIP-et</div>
+  <div id="info">BKK + Volán + MÁV együtt kezelhető</div>
+
+  <div id="dropzone">📁 Húzz ide több ZIP-et is</div>
+  <input type="file" id="fileInput" multiple accept=".zip" />
 
   <input id="search" placeholder="Keresés..." />
 
@@ -52,11 +57,12 @@
 <script>
 
 const map = L.map('map').setView([47.4979,19.0402],12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution:'© OSM' }).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
 
 let stops=[];
 let markers=[];
 let stopTimesIndex={};
+
 const status=document.getElementById('status');
 
 // ---------------- CSV ----------------
@@ -66,56 +72,57 @@ function parseCSV(text){
   return {lines,header};
 }
 
-// ---------------- LOAD FROM ZIP ----------------
+// ---------------- MULTI LOAD ----------------
 async function loadZip(file){
   const zip=await JSZip.loadAsync(file);
 
   const stopsFile=zip.file("stops.txt");
   const stopTimesFile=zip.file("stop_times.txt");
 
-  if(!stopsFile){status.innerText="❌ nincs stops.txt"; return;}
+  if(stopsFile){
+    const text=await stopsFile.async("string");
+    const {lines,header}=parseCSV(text);
 
-  const stopsText=await stopsFile.async("string");
-  const {lines,header}=parseCSV(stopsText);
+    const idIndex=header.indexOf('stop_id');
+    const nameIndex=header.indexOf('stop_name');
+    const latIndex=header.indexOf('stop_lat');
+    const lonIndex=header.indexOf('stop_lon');
 
-  const idIndex=header.indexOf('stop_id');
-  const nameIndex=header.indexOf('stop_name');
-  const latIndex=header.indexOf('stop_lat');
-  const lonIndex=header.indexOf('stop_lon');
+    const newStops=lines.slice(1).map(l=>{
+      const c=l.split(',');
+      return {
+        id:c[idIndex],
+        name:c[nameIndex],
+        lat:parseFloat(c[latIndex]),
+        lon:parseFloat(c[lonIndex])
+      };
+    }).filter(s=>s.id && s.name && !isNaN(s.lat));
 
-  stops=lines.slice(1).map(l=>{
-    const c=l.split(',');
-    return {
-      id:c[idIndex],
-      name:c[nameIndex],
-      lat:parseFloat(c[latIndex]),
-      lon:parseFloat(c[lonIndex])
-    };
-  }).filter(s=>s.id && s.name && !isNaN(s.lat));
+    stops=stops.concat(newStops);
+  }
 
-  status.innerText=`✔ Betöltve: ${stops.length} megálló`;
-
-  render();
-
-  // STOP TIMES
   if(stopTimesFile){
-    const stText=await stopTimesFile.async("string");
-    const stLines=stText.split(/\r?\n/).filter(Boolean);
-    const stHeader=stLines[0].split(',');
+    const text=await stopTimesFile.async("string");
+    const lines=text.split(/\r?\n/).filter(Boolean);
+    const header=lines[0].split(',');
 
-    const sid=stHeader.indexOf('stop_id');
-    const time=stHeader.indexOf('departure_time');
-    const trip=stHeader.indexOf('trip_id');
+    const sid=header.indexOf('stop_id');
+    const time=header.indexOf('departure_time');
+    const trip=header.indexOf('trip_id');
 
-    stopTimesIndex={};
-
-    for(let i=1;i<stLines.length;i++){
-      const c=stLines[i].split(',');
+    for(let i=1;i<lines.length;i++){
+      const c=lines[i].split(',');
       const id=c[sid];
+      if(!id) continue;
+
       if(!stopTimesIndex[id]) stopTimesIndex[id]=[];
       stopTimesIndex[id].push({time:c[time],trip:c[trip]});
     }
   }
+
+  status.innerText=`✔ Összesített megállók: ${stops.length}`;
+
+  render();
 }
 
 // ---------------- RENDER ----------------
@@ -169,23 +176,26 @@ search.addEventListener('input',e=>{
   renderMarkers(f);
 });
 
-// ---------------- DROPZONE ----------------
-const drop=document.getElementById('dropzone');
+// ---------------- FILE INPUT ----------------
 const fileInput=document.getElementById('fileInput');
+const drop=document.getElementById('dropzone');
+
+function handleFiles(files){
+  for(const f of files){
+    loadZip(f);
+  }
+}
 
 drop.addEventListener('dragover',e=>{e.preventDefault();drop.style.background="#ddd"});
 drop.addEventListener('dragleave',()=>drop.style.background="white");
 drop.addEventListener('drop',e=>{
   e.preventDefault();drop.style.background="white";
-  loadZip(e.dataTransfer.files[0]);
+  handleFiles(e.dataTransfer.files);
 });
 
-fileInput.addEventListener('change',e=>loadZip(e.target.files[0]));
+fileInput.addEventListener('change',e=>handleFiles(e.target.files));
 
 </script>
 
 </body>
 </html>
-
-
-
