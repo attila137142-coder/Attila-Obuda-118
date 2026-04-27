@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
   <meta charset="UTF-8" />
-  <title>MULTI GTFS PRO RENDSZER (BKK + REGIONÁLIS)</title>
+  <title>MULTI GTFS PRO RENDSZER (AUTO SAVE)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -39,12 +39,12 @@
 
 <div id="sidebar">
 
-  <h3>🌍 MULTI GTFS PRO</h3>
+  <h3>🌍 MULTI GTFS PRO (AUTO SAVE)</h3>
 
-  <div id="status">📦 Dobd be 1 vagy több GTFS ZIP-et</div>
-  <div id="info">BKK + Volán + MÁV együtt kezelhető</div>
+  <div id="status">📦 ZIP betöltés vagy visszatöltés...</div>
+  <div id="info">BKK + Volán + MÁV + mentés</div>
 
-  <div id="dropzone">📁 Húzz ide több ZIP-et is</div>
+  <div id="dropzone">📁 Húzz ide GTFS ZIP-et</div>
   <input type="file" id="fileInput" multiple accept=".zip" />
 
   <input id="search" placeholder="Keresés..." />
@@ -56,6 +56,8 @@
 
 <script>
 
+const STORAGE_KEY = "gtfs_zip_storage_v1";
+
 const map = L.map('map').setView([47.4979,19.0402],12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
 
@@ -65,6 +67,36 @@ let stopTimesIndex={};
 
 const status=document.getElementById('status');
 
+// ---------------- STORAGE ----------------
+function saveZip(name, arrayBuffer){
+  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+
+  const base64 = arrayBufferToBase64(arrayBuffer);
+
+  stored.push({name, data:base64});
+
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(stored));
+}
+
+function loadSavedZips(){
+  const stored = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+  return stored;
+}
+
+function arrayBufferToBase64(buffer){
+  let binary='';
+  const bytes=new Uint8Array(buffer);
+  bytes.forEach(b=>binary+=String.fromCharCode(b));
+  return btoa(binary);
+}
+
+function base64ToBlob(base64){
+  const binary=atob(base64);
+  const bytes=new Uint8Array(binary.length);
+  for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
+  return new Blob([bytes]);
+}
+
 // ---------------- CSV ----------------
 function parseCSV(text){
   const lines=text.split(/\r?\n/).filter(Boolean);
@@ -72,7 +104,7 @@ function parseCSV(text){
   return {lines,header};
 }
 
-// ---------------- MULTI LOAD ----------------
+// ---------------- LOAD ZIP ----------------
 async function loadZip(file){
   const zip=await JSZip.loadAsync(file);
 
@@ -120,9 +152,27 @@ async function loadZip(file){
     }
   }
 
-  status.innerText=`✔ Összesített megállók: ${stops.length}`;
+  status.innerText=`✔ Betöltve: ${stops.length} megálló`;
 
   render();
+}
+
+// ---------------- INIT LOAD FROM STORAGE ----------------
+async function loadFromStorage(){
+  const stored = loadSavedZips();
+
+  if(stored.length === 0){
+    status.innerText = "📦 Nincs mentett GTFS";
+    return;
+  }
+
+  status.innerText = "♻ Betöltés mentett ZIP-ekből...";
+
+  for(const z of stored){
+    const blob = base64ToBlob(z.data);
+    const file = new File([blob], z.name);
+    await loadZip(file);
+  }
 }
 
 // ---------------- RENDER ----------------
@@ -182,7 +232,21 @@ const drop=document.getElementById('dropzone');
 
 function handleFiles(files){
   for(const f of files){
-    loadZip(f);
+    const reader = new FileReader();
+
+    reader.onload = async (e)=>{
+      const buffer = e.target.result;
+
+      // SAVE
+      saveZip(f.name, buffer);
+
+      // LOAD
+      const blob = new Blob([buffer]);
+      const file = new File([blob], f.name);
+      await loadZip(file);
+    };
+
+    reader.readAsArrayBuffer(f);
   }
 }
 
@@ -194,6 +258,9 @@ drop.addEventListener('drop',e=>{
 });
 
 fileInput.addEventListener('change',e=>handleFiles(e.target.files));
+
+// ---------------- START ----------------
+loadFromStorage();
 
 </script>
 
