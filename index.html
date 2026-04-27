@@ -1,43 +1,50 @@
-<!DOC<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ROXY V17 – FULL MULTI GTFS</title>
+<title>Attila Közlekedés MASTER</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{margin:0;font-family:Arial}
-#map{height:100vh}
-
-#panel{
-position:absolute;
-top:10px;
-left:10px;
-z-index:9999;
-background:#000d;
-color:#0f0;
-padding:10px;
-width:420px;
-max-height:90vh;
-overflow:auto;
-border:1px solid #0f0;
-}
+body{background:black;color:yellow;text-align:center;font-family:Arial;}
+#kmh{font-size:90px;color:#0f0;text-shadow:0 0 20px #0f0;}
+#ms{font-size:25px;}
+#coords,#alt,#cim,#tav,#megallo,#menetrend,#helyek{font-size:18px;color:cyan;margin:8px;}
+#map{height:800px;}
+button,input{padding:8px;margin:5px;font-size:16px;}
+section{border:2px solid yellow;margin:15px;padding:15px;}
 </style>
 </head>
 
 <body>
 
-<div id="panel">
-<h3>🚆 ROXY V17 – MULTI GTFS</h3>
-<div id="info">Betöltés...</div>
+<h1>🚌 Attila Közlekedés MASTER</h1>
 
-<input id="search" placeholder="cél">
-<button onclick="search()">Keres</button>
-<button onclick="route()">Útvonal</button>
+<section>
+<div id="kmh">0 km/h</div>
+<div id="ms">0 m/s</div>
+<div id="coords">GPS...</div>
+<div id="alt">-</div>
+<div id="cim">-</div>
+<div id="tav">Távolság: -</div>
+<div id="megallo">Megálló: -</div>
+<div id="menetrend">Menetrend: -</div>
+<div id="helyek">Közeli helyek: -</div>
+</section>
 
-<div id="stops"></div>
-</div>
+<section>
+<input id="kereso" placeholder="Keresés">
+<button onclick="keres()">Keresés</button>
+</section>
+
+<section>
+<button onclick="setLayer('osm')">Alap</button>
+<button onclick="setLayer('topo')">Topo</button>
+<button onclick="setLayer('turista')">Turista</button>
+<button onclick="setLayer('rail')">Vasút</button>
+<button onclick="setLayer('jelzes')">Turista utak</button>
+</section>
 
 <div id="map"></div>
 
@@ -45,225 +52,136 @@ border:1px solid #0f0;
 
 <script>
 
-// ================= MAP =================
-let map=L.map('map').setView([47.5,19.04],13);
+// MAP
+var map=L.map('map').setView([47.49,19.04],13);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png').addTo(map);
+var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+var topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+var turista=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:0.6});
+var rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/{z}/{x}/{y}.png');
+var jelzes=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
 
-let stopLayer=L.layerGroup().addTo(map);
-let routeLayer=L.layerGroup().addTo(map);
+osm.addTo(map);
 
-// ================= GLOBAL =================
-let STOPS=[];
-let STOP_TIMES=[];
-let user, target;
+function setLayer(n){
+map.eachLayer(l=>map.removeLayer(l));
+osm.addTo(map);
 
-// ================= CSV =================
-function parseCSV(row){
- return row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
+if(n==="topo") topo.addTo(map);
+if(n==="turista") turista.addTo(map);
+if(n==="rail") rail.addTo(map);
+if(n==="jelzes") jelzes.addTo(map);
 }
 
-// ================= LOAD STOPS =================
-async function loadStops(files){
+let marker=L.circleMarker([47.49,19.04],{radius:8,color:'red'}).addTo(map);
 
- for(let f of files){
+let aktualisPoz=null;
 
-  let r=await fetch(f);
-  let t=await r.text();
+// GPS
+navigator.geolocation.watchPosition(function(pos){
 
-  let lines=t.split("\n");
+let lat=pos.coords.latitude;
+let lon=pos.coords.longitude;
 
-  for(let i=1;i<lines.length;i++){
+aktualisPoz=[lat,lon];
 
-   let c=parseCSV(lines[i]);
-   if(!c) continue;
+marker.setLatLng([lat,lon]);
+map.setView([lat,lon]);
 
-   let lat=parseFloat(c[4]);
-   let lon=parseFloat(c[5]);
+document.getElementById("coords").innerText=
+lat.toFixed(5)+","+lon.toFixed(5);
 
-   if(isNaN(lat)) continue;
-
-   STOPS.push({
-    id:c[0],
-    name:c[2].replace(/"/g,""),
-    lat,lon
-   });
-
-  }
-
- }
-
- // dedupe
- STOPS = STOPS.filter((v,i,a)=>
-  a.findIndex(x=>Math.abs(x.lat-v.lat)<0.0001 && Math.abs(x.lon-v.lon)<0.0001)==i
- );
-
- console.log("Stops:",STOPS.length);
-}
-
-// ================= LOAD TIMES =================
-async function loadTimes(files){
-
- for(let f of files){
-
-  let r=await fetch(f);
-  let t=await r.text();
-
-  let lines=t.split("\n");
-
-  for(let i=1;i<lines.length;i++){
-
-   let c=parseCSV(lines[i]);
-   if(!c) continue;
-
-   STOP_TIMES.push({
-    trip:c[0],
-    time:c[1],
-    stop:c[3]
-   });
-
-  }
-
- }
-
- console.log("Times:",STOP_TIMES.length);
-}
-
-// ================= DIST =================
-function dist(a,b,c,d){
- let R=6371000;
- let dLat=(c-a)*Math.PI/180;
- let dLon=(d-b)*Math.PI/180;
- let x=Math.sin(dLat/2)**2+
- Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
- Math.sin(dLon/2)**2;
- return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-// ================= NEAREST =================
-function nearest(lat,lon){
-
- let best=null,min=1e9;
-
- STOPS.forEach(s=>{
-  let d=dist(lat,lon,s.lat,s.lon);
-  if(d<min){min=d;best=s;}
- });
-
- return {best,min};
-}
-
-// ================= DEPARTURES =================
-function getDepartures(stopId){
-
- let list = STOP_TIMES.filter(t=>t.stop==stopId);
-
- if(list.length==0){
-  return ["nincs adat"];
- }
-
- return list.slice(0,5).map(t=>t.time);
-}
-
-// ================= DRAW =================
-function drawStops(){
-
- stopLayer.clearLayers();
-
- STOPS.slice(0,500).forEach(s=>{
-
-  L.circleMarker([s.lat,s.lon],{radius:4,color:"#0f0"})
-   .addTo(stopLayer)
-   .bindPopup(s.name);
-
- });
-
-}
-
-// ================= GPS =================
-navigator.geolocation.getCurrentPosition(pos=>{
-
- user=[pos.coords.latitude,pos.coords.longitude];
-
- map.setView(user,14);
- L.marker(user).addTo(map);
+helyekKeres(lat,lon);
+megalloKeres(lat,lon);
 
 });
 
-// ================= CLICK =================
-map.on("click",e=>{
+// kereső
+function keres(){
+let q=document.getElementById("kereso").value;
 
- let n=nearest(e.latlng.lat,e.latlng.lng);
+fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`)
+.then(r=>r.json())
+.then(d=>{
+if(d.length){
+let lat=d[0].lat;
+let lon=d[0].lon;
 
- let deps=getDepartures(n.best.id);
+map.setView([lat,lon],15);
 
- document.getElementById("info").innerHTML=`
- <b>${n.best.name}</b><br>
- ${Math.round(n.min)} m<br>
- Indulások:<br>${deps.join("<br>")}
- `;
-
+if(aktualisPoz){
+let t=map.distance(aktualisPoz,[lat,lon]);
+document.getElementById("tav").innerText=
+"Távolság: "+(t/1000).toFixed(2)+" km";
+}
+}
 });
-
-// ================= SEARCH =================
-async function search(){
-
- let q=document.getElementById("search").value;
-
- let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let d=await r.json();
-
- target=[parseFloat(d[0].lat),parseFloat(d[0].lon)];
-
- L.marker(target).addTo(map);
- map.setView(target,15);
 }
 
-// ================= ROUTE =================
-async function route(){
+// közeli helyek
+function helyekKeres(lat,lon){
 
- if(!target) return;
-
- let url=`https://router.project-osrm.org/route/v1/driving/${user[1]},${user[0]};${target[1]},${target[0]}?overview=full&geometries=geojson`;
-
- let r=await fetch(url);
- let data=await r.json();
-
- let coords=data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
-
- routeLayer.clearLayers();
- L.polyline(coords,{color:"blue"}).addTo(routeLayer);
-
- let air = dist(user[0],user[1],target[0],target[1]);
-
- document.getElementById("info").innerHTML+=`
- <br>Légvonal: ${(air/1000).toFixed(2)} km
- `;
+fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:500,${lat},${lon});out;`)
+.then(r=>r.json())
+.then(d=>{
+let lista="";
+d.elements.slice(0,5).forEach(e=>{
+let t=map.distance([lat,lon],[e.lat,e.lon]);
+lista+=`<div>${e.tags.name||"hely"} - ${(t/1000).toFixed(2)} km</div>`;
+});
+document.getElementById("helyek").innerHTML=lista;
+});
 }
 
-// ================= INIT =================
-window.onload=async()=>{
+// megálló
+function megalloKeres(lat,lon){
 
- await loadStops([
-  "bkk_stops.txt",
-  "mav_stops.txt",
-  "volan_stops.txt"
- ]);
+fetch(`https://overpass-api.de/api/interpreter?data=[out:json];node(around:300,${lat},${lon})["highway"="bus_stop"];out;`)
+.then(r=>r.json())
+.then(d=>{
+if(d.elements.length){
+let nev=d.elements[0].tags.name||"Megálló";
+document.getElementById("megallo").innerText="Megálló: "+nev;
+menetrend();
+}
+});
+}
+// menetrend (demo)
+function menetrend(){
+let now=new Date();
+let lista="";
 
- await loadTimes([
-  "bkk_stop_times.txt",
-  "mav_stop_times.txt",
-  "volan_stop_times.txt"
- ]);
+for(let i=1;i<=5;i++){
+let p=i*5;
+let ido=new Date(now.getTime()+p*60000);
+let kes=Math.floor(Math.random()*3)-1;
 
- drawStops();
+let sz="white";
+if(kes>0) sz="blue";
+if(kes<0) sz="red";
 
- document.getElementById("info").innerHTML="✅ FULL MULTI GTFS READY";
+lista+=`<div style="color:${sz}">
+Járat ${i} → ${ido.getHours()}:${String(ido.getMinutes()).padStart(2,'0')}
+(${kes}p)
+</div>`;
+}
 
-};
+document.getElementById("menetrend").innerHTML=lista;
+}
+
+setInterval(()=>{ if(aktualisPoz) megalloKeres(aktualisPoz[0],aktualisPoz[1]); },15000);
+
+// erdei vasutak
+[
+["Gyermekvasút",47.55,18.98],
+["Királyrét",47.92,19.01],
+["Szob",47.82,18.86],
+["Nagybörzsöny",47.94,18.83],
+["Kemence",48.01,18.90]
+].forEach(v=>{
+L.marker([v[1],v[2]]).addTo(map).bindPopup("🚂 "+v[0]);
+});
 
 </script>
-
 </body>
 </html>
