@@ -1,154 +1,269 @@
-// ===============================
-// 🚆 ATILA DISPATCHER GTFS ENGINE V3 (DEPLOY READY)
-// Vite + React + BKK GTFS FIXED VERSION
-// ===============================
+<!DOC<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>ROXY V17 – FULL MULTI GTFS</title>
 
-import React, { useEffect, useMemo, useState } from "react";
-import JSZip from "jszip";
-import Fuse from "fuse.js";
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
-// ===============================
-// 🚍 GTFS FEEDS
-// ===============================
-const FEEDS = [
-  {
-    name: "BKK",
-    url: "https://bkk.hu/gtfs/budapest_gtfs.zip",
-  },
-  // ⚠️ Add real MAV / VOLAN GTFS URLs later
-];
+<style>
+body{margin:0;font-family:Arial}
+#map{height:100vh}
 
-export default function App() {
-  const [stops, setStops] = useState([]);
-  const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(false);
+#panel{
+position:absolute;
+top:10px;
+left:10px;
+z-index:9999;
+background:#000d;
+color:#0f0;
+padding:10px;
+width:420px;
+max-height:90vh;
+overflow:auto;
+border:1px solid #0f0;
+}
+</style>
+</head>
 
-  // ===============================
-  // 📦 GTFS LOADER
-  // ===============================
-  async function loadGTFS(url, source) {
-    try {
-      const res = await fetch(url);
-      const buffer = await res.arrayBuffer();
+<body>
 
-      const zip = await JSZip.loadAsync(buffer);
-      const file = zip.file("stops.txt");
+<div id="panel">
+<h3>🚆 ROXY V17 – MULTI GTFS</h3>
+<div id="info">Betöltés...</div>
 
-      if (!file) return [];
+<input id="search" placeholder="cél">
+<button onclick="search()">Keres</button>
+<button onclick="route()">Útvonal</button>
 
-      const text = await file.async("string");
-      const lines = text.split("\n");
+<div id="stops"></div>
+</div>
 
-      const data = [];
+<div id="map"></div>
 
-      for (let i = 1; i < lines.length; i++) {
-        const cols = lines[i].split(",");
-        if (cols.length < 6) continue;
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-        data.push({
-          id: cols[0],
-          name: cols[2],
-          lat: parseFloat(cols[4]),
-          lon: parseFloat(cols[5]),
-          source,
-        });
-      }
+<script>
 
-      return data;
-    } catch (err) {
-      console.error("GTFS load error:", source, err);
-      return [];
-    }
-  }
+// ================= MAP =================
+let map=L.map('map').setView([47.5,19.04],13);
 
-  // ===============================
-  // 🚀 LOAD ALL FEEDS
-  // ===============================
-  async function loadAll() {
-    setLoading(true);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png').addTo(map);
 
-    const all = [];
+let stopLayer=L.layerGroup().addTo(map);
+let routeLayer=L.layerGroup().addTo(map);
 
-    for (const feed of FEEDS) {
-      const data = await loadGTFS(feed.url, feed.name);
-      all.push(...data);
-    }
+// ================= GLOBAL =================
+let STOPS=[];
+let STOP_TIMES=[];
+let user, target;
 
-    setStops(all);
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    loadAll();
-  }, []);
-
-  // ===============================
-  // 🔍 SEARCH ENGINE (NO LIMIT BUG)
-  // ===============================
-  const fuse = useMemo(() => {
-    return new Fuse(stops, {
-      keys: ["name"],
-      threshold: 0.3,
-    });
-  }, [stops]);
-
-  const results = query
-    ? fuse.search(query).map((r) => r.item)
-    : [];
-
-  // ===============================
-  // 🎨 UI
-  // ===============================
-  return (
-    <div style={{ padding: 20, fontFamily: "sans-serif" }}>
-      <h1>🚆 Attila Dispatcher GTFS Engine V3</h1>
-
-      <input
-        value={query}
-        onChange={(e) => setQuery(e.target.value)}
-        placeholder="Keresés megállóra (BKK)"
-        style={{
-          padding: 10,
-          width: "100%",
-          marginTop: 10,
-          borderRadius: 6,
-          border: "1px solid #ccc",
-        }}
-      />
-
-      {loading && <p>⏳ GTFS betöltés...</p>}
-
-      <h3>📍 Találatok: {results.length}</h3>
-
-      <div style={{ marginTop: 10 }}>
-        {results.slice(0, 50).map((s, i) => (
-          <div
-            key={i}
-            style={{
-              padding: 10,
-              borderBottom: "1px solid #eee",
-            }}
-          >
-            <b>{s.name}</b>
-            <div style={{ fontSize: 12, opacity: 0.7 }}>
-              {s.source} | {s.lat}, {s.lon}
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
+// ================= CSV =================
+function parseCSV(row){
+ return row.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g);
 }
 
-// ===============================
-// 🚀 DEPLOY CHECKLIST (Vercel)
-// ===============================
-// 1. npm create vite@latest
-// 2. npm install
-// 3. npm install jszip fuse.js
-// 4. put this into src/App.jsx
-// 5. Vercel:
-//    - Build: npm run build
-//    - Output: dist
-//    - Framework: Vite
-// ===============================
+// ================= LOAD STOPS =================
+async function loadStops(files){
+
+ for(let f of files){
+
+  let r=await fetch(f);
+  let t=await r.text();
+
+  let lines=t.split("\n");
+
+  for(let i=1;i<lines.length;i++){
+
+   let c=parseCSV(lines[i]);
+   if(!c) continue;
+
+   let lat=parseFloat(c[4]);
+   let lon=parseFloat(c[5]);
+
+   if(isNaN(lat)) continue;
+
+   STOPS.push({
+    id:c[0],
+    name:c[2].replace(/"/g,""),
+    lat,lon
+   });
+
+  }
+
+ }
+
+ // dedupe
+ STOPS = STOPS.filter((v,i,a)=>
+  a.findIndex(x=>Math.abs(x.lat-v.lat)<0.0001 && Math.abs(x.lon-v.lon)<0.0001)==i
+ );
+
+ console.log("Stops:",STOPS.length);
+}
+
+// ================= LOAD TIMES =================
+async function loadTimes(files){
+
+ for(let f of files){
+
+  let r=await fetch(f);
+  let t=await r.text();
+
+  let lines=t.split("\n");
+
+  for(let i=1;i<lines.length;i++){
+
+   let c=parseCSV(lines[i]);
+   if(!c) continue;
+
+   STOP_TIMES.push({
+    trip:c[0],
+    time:c[1],
+    stop:c[3]
+   });
+
+  }
+
+ }
+
+ console.log("Times:",STOP_TIMES.length);
+}
+
+// ================= DIST =================
+function dist(a,b,c,d){
+ let R=6371000;
+ let dLat=(c-a)*Math.PI/180;
+ let dLon=(d-b)*Math.PI/180;
+ let x=Math.sin(dLat/2)**2+
+ Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*
+ Math.sin(dLon/2)**2;
+ return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// ================= NEAREST =================
+function nearest(lat,lon){
+
+ let best=null,min=1e9;
+
+ STOPS.forEach(s=>{
+  let d=dist(lat,lon,s.lat,s.lon);
+  if(d<min){min=d;best=s;}
+ });
+
+ return {best,min};
+}
+
+// ================= DEPARTURES =================
+function getDepartures(stopId){
+
+ let list = STOP_TIMES.filter(t=>t.stop==stopId);
+
+ if(list.length==0){
+  return ["nincs adat"];
+ }
+
+ return list.slice(0,5).map(t=>t.time);
+}
+
+// ================= DRAW =================
+function drawStops(){
+
+ stopLayer.clearLayers();
+
+ STOPS.slice(0,500).forEach(s=>{
+
+  L.circleMarker([s.lat,s.lon],{radius:4,color:"#0f0"})
+   .addTo(stopLayer)
+   .bindPopup(s.name);
+
+ });
+
+}
+
+// ================= GPS =================
+navigator.geolocation.getCurrentPosition(pos=>{
+
+ user=[pos.coords.latitude,pos.coords.longitude];
+
+ map.setView(user,14);
+ L.marker(user).addTo(map);
+
+});
+
+// ================= CLICK =================
+map.on("click",e=>{
+
+ let n=nearest(e.latlng.lat,e.latlng.lng);
+
+ let deps=getDepartures(n.best.id);
+
+ document.getElementById("info").innerHTML=`
+ <b>${n.best.name}</b><br>
+ ${Math.round(n.min)} m<br>
+ Indulások:<br>${deps.join("<br>")}
+ `;
+
+});
+
+// ================= SEARCH =================
+async function search(){
+
+ let q=document.getElementById("search").value;
+
+ let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+ let d=await r.json();
+
+ target=[parseFloat(d[0].lat),parseFloat(d[0].lon)];
+
+ L.marker(target).addTo(map);
+ map.setView(target,15);
+}
+
+// ================= ROUTE =================
+async function route(){
+
+ if(!target) return;
+
+ let url=`https://router.project-osrm.org/route/v1/driving/${user[1]},${user[0]};${target[1]},${target[0]}?overview=full&geometries=geojson`;
+
+ let r=await fetch(url);
+ let data=await r.json();
+
+ let coords=data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+
+ routeLayer.clearLayers();
+ L.polyline(coords,{color:"blue"}).addTo(routeLayer);
+
+ let air = dist(user[0],user[1],target[0],target[1]);
+
+ document.getElementById("info").innerHTML+=`
+ <br>Légvonal: ${(air/1000).toFixed(2)} km
+ `;
+}
+
+// ================= INIT =================
+window.onload=async()=>{
+
+ await loadStops([
+  "bkk_stops.txt",
+  "mav_stops.txt",
+  "volan_stops.txt"
+ ]);
+
+ await loadTimes([
+  "bkk_stop_times.txt",
+  "mav_stop_times.txt",
+  "volan_stop_times.txt"
+ ]);
+
+ drawStops();
+
+ document.getElementById("info").innerHTML="✅ FULL MULTI GTFS READY";
+
+};
+
+</script>
+
+</body>
+</html>
