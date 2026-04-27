@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>GTFS PRO ULTRA + ÚTVONALTERVEZŐ</title>
+<title>GTFS PRO ULTRA + BACKUP</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -24,12 +24,11 @@ input,button { width:100%; padding:8px; margin-bottom:8px; }
 <body>
 
 <div id="sidebar">
-<h3>🚌 GTFS ULTRA + ROUTE</h3>
+<h3>🚌 GTFS ULTRA + BACKUP</h3>
 <button onclick="clearDB()">🗑 CLEAR</button>
-
-<input id="from" placeholder="Honnan" />
-<input id="to" placeholder="Hová" />
-<button onclick="planRoute()">ÚTVONALTERVEZÉS</button>
+<button onclick="exportDB()">💾 EXPORT</button>
+<input type="file" id="importFile" />
+<button onclick="importDB()">📥 IMPORT</button>
 
 <input id="search" placeholder="Megálló keresés" />
 <div id="list"></div>
@@ -46,19 +45,12 @@ map.addLayer(cluster);
 
 let stopsMap = new Map();
 let stops=[];
-let stopTimes=[];
-let tripsMap={};
-let routesMap={};
-let shapesMap={};
-let shapeLines=[];
 
-// DB
 let db;
-const DB_NAME="GTFS_DB";
 
 function initDB(){
   return new Promise(res=>{
-    const req=indexedDB.open(DB_NAME,2);
+    const req=indexedDB.open("GTFS_DB",3);
     req.onupgradeneeded=e=>{
       db=e.target.result;
       if(!db.objectStoreNames.contains("zips")){
@@ -76,12 +68,21 @@ async function hashBuffer(buffer){
 
 async function saveZip(name,data){
   const hash = await hashBuffer(data);
-  const tx=db.transaction("zips","readwrite");
-  const store=tx.objectStore("zips");
-  const existing=await store.get(hash);
-  if(!existing){
-    store.put({hash,name,data});
-  }
+
+  return new Promise((res)=>{
+    const tx = db.transaction("zips","readwrite");
+    const store = tx.objectStore("zips");
+
+    const req = store.get(hash);
+
+    req.onsuccess = () => {
+      if(!req.result){
+        store.put({hash,name,data});
+      }
+    };
+
+    tx.oncomplete = () => res();
+  });
 }
 
 function getZips(){
@@ -96,6 +97,38 @@ function clearDB(){
   const tx=db.transaction("zips","readwrite");
   tx.objectStore("zips").clear();
   location.reload();
+}
+
+// EXPORT
+async function exportDB(){
+  const files = await getZips();
+
+  const zip = new JSZip();
+
+  files.forEach(f=>{
+    zip.file(f.name, f.data);
+  });
+
+  const blob = await zip.generateAsync({type:"blob"});
+
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = "GTFS_BACKUP.zip";
+  a.click();
+}
+
+// IMPORT
+async function importDB(){
+  const file = document.getElementById('importFile').files[0];
+  if(!file) return;
+
+  const zip = await JSZip.loadAsync(file);
+
+  for(const name of Object.keys(zip.files)){
+    const data = await zip.file(name).async("arraybuffer");
+    await saveZip(name, data);
+    await loadZip(new File([data], name));
+  }
 }
 
 function parseCSV(text){
@@ -132,20 +165,16 @@ async function loadZip(file){
     });
   }
 
-  if(zip.file("stop_times.txt")){
-    const {header,data}=parseCSV(await zip.file("stop_times.txt").async("string"));
-    const sI=header.indexOf('stop_id');
-    const tI=header.indexOf('departure_time');
-    const trI=header.indexOf('trip_id');
-
-    stopTimes=stopTimes.concat(data.map(r=>({stop:r[sI],time:r[tI],trip:r[trI]})));
-  }
-
   render();
 }
 
 async function loadFromDB(){
+  stopsMap=new Map();
+
   const files=await getZips();
+
+  console.log("BETÖLTÖTT ZIP-ek:", files.length);
+
   for(const f of files){
     await loadZip(new File([f.data],f.name));
   }
@@ -153,6 +182,7 @@ async function loadFromDB(){
 
 function render(){
   stops=Array.from(stopsMap.values());
+
   cluster.clearLayers();
 
   stops.forEach(s=>{
@@ -163,28 +193,13 @@ function render(){
 
   const list=document.getElementById('list');
   list.innerHTML='';
+
   stops.slice(0,200).forEach(s=>{
     const d=document.createElement('div');
     d.className='stop';
     d.innerText=s.name;
     list.appendChild(d);
   });
-}
-
-function findStopByName(name){
-  return stops.find(s=>s.name.toLowerCase().includes(name.toLowerCase()));
-}
-
-function planRoute(){
-  const a=document.getElementById('from').value;
-  const b=document.getElementById('to').value;
-
-  const s1=findStopByName(a);
-  const s2=findStopByName(b);
-
-  if(!s1||!s2){alert("Nincs találat");return;}
-
-  L.polyline([[s1.lat,s1.lon],[s2.lat,s2.lon]],{color:'red'}).addTo(map);
 }
 
 // FILE INPUT
@@ -214,3 +229,5 @@ input.onchange=e=>{
 
 </body>
 </html>
+
+
