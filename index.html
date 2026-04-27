@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>MULTI GTFS PRO ULTRA (FIX + CLEAR + VEHICLES)</title>
+<title>GTFS PRO ONLINE</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
@@ -16,21 +16,19 @@ body { margin:0; font-family: Arial; display:flex; height:100vh; }
 #dropzone { border:2px dashed #888; padding:10px; text-align:center; margin-bottom:10px; }
 .stop { padding:6px; border-bottom:1px solid #eee; cursor:pointer; }
 .stop:hover { background:#f0f0f0; }
-input { width:100%; padding:8px; margin-bottom:10px; }
-button { width:100%; padding:8px; margin-bottom:8px; cursor:pointer; }
+input,button { width:100%; padding:8px; margin-bottom:8px; }
 #status { font-size:12px; margin-bottom:10px; }
 </style>
 </head>
 <body>
 
 <div id="sidebar">
-<h3>🚌 MULTI GTFS ULTRA</h3>
+<h3>🚌 GTFS PRO ONLINE</h3>
 <div id="status">Indítás...</div>
 
-<div id="dropzone">📁 ZIP húzás</div>
+<div id="dropzone">📁 Húzd ide ZIP</div>
 <input type="file" id="fileInput" multiple accept=".zip" />
-
-<button onclick="clearDB()">🗑 CLEAR GTFS ADATOK</button>
+<button onclick="clearDB()">🗑 CLEAR</button>
 
 <input id="search" placeholder="Keresés..." />
 <div id="list"></div>
@@ -39,27 +37,19 @@ button { width:100%; padding:8px; margin-bottom:8px; cursor:pointer; }
 <div id="map"></div>
 
 <script>
-
 const map = L.map('map').setView([47.4979,19.0402],12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let stops=[];
-let stopTimes=[];
-let tripsMap={};
-let routesMap={};
-
-let markers=[];
-let vehicles=[];
-let vehicleMarkers=[];
-
+let stops=[], stopTimes=[], tripsMap={}, routesMap={};
+let markers=[], vehicles=[], vehicleMarkers=[];
 const status=document.getElementById('status');
 
-// ---------------- INDEXEDDB ----------------
+// DB
 let db;
 const DB_NAME="GTFS_DB";
 
 function initDB(){
-  return new Promise((res)=>{
+  return new Promise(res=>{
     const req=indexedDB.open(DB_NAME,1);
     req.onupgradeneeded=e=>{
       db=e.target.result;
@@ -70,8 +60,11 @@ function initDB(){
 }
 
 function saveZip(name,data){
-  const tx=db.transaction("zips","readwrite");
-  tx.objectStore("zips").put({name,data});
+  return new Promise(res=>{
+    const tx=db.transaction("zips","readwrite");
+    tx.objectStore("zips").put({name,data});
+    tx.oncomplete=()=>res();
+  });
 }
 
 function getZips(){
@@ -88,22 +81,17 @@ function clearDB(){
   location.reload();
 }
 
-// ---------------- CSV ----------------
 function parseCSV(t){
   const lines=t.split(/\r?\n/).filter(Boolean);
   const h=lines[0].split(',');
   return {lines,h};
 }
 
-// ---------------- LOAD ZIP ----------------
 async function loadZip(file){
   const zip=await JSZip.loadAsync(file);
 
-  const stopsFile=zip.file("stops.txt");
-  const stFile=zip.file("stop_times.txt");
-
-  if(stopsFile){
-    const text=await stopsFile.async("string");
+  if(zip.file("stops.txt")){
+    const text=await zip.file("stops.txt").async("string");
     const {lines,h}=parseCSV(text);
 
     const idI=h.indexOf('stop_id');
@@ -116,16 +104,38 @@ async function loadZip(file){
       return {id:c[idI],name:c[nI],lat:+c[laI],lon:+c[loI]};
     });
 
-    // FIX DUPLIKÁT
     newStops.forEach(s=>{
       if(!stops.find(x=>x.id===s.id)) stops.push(s);
     });
   }
 
-  if(stFile){
-    const text=await stFile.async("string");
+  if(zip.file("routes.txt")){
+    const text=await zip.file("routes.txt").async("string");
     const {lines,h}=parseCSV(text);
+    const rid=h.indexOf('route_id');
+    const short=h.indexOf('route_short_name');
+    lines.slice(1).forEach(l=>{
+      const c=l.split(',');
+      routesMap[c[rid]]=c[short];
+    });
+  }
 
+  if(zip.file("trips.txt")){
+    const text=await zip.file("trips.txt").async("string");
+    const {lines,h}=parseCSV(text);
+    const tid=h.indexOf('trip_id');
+    const rid=h.indexOf('route_id');
+    const head=h.indexOf('trip_headsign');
+
+    lines.slice(1).forEach(l=>{
+      const c=l.split(',');
+      tripsMap[c[tid]]={route:routesMap[c[rid]], headsign:c[head]};
+    });
+  }
+
+  if(zip.file("stop_times.txt")){
+    const text=await zip.file("stop_times.txt").async("string");
+    const {lines,h}=parseCSV(text);
     const sI=h.indexOf('stop_id');
     const tI=h.indexOf('departure_time');
     const trI=h.indexOf('trip_id');
@@ -137,32 +147,28 @@ async function loadZip(file){
   }
 
   status.innerText=`✔ ${stops.length} megálló`;
-
   buildVehicles();
   updateVehicles();
-
   render();
 }
 
-// ---------------- LOAD DB ----------------
 async function loadFromDB(){
+  stops=[]; stopTimes=[]; tripsMap={}; routesMap={};
   const files=await getZips();
+  if(!files.length){status.innerText="Nincs mentett adat";return;}
 
-  stops=[];
-  stopTimes=[];
-  tripsMap={};
-  routesMap={};
+  status.innerText="♻ Betöltés...";
 
   for(const f of files){
     const file=new File([f.data],f.name);
     await loadZip(file);
   }
+
+  status.innerText="♻ Kész (adatbázisból)";
 }
 
-// ---------------- VEHICLES ----------------
 function buildVehicles(){
   vehicles=[];
-
   const grouped={};
 
   stopTimes.forEach(t=>{
@@ -189,17 +195,21 @@ function updateVehicles(){
     for(let i=0;i<v.seq.length-1;i++){
       const a=v.seq[i],b=v.seq[i+1];
       if(cur>=a.sec && cur<=b.sec){
-
         const sa=stops.find(s=>s.id===a.stop);
         const sb=stops.find(s=>s.id===b.stop);
         if(!sa||!sb) return;
 
         const r=(cur-a.sec)/(b.sec-a.sec);
-
         const lat=sa.lat+(sb.lat-sa.lat)*r;
         const lon=sa.lon+(sb.lon-sa.lon)*r;
 
-        const m=L.circleMarker([lat,lon],{radius:6}).addTo(map);
+        const trip=tripsMap[v.id];
+        const label=trip?trip.route:"?";
+
+        const m=L.circleMarker([lat,lon],{radius:6})
+          .addTo(map)
+          .bindPopup(`🚌 ${label}`);
+
         vehicleMarkers.push(m);
         break;
       }
@@ -209,7 +219,6 @@ function updateVehicles(){
 
 setInterval(updateVehicles,5000);
 
-// ---------------- RENDER ----------------
 function render(){
   const list=document.getElementById('list');
   list.innerHTML='';
@@ -218,7 +227,7 @@ function render(){
     const d=document.createElement('div');
     d.className='stop';
     d.innerText=s.name;
-    d.onclick=()=>alert(s.name);
+    d.onclick=()=>openStop(s);
     list.appendChild(d);
   });
 
@@ -231,7 +240,32 @@ function render(){
   });
 }
 
-// ---------------- SEARCH ----------------
+function openStop(stop){
+  const now=new Date();
+  const cur=now.getHours()*3600+now.getMinutes()*60;
+
+  const times=stopTimes
+    .filter(t=>t.stop===stop.id)
+    .map(t=>{
+      const p=t.time.split(':');
+      const sec=+p[0]*3600+ +p[1]*60;
+      return {...t,sec};
+    })
+    .filter(t=>t.sec>=cur)
+    .sort((a,b)=>a.sec-b.sec)
+    .slice(0,10);
+
+  let html=`<b>${stop.name}</b><br><br>`;
+
+  times.forEach(t=>{
+    const trip=tripsMap[t.trip];
+    if(!trip) return;
+    html+=`🚌 <b>${trip.route}</b> → ${trip.headsign}<br>${t.time}<br><br>`;
+  });
+
+  L.popup().setLatLng([stop.lat,stop.lon]).setContent(html).openOn(map);
+}
+
 search.oninput=e=>{
   const q=e.target.value.toLowerCase();
   const f=stops.filter(s=>s.name.toLowerCase().includes(q));
@@ -245,7 +279,6 @@ search.oninput=e=>{
   });
 };
 
-// ---------------- FILE ----------------
 const fileInput=document.getElementById('fileInput');
 const drop=document.getElementById('dropzone');
 
@@ -253,7 +286,7 @@ function handle(files){
   for(const f of files){
     const r=new FileReader();
     r.onload=async e=>{
-      saveZip(f.name,e.target.result);
+      await saveZip(f.name,e.target.result);
       const file=new File([e.target.result],f.name);
       await loadZip(file);
     };
@@ -265,7 +298,6 @@ drop.ondragover=e=>e.preventDefault();
 drop.ondrop=e=>{e.preventDefault();handle(e.dataTransfer.files);};
 fileInput.onchange=e=>handle(e.target.files);
 
-// ---------------- START ----------------
 (async()=>{
   await initDB();
   await loadFromDB();
@@ -275,4 +307,3 @@ fileInput.onchange=e=>handle(e.target.files);
 
 </body>
 </html>
-
