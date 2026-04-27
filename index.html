@@ -2,12 +2,16 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>GTFS PRO ONLINE</title>
+<title>GTFS PRO ONLINE + CLUSTER</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
 
 <style>
 body { margin:0; font-family: Arial; display:flex; height:100vh; }
@@ -23,10 +27,10 @@ input,button { width:100%; padding:8px; margin-bottom:8px; }
 <body>
 
 <div id="sidebar">
-<h3>🚌 GTFS PRO ONLINE</h3>
+<h3>🚌 GTFS PRO + CLUSTER</h3>
 <div id="status">Indítás...</div>
 
-<div id="dropzone">📁 Húzd ide ZIP</div>
+<div id="dropzone">📁 ZIP húzás</div>
 <input type="file" id="fileInput" multiple accept=".zip" />
 <button onclick="clearDB()">🗑 CLEAR</button>
 
@@ -40,8 +44,11 @@ input,button { width:100%; padding:8px; margin-bottom:8px; }
 const map = L.map('map').setView([47.4979,19.0402],12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+let clusterGroup = L.markerClusterGroup();
+map.addLayer(clusterGroup);
+
 let stops=[], stopTimes=[], tripsMap={}, routesMap={};
-let markers=[], vehicles=[], vehicleMarkers=[];
+let vehicles=[], vehicleMarkers=[];
 const status=document.getElementById('status');
 
 // DB
@@ -164,7 +171,7 @@ async function loadFromDB(){
     await loadZip(file);
   }
 
-  status.innerText="♻ Kész (adatbázisból)";
+  status.innerText="♻ Kész";
 }
 
 function buildVehicles(){
@@ -206,7 +213,7 @@ function updateVehicles(){
         const trip=tripsMap[v.id];
         const label=trip?trip.route:"?";
 
-        const m=L.circleMarker([lat,lon],{radius:6})
+        const m=L.circleMarker([lat,lon],{radius:6,color:"red"})
           .addTo(map)
           .bindPopup(`🚌 ${label}`);
 
@@ -231,12 +238,13 @@ function render(){
     list.appendChild(d);
   });
 
-  markers.forEach(m=>map.removeLayer(m));
-  markers=[];
+  clusterGroup.clearLayers();
 
   stops.forEach(s=>{
-    const m=L.marker([s.lat,s.lon]).addTo(map);
-    markers.push(m);
+    if(!isNaN(s.lat) && !isNaN(s.lon)){
+      const m=L.marker([s.lat,s.lon]).on('click',()=>openStop(s));
+      clusterGroup.addLayer(m);
+    }
   });
 }
 
@@ -269,13 +277,23 @@ function openStop(stop){
 search.oninput=e=>{
   const q=e.target.value.toLowerCase();
   const f=stops.filter(s=>s.name.toLowerCase().includes(q));
+
   const list=document.getElementById('list');
   list.innerHTML='';
+
+  clusterGroup.clearLayers();
+
   f.forEach(s=>{
     const d=document.createElement('div');
     d.className='stop';
     d.innerText=s.name;
+    d.onclick=()=>openStop(s);
     list.appendChild(d);
+
+    if(!isNaN(s.lat) && !isNaN(s.lon)){
+      const m=L.marker([s.lat,s.lon]).on('click',()=>openStop(s));
+      clusterGroup.addLayer(m);
+    }
   });
 };
 
