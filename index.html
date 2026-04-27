@@ -1,73 +1,127 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>GTFS OFFLINE</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+import React, { useEffect, useMemo, useState } from "react";
+import JSZip from "jszip";
+import Fuse from "fuse.js";
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+// ===============================
+// 🚀 ATILA DISPATCHER GTFS ENGINE V3
+// BKK + MÁV + Volán unified system
+// ===============================
 
-<style>
-body { margin:0; display:flex; height:100vh; font-family:Arial; }
-#sidebar { width:300px; padding:10px; border-right:1px solid #ccc; overflow:auto; }
-#map { flex:1; }
-input { width:100%; padding:8px; margin-bottom:10px; }
-.stop { padding:6px; border-bottom:1px solid #eee; }
-</style>
-</head>
-<body>
-
-<div id="sidebar">
-<h3>🚌 OFFLINE DEMO</h3>
-<input id="search" placeholder="Keresés">
-<div id="list"></div>
-</div>
-
-<div id="map"></div>
-
-<script>
-const map = L.map('map').setView([47.4979,19.0402],13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-// 🔥 BEÉGETETT ADAT
-const stops = [
-  {name:"Örs vezér tere",lat:47.503,lon:19.136},
-  {name:"Deák Ferenc tér",lat:47.498,lon:19.055},
-  {name:"Kőbánya alsó",lat:47.482,lon:19.124},
-  {name:"Puskás Stadion",lat:47.500,lon:19.104},
-  {name:"Bécsi út / Vörösvári út",lat:47.545,lon:19.028}
+const FEEDS = [
+  { name: "BKK", url: "https://bkk.hu/gtfs/budapest_gtfs.zip" },
+  // Placeholders (you can replace with real MAV / Volan GTFS sources)
+  { name: "MAV", url: "https://example.com/mav_gtfs.zip" },
+  { name: "VOLAN", url: "https://example.com/volan_gtfs.zip" },
 ];
 
-let markers=[];
+export default function App() {
+  const [stops, setStops] = useState([]);
+  const [query, setQuery] = useState("");
+  const [loading, setLoading] = useState(false);
 
-function render(listData){
-  markers.forEach(m=>map.removeLayer(m));
-  markers=[];
+  // ===============================
+  // 📦 GTFS LOADER
+  // ===============================
+  async function loadGTFS(url, source) {
+    const res = await fetch(url);
+    const buffer = await res.arrayBuffer();
 
-  const list=document.getElementById('list');
-  list.innerHTML='';
+    const zip = await JSZip.loadAsync(buffer);
+    const file = zip.file("stops.txt");
 
-  listData.forEach(s=>{
-    const m=L.marker([s.lat,s.lon]).addTo(map);
-    markers.push(m);
+    if (!file) return [];
 
-    const d=document.createElement('div');
-    d.className='stop';
-    d.innerText=s.name;
-    list.appendChild(d);
-  });
+    const text = await file.async("string");
+    const lines = text.split("\n");
+
+    const data = [];
+
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(",");
+      if (cols.length < 6) continue;
+
+      data.push({
+        id: cols[0],
+        name: cols[2],
+        lat: parseFloat(cols[4]),
+        lon: parseFloat(cols[5]),
+        source,
+      });
+    }
+
+    return data;
+  }
+
+  // ===============================
+  // 🚀 LOAD ALL FEEDS
+  // ===============================
+  async function loadAll() {
+    setLoading(true);
+
+    const all = [];
+
+    for (const feed of FEEDS) {
+      try {
+        const data = await loadGTFS(feed.url, feed.name);
+        all.push(...data);
+      } catch (e) {
+        console.warn("Feed error:", feed.name);
+      }
+    }
+
+    setStops(all);
+    setLoading(false);
+  }
+
+  useEffect(() => {
+    loadAll();
+  }, []);
+
+  // ===============================
+  // 🔍 SEARCH ENGINE (NO LIMIT BUG)
+  // ===============================
+  const fuse = useMemo(() => {
+    return new Fuse(stops, {
+      keys: ["name"],
+      threshold: 0.3,
+    });
+  }, [stops]);
+
+  const results = query
+    ? fuse.search(query).map((r) => r.item)
+    : [];
+
+  return (
+    <div style={{ padding: 20, fontFamily: "sans-serif" }}>
+      <h1>🚆 Attila Dispatcher GTFS Engine V3</h1>
+
+      <input
+        placeholder="Keresés megállóra (BKK / MÁV / Volán)"
+        value={query}
+        onChange={(e) => setQuery(e.target.value)}
+        style={{ padding: 10, width: "100%", marginTop: 10 }}
+      />
+
+      {loading && <p>⏳ GTFS betöltés...</p>}
+
+      <h3>📍 Találatok: {results.length}</h3>
+
+      <div style={{ marginTop: 10 }}>
+        {results.map((s, i) => (
+          <div
+            key={i}
+            style={{
+              padding: 10,
+              borderBottom: "1px solid #ddd",
+            }}
+          >
+            <b>{s.name}</b>
+            <div style={{ fontSize: 12, opacity: 0.7 }}>
+              {s.source} | {s.lat}, {s.lon}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
-
-render(stops);
-
-// kereső
-search.oninput=e=>{
-  const q=e.target.value.toLowerCase();
-  const f=stops.filter(s=>s.name.toLowerCase().includes(q));
-  render(f);
-};
-</script>
-
-</body>
-</html>
