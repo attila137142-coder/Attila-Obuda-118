@@ -1,17 +1,21 @@
+// ===============================
+// 🚆 ATILA DISPATCHER GTFS ENGINE V3 (DEPLOY READY)
+// Vite + React + BKK GTFS FIXED VERSION
+// ===============================
+
 import React, { useEffect, useMemo, useState } from "react";
 import JSZip from "jszip";
 import Fuse from "fuse.js";
 
 // ===============================
-// 🚀 ATILA DISPATCHER GTFS ENGINE V3
-// BKK + MÁV + Volán unified system
+// 🚍 GTFS FEEDS
 // ===============================
-
 const FEEDS = [
-  { name: "BKK", url: "https://bkk.hu/gtfs/budapest_gtfs.zip" },
-  // Placeholders (you can replace with real MAV / Volan GTFS sources)
-  { name: "MAV", url: "https://example.com/mav_gtfs.zip" },
-  { name: "VOLAN", url: "https://example.com/volan_gtfs.zip" },
+  {
+    name: "BKK",
+    url: "https://bkk.hu/gtfs/budapest_gtfs.zip",
+  },
+  // ⚠️ Add real MAV / VOLAN GTFS URLs later
 ];
 
 export default function App() {
@@ -23,33 +27,38 @@ export default function App() {
   // 📦 GTFS LOADER
   // ===============================
   async function loadGTFS(url, source) {
-    const res = await fetch(url);
-    const buffer = await res.arrayBuffer();
+    try {
+      const res = await fetch(url);
+      const buffer = await res.arrayBuffer();
 
-    const zip = await JSZip.loadAsync(buffer);
-    const file = zip.file("stops.txt");
+      const zip = await JSZip.loadAsync(buffer);
+      const file = zip.file("stops.txt");
 
-    if (!file) return [];
+      if (!file) return [];
 
-    const text = await file.async("string");
-    const lines = text.split("\n");
+      const text = await file.async("string");
+      const lines = text.split("\n");
 
-    const data = [];
+      const data = [];
 
-    for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split(",");
-      if (cols.length < 6) continue;
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(",");
+        if (cols.length < 6) continue;
 
-      data.push({
-        id: cols[0],
-        name: cols[2],
-        lat: parseFloat(cols[4]),
-        lon: parseFloat(cols[5]),
-        source,
-      });
+        data.push({
+          id: cols[0],
+          name: cols[2],
+          lat: parseFloat(cols[4]),
+          lon: parseFloat(cols[5]),
+          source,
+        });
+      }
+
+      return data;
+    } catch (err) {
+      console.error("GTFS load error:", source, err);
+      return [];
     }
-
-    return data;
   }
 
   // ===============================
@@ -61,12 +70,8 @@ export default function App() {
     const all = [];
 
     for (const feed of FEEDS) {
-      try {
-        const data = await loadGTFS(feed.url, feed.name);
-        all.push(...data);
-      } catch (e) {
-        console.warn("Feed error:", feed.name);
-      }
+      const data = await loadGTFS(feed.url, feed.name);
+      all.push(...data);
     }
 
     setStops(all);
@@ -91,15 +96,24 @@ export default function App() {
     ? fuse.search(query).map((r) => r.item)
     : [];
 
+  // ===============================
+  // 🎨 UI
+  // ===============================
   return (
     <div style={{ padding: 20, fontFamily: "sans-serif" }}>
       <h1>🚆 Attila Dispatcher GTFS Engine V3</h1>
 
       <input
-        placeholder="Keresés megállóra (BKK / MÁV / Volán)"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        style={{ padding: 10, width: "100%", marginTop: 10 }}
+        placeholder="Keresés megállóra (BKK)"
+        style={{
+          padding: 10,
+          width: "100%",
+          marginTop: 10,
+          borderRadius: 6,
+          border: "1px solid #ccc",
+        }}
       />
 
       {loading && <p>⏳ GTFS betöltés...</p>}
@@ -107,12 +121,12 @@ export default function App() {
       <h3>📍 Találatok: {results.length}</h3>
 
       <div style={{ marginTop: 10 }}>
-        {results.map((s, i) => (
+        {results.slice(0, 50).map((s, i) => (
           <div
             key={i}
             style={{
               padding: 10,
-              borderBottom: "1px solid #ddd",
+              borderBottom: "1px solid #eee",
             }}
           >
             <b>{s.name}</b>
@@ -125,3 +139,16 @@ export default function App() {
     </div>
   );
 }
+
+// ===============================
+// 🚀 DEPLOY CHECKLIST (Vercel)
+// ===============================
+// 1. npm create vite@latest
+// 2. npm install
+// 3. npm install jszip fuse.js
+// 4. put this into src/App.jsx
+// 5. Vercel:
+//    - Build: npm run build
+//    - Output: dist
+//    - Framework: Vite
+// ===============================
