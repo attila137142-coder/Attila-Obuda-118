@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila GPS PRO NAVI</title>
+<title>Attila GPS PRO FIX</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
@@ -12,7 +12,7 @@
 body { margin:0; font-family: Arial; background:#111; color:#fff; }
 #map { height: 60vh; }
 .panel { padding:10px; }
-button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
+button { margin:3px; padding:8px; border-radius:6px; border:0; }
 .box { background:#1e1e1e; padding:10px; border-radius:8px; font-size:13px; }
 </style>
 </head>
@@ -20,49 +20,25 @@ button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
 <body>
 
 <div class="panel">
-
-<button onclick="setMode('gps')">🧭 GPS</button>
-<button onclick="setMode('tura')">🥾 Túra</button>
-<button onclick="toggleElevation()">⛰️ Magasság váltás</button>
-<button onclick="loadPOI()">📌 POI</button>
-<button onclick="loadRail()">🚆 Vasút</button>
+<button onclick="toggleElevation()">⛰️ Magasság</button>
 <button onclick="resetTrack()">🔄 Reset</button>
-
 <div id="info" class="box">Indítás...</div>
-
 </div>
 
 <div id="map"></div>
 
 <script>
 
+// MAP
 let map = L.map('map').setView([47.4979,19.0402],13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let mode="gps";
+// STATE
 let track=[];
 let marker, polyline;
+let elevationMode="gps";
 
-let elevationMode = "gps"; // gps / api
-
-let poiLayer = L.layerGroup().addTo(map);
-
-let heading = 0;
-window.addEventListener("deviceorientation", e=>{
-  if(e.alpha) heading = Math.round(e.alpha);
-});
-
-// -------- MODE
-function setMode(m){
-  mode=m;
-}
-
-// -------- ELEV SWITCH
-function toggleElevation(){
-  elevationMode = elevationMode==="gps" ? "api" : "gps";
-}
-
-// -------- DIST
+// ---------- DIST
 function dist(a,b,c,d){
   let R=6371e3;
   let φ1=a*Math.PI/180;
@@ -77,80 +53,82 @@ function dist(a,b,c,d){
   return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// -------- SEGMENT
+// ---------- SEGMENT
 function calcSeg(a,b){
-  let d = dist(a.lat,a.lng,b.lat,b.lng);
-  let h = (b.ele||0)-(a.ele||0);
-  let slope = d>0 ? (h/d)*100 : 0;
+  let d=dist(a.lat,a.lng,b.lat,b.lng);
+  let h=(b.ele||0)-(a.ele||0);
+  let s=d>0?(h/d)*100:0;
 
-  return {
-    d: Math.round(d),
-    h: Math.round(h),
-    s: slope.toFixed(1)
-  };
+  return {d:Math.round(d),h:Math.round(h),s:s.toFixed(1)};
 }
 
-// -------- API HEIGHT
+// ---------- API HEIGHT (BACKGROUND)
 async function getElevation(lat,lng){
   try{
-    let r = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`);
-    let d = await r.json();
+    let r=await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`);
+    let d=await r.json();
     return d.results[0].elevation;
-  }catch(e){
-    return 0;
+  }catch(e){return 0;}
+}
+
+// ---------- UPDATE POS (FAST)
+function updatePosition(lat,lng,ele){
+
+  track.push({lat,lng,ele});
+  if(track.length>100) track.shift();
+
+  if(!marker){
+    marker = L.marker([lat,lng]).addTo(map);
+    map.setView([lat,lng],15);
+  }else{
+    marker.setLatLng([lat,lng]);
+    map.panTo([lat,lng]);
+  }
+
+  let latlngs = track.map(p=>[p.lat,p.lng]);
+
+  if(polyline){
+    polyline.setLatLngs(latlngs);
+  }else{
+    polyline = L.polyline(latlngs,{color:'red'}).addTo(map);
+  }
+
+  renderUI(lat,lng);
+}
+
+// ---------- UPDATE HEIGHT (ASYNC)
+function updateElevation(ele){
+  if(track.length){
+    track[track.length-1].ele = ele;
   }
 }
 
-// -------- GPS
+// ---------- GPS (NON BLOCKING)
 function startGPS(){
   navigator.geolocation.watchPosition(pos=>{
 
-    let lat = pos.coords.latitude;
-    let lng = pos.coords.longitude;
+    let lat=pos.coords.latitude;
+    let lng=pos.coords.longitude;
+    let ele=pos.coords.altitude||0;
 
-    let ele = pos.coords.altitude || 0;
-
-    // 🔥 AZONNAL FRISSÍT (nem vár)
     updatePosition(lat,lng,ele);
 
-    // 🔥 API háttérben fut
     if(elevationMode==="api"){
-      getElevation(lat,lng).then(apiEle=>{
-        updateElevation(apiEle);
+      getElevation(lat,lng).then(e=>{
+        updateElevation(e);
       });
     }
 
   },err=>console.log(err),{enableHighAccuracy:true});
 }
 
-    track.push({lat,lng,ele});
-    if(track.length>100) track.shift();
-
-    if(!marker){
-      marker = L.marker([lat,lng]).addTo(map);
-      map.setView([lat,lng],15);
-    } else {
-      marker.setLatLng([lat,lng]);
-      map.panTo([lat,lng]);
-    }
-
-    if(polyline) polyline.setLatLngs(track.map(p=>[p.lat,p.lng]));
-    else polyline = L.polyline(track.map(p=>[p.lat,p.lng]),{color:'red'}).addTo(map);
-
-    renderUI(lat,lng);
-
-  },err=>console.log(err),{enableHighAccuracy:true});
-}
-
-// -------- UI
+// ---------- UI
 function renderUI(lat,lng){
 
-  let seg = "";
+  let seg="";
 
   if(track.length>1){
-    let a = track[track.length-2];
-    let b = track[track.length-1];
-    let s = calcSeg(a,b);
+    let s=calcSeg(track[track.length-2],track[track.length-1]);
 
     seg = `
     📏 ${s.d} m<br>
@@ -159,60 +137,18 @@ function renderUI(lat,lng){
     `;
   }
 
-  document.getElementById("info").innerHTML = `
-  🧭 ${mode}<br>
-  🧭 irány: ${heading}°<br>
+  document.getElementById("info").innerHTML=`
   📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br><br>
-
   ${seg}<br>
-
-  🔄 magasság: ${elevationMode.toUpperCase()}
+  🔄 mód: ${elevationMode.toUpperCase()}
   `;
 }
 
-// -------- POI
-async function loadPOI(){
-  poiLayer.clearLayers();
-
-  let c = map.getCenter();
-
-  let q = `
-  [out:json];
-  node(around:1200,${c.lat},${c.lng})[amenity];
-  out;
-  `;
-
-  let r = await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q));
-  let d = await r.json();
-
-  d.elements.slice(0,20).forEach(p=>{
-    let m = L.marker([p.lat,p.lon]).addTo(poiLayer);
-    m.bindPopup(p.tags.name || "POI");
-  });
+// ---------- BUTTONS
+function toggleElevation(){
+  elevationMode = elevationMode==="gps"?"api":"gps";
 }
 
-// -------- RAIL
-async function loadRail(){
-  poiLayer.clearLayers();
-
-  let c = map.getCenter();
-
-  let q = `
-  [out:json];
-  node(around:4000,${c.lat},${c.lng})[railway=station];
-  out;
-  `;
-
-  let r = await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q));
-  let d = await r.json();
-
-  d.elements.forEach(p=>{
-    let m = L.marker([p.lat,p.lon]).addTo(poiLayer);
-    m.bindPopup("🚆 "+(p.tags.name||"Állomás"));
-  });
-}
-
-// -------- RESET
 function resetTrack(){
   track=[];
   if(polyline) map.removeLayer(polyline);
