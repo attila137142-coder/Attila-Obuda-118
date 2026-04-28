@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FUTÁR + MÁV + VOLÁN HYBRID SYSTEM</title>
+  <title>REAL NATIONAL TRANSIT OS</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -20,10 +20,25 @@
     .resultBox{margin-top:8px;padding:8px;background:#111827;border-radius:8px;cursor:pointer}
     .tag{font-size:11px;padding:2px 6px;border-radius:6px;background:#374151;margin-left:5px}
 
-    /* STATUS COLORS */
+    .late{color:#3b82f6}   /* KÉK - késik */
+    .early{color:#ef4444}  /* PIROS - siet */
     .onTime{color:#e2e8f0}
-    .late{color:#3b82f6}   /* KÉK = késik */
-    .early{color:#ef4444}  /* PIROS = siet */
+
+    .vehicleRow{
+      display:flex;
+      gap:8px;
+      flex-wrap:wrap;
+      margin-top:6px;
+      font-size:12px;
+      opacity:0.9;
+    }
+
+    .vehicle{
+      background:#0b1220;
+      padding:4px 8px;
+      border-radius:6px;
+      border:1px solid #374151;
+    }
 
     #menu{position:fixed;inset:0;background:#0b1220;display:none;padding:20px;z-index:999;overflow:auto}
   </style>
@@ -31,21 +46,21 @@
 <body>
 
 <header>
-  <h1>🚆 FUTÁR + MÁV + VOLÁN HYBRID SYSTEM</h1>
+  <h1>🚆 REAL NATIONAL TRANSIT OS</h1>
   <button class="btn" onclick="toggleMenu()">Menü</button>
 </header>
 
 <div id="menu">
-  <h2>🧭 UNIFIED DISPATCH ENGINE</h2>
-  <p>BKK / MÁV / VOLÁN integrált rendszer</p>
+  <h2>🧭 DISPATCH ENGINE</h2>
+  <p>BKK + MÁV + VOLÁN + FLEET DATA</p>
   <button class="btn" onclick="toggleMenu()">Bezár</button>
 </div>
 
 <div class="grid">
 
   <div class="card">
-    <h3>🔍 Kereső (járatok + megállók)</h3>
-    <input id="search" placeholder="megálló / járat / GTFS" oninput="searchStops()" />
+    <h3>🔍 Kereső (GTFS + idegen adatok)</h3>
+    <input id="search" placeholder="megálló / jármű / járat" oninput="searchAll()" />
     <div id="results"></div>
   </div>
 
@@ -55,8 +70,8 @@
   </div>
 
   <div class="card">
-    <h3>📊 Diszpécser panel</h3>
-    <div id="panel">Válassz megállót...</div>
+    <h3>📊 Indulási panel</h3>
+    <div id="panel">Válassz elemet...</div>
   </div>
 
 </div>
@@ -65,23 +80,18 @@
 
 let map;
 let userLat=null,userLon=null;
-let selected=null;
-
-// ---------------- ROUTES (HOVA MEGY) ----------------
-const routes=[
-  {id:"R1",name:"Deák → Örs",from:"Deák Ferenc tér",to:"Örs vezér tere"},
-  {id:"R2",name:"Batthyány → Szentendre",from:"Batthyány tér",to:"Szentendre"},
-  {id:"R3",name:"Vác → Szob",from:"Vác",to:"Szob"}
-];
 
 // ---------------- STOPS ----------------
 const stops=[
-  {name:"Deák Ferenc tér",gtfs:"BKK_001",lat:47.4975,lon:19.0550,net:"bkk",route:"R1"},
-  {name:"Örs vezér tere",gtfs:"BKK_002",lat:47.5017,lon:19.1356,net:"bkk",route:"R1"},
-  {name:"Batthyány tér",gtfs:"BKK_003",lat:47.5060,lon:19.0394,net:"bkk",route:"R2"},
-  {name:"Szentendre",gtfs:"VOL_002",lat:47.6604,lon:19.0754,net:"volan",route:"R2"},
-  {name:"Vác",gtfs:"VOL_003",lat:47.7819,lon:19.1296,net:"volan",route:"R3"},
-  {name:"Szob",gtfs:"MAV_002",lat:47.8213,lon:18.8626,net:"mav",route:"R3"}
+  {name:"Deák Ferenc tér",gtfs:"BKK_001",lat:47.4975,lon:19.0550,route:"R1"},
+  {name:"Örs vezér tere",gtfs:"BKK_002",lat:47.5017,lon:19.1356,route:"R1"},
+  {name:"Szob",gtfs:"MAV_002",lat:47.8213,lon:18.8626,route:"R2"}
+];
+
+// ---------------- IDEGEN / FLEET ADATOK ----------------
+const vehicles=[
+  {route:"R1",type:"Volvo 2220",line:"300/95",shift:"2430/3",plate:"DKG-258"},
+  {route:"R2",type:"MÁV FLIRT",line:"120A",shift:"1102/1",plate:"H-TRAIN"}
 ];
 
 // ---------------- GPS ----------------
@@ -101,63 +111,77 @@ function dist(a,b,c,d){
   return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ---------------- STATUS ----------------
-function status(diff){
-  if(diff<0) return {t:`KÉSIK ${Math.abs(diff)}p`,c:"late"};
-  if(diff>5) return {t:`SIET ${diff}p`,c:"early"};
-  return {t:"IDŐBEN",c:"onTime"};
-}
-
-// ---------------- SEARCH ----------------
-function searchStops(){
+// ---------------- SEARCH (ALL DATA) ----------------
+function searchAll(){
   const q=document.getElementById('search').value.toLowerCase();
   const res=document.getElementById('results');
   res.innerHTML="";
 
-  stops.filter(s=>s.name.toLowerCase().includes(q)||s.gtfs.toLowerCase().includes(q))
-  .forEach(s=>{
+  const all=[
+    ...stops.map(s=>({...s,type:"stop"})),
+    ...vehicles.map(v=>({...v,type:"vehicle"}))
+  ];
 
-    let d="";
-    if(userLat)d=`📏 ${dist(userLat,userLon,s.lat,s.lon).toFixed(2)} km`;
-
-    const r=routes.find(r=>r.id===s.route);
+  all.filter(x=>(x.name||x.type||x.plate||"").toLowerCase().includes(q)|| (x.gtfs||"").toLowerCase().includes(q))
+  .forEach(x=>{
 
     const div=document.createElement("div");
     div.className="resultBox";
-    div.innerHTML=`
-      🚏 ${s.name}<br>
-      🆔 ${s.gtfs}<br>
-      🧭 ${r?r.name:"nincs útvonal"}<br>
-      ${d}
-    `;
 
-    div.onclick=()=>renderPanel(s);
+    if(x.type=="stop"){
+      div.innerHTML=`🚏 ${x.name}<br>🆔 ${x.gtfs}`;
+      div.onclick=()=>renderStop(x);
+    }
+
+    if(x.type=="vehicle"){
+      div.innerHTML=`🚍 ${x.type}<br>📟 ${x.line} | ${x.shift}<br>🚗 ${x.plate}`;
+      div.onclick=()=>renderVehicle(x);
+    }
+
     res.appendChild(div);
   });
 }
 
-// ---------------- PANEL ----------------
-function renderPanel(s){
+// ---------------- STOP PANEL ----------------
+function renderStop(s){
   const el=document.getElementById('panel');
+  const v=vehicles.filter(v=>v.route===s.route);
 
-  const r=routes.find(x=>x.id===s.route);
+  const times=[-3,0,4,10];
 
-  const times=[-4,0,3,9];
+  el.innerHTML=`<b>${s.name}</b><br>🧭 Route: ${s.route}<br><br>`;
 
-  el.innerHTML=`
-    <b>${s.name}</b><br>
-    🧭 Hova megy: ${r?r.name:"ismeretlen"}<br><br>
-  `;
-
-  times.forEach(t=>{
-    const st=status(t);
-
+  v.forEach(vv=>{
     el.innerHTML+=`
-      <div class="${st.c}">
-        🕒 indulás +${t}p <span class="tag">${st.t}</span>
+      <div class="vehicleRow">
+        <div class="vehicle">${vv.type}</div>
+        <div class="vehicle">${vv.line}</div>
+        <div class="vehicle">${vv.shift}</div>
+        <div class="vehicle">${vv.plate}</div>
       </div>
     `;
   });
+
+  times.forEach(t=>{
+    let cls="onTime",txt="IDŐBEN";
+
+    if(t<0){cls="late";txt=`KÉSIK ${Math.abs(t)}p`}
+    if(t>5){cls="early";txt=`SIET ${t}p`}
+
+    el.innerHTML+=`<div class="${cls}">🕒 +${t}p <span class="tag">${txt}</span></div>`;
+  });
+}
+
+// ---------------- VEHICLE PANEL ----------------
+function renderVehicle(v){
+  const el=document.getElementById('panel');
+  el.innerHTML=`
+    <b>🚍 ${v.type}</b><br>
+    📟 ${v.line}<br>
+    ⏱ ${v.shift}<br>
+    🚗 ${v.plate}<br>
+    🧭 Route: ${v.route}
+  `;
 }
 
 // ---------------- MAP ----------------
@@ -168,7 +192,7 @@ window.onload=()=>{
   stops.forEach(s=>{
     L.marker([s.lat,s.lon]).addTo(map)
     .bindPopup(`${s.name}<br>${s.gtfs}`)
-    .on('click',()=>renderPanel(s));
+    .on('click',()=>renderStop(s));
   });
 
   startGPS();
@@ -184,3 +208,4 @@ function toggleMenu(){
 
 </body>
 </html>
+
