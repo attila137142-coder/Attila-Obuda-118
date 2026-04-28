@@ -3,31 +3,37 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>GTFS Dispatcher - FULL MODE</title>
+  <title>REAL GPS DISPATCH MODE - GTFS ENGINE</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    body { margin:0; font-family: Arial; background:#0f172a; color:#e2e8f0; }
+    body { margin:0; font-family:Arial; background:#0f172a; color:#e2e8f0; }
     header { padding:12px; background:#111827; display:flex; justify-content:space-between; align-items:center; }
     h1 { font-size:14px; margin:0; }
-    .badge { font-size:11px; opacity:0.8; }
     .btn { background:#2563eb; border:none; padding:8px 10px; color:#fff; border-radius:8px; cursor:pointer; }
     .grid { display:grid; gap:10px; padding:10px; }
     .card { background:#1f2937; padding:10px; border-radius:12px; }
     input { width:100%; padding:10px; border-radius:8px; border:none; margin-top:5px; }
-    #map { height:320px; border-radius:12px; }
+    #map { height:300px; border-radius:12px; }
     .small { font-size:12px; opacity:0.85; white-space:pre-line; }
-    .resultBox { margin-top:8px; padding:8px; background:#111827; border-radius:8px; }
+    .resultBox { margin-top:8px; padding:8px; background:#111827; border-radius:8px; cursor:pointer; }
 
     #menu { position:fixed; inset:0; background:#0b1220; display:none; padding:20px; z-index:999; overflow:auto; }
+
+    /* DISPATCH COLORS */
+    .onTime { color:#e2e8f0; }
+    .late { color:#60a5fa; }
+    .early { color:#ef4444; }
+
+    .tag { font-size:11px; padding:2px 6px; border-radius:6px; background:#374151; margin-left:5px; }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>🧭 GTFS DISPATCHER <span class="badge">FULL MODE</span></h1>
+  <h1>🧭 REAL GPS DISPATCH MODE</h1>
   <button class="btn" onclick="toggleMenu()">Menü</button>
 </header>
 
@@ -40,15 +46,19 @@
 <div class="grid">
 
   <div class="card">
-    <h3>🔍 Megálló kereső (FULL GTFS)</h3>
-    <input id="search" placeholder="Név vagy GTFS kód" oninput="searchStops()" />
+    <h3>🔍 Megálló kereső</h3>
+    <input id="search" placeholder="Név vagy GTFS" oninput="searchStops()" />
     <div id="results" class="small"></div>
   </div>
 
   <div class="card">
     <h3>🗺️ Térkép</h3>
     <div id="map"></div>
-    <div class="small" id="mapStatus">betöltés...</div>
+  </div>
+
+  <div class="card">
+    <h3>📊 Megálló menetrend (DISPATCH)</h3>
+    <div id="schedule" class="small">Válassz megállót...</div>
   </div>
 
 </div>
@@ -57,87 +67,122 @@
 
 let map;
 let userLat=null, userLon=null;
+let selectedStop=null;
 
-// ---------------- CLEAN GTFS DATASET ----------------
+// ---------------- GTFS STOPS ----------------
 const stops = [
-  {gtfs:"BKK_001", name:"Deák Ferenc tér", lat:47.4975, lon:19.0550, type:"bkk"},
-  {gtfs:"H5-09183", name:"Békásmegyer HÉV-állomás", lat:47.598091, lon:19.054599},
-  {gtfs:"BKK-F00457", name:"Nád utca", lat:47.594072, lon:19.048469},
-  {gtfs:"BKK-00438", name:"Gulácsy Lajos utca", lat:47.602562, lon:19.048229},
-  {gtfs:"BKK-F00611", name:"Florián tér A", lat:47.542896, lon:19.042252},
-  {gtfs:"BKK-F00613", name:"Florián tér B", lat:47.541664, lon:19.040084},
-  {gtfs:"BKK-F00057", name:"Batthyány tér (villamos)", lat:47.506002, lon:19.039456},
-  {gtfs:"BKK-F00265", name:"Verecke lépcső", lat:47.529117, lon:19.003624},
-  {gtfs:"BKK-F044192", name:"Csobánka tér 243", lat:47.597795, lon:19.053787},
-  {gtfs:"BKK-008939", name:"Csobánka tér 160", lat:47.598425, lon:19.054240},
-  {gtfs:"H5-09142221", name:"Szentendre HÉV végállomás", lat:47.661038, lon:19.075607},
-  {gtfs:"BKK-008030", name:"Örs vezér tere", lat:47.501742, lon:19.135604},
-  {gtfs:"BKK-1831", name:"Kocka utca (kifelé)", lat:47.484915, lon:19.155466},
-  {gtfs:"BKK-1832", name:"Kocka utca (befelé)", lat:47.484708, lon:19.155969},
-  {gtfs:"BKK-F01842", name:"Újhegyi sétány", lat:47.470813, lon:19.164510},
-  {gtfs:"BKK-008863", name:"Gőzmozdony utca", lat:47.470028, lon:19.157173},
-  {gtfs:"VOLAN-773493-1", name:"Bojtár utca A", lat:47.560099, lon:19.024711},
-  {gtfs:"VOLAN-773493-2", name:"Bojtár utca B", lat:47.559047, lon:19.042921},
-  {gtfs:"VOLAN-778806-99", name:"Szentendre autóbusz-állomás", lat:47.660403, lon:19.075408},
-  {gtfs:"VOLAN-778840-1", name:"Skanzen 1", lat:47.691135, lon:19.046955},
-  {gtfs:"VOLAN-778840-2", name:"Skanzen 2", lat:47.691273, lon:19.045667},
-  {gtfs:"VOLAN-779053-1", name:"Tahitótfalu hídfő 1", lat:47.751712, lon:19.078215},
-  {gtfs:"VOLAN-779053-2", name:"Tahitótfalu hídfő 2", lat:47.751648, lon:19.078091},
-  {gtfs:"VOLAN-778803", name:"Dömör-kapu", lat:47.694900, lon:19.000210},
-  {gtfs:"VOLAN-779365", name:"Vác autóbusz-állomás", lat:47.781930, lon:19.129643},
-  {gtfs:"VOLAN-778190", name:"Kóspallag templom", lat:47.877850, lon:18.932580},
-  {gtfs:"VOLAN-778186", name:"Kisinóci turistaház", lat:47.890600, lon:18.927580},
-  {gtfs:"VOLAN-779017", name:"Királyrét", lat:47.895040, lon:18.977687},
-  {gtfs:"VOLAN-779011", name:"Szob vasútállomás", lat:47.821319, lon:18.862602},
-  {gtfs:"VOLAN-778310", name:"Nagybörzsöny községháza", lat:47.936030, lon:18.827710},
-  {gtfs:"VOLAN-778086", name:"Kemence 1", lat:48.015915, lon:18.888468},
-  {gtfs:"VOLAN-778086-2", name:"Kemence 2", lat:48.015710, lon:18.888021},
-  {gtfs:"VOLAN-778532", name:"Pilisborosjenő", lat:47.609100, lon:18.989680},
-  {gtfs:"VOLAN-778561", name:"Dobogókő", lat:47.719118, lon:18.897577},
-  {gtfs:"VOLAN-779478", name:"Vámosmikola", lat:47.978190, lon:18.785890},
-  {gtfs:"VOLAN-325369", name:"Dunapataj", lat:46.644280, lon:19.000233},
-  {gtfs:"VOLAN-325374", name:"Szelidi-tó", lat:46.625050, lon:19.046159},
-  {gtfs:"HEV5-09134", name:"Pomáz HÉV", lat:47.642749, lon:19.032657},
-  {gtfs:"VOLAN-778618", name:"Pomáz autóbusz-állomás", lat:47.642749, lon:19.032657},
-  {gtfs:"ERDO-001", name:"Magas-taxi turistaház", lat:47.92842, lon:18.92997},
-  {gtfs:"ERDO-002", name:"Nagyhideghegy", lat:47.936111, lon:18.921944},
-  {gtfs:"ERDO-003", name:"Csóványos", lat:47.94908, lon:18.94830},
-  {gtfs:"UTCA-001", name:"Lakás (Dino)", lat:47.594304, lon:19.048770}
+  {gtfs:"BKK_001", name:"Deák Ferenc tér", lat:47.4975, lon:19.0550},
+  {gtfs:"BKK_002", name:"Örs vezér tere", lat:47.5017, lon:19.1356},
+  {gtfs:"BKK_003", name:"Batthyány tér", lat:47.5060, lon:19.0394},
+  {gtfs:"H5_001", name:"Békásmegyer HÉV", lat:47.5981, lon:19.0546}
 ];
 
-// ---------------- SEARCH + DISTANCE ALL ----------------
+// ---------------- MOCK TIMETABLE ----------------
+function getTimetable(stop){
+  const now = new Date();
+  const base = now.getHours()*60 + now.getMinutes();
+
+  return [
+    base - 4,
+    base + 2,
+    base + 10
+  ];
+}
+
+function statusText(mins){
+  if(mins < 0) return {text:`KÉSIK ${Math.abs(mins)}p`, cls:"late"};
+  if(mins === 0) return {text:`IDŐBEN`, cls:"onTime"};
+  if(mins > 0) return {text:`SIET ${mins}p`, cls:"early"};
+}
+
+// ---------------- GPS REAL MODE ----------------
+function startGPS(){
+  if(!navigator.geolocation) return;
+
+  navigator.geolocation.watchPosition(pos=>{
+    userLat=pos.coords.latitude;
+    userLon=pos.coords.longitude;
+  });
+}
+
+// ---------------- DISTANCE ----------------
+function dist(a,b,c,d){
+  const R=6371;
+  const dLat=(c-a)*Math.PI/180;
+  const dLon=(d-b)*Math.PI/180;
+  const x=Math.sin(dLat/2)**2 + Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// ---------------- SEARCH ----------------
 function searchStops(){
   const q=document.getElementById('search').value.toLowerCase();
   const res=document.getElementById('results');
   res.innerHTML="";
 
-  const found=stops.filter(s=>s.name.toLowerCase().includes(q)||s.gtfs.toLowerCase().includes(q));
+  stops.filter(s=>s.name.toLowerCase().includes(q)||s.gtfs.toLowerCase().includes(q))
+  .forEach(s=>{
 
-  found.forEach(s=>{
-    let dist="";
-    if(userLat!=null){
-      const d=Math.sqrt(Math.pow(userLat-s.lat,2)+Math.pow(userLon-s.lon,2))*111;
-      dist=`\n📏 ~${d.toFixed(2)} km`;
-    }
+    let d="";
+    if(userLat) d=` | 📏 ${dist(userLat,userLon,s.lat,s.lon).toFixed(2)} km`;
 
     const div=document.createElement("div");
     div.className="resultBox";
-    div.innerText=`🚏 ${s.name}\n🆔 ${s.gtfs}\n📍 ${s.lat},${s.lon}${dist}`;
+    div.innerHTML=`🚏 ${s.name}<br>🆔 ${s.gtfs}<br>${d}`;
+
+    div.onclick=()=>renderSchedule(s);
+
     res.appendChild(div);
+  });
+}
+
+// ---------------- SCHEDULE RENDER ----------------
+function renderSchedule(stop){
+  selectedStop=stop;
+  const box=document.getElementById('schedule');
+
+  const times=getTimetable(stop);
+
+  box.innerHTML=`<b>${stop.name}</b><br><br>`;
+
+  times.forEach(t=>{
+    const now=new Date();
+    const current=now.getHours()*60+now.getMinutes();
+    const diff=t-current;
+
+    const st=statusText(diff);
+
+    const h=Math.floor(t/60);
+    const m=t%60;
+
+    box.innerHTML+=`
+      <div class="${st.cls}">
+        🕒 ${h}:${m.toString().padStart(2,'0')} 
+        <span class="tag">${st.text}</span>
+      </div>
+    `;
   });
 }
 
 // ---------------- MAP ----------------
 window.onload=()=>{
-  map=L.map('map').setView([47.5,19.04],11);
+  map=L.map('map').setView([47.5,19.05],11);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
   stops.forEach(s=>{
-    L.marker([s.lat,s.lon]).addTo(map).bindPopup(s.name+"<br>"+s.gtfs);
+    L.marker([s.lat,s.lon]).addTo(map)
+    .bindPopup(s.name)
+    .on('click',()=>renderSchedule(s));
   });
 
-  setTimeout(()=>map.invalidateSize(),300);
+  startGPS();
 };
+
+// ---------------- MENU ----------------
+function toggleMenu(){
+  const m=document.getElementById('menu');
+  m.style.display=m.style.display==='block'?'none':'block';
+}
 
 </script>
 
