@@ -18,8 +18,20 @@
     input { width:100%; padding:10px; border-radius:8px; border:none; margin-top:5px; }
     #map { height:320px; border-radius:12px; }
     .small { font-size:12px; opacity:0.85; white-space:pre-line; }
-    .compass { font-size:28px; text-align:center; padding:10px; }
+    .compass { font-size:26px; text-align:center; padding:10px; }
     .resultBox { margin-top:8px; padding:8px; background:#111827; border-radius:8px; }
+
+    /* MENU PANEL */
+    #menu {
+      position:fixed;
+      top:0; left:0;
+      width:100%; height:100%;
+      background:#0b1220;
+      display:none;
+      padding:20px;
+      overflow:auto;
+      z-index:999;
+    }
   </style>
 </head>
 <body>
@@ -29,143 +41,134 @@
   <button class="btn" onclick="toggleMenu()">Menü</button>
 </header>
 
+<!-- MENU -->
+<div id="menu">
+  <h2>🚆 GTFS MENÜ</h2>
+  <p>📌 Járatok / útvonaltervező / import (placeholder)</p>
+  <button class="btn" onclick="toggleMenu()">Bezár</button>
+</div>
+
 <div class="grid">
 
   <div class="card">
     <h3>🔍 GTFS / Megálló kereső</h3>
-    <input id="search" placeholder="Név vagy GTFS ID (pl. 012345)" oninput="searchStops()" />
+    <input id="search" placeholder="Név vagy GTFS ID" oninput="searchStops()" />
     <div id="results" class="small"></div>
   </div>
 
   <div class="card">
     <h3>🗺️ Térkép</h3>
     <div id="map"></div>
-    <div class="small" id="mapStatus">Térkép betöltés...</div>
+    <div class="small" id="mapStatus">Térkép várakozás...</div>
   </div>
 
   <div class="card">
     <h3>🧭 Iránytű</h3>
-    <div class="compass" id="compass">Várakozás...</div>
+    <div class="compass" id="compass">⏳ VÁRAKOZÁS: szenzor / engedély</div>
     <button class="btn" onclick="startCompass()">Iránytű indítása</button>
+    <div class="small">Ha nem indul: HTTPS + engedély kell</div>
   </div>
 
 </div>
 
 <script>
 
-// ---------------- DEMO GTFS ADAT (később importálható ZIP-ből) ----------------
+let map;
+let compassStarted = false;
+
 const stops = [
   { id:"BKK001", name:"Deák Ferenc tér", lat:47.4979, lon:19.0550 },
-  { id:"BKK002", name:"Kelenföld vasútállomás", lat:47.4649, lon:19.0227 },
-  { id:"BKK003", name:"Örs vezér tere", lat:47.5006, lon:19.1372 },
-  { id:"BKK004", name:"Batthyány tér", lat:47.5063, lon:19.0399 },
-  { id:"BKK005", name:"Attila út (demo)", lat:47.4982, lon:19.0415 }
+  { id:"BKK002", name:"Kelenföld", lat:47.4649, lon:19.0227 },
+  { id:"BKK003", name:"Örs vezér tere", lat:47.5006, lon:19.1372 }
 ];
 
-let userLat = null;
-let userLon = null;
-
-// ---------------- HELYMEGHATÁROZÁS ----------------
-if(navigator.geolocation){
-  navigator.geolocation.getCurrentPosition(pos => {
-    userLat = pos.coords.latitude;
-    userLon = pos.coords.longitude;
-  });
-}
-
-// ---------------- TÁVOLSÁG ----------------
-function getDistance(lat1, lon1, lat2, lon2){
-  const R = 6371;
-  const dLat = (lat2-lat1)*Math.PI/180;
-  const dLon = (lon2-lon1)*Math.PI/180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R*c;
-}
-
-// ---------------- KERESŐ ----------------
-function searchStops(){
-  const q = document.getElementById('search').value.toLowerCase();
-  const resDiv = document.getElementById('results');
-  resDiv.innerHTML = "";
-
-  const results = stops.filter(s =>
-    s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q)
-  );
-
-  if(results.length === 0){
-    resDiv.innerText = "Nincs találat";
-    return;
-  }
-
-  results.forEach(s => {
-    let distText = "";
-
-    if(userLat && userLon){
-      const d = getDistance(userLat, userLon, s.lat, s.lon);
-      distText = ` | Távolság: ${d.toFixed(2)} km`;
-    }
-
-    const box = document.createElement("div");
-    box.className = "resultBox";
-    box.innerText = `Név: ${s.name}\nID: ${s.id}\nLat: ${s.lat}, Lon: ${s.lon}${distText}`;
-
-    resDiv.appendChild(box);
-  });
-}
-
-// ---------------- MAP ----------------
-let map;
-
+// MAP INIT
 window.onload = () => {
-  map = L.map('map').setView([47.4979, 19.0402], 12);
+  try {
+    map = L.map('map').setView([47.4979, 19.0402], 12);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap'
-  }).addTo(map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
 
-  stops.forEach(s => {
-    L.marker([s.lat, s.lon]).addTo(map).bindPopup(s.name);
-  });
+    stops.forEach(s => {
+      L.marker([s.lat, s.lon]).addTo(map).bindPopup(s.name);
+    });
 
-  setTimeout(() => map.invalidateSize(), 300);
-  document.getElementById('mapStatus').innerText = "OK ✔";
+    setTimeout(() => map.invalidateSize(), 300);
+    document.getElementById('mapStatus').innerText = "TÉRKÉP BETÖLTVE ✔";
+  } catch(e){
+    document.getElementById('mapStatus').innerText = "HIBA: " + e.message;
+  }
 };
 
-// ---------------- IRÁNYTŰ ----------------
-function startCompass(){
-  if(!window.DeviceOrientationEvent){
-    document.getElementById('compass').innerText = "Nincs szenzor";
+// SEARCH
+function searchStops(){
+  const q = document.getElementById('search').value.toLowerCase();
+  const res = document.getElementById('results');
+  res.innerHTML = "";
+
+  const found = stops.filter(s => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q));
+
+  if(found.length === 0){
+    res.innerText = "Nincs találat";
     return;
   }
 
+  found.forEach(s => {
+    const box = document.createElement("div");
+    box.className = "resultBox";
+    box.innerText = `Név: ${s.name}\nID: ${s.id}\nLat: ${s.lat}, Lon: ${s.lon}`;
+    res.appendChild(box);
+  });
+}
+
+// MENU FIX
+function toggleMenu(){
+  const m = document.getElementById('menu');
+  m.style.display = (m.style.display === "block") ? "none" : "block";
+}
+
+// COMPASS FIX
+function startCompass(){
+  const el = document.getElementById('compass');
+
+  if(!window.DeviceOrientationEvent){
+    el.innerText = "❌ nincs szenzor";
+    return;
+  }
+
+  el.innerText = "⏳ engedély / szenzor várakozás";
+
   if(typeof DeviceOrientationEvent.requestPermission === 'function'){
-    DeviceOrientationEvent.requestPermission().then(p=>{
-      if(p==='granted') initCompass();
-    });
+    DeviceOrientationEvent.requestPermission()
+      .then(p => {
+        if(p === 'granted') initCompass();
+        else el.innerText = "❌ engedély megtagadva";
+      })
+      .catch(()=> el.innerText="❌ engedély hiba");
   } else {
     initCompass();
   }
 }
 
 function initCompass(){
+  compassStarted = true;
+  document.getElementById('compass').innerText = "🧭 aktív";
+
   window.addEventListener("deviceorientation", e => {
     let d = e.alpha || 0;
     let t = "⬆️ ÉSZAK";
+
     if(d>45&&d<135) t="➡️ KELET";
     else if(d>135&&d<225) t="⬇️ DÉL";
     else if(d>225&&d<315) t="⬅️ NYUGAT";
+
     document.getElementById('compass').innerText = t;
   });
-}
-
-// ---------------- MENU ----------------
-function toggleMenu(){
-  alert("GTFS menü: járatok, útvonal, import helye (következő lépés)");
 }
 
 </script>
 
 </body>
 </html>
-
