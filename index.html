@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>BKK + MÁV + VOLÁN UNIFIED DISPATCH SYSTEM</title>
+  <title>FUTÁR + MÁV + VOLÁN HYBRID SYSTEM</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -20,22 +20,23 @@
     .resultBox{margin-top:8px;padding:8px;background:#111827;border-radius:8px;cursor:pointer}
     .tag{font-size:11px;padding:2px 6px;border-radius:6px;background:#374151;margin-left:5px}
 
-    #menu{position:fixed;inset:0;background:#0b1220;display:none;padding:20px;z-index:999;overflow:auto}
+    /* STATUS COLORS */
+    .onTime{color:#e2e8f0}
+    .late{color:#3b82f6}   /* KÉK = késik */
+    .early{color:#ef4444}  /* PIROS = siet */
 
-    .bkk{color:#60a5fa}
-    .mav{color:#fbbf24}
-    .volan{color:#34d399}
+    #menu{position:fixed;inset:0;background:#0b1220;display:none;padding:20px;z-index:999;overflow:auto}
   </style>
 </head>
 <body>
 
 <header>
-  <h1>🚆 BKK + MÁV + VOLÁN DISPATCH</h1>
+  <h1>🚆 FUTÁR + MÁV + VOLÁN HYBRID SYSTEM</h1>
   <button class="btn" onclick="toggleMenu()">Menü</button>
 </header>
 
 <div id="menu">
-  <h2>🚦 UNIFIED ENGINE</h2>
+  <h2>🧭 UNIFIED DISPATCH ENGINE</h2>
   <p>BKK / MÁV / VOLÁN integrált rendszer</p>
   <button class="btn" onclick="toggleMenu()">Bezár</button>
 </div>
@@ -43,8 +44,8 @@
 <div class="grid">
 
   <div class="card">
-    <h3>🔍 Kereső (összes hálózat)</h3>
-    <input id="search" placeholder="megálló / GTFS / vasútállomás" oninput="searchStops()" />
+    <h3>🔍 Kereső (járatok + megállók)</h3>
+    <input id="search" placeholder="megálló / járat / GTFS" oninput="searchStops()" />
     <div id="results"></div>
   </div>
 
@@ -64,20 +65,23 @@
 
 let map;
 let userLat=null,userLon=null;
+let selected=null;
 
-// ---------------- UNIFIED GTFS ----------------
+// ---------------- ROUTES (HOVA MEGY) ----------------
+const routes=[
+  {id:"R1",name:"Deák → Örs",from:"Deák Ferenc tér",to:"Örs vezér tere"},
+  {id:"R2",name:"Batthyány → Szentendre",from:"Batthyány tér",to:"Szentendre"},
+  {id:"R3",name:"Vác → Szob",from:"Vác",to:"Szob"}
+];
+
+// ---------------- STOPS ----------------
 const stops=[
-  // BKK
-  {name:"Deák Ferenc tér",gtfs:"BKK_001",lat:47.4975,lon:19.0550,net:"bkk"},
-  {name:"Örs vezér tere",gtfs:"BKK_002",lat:47.5017,lon:19.1356,net:"bkk"},
-
-  // MÁV / HÉV
-  {name:"Kelenföld vasútállomás",gtfs:"MAV_001",lat:47.4649,lon:19.0227,net:"mav"},
-  {name:"Szob vasútállomás",gtfs:"MAV_002",lat:47.8213,lon:18.8626,net:"mav"},
-
-  // VOLÁN
-  {name:"Vác autóbusz-állomás",gtfs:"VOLAN_001",lat:47.7819,lon:19.1296,net:"volan"},
-  {name:"Szentendre autóbusz-állomás",gtfs:"VOLAN_002",lat:47.6604,lon:19.0754,net:"volan"}
+  {name:"Deák Ferenc tér",gtfs:"BKK_001",lat:47.4975,lon:19.0550,net:"bkk",route:"R1"},
+  {name:"Örs vezér tere",gtfs:"BKK_002",lat:47.5017,lon:19.1356,net:"bkk",route:"R1"},
+  {name:"Batthyány tér",gtfs:"BKK_003",lat:47.5060,lon:19.0394,net:"bkk",route:"R2"},
+  {name:"Szentendre",gtfs:"VOL_002",lat:47.6604,lon:19.0754,net:"volan",route:"R2"},
+  {name:"Vác",gtfs:"VOL_003",lat:47.7819,lon:19.1296,net:"volan",route:"R3"},
+  {name:"Szob",gtfs:"MAV_002",lat:47.8213,lon:18.8626,net:"mav",route:"R3"}
 ];
 
 // ---------------- GPS ----------------
@@ -97,6 +101,13 @@ function dist(a,b,c,d){
   return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
+// ---------------- STATUS ----------------
+function status(diff){
+  if(diff<0) return {t:`KÉSIK ${Math.abs(diff)}p`,c:"late"};
+  if(diff>5) return {t:`SIET ${diff}p`,c:"early"};
+  return {t:"IDŐBEN",c:"onTime"};
+}
+
 // ---------------- SEARCH ----------------
 function searchStops(){
   const q=document.getElementById('search').value.toLowerCase();
@@ -109,11 +120,14 @@ function searchStops(){
     let d="";
     if(userLat)d=`📏 ${dist(userLat,userLon,s.lat,s.lon).toFixed(2)} km`;
 
+    const r=routes.find(r=>r.id===s.route);
+
     const div=document.createElement("div");
     div.className="resultBox";
     div.innerHTML=`
-      <span class="${s.net}">🚏 ${s.name}</span><br>
+      🚏 ${s.name}<br>
       🆔 ${s.gtfs}<br>
+      🧭 ${r?r.name:"nincs útvonal"}<br>
       ${d}
     `;
 
@@ -126,18 +140,23 @@ function searchStops(){
 function renderPanel(s){
   const el=document.getElementById('panel');
 
-  const times=[-3,0,4,12];
+  const r=routes.find(x=>x.id===s.route);
 
-  el.innerHTML=`<b>${s.name}</b><br><br>`;
+  const times=[-4,0,3,9];
+
+  el.innerHTML=`
+    <b>${s.name}</b><br>
+    🧭 Hova megy: ${r?r.name:"ismeretlen"}<br><br>
+  `;
 
   times.forEach(t=>{
-    let st="IDŐBEN",cls="";
+    const st=status(t);
 
-    if(t<0){st=`KÉSIK ${Math.abs(t)}p`;cls="mav"}
-    if(t>5){st=`SIET ${t}p`;cls="volan"}
-    if(t>=0&&t<=5){st="IDŐBEN";cls="bkk"}
-
-    el.innerHTML+=`<div class="${cls}">🕒 indulás +${t}p <span class="tag">${st}</span></div>`;
+    el.innerHTML+=`
+      <div class="${st.c}">
+        🕒 indulás +${t}p <span class="tag">${st.t}</span>
+      </div>
+    `;
   });
 }
 
@@ -148,7 +167,7 @@ window.onload=()=>{
 
   stops.forEach(s=>{
     L.marker([s.lat,s.lon]).addTo(map)
-    .bindPopup(`<b>${s.name}</b><br>${s.net.toUpperCase()}`)
+    .bindPopup(`${s.name}<br>${s.gtfs}`)
     .on('click',()=>renderPanel(s));
   });
 
