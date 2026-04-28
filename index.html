@@ -2,15 +2,16 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila GPS PRO FIX</title>
+<title>Attila NAVI PRO+</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body { margin:0; font-family: Arial; background:#111; color:#fff; }
-#map { height: 60vh; }
+body { margin:0; background:#111; color:#fff; font-family:Arial; }
+#map { height: 50vh; }
+#chart { height:150px; background:#000; }
 .panel { padding:10px; }
 button { margin:3px; padding:8px; border-radius:6px; border:0; }
 .box { background:#1e1e1e; padding:10px; border-radius:8px; font-size:13px; }
@@ -26,17 +27,21 @@ button { margin:3px; padding:8px; border-radius:6px; border:0; }
 </div>
 
 <div id="map"></div>
+<canvas id="chart"></canvas>
 
 <script>
 
-// MAP
-let map = L.map('map').setView([47.4979,19.0402],13);
+let map = L.map('map').setView([47.49,19.04],13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// STATE
 let track=[];
 let marker, polyline;
 let elevationMode="gps";
+
+let totalDist=0;
+let totalUp=0;
+
+let ctx = document.getElementById("chart").getContext("2d");
 
 // ---------- DIST
 function dist(a,b,c,d){
@@ -53,16 +58,7 @@ function dist(a,b,c,d){
   return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ---------- SEGMENT
-function calcSeg(a,b){
-  let d=dist(a.lat,a.lng,b.lat,b.lng);
-  let h=(b.ele||0)-(a.ele||0);
-  let s=d>0?(h/d)*100:0;
-
-  return {d:Math.round(d),h:Math.round(h),s:s.toFixed(1)};
-}
-
-// ---------- API HEIGHT (BACKGROUND)
+// ---------- API HEIGHT
 async function getElevation(lat,lng){
   try{
     let r=await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`);
@@ -71,77 +67,119 @@ async function getElevation(lat,lng){
   }catch(e){return 0;}
 }
 
-// ---------- UPDATE POS (FAST)
-function updatePosition(lat,lng,ele){
+// ---------- REVERSE
+async function reverse(lat,lng){
+  try{
+    let r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${lat}&lon=${lng}`);
+    let d=await r.json();
+    let a=d.address||{};
+    return `${a.city||a.town||""}, ${a.road||""} ${a.house_number||""}`;
+  }catch(e){return "nincs adat";}
+}
+
+// ---------- UPDATE
+function updatePosition(lat,lng,ele,acc){
+
+  // zajszűrés
+  if(track.length){
+    let last=track[track.length-1];
+    let d=dist(last.lat,last.lng,lat,lng);
+    if(d<2) return; // 🔥 2m alatt ignorál
+  }
 
   track.push({lat,lng,ele});
-  if(track.length>100) track.shift();
+  if(track.length>300) track.shift();
 
   if(!marker){
-    marker = L.marker([lat,lng]).addTo(map);
+    marker=L.marker([lat,lng]).addTo(map);
     map.setView([lat,lng],15);
   }else{
     marker.setLatLng([lat,lng]);
     map.panTo([lat,lng]);
   }
 
-  let latlngs = track.map(p=>[p.lat,p.lng]);
+  let latlngs=track.map(p=>[p.lat,p.lng]);
 
-  if(polyline){
-    polyline.setLatLngs(latlngs);
-  }else{
-    polyline = L.polyline(latlngs,{color:'red'}).addTo(map);
+  if(polyline) polyline.setLatLngs(latlngs);
+  else polyline=L.polyline(latlngs,{color:'red'}).addTo(map);
+
+  // stat
+  if(track.length>1){
+    let a=track[track.length-2];
+    let b=track[track.length-1];
+
+    let d=dist(a.lat,a.lng,b.lat,b.lng);
+    totalDist += d;
+
+    let diff=(b.ele||0)-(a.ele||0);
+    if(diff>0) totalUp += diff;
   }
 
-  renderUI(lat,lng);
+  renderUI(lat,lng,ele,acc);
+  drawChart();
 }
 
-// ---------- UPDATE HEIGHT (ASYNC)
-function updateElevation(ele){
-  if(track.length){
-    track[track.length-1].ele = ele;
-  }
+// ---------- CHART
+function drawChart(){
+  ctx.clearRect(0,0,800,150);
+
+  if(track.length<2) return;
+
+  let max = Math.max(...track.map(p=>p.ele));
+  let min = Math.min(...track.map(p=>p.ele));
+
+  ctx.beginPath();
+
+  track.forEach((p,i)=>{
+    let x = i*(800/track.length);
+    let y = 150 - ((p.ele-min)/(max-min+1))*150;
+
+    if(i===0) ctx.moveTo(x,y);
+    else ctx.lineTo(x,y);
+  });
+
+  ctx.strokeStyle="lime";
+  ctx.stroke();
 }
 
-// ---------- GPS (NON BLOCKING)
+// ---------- UI
+async function renderUI(lat,lng,ele,acc){
+
+  let addr = await reverse(lat,lng);
+
+  document.getElementById("info").innerHTML = `
+  📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br>
+  📏 Pontosság: ${Math.round(acc)} m<br>
+  ⛰️ Magasság: ${Math.round(ele)} m<br><br>
+
+  📊 Össztáv: ${Math.round(totalDist)} m<br>
+  ⛰️ Össz emelkedés: ${Math.round(totalUp)} m<br><br>
+
+  🏠 ${addr}<br><br>
+
+  🔄 mód: ${elevationMode.toUpperCase()}
+  `;
+}
+
+// ---------- GPS
 function startGPS(){
   navigator.geolocation.watchPosition(pos=>{
 
     let lat=pos.coords.latitude;
     let lng=pos.coords.longitude;
     let ele=pos.coords.altitude||0;
+    let acc=pos.coords.accuracy;
 
-    updatePosition(lat,lng,ele);
+    updatePosition(lat,lng,ele,acc);
 
     if(elevationMode==="api"){
       getElevation(lat,lng).then(e=>{
-        updateElevation(e);
+        track[track.length-1].ele=e;
       });
     }
 
-  },err=>console.log(err),{enableHighAccuracy:true});
-}
-
-// ---------- UI
-function renderUI(lat,lng){
-
-  let seg="";
-
-  if(track.length>1){
-    let s=calcSeg(track[track.length-2],track[track.length-1]);
-
-    seg = `
-    📏 ${s.d} m<br>
-    ⛰️ ${s.h} m<br>
-    📈 ${s.s} %
-    `;
-  }
-
-  document.getElementById("info").innerHTML=`
-  📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br><br>
-  ${seg}<br>
-  🔄 mód: ${elevationMode.toUpperCase()}
-  `;
+  },err=>console.log(err),
+  {enableHighAccuracy:true, maximumAge:0, timeout:5000});
 }
 
 // ---------- BUTTONS
@@ -151,8 +189,9 @@ function toggleElevation(){
 
 function resetTrack(){
   track=[];
+  totalDist=0;
+  totalUp=0;
   if(polyline) map.removeLayer(polyline);
-  polyline=null;
 }
 
 // START
