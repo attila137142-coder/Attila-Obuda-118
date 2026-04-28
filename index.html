@@ -35,13 +35,13 @@
 <body>
 
 <header>
-  <h1>🧭 Iránytű Navi PRO - GTFS FULL ENGINE</h1>
+  <h1>🧭 Iránytű Navi PRO - GTFS ENGINE</h1>
   <button class="btn" onclick="toggleMenu()">Menü</button>
 </header>
 
 <div id="menu">
-  <h2>🚆 GTFS FULL ENGINE</h2>
-  <p>📦 Járatok / útvonaltervező / import (következő lépés)</p>
+  <h2>🚆 GTFS ENGINE</h2>
+  <p>Járatok / útvonal / import (következő lépés)</p>
   <button class="btn" onclick="toggleMenu()">Bezár</button>
 </div>
 
@@ -49,7 +49,7 @@
 
   <div class="card">
     <h3>🔍 GTFS Megálló kereső</h3>
-    <input id="search" placeholder="Név vagy GTFS kód (pl. 01234)" oninput="searchStops()" />
+    <input id="search" placeholder="Név vagy GTFS kód" oninput="searchStops()" />
     <div id="results" class="small"></div>
   </div>
 
@@ -70,15 +70,69 @@
 <script>
 
 let map;
+let userLat = null;
+let userLon = null;
 
-// ---------------- GTFS FULL (SIMULÁLT STRUKTÚRA) ----------------
+// ---------------- GTFS DATA ----------------
 const stops = [
   { gtfs:"HU-BKK-1001", name:"Deák Ferenc tér", lat:47.4979, lon:19.0550 },
   { gtfs:"HU-BKK-1002", name:"Kelenföld vasútállomás", lat:47.4649, lon:19.0227 },
   { gtfs:"HU-BKK-1003", name:"Örs vezér tere", lat:47.5006, lon:19.1372 },
   { gtfs:"HU-BKK-1004", name:"Batthyány tér", lat:47.5063, lon:19.0399 },
-  { gtfs:"HU-BKK-1005", name:"Attila út (demo)", lat:47.4982, lon:19.0415 }
+  { gtfs:"HU-BKK-1005", name:"Attila út (demo)", lat:47.4982, lon:19.0415 },
+  { gtfs:"HU-BKK-1006", name:"Móricz Zsigmond körtér", lat:47.4775, lon:19.0462 }
 ];
+
+// ---------------- GEOLOCATION ----------------
+if(navigator.geolocation){
+  navigator.geolocation.getCurrentPosition(pos => {
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+  });
+}
+
+function getDistance(lat1, lon1, lat2, lon2){
+  const R = 6371;
+  const dLat = (lat2-lat1)*Math.PI/180;
+  const dLon = (lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R*c;
+}
+
+// ---------------- SEARCH (ALL STOPS + DISTANCE) ----------------
+function searchStops(){
+  const q = document.getElementById('search').value.toLowerCase();
+  const res = document.getElementById('results');
+  res.innerHTML = "";
+
+  const found = stops.filter(s =>
+    s.name.toLowerCase().includes(q) || s.gtfs.toLowerCase().includes(q)
+  );
+
+  if(found.length === 0){
+    res.innerText = "Nincs találat";
+    return;
+  }
+
+  found.forEach(s => {
+    let distText = "";
+
+    if(userLat !== null && userLon !== null){
+      const d = getDistance(userLat, userLon, s.lat, s.lon);
+      distText = `\n📏 Távolság: ${d.toFixed(2)} km`;
+    } else {
+      distText = "\n📏 Távolság: (helymeghatározás nincs)";
+    }
+
+    const box = document.createElement("div");
+    box.className = "resultBox";
+    box.innerText =
+      `🚏 ${s.name}\n🆔 GTFS: ${s.gtfs}\n📍 ${s.lat}, ${s.lon}${distText}`;
+
+    res.appendChild(box);
+  });
+}
 
 // ---------------- MAP ----------------
 window.onload = () => {
@@ -97,37 +151,6 @@ window.onload = () => {
   document.getElementById('mapStatus').innerText = "✔ GTFS MAP READY";
 };
 
-// ---------------- SEARCH (GTFS + NAME) ----------------
-function searchStops(){
-  const q = document.getElementById('search').value.toLowerCase();
-  const res = document.getElementById('results');
-  res.innerHTML = "";
-
-  const found = stops.filter(s =>
-    s.name.toLowerCase().includes(q) ||
-    s.gtfs.toLowerCase().includes(q)
-  );
-
-  if(found.length === 0){
-    res.innerText = "Nincs találat";
-    return;
-  }
-
-  found.forEach(s => {
-    const box = document.createElement("div");
-    box.className = "resultBox";
-    box.innerText =
-      `🚏 ${s.name}\n🆔 GTFS: ${s.gtfs}\n📍 ${s.lat}, ${s.lon}`;
-    res.appendChild(box);
-  });
-}
-
-// ---------------- MENU ----------------
-function toggleMenu(){
-  const m = document.getElementById('menu');
-  m.style.display = (m.style.display === "block") ? "none" : "block";
-}
-
 // ---------------- COMPASS ----------------
 function startCompass(){
   const el = document.getElementById('compass');
@@ -137,7 +160,7 @@ function startCompass(){
     return;
   }
 
-  el.innerText = "⏳ engedély / szenzor várakozás";
+  el.innerText = "⏳ várakozás: engedély / szenzor";
 
   if(typeof DeviceOrientationEvent.requestPermission === 'function'){
     DeviceOrientationEvent.requestPermission()
@@ -161,6 +184,12 @@ function initCompass(){
 
     document.getElementById('compass').innerText = t;
   });
+}
+
+// ---------------- MENU ----------------
+function toggleMenu(){
+  const m = document.getElementById('menu');
+  m.style.display = (m.style.display === "block") ? "none" : "block";
 }
 
 </script>
