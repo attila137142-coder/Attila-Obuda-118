@@ -5,23 +5,22 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Iránytű Navi PRO</title>
 
-  <!-- Leaflet térkép -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    body { margin:0; font-family: Arial, sans-serif; background:#0f172a; color:#e2e8f0; }
+    body { margin:0; font-family: Arial; background:#0f172a; color:#e2e8f0; }
     header { padding:12px; background:#111827; display:flex; justify-content:space-between; align-items:center; }
     h1 { font-size:16px; margin:0; }
-    .btn { background:#2563eb; border:none; padding:8px 10px; color:white; border-radius:8px; cursor:pointer; }
-    .grid { display:grid; grid-template-columns:1fr; gap:10px; padding:10px; }
+    .btn { background:#2563eb; border:none; padding:8px 10px; color:#fff; border-radius:8px; cursor:pointer; }
+    .grid { display:grid; gap:10px; padding:10px; }
     .card { background:#1f2937; padding:10px; border-radius:12px; }
     input { width:100%; padding:10px; border-radius:8px; border:none; margin-top:5px; }
     #map { height:320px; border-radius:12px; }
     .small { font-size:12px; opacity:0.8; white-space:pre-line; }
     .row { display:flex; gap:10px; }
     .row > div { flex:1; }
-    .compass { font-size:32px; text-align:center; padding:10px; }
+    .compass { font-size:28px; text-align:center; padding:10px; }
   </style>
 </head>
 <body>
@@ -34,57 +33,49 @@
 <div class="grid">
 
   <div class="card">
-    <h3>🔍 Kereső (GTFS / megállók)</h3>
-    <input id="search" placeholder="Írd be a megállót..." oninput="searchStops()" />
+    <h3>🔍 Kereső</h3>
+    <input id="search" placeholder="Megálló keresés..." oninput="searchStops()" />
     <div id="results" class="small"></div>
   </div>
 
   <div class="card">
-    <h3>🗺️ Térkép (OpenStreetMap)</h3>
+    <h3>🗺️ Térkép</h3>
     <div id="map"></div>
-    <div class="small">BKK / MÁV / Volán integrációra kész</div>
+    <div class="small" id="mapStatus">Térkép inicializálás...</div>
   </div>
 
   <div class="card">
-    <h3>🧭 Iránytű NAVI</h3>
-    <div class="compass" id="compass">⬆️ ÉSZAK</div>
+    <h3>🧭 Iránytű</h3>
+    <div class="compass" id="compass">Várakozás...</div>
     <button class="btn" onclick="startCompass()">Iránytű indítása</button>
-    <div class="small">Engedély kell a szenzorhoz (telefon)</div>
-  </div>
-
-  <div class="card">
-    <h3>📍 Távolság számító</h3>
-    <div class="row">
-      <div><input placeholder="Lat 1" id="lat1" /></div>
-      <div><input placeholder="Lon 1" id="lon1" /></div>
-    </div>
-    <div class="row">
-      <div><input placeholder="Lat 2" id="lat2" /></div>
-      <div><input placeholder="Lon 2" id="lon2" /></div>
-    </div>
-    <button class="btn" onclick="calcDistance()">Számol</button>
-    <div id="dist" class="small"></div>
+    <div class="small">Ha nem működik: HTTPS vagy engedély kell</div>
   </div>
 
 </div>
 
 <script>
 
-// ---------------- MAP ----------------
-let map = L.map('map').setView([47.4979, 19.0402], 12);
+let map;
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap'
-}).addTo(map);
+window.onload = () => {
+  try {
+    map = L.map('map').setView([47.4979, 19.0402], 12);
 
-L.marker([47.4979, 19.0402]).addTo(map)
-  .bindPopup('Budapest központ')
-  .openPopup();
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(map);
 
-// ---------------- SEARCH ----------------
-const stops = [
-  "Attila út", "Deák Ferenc tér", "Kelenföld", "Örs vezér tere", "Batthyány tér"
-];
+    L.marker([47.4979, 19.0402]).addTo(map).bindPopup('Budapest').openPopup();
+
+    setTimeout(() => map.invalidateSize(), 300);
+
+    document.getElementById('mapStatus').innerText = "Térkép OK ✔";
+  } catch(e){
+    document.getElementById('mapStatus').innerText = "Térkép hiba: " + e.message;
+  }
+};
+
+const stops = ["Attila út","Deák tér","Kelenföld","Örs vezér tere","Batthyány tér"];
 
 function searchStops(){
   const q = document.getElementById('search').value.toLowerCase();
@@ -93,65 +84,55 @@ function searchStops(){
 }
 
 function toggleMenu(){
-  alert("Menü helye: GTFS + járatok + útvonaltervező");
+  console.log("GTFS MENU OPEN");
+  alert("Menü: GTFS / járatok / útvonaltervező (placeholder)");
 }
 
-// ---------------- COMPASS FIX ----------------
 function startCompass(){
   if(!window.DeviceOrientationEvent){
-    alert("Iránytű nem támogatott");
+    document.getElementById('compass').innerText = "Nincs szenzor";
     return;
   }
 
-  // iOS permission fix
   if(typeof DeviceOrientationEvent.requestPermission === 'function'){
     DeviceOrientationEvent.requestPermission()
-      .then(permissionState => {
-        if(permissionState === 'granted') initCompass();
-        else alert('Nincs engedély');
-      });
+      .then(p => { if(p==='granted') initCompass(); })
+      .catch(()=>fallbackCompass());
   } else {
     initCompass();
+    fallbackCompass();
   }
 }
 
 function initCompass(){
-  window.addEventListener("deviceorientation", function(event){
-    let dir = event.alpha || 0;
-    let text = "⬆️ ÉSZAK";
+  window.addEventListener("deviceorientation", e => {
+    if(e.alpha==null){ fallbackCompass(); return; }
 
-    if(dir > 45 && dir < 135) text = "➡️ KELET";
-    else if(dir > 135 && dir < 225) text = "⬇️ DÉL";
-    else if(dir > 225 && dir < 315) text = "⬅️ NYUGAT";
+    let d = e.alpha;
+    let t = "⬆️ ÉSZAK";
 
-    document.getElementById("compass").innerText = text;
+    if(d>45&&d<135) t="➡️ KELET";
+    else if(d>135&&d<225) t="⬇️ DÉL";
+    else if(d>225&&d<315) t="⬅️ NYUGAT";
+
+    document.getElementById('compass').innerText = t;
   });
 }
 
-// ---------------- DISTANCE ----------------
-function calcDistance(){
-  const lat1 = parseFloat(document.getElementById('lat1').value);
-  const lon1 = parseFloat(document.getElementById('lon1').value);
-  const lat2 = parseFloat(document.getElementById('lat2').value);
-  const lon2 = parseFloat(document.getElementById('lon2').value);
-
-  if(isNaN(lat1)||isNaN(lon1)||isNaN(lat2)||isNaN(lon2)){
-    document.getElementById('dist').innerText = "Adj meg minden koordinátát!";
-    return;
-  }
-
-  const R = 6371;
-  const dLat = (lat2-lat1)*Math.PI/180;
-  const dLon = (lon2-lon1)*Math.PI/180;
-  const a = Math.sin(dLat/2)**2 +
-            Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-  const d = R*c;
-  document.getElementById('dist').innerText = "Távolság: " + d.toFixed(2) + " km";
+// fallback (desktop teszt)
+function fallbackCompass(){
+  window.addEventListener('mousemove', e => {
+    const x = e.clientX/window.innerWidth;
+    let t = "⬆️ ÉSZAK";
+    if(x<0.25) t="⬅️ NYUGAT";
+    else if(x<0.5) t="⬇️ DÉL";
+    else if(x<0.75) t="➡️ KELET";
+    document.getElementById('compass').innerText = t;
+  });
 }
 
 </script>
 
 </body>
 </html>
+
