@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Iránytű Navi PRO - GTFS FULL ENGINE</title>
+  <title>Iránytű Navi PRO - GTFS ENGINE</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -18,7 +18,6 @@
     input { width:100%; padding:10px; border-radius:8px; border:none; margin-top:5px; }
     #map { height:320px; border-radius:12px; }
     .small { font-size:12px; opacity:0.85; white-space:pre-line; }
-    .compass { font-size:26px; text-align:center; padding:10px; }
     .resultBox { margin-top:8px; padding:8px; background:#111827; border-radius:8px; }
 
     #menu {
@@ -29,6 +28,26 @@
       padding:20px;
       z-index:999;
       overflow:auto;
+    }
+
+    /* COMPASS BIG UPGRADE */
+    .compass {
+      font-size:42px;
+      text-align:center;
+      padding:12px;
+      font-weight:bold;
+    }
+
+    .compassTable {
+      margin-top:10px;
+      background:#111827;
+      padding:10px;
+      border-radius:10px;
+      font-size:12px;
+    }
+
+    .compassTable div {
+      margin:4px 0;
     }
   </style>
 </head>
@@ -41,7 +60,13 @@
 
 <div id="menu">
   <h2>🚆 GTFS ENGINE</h2>
-  <p>Járatok / útvonal / import (következő lépés)</p>
+  <p>Járatok / útvonaltervező / import</p>
+
+  <button class="btn" onclick="alert('GTFS IMPORT PLACEHOLDER')">📦 GTFS Import</button>
+  <button class="btn" onclick="alert('JÁRAT LISTA PLACEHOLDER')">🚍 Járatok</button>
+  <button class="btn" onclick="alert('ÚTVONALTERVEZŐ PLACEHOLDER')">🧭 Útvonaltervező</button>
+
+  <br/><br/>
   <button class="btn" onclick="toggleMenu()">Bezár</button>
 </div>
 
@@ -60,8 +85,16 @@
   </div>
 
   <div class="card">
-    <h3>🧭 Iránytű</h3>
-    <div class="compass" id="compass">⏳ várakozás: szenzor / engedély</div>
+    <h3>🧭 Iránytű NAVI</h3>
+    <div class="compass" id="compass">⏳ VÁRAKOZÁS: szenzor</div>
+
+    <!-- TABLE VIEW -->
+    <div class="compassTable" id="compassData">
+      <div>📍 Alpha: -</div>
+      <div>🧭 Irány: -</div>
+      <div>📡 Status: várakozás</div>
+    </div>
+
     <button class="btn" onclick="startCompass()">Iránytű indítása</button>
   </div>
 
@@ -73,123 +106,104 @@ let map;
 let userLat = null;
 let userLon = null;
 
-// ---------------- GTFS DATA ----------------
 const stops = [
   { gtfs:"HU-BKK-1001", name:"Deák Ferenc tér", lat:47.4979, lon:19.0550 },
-  { gtfs:"HU-BKK-1002", name:"Kelenföld vasútállomás", lat:47.4649, lon:19.0227 },
+  { gtfs:"HU-BKK-1002", name:"Kelenföld", lat:47.4649, lon:19.0227 },
   { gtfs:"HU-BKK-1003", name:"Örs vezér tere", lat:47.5006, lon:19.1372 },
-  { gtfs:"HU-BKK-1004", name:"Batthyány tér", lat:47.5063, lon:19.0399 },
-  { gtfs:"HU-BKK-1005", name:"Attila út (demo)", lat:47.4982, lon:19.0415 },
-  { gtfs:"HU-BKK-1006", name:"Móricz Zsigmond körtér", lat:47.4775, lon:19.0462 }
+  { gtfs:"HU-BKK-1004", name:"Batthyány tér", lat:47.5063, lon:19.0399 }
 ];
 
-// ---------------- GEOLOCATION ----------------
+// GEO
 if(navigator.geolocation){
-  navigator.geolocation.getCurrentPosition(pos => {
-    userLat = pos.coords.latitude;
-    userLon = pos.coords.longitude;
+  navigator.geolocation.getCurrentPosition(p=>{
+    userLat=p.coords.latitude;
+    userLon=p.coords.longitude;
   });
 }
 
-function getDistance(lat1, lon1, lat2, lon2){
-  const R = 6371;
-  const dLat = (lat2-lat1)*Math.PI/180;
-  const dLon = (lon2-lon1)*Math.PI/180;
-  const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R*c;
+function getDistance(a,b,c,d){
+  const R=6371;
+  const dLat=(c-a)*Math.PI/180;
+  const dLon=(d-b)*Math.PI/180;
+  const x=Math.sin(dLat/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ---------------- SEARCH (ALL STOPS + DISTANCE) ----------------
+// SEARCH
 function searchStops(){
-  const q = document.getElementById('search').value.toLowerCase();
-  const res = document.getElementById('results');
-  res.innerHTML = "";
+  const q=document.getElementById('search').value.toLowerCase();
+  const res=document.getElementById('results');
+  res.innerHTML="";
 
-  const found = stops.filter(s =>
-    s.name.toLowerCase().includes(q) || s.gtfs.toLowerCase().includes(q)
-  );
+  const found=stops.filter(s=>s.name.toLowerCase().includes(q)||s.gtfs.toLowerCase().includes(q));
 
-  if(found.length === 0){
-    res.innerText = "Nincs találat";
-    return;
-  }
+  found.forEach(s=>{
+    let dist="";
+    if(userLat!=null) dist=` | 📏 ${getDistance(userLat,userLon,s.lat,s.lon).toFixed(2)} km`;
 
-  found.forEach(s => {
-    let distText = "";
-
-    if(userLat !== null && userLon !== null){
-      const d = getDistance(userLat, userLon, s.lat, s.lon);
-      distText = `\n📏 Távolság: ${d.toFixed(2)} km`;
-    } else {
-      distText = "\n📏 Távolság: (helymeghatározás nincs)";
-    }
-
-    const box = document.createElement("div");
-    box.className = "resultBox";
-    box.innerText =
-      `🚏 ${s.name}\n🆔 GTFS: ${s.gtfs}\n📍 ${s.lat}, ${s.lon}${distText}`;
-
-    res.appendChild(box);
+    const div=document.createElement("div");
+    div.className="resultBox";
+    div.innerText=`🚏 ${s.name}\n🆔 ${s.gtfs}\n📍 ${s.lat},${s.lon}${dist}`;
+    res.appendChild(div);
   });
 }
 
-// ---------------- MAP ----------------
-window.onload = () => {
-  map = L.map('map').setView([47.4979, 19.0402], 12);
+// MAP
+window.onload=()=>{
+  map=L.map('map').setView([47.4979,19.04],12);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '&copy; OpenStreetMap'
-  }).addTo(map);
-
-  stops.forEach(s => {
-    L.marker([s.lat, s.lon]).addTo(map)
-      .bindPopup(`<b>${s.name}</b><br>GTFS: ${s.gtfs}`);
+  stops.forEach(s=>{
+    L.marker([s.lat,s.lon]).addTo(map).bindPopup(`${s.name}<br>${s.gtfs}`);
   });
 
-  setTimeout(() => map.invalidateSize(), 300);
-  document.getElementById('mapStatus').innerText = "✔ GTFS MAP READY";
+  setTimeout(()=>map.invalidateSize(),300);
+  document.getElementById('mapStatus').innerText="✔ READY";
 };
 
-// ---------------- COMPASS ----------------
+// MENU
+function toggleMenu(){
+  const m=document.getElementById('menu');
+  m.style.display=m.style.display==='block'?'none':'block';
+}
+
+// COMPASS + TABLE
 function startCompass(){
-  const el = document.getElementById('compass');
+  const el=document.getElementById('compass');
+  const table=document.getElementById('compassData');
 
   if(!window.DeviceOrientationEvent){
-    el.innerText = "❌ nincs szenzor";
+    el.innerText="❌ nincs szenzor";
     return;
   }
 
-  el.innerText = "⏳ várakozás: engedély / szenzor";
+  if(typeof DeviceOrientationEvent.requestPermission==='function'){
+    DeviceOrientationEvent.requestPermission().then(p=>{
+      if(p!=='granted'){el.innerText="❌ nincs engedély";return;}
+      initCompass();
+    });
+  }else initCompass();
 
-  if(typeof DeviceOrientationEvent.requestPermission === 'function'){
-    DeviceOrientationEvent.requestPermission()
-      .then(p => {
-        if(p === 'granted') initCompass();
-        else el.innerText = "❌ engedély megtagadva";
-      });
-  } else {
-    initCompass();
+  function initCompass(){
+    table.innerHTML="<div>📡 Status: aktív</div>";
+
+    window.addEventListener("deviceorientation",e=>{
+      let a=e.alpha||0;
+      let dir="ÉSZAK";
+
+      if(a>45&&a<135)dir="KELET";
+      else if(a>135&&a<225)dir="DÉL";
+      else if(a>225&&a<315)dir="NYUGAT";
+
+      el.innerText="🧭 "+dir;
+
+      table.innerHTML=`
+        <div>📍 Alpha: ${a.toFixed(1)}</div>
+        <div>🧭 Irány: ${dir}</div>
+        <div>📡 Status: aktív</div>
+      `;
+    });
   }
-}
-
-function initCompass(){
-  window.addEventListener("deviceorientation", e => {
-    let d = e.alpha || 0;
-    let t = "⬆️ ÉSZAK";
-
-    if(d>45&&d<135) t="➡️ KELET";
-    else if(d>135&&d<225) t="⬇️ DÉL";
-    else if(d>225&&d<315) t="⬅️ NYUGAT";
-
-    document.getElementById('compass').innerText = t;
-  });
-}
-
-// ---------------- MENU ----------------
-function toggleMenu(){
-  const m = document.getElementById('menu');
-  m.style.display = (m.style.display === "block") ? "none" : "block";
 }
 
 </script>
