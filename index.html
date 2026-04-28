@@ -1,218 +1,127 @@
+Térképes, két pont közti keresö
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<title>Attila GPS PRO NAVI</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<style>
-body { margin:0; font-family: Arial; background:#111; color:#fff; }
-#map { height: 60vh; }
-.panel { padding:10px; }
-button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
-.box { background:#1e1e1e; padding:10px; border-radius:8px; font-size:13px; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Iránytű Navi PRO</title>
+  <style>
+    body { margin:0; font-family: Arial, sans-serif; background:#0f172a; color:#e2e8f0; }
+    header { padding:12px; background:#111827; display:flex; justify-content:space-between; align-items:center; }
+    h1 { font-size:16px; margin:0; }
+    .btn { background:#2563eb; border:none; padding:8px 10px; color:white; border-radius:8px; cursor:pointer; }
+    .grid { display:grid; grid-template-columns:1fr; gap:10px; padding:10px; }
+    .card { background:#1f2937; padding:10px; border-radius:12px; }
+    input { width:100%; padding:10px; border-radius:8px; border:none; margin-top:5px; }
+    #map { height:300px; background:#0b1220; border-radius:12px; display:flex; align-items:center; justify-content:center; }
+    .small { font-size:12px; opacity:0.8; }
+    .row { display:flex; gap:10px; }
+    .row > div { flex:1; }
+    .compass { font-size:32px; text-align:center; padding:10px; }
+  </style>
 </head>
-
 <body>
 
-<div class="panel">
+<header>
+  <h1>🧭 Iránytű Navi PRO</h1>
+  <button class="btn" onclick="toggleMenu()">Menü</button>
+</header>
 
-<button onclick="setMode('gps')">🧭 GPS</button>
-<button onclick="setMode('tura')">🥾 Túra</button>
-<button onclick="toggleElevation()">⛰️ Magasság váltás</button>
-<button onclick="loadPOI()">📌 POI</button>
-<button onclick="loadRail()">🚆 Vasút</button>
-<button onclick="resetTrack()">🔄 Reset</button>
+<div class="grid">
 
-<div id="info" class="box">Indítás...</div>
+  <div class="card">
+    <h3>🔍 Kereső (GTFS / megállók)</h3>
+    <input id="search" placeholder="Írd be a megállót..." oninput="searchStops()" />
+    <div id="results" class="small"></div>
+  </div>
+
+  <div class="card">
+    <h3>🗺️ Térkép</h3>
+    <div id="map">Térkép betöltés (placeholder)</div>
+    <div class="small">BKK / MÁV / Volán integráció helye</div>
+  </div>
+
+  <div class="card">
+    <h3>🧭 Iránytű NAVI</h3>
+    <div class="compass" id="compass">⬆️ ÉSZAK</div>
+    <button class="btn" onclick="startCompass()">Iránytű indítása</button>
+    <div class="small">Telefon szenzor alapú irány</div>
+  </div>
+
+  <div class="card">
+    <h3>📍 Távolság számító (demo)</h3>
+    <div class="row">
+      <div>
+        <input placeholder="Lat 1" id="lat1" />
+      </div>
+      <div>
+        <input placeholder="Lon 1" id="lon1" />
+      </div>
+    </div>
+    <div class="row">
+      <div>
+        <input placeholder="Lat 2" id="lat2" />
+      </div>
+      <div>
+        <input placeholder="Lon 2" id="lon2" />
+      </div>
+    </div>
+    <button class="btn" onclick="calcDistance()">Számol</button>
+    <div id="dist" class="small"></div>
+  </div>
 
 </div>
 
-<div id="map"></div>
-
 <script>
 
-let map = L.map('map').setView([47.4979,19.0402],13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+const stops = [
+  "Attila út", "Deák Ferenc tér", "Kelenföld", "Örs vezér tere", "Batthyány tér"
+];
 
-let mode="gps";
-let track=[];
-let marker, polyline;
-
-let elevationMode = "gps"; // gps / api
-
-let poiLayer = L.layerGroup().addTo(map);
-
-let heading = 0;
-window.addEventListener("deviceorientation", e=>{
-  if(e.alpha) heading = Math.round(e.alpha);
-});
-
-// -------- MODE
-function setMode(m){
-  mode=m;
+function searchStops(){
+  const q = document.getElementById('search').value.toLowerCase();
+  const res = stops.filter(s => s.toLowerCase().includes(q));
+  document.getElementById('results').innerText = res.join('\n') || "Nincs találat";
 }
 
-// -------- ELEV SWITCH
-function toggleElevation(){
-  elevationMode = elevationMode==="gps" ? "api" : "gps";
+function toggleMenu(){
+  alert("Menü (ide jön majd teljes GTFS vezérlő + járatok)");
 }
 
-// -------- DIST
-function dist(a,b,c,d){
-  let R=6371e3;
-  let φ1=a*Math.PI/180;
-  let φ2=c*Math.PI/180;
-  let Δφ=(c-a)*Math.PI/180;
-  let Δλ=(d-b)*Math.PI/180;
-
-  let x=Math.sin(Δφ/2)**2+
-    Math.cos(φ1)*Math.cos(φ2)*
-    Math.sin(Δλ/2)**2;
-
-  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-// -------- SEGMENT
-function calcSeg(a,b){
-  let d = dist(a.lat,a.lng,b.lat,b.lng);
-  let h = (b.ele||0)-(a.ele||0);
-  let slope = d>0 ? (h/d)*100 : 0;
-
-  return {
-    d: Math.round(d),
-    h: Math.round(h),
-    s: slope.toFixed(1)
-  };
-}
-
-// -------- API HEIGHT
-async function getElevation(lat,lng){
-  try{
-    let r = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`);
-    let d = await r.json();
-    return d.results[0].elevation;
-  }catch(e){
-    return 0;
+let compassActive = false;
+function startCompass(){
+  if(window.DeviceOrientationEvent){
+    window.addEventListener("deviceorientation", function(event){
+      let dir = event.alpha;
+      let text = "⬆️ ÉSZAK";
+      if(dir > 45 && dir < 135) text = "➡️ KELET";
+      else if(dir > 135 && dir < 225) text = "⬇️ DÉL";
+      else if(dir > 225 && dir < 315) text = "⬅️ NYUGAT";
+      document.getElementById("compass").innerText = text;
+    });
+    compassActive = true;
+  } else {
+    alert("Iránytű nem támogatott");
   }
 }
 
-// -------- GPS
-function startGPS(){
-  navigator.geolocation.watchPosition(async pos=>{
+function calcDistance(){
+  const lat1 = parseFloat(document.getElementById('lat1').value);
+  const lon1 = parseFloat(document.getElementById('lon1').value);
+  const lat2 = parseFloat(document.getElementById('lat2').value);
+  const lon2 = parseFloat(document.getElementById('lon2').value);
 
-    let lat = pos.coords.latitude;
-    let lng = pos.coords.longitude;
+  const R = 6371;
+  const dLat = (lat2-lat1)*Math.PI/180;
+  const dLon = (lon2-lon1)*Math.PI/180;
+  const a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+            Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+            Math.sin(dLon/2)*Math.sin(dLon/2);
+  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  const d = R*c;
 
-    let ele = pos.coords.altitude || 0;
-
-    // API felülírás
-    if(elevationMode==="api"){
-      ele = await getElevation(lat,lng);
-    }
-
-    track.push({lat,lng,ele});
-    if(track.length>100) track.shift();
-
-    if(!marker){
-      marker = L.marker([lat,lng]).addTo(map);
-      map.setView([lat,lng],15);
-    } else {
-      marker.setLatLng([lat,lng]);
-      map.panTo([lat,lng]);
-    }
-
-    if(polyline) polyline.setLatLngs(track.map(p=>[p.lat,p.lng]));
-    else polyline = L.polyline(track.map(p=>[p.lat,p.lng]),{color:'red'}).addTo(map);
-
-    renderUI(lat,lng);
-
-  },err=>console.log(err),{enableHighAccuracy:true});
+  document.getElementById('dist').innerText = "Távolság: " + d.toFixed(2) + " km";
 }
-
-// -------- UI
-function renderUI(lat,lng){
-
-  let seg = "";
-
-  if(track.length>1){
-    let a = track[track.length-2];
-    let b = track[track.length-1];
-    let s = calcSeg(a,b);
-
-    seg = `
-    📏 ${s.d} m<br>
-    ⛰️ ${s.h} m<br>
-    📈 ${s.s} %
-    `;
-  }
-
-  document.getElementById("info").innerHTML = `
-  🧭 ${mode}<br>
-  🧭 irány: ${heading}°<br>
-  📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br><br>
-
-  ${seg}<br>
-
-  🔄 magasság: ${elevationMode.toUpperCase()}
-  `;
-}
-
-// -------- POI
-async function loadPOI(){
-  poiLayer.clearLayers();
-
-  let c = map.getCenter();
-
-  let q = `
-  [out:json];
-  node(around:1200,${c.lat},${c.lng})[amenity];
-  out;
-  `;
-
-  let r = await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q));
-  let d = await r.json();
-
-  d.elements.slice(0,20).forEach(p=>{
-    let m = L.marker([p.lat,p.lon]).addTo(poiLayer);
-    m.bindPopup(p.tags.name || "POI");
-  });
-}
-
-// -------- RAIL
-async function loadRail(){
-  poiLayer.clearLayers();
-
-  let c = map.getCenter();
-
-  let q = `
-  [out:json];
-  node(around:4000,${c.lat},${c.lng})[railway=station];
-  out;
-  `;
-
-  let r = await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q));
-  let d = await r.json();
-
-  d.elements.forEach(p=>{
-    let m = L.marker([p.lat,p.lon]).addTo(poiLayer);
-    m.bindPopup("🚆 "+(p.tags.name||"Állomás"));
-  });
-}
-
-// -------- RESET
-function resetTrack(){
-  track=[];
-  if(polyline) map.removeLayer(polyline);
-  polyline=null;
-}
-
-// START
-startGPS();
 
 </script>
 
