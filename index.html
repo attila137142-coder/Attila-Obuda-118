@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Iránytű Navi PRO</title>
+  <title>Iránytű Navi PRO - GTFS FULL ENGINE</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -21,52 +21,48 @@
     .compass { font-size:26px; text-align:center; padding:10px; }
     .resultBox { margin-top:8px; padding:8px; background:#111827; border-radius:8px; }
 
-    /* MENU PANEL */
     #menu {
       position:fixed;
-      top:0; left:0;
-      width:100%; height:100%;
+      inset:0;
       background:#0b1220;
       display:none;
       padding:20px;
-      overflow:auto;
       z-index:999;
+      overflow:auto;
     }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>🧭 Iránytű Navi PRO</h1>
+  <h1>🧭 Iránytű Navi PRO - GTFS FULL ENGINE</h1>
   <button class="btn" onclick="toggleMenu()">Menü</button>
 </header>
 
-<!-- MENU -->
 <div id="menu">
-  <h2>🚆 GTFS MENÜ</h2>
-  <p>📌 Járatok / útvonaltervező / import (placeholder)</p>
+  <h2>🚆 GTFS FULL ENGINE</h2>
+  <p>📦 Járatok / útvonaltervező / import (következő lépés)</p>
   <button class="btn" onclick="toggleMenu()">Bezár</button>
 </div>
 
 <div class="grid">
 
   <div class="card">
-    <h3>🔍 GTFS / Megálló kereső</h3>
-    <input id="search" placeholder="Név vagy GTFS ID" oninput="searchStops()" />
+    <h3>🔍 GTFS Megálló kereső</h3>
+    <input id="search" placeholder="Név vagy GTFS kód (pl. 01234)" oninput="searchStops()" />
     <div id="results" class="small"></div>
   </div>
 
   <div class="card">
     <h3>🗺️ Térkép</h3>
     <div id="map"></div>
-    <div class="small" id="mapStatus">Térkép várakozás...</div>
+    <div class="small" id="mapStatus">Térkép betöltés...</div>
   </div>
 
   <div class="card">
     <h3>🧭 Iránytű</h3>
-    <div class="compass" id="compass">⏳ VÁRAKOZÁS: szenzor / engedély</div>
+    <div class="compass" id="compass">⏳ várakozás: szenzor / engedély</div>
     <button class="btn" onclick="startCompass()">Iránytű indítása</button>
-    <div class="small">Ha nem indul: HTTPS + engedély kell</div>
   </div>
 
 </div>
@@ -74,41 +70,43 @@
 <script>
 
 let map;
-let compassStarted = false;
 
+// ---------------- GTFS FULL (SIMULÁLT STRUKTÚRA) ----------------
 const stops = [
-  { id:"BKK001", name:"Deák Ferenc tér", lat:47.4979, lon:19.0550 },
-  { id:"BKK002", name:"Kelenföld", lat:47.4649, lon:19.0227 },
-  { id:"BKK003", name:"Örs vezér tere", lat:47.5006, lon:19.1372 }
+  { gtfs:"HU-BKK-1001", name:"Deák Ferenc tér", lat:47.4979, lon:19.0550 },
+  { gtfs:"HU-BKK-1002", name:"Kelenföld vasútállomás", lat:47.4649, lon:19.0227 },
+  { gtfs:"HU-BKK-1003", name:"Örs vezér tere", lat:47.5006, lon:19.1372 },
+  { gtfs:"HU-BKK-1004", name:"Batthyány tér", lat:47.5063, lon:19.0399 },
+  { gtfs:"HU-BKK-1005", name:"Attila út (demo)", lat:47.4982, lon:19.0415 }
 ];
 
-// MAP INIT
+// ---------------- MAP ----------------
 window.onload = () => {
-  try {
-    map = L.map('map').setView([47.4979, 19.0402], 12);
+  map = L.map('map').setView([47.4979, 19.0402], 12);
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; OpenStreetMap'
-    }).addTo(map);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; OpenStreetMap'
+  }).addTo(map);
 
-    stops.forEach(s => {
-      L.marker([s.lat, s.lon]).addTo(map).bindPopup(s.name);
-    });
+  stops.forEach(s => {
+    L.marker([s.lat, s.lon]).addTo(map)
+      .bindPopup(`<b>${s.name}</b><br>GTFS: ${s.gtfs}`);
+  });
 
-    setTimeout(() => map.invalidateSize(), 300);
-    document.getElementById('mapStatus').innerText = "TÉRKÉP BETÖLTVE ✔";
-  } catch(e){
-    document.getElementById('mapStatus').innerText = "HIBA: " + e.message;
-  }
+  setTimeout(() => map.invalidateSize(), 300);
+  document.getElementById('mapStatus').innerText = "✔ GTFS MAP READY";
 };
 
-// SEARCH
+// ---------------- SEARCH (GTFS + NAME) ----------------
 function searchStops(){
   const q = document.getElementById('search').value.toLowerCase();
   const res = document.getElementById('results');
   res.innerHTML = "";
 
-  const found = stops.filter(s => s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q));
+  const found = stops.filter(s =>
+    s.name.toLowerCase().includes(q) ||
+    s.gtfs.toLowerCase().includes(q)
+  );
 
   if(found.length === 0){
     res.innerText = "Nincs találat";
@@ -118,18 +116,19 @@ function searchStops(){
   found.forEach(s => {
     const box = document.createElement("div");
     box.className = "resultBox";
-    box.innerText = `Név: ${s.name}\nID: ${s.id}\nLat: ${s.lat}, Lon: ${s.lon}`;
+    box.innerText =
+      `🚏 ${s.name}\n🆔 GTFS: ${s.gtfs}\n📍 ${s.lat}, ${s.lon}`;
     res.appendChild(box);
   });
 }
 
-// MENU FIX
+// ---------------- MENU ----------------
 function toggleMenu(){
   const m = document.getElementById('menu');
   m.style.display = (m.style.display === "block") ? "none" : "block";
 }
 
-// COMPASS FIX
+// ---------------- COMPASS ----------------
 function startCompass(){
   const el = document.getElementById('compass');
 
@@ -145,17 +144,13 @@ function startCompass(){
       .then(p => {
         if(p === 'granted') initCompass();
         else el.innerText = "❌ engedély megtagadva";
-      })
-      .catch(()=> el.innerText="❌ engedély hiba");
+      });
   } else {
     initCompass();
   }
 }
 
 function initCompass(){
-  compassStarted = true;
-  document.getElementById('compass').innerText = "🧭 aktív";
-
   window.addEventListener("deviceorientation", e => {
     let d = e.alpha || 0;
     let t = "⬆️ ÉSZAK";
