@@ -3,52 +3,49 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>REAL GPS DISPATCH MODE - GTFS ENGINE</title>
+  <title>BKK + MÁV + VOLÁN UNIFIED DISPATCH SYSTEM</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    body { margin:0; font-family:Arial; background:#0f172a; color:#e2e8f0; }
-    header { padding:12px; background:#111827; display:flex; justify-content:space-between; align-items:center; }
-    h1 { font-size:14px; margin:0; }
-    .btn { background:#2563eb; border:none; padding:8px 10px; color:#fff; border-radius:8px; cursor:pointer; }
-    .grid { display:grid; gap:10px; padding:10px; }
-    .card { background:#1f2937; padding:10px; border-radius:12px; }
-    input { width:100%; padding:10px; border-radius:8px; border:none; margin-top:5px; }
-    #map { height:300px; border-radius:12px; }
-    .small { font-size:12px; opacity:0.85; white-space:pre-line; }
-    .resultBox { margin-top:8px; padding:8px; background:#111827; border-radius:8px; cursor:pointer; }
+    body{margin:0;font-family:Arial;background:#0f172a;color:#e2e8f0}
+    header{padding:12px;background:#111827;display:flex;justify-content:space-between;align-items:center}
+    h1{font-size:14px;margin:0}
+    .btn{background:#2563eb;border:none;padding:8px 10px;color:#fff;border-radius:8px;cursor:pointer}
+    .grid{display:grid;gap:10px;padding:10px}
+    .card{background:#1f2937;padding:10px;border-radius:12px}
+    input{width:100%;padding:10px;border-radius:8px;border:none;margin-top:5px}
+    #map{height:320px;border-radius:12px}
+    .resultBox{margin-top:8px;padding:8px;background:#111827;border-radius:8px;cursor:pointer}
+    .tag{font-size:11px;padding:2px 6px;border-radius:6px;background:#374151;margin-left:5px}
 
-    #menu { position:fixed; inset:0; background:#0b1220; display:none; padding:20px; z-index:999; overflow:auto; }
+    #menu{position:fixed;inset:0;background:#0b1220;display:none;padding:20px;z-index:999;overflow:auto}
 
-    /* DISPATCH COLORS */
-    .onTime { color:#e2e8f0; }
-    .late { color:#60a5fa; }
-    .early { color:#ef4444; }
-
-    .tag { font-size:11px; padding:2px 6px; border-radius:6px; background:#374151; margin-left:5px; }
+    .bkk{color:#60a5fa}
+    .mav{color:#fbbf24}
+    .volan{color:#34d399}
   </style>
 </head>
 <body>
 
 <header>
-  <h1>🧭 REAL GPS DISPATCH MODE</h1>
+  <h1>🚆 BKK + MÁV + VOLÁN DISPATCH</h1>
   <button class="btn" onclick="toggleMenu()">Menü</button>
 </header>
 
 <div id="menu">
-  <h2>🚆 GTFS ENGINE</h2>
-  <p>Járatok / útvonal / import</p>
+  <h2>🚦 UNIFIED ENGINE</h2>
+  <p>BKK / MÁV / VOLÁN integrált rendszer</p>
   <button class="btn" onclick="toggleMenu()">Bezár</button>
 </div>
 
 <div class="grid">
 
   <div class="card">
-    <h3>🔍 Megálló kereső</h3>
-    <input id="search" placeholder="Név vagy GTFS" oninput="searchStops()" />
-    <div id="results" class="small"></div>
+    <h3>🔍 Kereső (összes hálózat)</h3>
+    <input id="search" placeholder="megálló / GTFS / vasútállomás" oninput="searchStops()" />
+    <div id="results"></div>
   </div>
 
   <div class="card">
@@ -57,8 +54,8 @@
   </div>
 
   <div class="card">
-    <h3>📊 Megálló menetrend (DISPATCH)</h3>
-    <div id="schedule" class="small">Válassz megállót...</div>
+    <h3>📊 Diszpécser panel</h3>
+    <div id="panel">Válassz megállót...</div>
   </div>
 
 </div>
@@ -66,46 +63,32 @@
 <script>
 
 let map;
-let userLat=null, userLon=null;
-let selectedStop=null;
+let userLat=null,userLon=null;
 
-// ---------------- GTFS STOPS ----------------
-const stops = [
-  {gtfs:"BKK_001", name:"Deák Ferenc tér", lat:47.4975, lon:19.0550},
-  {gtfs:"BKK_002", name:"Örs vezér tere", lat:47.5017, lon:19.1356},
-  {gtfs:"BKK_003", name:"Batthyány tér", lat:47.5060, lon:19.0394},
-  {gtfs:"H5_001", name:"Békásmegyer HÉV", lat:47.5981, lon:19.0546}
+// ---------------- UNIFIED GTFS ----------------
+const stops=[
+  // BKK
+  {name:"Deák Ferenc tér",gtfs:"BKK_001",lat:47.4975,lon:19.0550,net:"bkk"},
+  {name:"Örs vezér tere",gtfs:"BKK_002",lat:47.5017,lon:19.1356,net:"bkk"},
+
+  // MÁV / HÉV
+  {name:"Kelenföld vasútállomás",gtfs:"MAV_001",lat:47.4649,lon:19.0227,net:"mav"},
+  {name:"Szob vasútállomás",gtfs:"MAV_002",lat:47.8213,lon:18.8626,net:"mav"},
+
+  // VOLÁN
+  {name:"Vác autóbusz-állomás",gtfs:"VOLAN_001",lat:47.7819,lon:19.1296,net:"volan"},
+  {name:"Szentendre autóbusz-állomás",gtfs:"VOLAN_002",lat:47.6604,lon:19.0754,net:"volan"}
 ];
 
-// ---------------- MOCK TIMETABLE ----------------
-function getTimetable(stop){
-  const now = new Date();
-  const base = now.getHours()*60 + now.getMinutes();
-
-  return [
-    base - 4,
-    base + 2,
-    base + 10
-  ];
-}
-
-function statusText(mins){
-  if(mins < 0) return {text:`KÉSIK ${Math.abs(mins)}p`, cls:"late"};
-  if(mins === 0) return {text:`IDŐBEN`, cls:"onTime"};
-  if(mins > 0) return {text:`SIET ${mins}p`, cls:"early"};
-}
-
-// ---------------- GPS REAL MODE ----------------
+// ---------------- GPS ----------------
 function startGPS(){
-  if(!navigator.geolocation) return;
-
-  navigator.geolocation.watchPosition(pos=>{
-    userLat=pos.coords.latitude;
-    userLon=pos.coords.longitude;
+  navigator.geolocation.watchPosition(p=>{
+    userLat=p.coords.latitude;
+    userLon=p.coords.longitude;
   });
 }
 
-// ---------------- DISTANCE ----------------
+// ---------------- DIST ----------------
 function dist(a,b,c,d){
   const R=6371;
   const dLat=(c-a)*Math.PI/180;
@@ -124,55 +107,49 @@ function searchStops(){
   .forEach(s=>{
 
     let d="";
-    if(userLat) d=` | 📏 ${dist(userLat,userLon,s.lat,s.lon).toFixed(2)} km`;
+    if(userLat)d=`📏 ${dist(userLat,userLon,s.lat,s.lon).toFixed(2)} km`;
 
     const div=document.createElement("div");
     div.className="resultBox";
-    div.innerHTML=`🚏 ${s.name}<br>🆔 ${s.gtfs}<br>${d}`;
+    div.innerHTML=`
+      <span class="${s.net}">🚏 ${s.name}</span><br>
+      🆔 ${s.gtfs}<br>
+      ${d}
+    `;
 
-    div.onclick=()=>renderSchedule(s);
-
+    div.onclick=()=>renderPanel(s);
     res.appendChild(div);
   });
 }
 
-// ---------------- SCHEDULE RENDER ----------------
-function renderSchedule(stop){
-  selectedStop=stop;
-  const box=document.getElementById('schedule');
+// ---------------- PANEL ----------------
+function renderPanel(s){
+  const el=document.getElementById('panel');
 
-  const times=getTimetable(stop);
+  const times=[-3,0,4,12];
 
-  box.innerHTML=`<b>${stop.name}</b><br><br>`;
+  el.innerHTML=`<b>${s.name}</b><br><br>`;
 
   times.forEach(t=>{
-    const now=new Date();
-    const current=now.getHours()*60+now.getMinutes();
-    const diff=t-current;
+    let st="IDŐBEN",cls="";
 
-    const st=statusText(diff);
+    if(t<0){st=`KÉSIK ${Math.abs(t)}p`;cls="mav"}
+    if(t>5){st=`SIET ${t}p`;cls="volan"}
+    if(t>=0&&t<=5){st="IDŐBEN";cls="bkk"}
 
-    const h=Math.floor(t/60);
-    const m=t%60;
-
-    box.innerHTML+=`
-      <div class="${st.cls}">
-        🕒 ${h}:${m.toString().padStart(2,'0')} 
-        <span class="tag">${st.text}</span>
-      </div>
-    `;
+    el.innerHTML+=`<div class="${cls}">🕒 indulás +${t}p <span class="tag">${st}</span></div>`;
   });
 }
 
 // ---------------- MAP ----------------
 window.onload=()=>{
-  map=L.map('map').setView([47.5,19.05],11);
+  map=L.map('map').setView([47.5,19.05],10);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
   stops.forEach(s=>{
     L.marker([s.lat,s.lon]).addTo(map)
-    .bindPopup(s.name)
-    .on('click',()=>renderSchedule(s));
+    .bindPopup(`<b>${s.name}</b><br>${s.net.toUpperCase()}`)
+    .on('click',()=>renderPanel(s));
   });
 
   startGPS();
