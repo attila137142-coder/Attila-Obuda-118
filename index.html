@@ -2,267 +2,131 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>V8 CLEAN UI + EVENT ENGINE (STABLE)</title>
+<title>V9 GTFS IMPORT ENGINE</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <style>
-body{
-  margin:0;
-  font-family:Arial;
+body {
+  font-family: Arial;
   background:#0f172a;
-  color:#e2e8f0;
+  color:white;
+  padding:20px;
 }
 
-header{
-  display:flex;
-  gap:10px;
+button {
   padding:10px;
-  background:#111827;
-  align-items:center;
-}
-
-button{
-  padding:10px 12px;
-  border:0;
-  border-radius:8px;
-  background:#22c55e;
-  font-weight:bold;
+  margin:5px;
   cursor:pointer;
 }
 
-button.secondary{background:#38bdf8}
-
-.container{
-  display:grid;
-  grid-template-columns:340px 1fr;
-  height:calc(100vh - 60px);
-}
-
-.sidebar{
+.panel {
+  background:#1e293b;
   padding:10px;
-  background:#111827;
-  overflow:auto;
-}
-
-.main{
-  padding:10px;
-  overflow:auto;
-}
-
-#map{
-  height:100%;
-  width:100%;
-  border-left:1px solid #1f2937;
-}
-
-input{
-  width:100%;
-  padding:10px;
-  margin:6px 0;
-  border-radius:6px;
-  border:1px solid #334155;
-  background:#0b1220;
-  color:white;
-}
-
-.table{
-  width:100%;
-  border-collapse:collapse;
   margin-top:10px;
-}
-
-.table th,.table td{
-  border:1px solid #334155;
-  padding:6px;
-  text-align:center;
+  border-radius:8px;
+  max-height:300px;
+  overflow:auto;
   font-size:12px;
 }
-
-.table th{
-  background:#1f2937;
-}
-
-.title{font-weight:bold;margin:8px 0}
-.badge{background:#2563eb;padding:2px 6px;border-radius:6px;font-size:11px}
-.panel{background:#0b1220;padding:8px;border-radius:8px;margin-top:10px}
-.ok{color:#4ade80}
-.err{color:#f87171}
-.small{font-size:12px;opacity:.8}
 </style>
 </head>
+
 <body>
 
-<header>
-<button onclick="loadDemo()">📥 DEMO</button>
-<button class="secondary" onclick="exportZip()">📦 EXPORT</button>
-<span class="small">V8 CLEAN EVENT ENGINE</span>
-</header>
+<h2>🚍 V9 – REAL GTFS IMPORT (BKK ZIP)</h2>
 
-<div class="container">
+<input type="file" id="zipFile" accept=".zip">
+<button onclick="loadGTFS()">GTFS betöltés</button>
 
-<div class="sidebar">
+<div class="panel" id="status">Várakozás GTFS ZIP-re...</div>
 
-<div class="title">🔎 Megálló kereső</div>
-<input id="search" oninput="renderStops()" placeholder="pl. Óbuda">
-<div id="stopList"></div>
-
-<div class="panel">
-<div class="title">🧠 DEBUG</div>
-<div id="debug"></div>
-</div>
-
-</div>
-
-<div class="main">
-<div class="title">🚏 MEGÁLLÓS MENETREND (FULL DISPATCH TABLE)</div>
-<div id="timetable">Válassz megállót</div>
-</div>
-
-<div id="map"></div>
-
-</div>
+<div class="panel" id="output"></div>
 
 <script>
-
-let gtfs={stops:[],trips:[],stop_times:[]};
-let map;
-
-window.onload=()=>{
-  map=L.map('map').setView([47.4979,19.0402],11);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-  loadDemo();
-  renderAll();
+let GTFS = {
+  stops: [],
+  routes: [],
+  trips: [],
+  stop_times: []
 };
 
-function loadDemo(){
-
-  gtfs.stops=[
-    {id:"1",name:"Óbuda",lat:47.541,lon:19.045},
-    {id:"2",name:"Békásmegyer",lat:47.595,lon:19.043},
-    {id:"3",name:"Szob vasút",lat:47.82,lon:18.87}
-  ];
-
-  gtfs.trips=[
-    {id:"T204",viszonylat:"204",dir:"BM → Újmegyer tér",vehicle:"Ikarus 412",internal:"5-2 DE",vehicle_no:"DPY-256"},
-    {id:"T243",viszonylat:"243",dir:"Békásmegyer HÉV",vehicle:"Volvo 512",internal:"8-1 ÁTSZ",vehicle_no:"NKH-852"},
-    {id:"T32",viszonylat:"32",dir:"Örs Vezér tér",vehicle:"Van Hool csuklós",internal:"6-4 DU",vehicle_no:"HHH-842"}
-  ];
-
-  gtfs.stop_times=[
-    {trip:"T204",stop:"1",time:"22:35",delay:"2p18mp SIET"},
-    {trip:"T243",stop:"2",time:"22:38",delay:"IDŐBEN"},
-    {trip:"T32",stop:"3",time:"22:40",delay:"6p43mp KÉSIK"}
-  ];
+function log(msg){
+  document.getElementById("status").innerText = msg;
 }
 
-function renderAll(){
-  renderStops();
-  renderDebug();
-  renderMap();
+function parseCSV(text){
+  const lines = text.split("\n").filter(l => l.trim().length>0);
+  const headers = lines[0].split(",");
+
+  return lines.slice(1).map(line => {
+    const values = line.split(",");
+    let obj = {};
+    headers.forEach((h,i)=> obj[h.trim()] = values[i]);
+    return obj;
+  });
 }
 
-function renderStops(){
-  const q=document.getElementById("search").value.toLowerCase();
-  const list=document.getElementById("stopList");
-  list.innerHTML="";
-
-  const filtered=gtfs.stops.filter(s=>s.name.toLowerCase().includes(q));
-
-  if(q && filtered.length===0){
-    list.innerHTML="<div class='small'>Nincs találat</div>";
+async function loadGTFS(){
+  const file = document.getElementById("zipFile").files[0];
+  if(!file){
+    log("❌ Nincs ZIP kiválasztva!");
     return;
   }
 
-  filtered.forEach(s=>{
-    const d=document.createElement("div");
-    d.innerHTML=`🚏 ${s.name}`;
-    d.style.padding="6px";
-    d.style.cursor="pointer";
+  log("📦 ZIP betöltése...");
 
-    d.onclick=()=>{
-      console.log("CLICK STOP",s);
-      showTimetable(s);
-    };
+  const zip = await JSZip.loadAsync(file);
 
-    list.appendChild(d);
+  // STOPS
+  if(zip.file("stops.txt")){
+    const stopsText = await zip.file("stops.txt").async("string");
+    GTFS.stops = parseCSV(stopsText);
+  }
+
+  // ROUTES
+  if(zip.file("routes.txt")){
+    const routesText = await zip.file("routes.txt").async("string");
+    GTFS.routes = parseCSV(routesText);
+  }
+
+  // TRIPS
+  if(zip.file("trips.txt")){
+    const tripsText = await zip.file("trips.txt").async("string");
+    GTFS.trips = parseCSV(tripsText);
+  }
+
+  // STOP TIMES
+  if(zip.file("stop_times.txt")){
+    const stText = await zip.file("stop_times.txt").async("string");
+    GTFS.stop_times = parseCSV(stText);
+  }
+
+  log("✅ GTFS betöltve!");
+
+  renderPreview();
+}
+
+function renderPreview(){
+  let out = "";
+
+  out += `<b>🚏 Megállók:</b> ${GTFS.stops.length}<br>`;
+  out += `<b>🚌 Járatok (routes):</b> ${GTFS.routes.length}<br>`;
+  out += `<b>🚍 Trips:</b> ${GTFS.trips.length}<br>`;
+  out += `<b>⏱ Stop times:</b> ${GTFS.stop_times.length}<br><br>`;
+
+  out += "<b>Első 5 megálló:</b><br>";
+  GTFS.stops.slice(0,5).forEach(s=>{
+    out += `• ${s.stop_name} (${s.stop_id})<br>`;
   });
-}
 
-function showTimetable(stop){
-
-  const rows=gtfs.stop_times
-  .filter(x=>x.stop===stop.id)
-  .map(x=>{
-    const t=gtfs.trips.find(tr=>tr.id===x.trip);
-
-    return `<tr>
-      <td>${t.viszonylat}</td>
-      <td>${t.dir}</td>
-      <td>${x.time}</td>
-      <td>${x.delay}</td>
-      <td>${t.internal}</td>
-      <td>${t.vehicle_no}</td>
-      <td>${t.vehicle}</td>
-    </tr>`;
+  out += "<br><b>Első 5 route:</b><br>";
+  GTFS.routes.slice(0,5).forEach(r=>{
+    out += `• ${r.route_short_name || ""} ${r.route_long_name || ""}<br>`;
   });
 
-  document.getElementById("timetable").innerHTML=`
-  <div class='title'>📍 ${stop.name}</div>
-  <table class='table'>
-    <tr>
-      <th>Viszonylat száma</th>
-      <th>Iránya – cél végállomás</th>
-      <th>Indul</th>
-      <th>Időbeli eltérés</th>
-      <th>Belső azonosító</th>
-      <th>Jármű száma</th>
-      <th>Jármű típusa</th>
-    </tr>
-    ${rows.join("")}
-  </table>`;
+  document.getElementById("output").innerHTML = out;
 }
-
-function renderDebug(){
-  let ok=true;
-  let msg="";
-
-  if(!gtfs.stops.length){ok=false;msg+="❌ stops hiányzik<br>";}
-  if(!gtfs.trips.length){ok=false;msg+="❌ trips hiányzik<br>";}
-  if(!gtfs.stop_times.length){ok=false;msg+="❌ stop_times hiányzik<br>";}
-
-  document.getElementById("debug").innerHTML=
-    ok?"<div class='ok'>✔ GTFS OK</div>":"<div class='err'>"+msg+"</div>";
-}
-
-function renderMap(){
-  map.eachLayer(l=>{if(l instanceof L.Marker) map.removeLayer(l);});
-
-  gtfs.stops.forEach(s=>{
-    if(s.lat&&s.lon){
-      L.marker([s.lat,s.lon]).addTo(map).bindPopup(s.name);
-    }
-  });
-}
-
-function exportZip(){
-  const zip=new JSZip();
-
-  zip.file("stops.txt",gtfs.stops.map(s=>`${s.id},${s.name}`).join("\n"));
-  zip.file("trips.txt",gtfs.trips.map(t=>`${t.id},${t.viszonylat},${t.dir},${t.vehicle},${t.internal},${t.vehicle_no}`).join("\n"));
-  zip.file("stop_times.txt",gtfs.stop_times.map(s=>`${s.trip},${s.stop},${s.time},${s.delay}`).join("\n"));
-
-  zip.generateAsync({type:"blob"}).then(b=>{
-    const a=document.createElement("a");
-    a.href=URL.createObjectURL(b);
-    a.download="gtfs_v8.zip";
-    a.click();
-  });
-}
-
 </script>
 
 </body>
