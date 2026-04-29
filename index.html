@@ -1,224 +1,75 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>Attila NAVI PRO MAX FUTÁR</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+const express = require("express");
+const app = express();
+const fetch = require("node-fetch");
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+app.use(express.json());
 
-<style>
-body { margin:0; background:#111; color:#fff; font-family:Arial; }
-#map { height: 45vh; }
-.panel { padding:8px; }
-button { margin:3px; padding:8px; border-radius:6px; border:0; font-weight:bold; }
-.box { background:#1e1e1e; padding:8px; border-radius:8px; font-size:12px; }
-input { width:95%; padding:6px; border-radius:6px; border:0; }
-#searchResults { max-height:120px; overflow:auto; }
-</style>
-</head>
+let stops = [];
+let stopTimes = [];
+let vehicles = [];
 
-<body>
-
-<div class="panel">
-
-<input id="searchInput" placeholder="Keresés..." />
-<button onclick="searchPlace()">🔎</button><br>
-
-<button onclick="setLayer('street')">UTCAI</button>
-<button onclick="setLayer('topo')">TOPO</button>
-<button onclick="toggleRail()">VASÚTI</button>
-<button onclick="toggleHike()">TURISTA</button><br>
-
-<button onclick="searchPOI()">📍 POI</button>
-<button onclick="loadBKK()">🚌 BKK</button>
-
-<div id="info" class="box">Indítás...</div>
-<div id="searchResults" class="box"></div>
-
-</div>
-
-<div id="map"></div>
-
-<script>
-
-// ---------- MAP
-let map = L.map('map').setView([47.49,19.04],13);
-
-let baseLayers = {
-  street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
-  topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
-};
-
-let railLayer = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.8});
-let hikeLayer = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',{opacity:0.9});
-
-let currentBase = baseLayers.street;
-currentBase.addTo(map);
-
-function setLayer(t){
-  map.removeLayer(currentBase);
-  currentBase = baseLayers[t];
-  map.addLayer(currentBase);
-}
-
-function toggleRail(){ map.hasLayer(railLayer)?map.removeLayer(railLayer):map.addLayer(railLayer);}
-function toggleHike(){ map.hasLayer(hikeLayer)?map.removeLayer(hikeLayer):map.addLayer(hikeLayer);}
-
-// ---------- DATA
-let track=[], marker, polyline;
-let lastTime=null, speedKmh=0, speedMs=0;
-let gtfsStops=[], stopTimes=[];
-let vehiclesLayer = L.layerGroup().addTo(map);
-
-// ---------- DIST
-function dist(a,b,c,d){
-  let R=6371e3;
-  let φ1=a*Math.PI/180, φ2=c*Math.PI/180;
-  let Δφ=(c-a)*Math.PI/180;
-  let Δλ=(d-b)*Math.PI/180;
-  let x=Math.sin(Δφ/2)**2+
-    Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-// ---------- GPS
-navigator.geolocation.watchPosition(pos=>{
-  let lat=pos.coords.latitude;
-  let lng=pos.coords.longitude;
-
-  let now=Date.now();
-
-  if(track.length){
-    let last=track[track.length-1];
-    let d=dist(last.lat,last.lng,lat,lng);
-    if(d<2) return;
-
-    let dt=(now-lastTime)/1000;
-    if(dt>0.5){
-      speedMs=d/dt;
-      speedKmh=speedMs*3.6;
-    }
-  }
-
-  lastTime=now;
-  track.push({lat,lng});
-
-  if(!marker){
-    marker=L.marker([lat,lng]).addTo(map);
-    map.setView([lat,lng],15);
-  }else{
-    marker.setLatLng([lat,lng]);
-  }
-
-  if(polyline) polyline.setLatLngs(track.map(p=>[p.lat,p.lng]));
-  else polyline=L.polyline(track.map(p=>[p.lat,p.lng]),{color:'red'}).addTo(map);
-
-  document.getElementById("info").innerHTML=
-    `🚀 ${speedKmh.toFixed(1)} km/h<br>⚡ ${speedMs.toFixed(2)} m/s`;
-
+// ---------- START ----------
+app.listen(3000, () => {
+  console.log("🚀 FUTÁR PRO MAX backend fut: 3000");
 });
 
-// ---------- SEARCH
-async function searchPlace(){
-  let q=document.getElementById("searchInput").value;
-  let res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
-  let data=await res.json();
+// ---------- GTFS LOAD (SIMPLIFIED) ----------
+const fs = require("fs");
 
-  let html="";
-  data.forEach(p=>{
-    html+=`<div onclick="goTo(${p.lat},${p.lon})">${p.display_name}</div>`;
-  });
+function loadGTFS(){
 
-  document.getElementById("searchResults").innerHTML=html;
+  stops = fs.readFileSync("stops.txt","utf8")
+    .split("\n").slice(1)
+    .map(r=>{
+      let c=r.split(",");
+      return {id:c[0],name:c[2],lat:+c[4],lng:+c[5]};
+    });
+
+  stopTimes = fs.readFileSync("stop_times.txt","utf8")
+    .split("\n").slice(1)
+    .map(r=>{
+      let c=r.split(",");
+      return {trip:c[0],time:c[2],stop:c[3]};
+    });
+
+  console.log("GTFS betöltve");
 }
 
-function goTo(lat,lng){
-  map.setView([lat,lng],15);
+loadGTFS();
+
+// ---------- STOPS API ----------
+app.get("/stops",(req,res)=>{
+  res.json(stops);
+});
+
+// ---------- DEPARTURES ----------
+app.get("/departures/:stopId",(req,res)=>{
+
+  let now = new Date().toTimeString().slice(0,5);
+
+  let deps = stopTimes
+    .filter(t=>t.stop === req.params.stopId && t.time > now)
+    .slice(0,10);
+
+  res.json(deps);
+});
+
+// ---------- REALTIME VEHICLES ----------
+async function updateVehicles(){
+
+  // 🔴 MOCK (később GTFS-RT ide jön)
+  vehicles = stops.slice(0,20).map((s,i)=>({
+    id:i,
+    lat:s.lat + Math.random()*0.001,
+    lng:s.lng + Math.random()*0.001,
+    route:"BKK-" + (5+i),
+    delay: Math.floor(Math.random()*15)
+  }));
+
 }
 
-// ---------- POI
-async function searchPOI(){
-  if(!track.length) return;
-  let last=track[track.length-1];
+setInterval(updateVehicles,5000);
 
-  let q=`[out:json];node(around:500,${last.lat},${last.lng})["amenity"];out;`;
-  let res=await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q));
-  let data=await res.json();
-
-  data.elements.forEach(p=>{
-    L.marker([p.lat,p.lon]).addTo(map)
-      .bindPopup(p.tags.name||"POI");
-  });
-}
-
-// ---------- GTFS LOAD
-async function loadBKK(){
-
-  let url="https://bkk.hu/gtfs/budapest_gtfs.zip";
-
-  let res=await fetch(url);
-  let blob=await res.blob();
-
-  let zip=await JSZip.loadAsync(blob);
-
-  let stopsTxt=await zip.file("stops.txt").async("string");
-  let timesTxt=await zip.file("stop_times.txt").async("string");
-
-  gtfsStops = stopsTxt.split("\n").slice(1).map(r=>{
-    let c=r.split(",");
-    return {id:c[0],n:c[2],la:+c[4],lo:+c[5]};
-  });
-
-  stopTimes = timesTxt.split("\n").slice(1).map(r=>{
-    let c=r.split(",");
-    return {stop_id:c[3],time:c[2]};
-  });
-
-  console.log("BKK betöltve!");
-}
-
-// ---------- STOPS
-function showStops(){
-  if(!track.length) return;
-  let last=track[track.length-1];
-
-  gtfsStops.forEach(s=>{
-    let d=dist(last.lat,last.lng,s.la,s.lo);
-    if(d<300){
-      let deps = stopTimes
-        .filter(t=>t.stop_id===s.id)
-        .slice(0,5)
-        .map(t=>t.time)
-        .join("<br>");
-
-      L.circleMarker([s.la,s.lo],{radius:5,color:"yellow"})
-        .addTo(map)
-        .bindPopup(`🚌 ${s.n}<br>${deps}`);
-    }
-  });
-}
-
-// ---------- REALTIME (FAKE DEMO / READY)
-function loadVehicles(){
-
-  vehiclesLayer.clearLayers();
-
-  gtfsStops.slice(0,20).forEach(s=>{
-    let m = L.circleMarker([s.la,s.lo],{
-      radius:6,
-      color:"cyan"
-    }).addTo(vehiclesLayer);
-
-    m.bindPopup(`🚌 Jármű (demo)<br>${s.n}`);
-  });
-}
-
-// refresh
-setInterval(loadVehicles,5000);
-
-</script>
-</body>
-</html>
+app.get("/vehicles",(req,res)=>{
+  res.json(vehicles);
+});
