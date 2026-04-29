@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>V5 STABLE GTFS ENGINE + VEHICLE SYSTEM</title>
+<title>V6 GTFS DISPATCHER ENGINE (FIXED UI + FULL TIMETABLE)</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -13,14 +13,34 @@ body{margin:0;font-family:Arial;background:#0f172a;color:#e2e8f0}
 header{display:flex;gap:8px;flex-wrap:wrap;padding:10px;background:#111827;align-items:center}
 button{padding:10px 12px;border:0;border-radius:8px;background:#22c55e;color:#000;font-weight:bold;cursor:pointer}
 button.secondary{background:#38bdf8}
-.container{display:grid;grid-template-columns:320px 1fr 1fr;height:calc(100vh - 60px)}
+
+/* FIXED LAYOUT: no overlap */
+.container{
+  display:grid;
+  grid-template-columns:320px 1fr;
+  grid-template-rows:100%;
+  height:calc(100vh - 60px);
+}
+
 .sidebar{padding:10px;background:#111827;overflow:auto}
 .main{padding:10px;overflow:auto}
-.map{height:100%}
+
+.map{
+  position:fixed;
+  right:0;
+  top:60px;
+  width:40%;
+  height:calc(100vh - 60px);
+  background:#0b1220;
+  z-index:0;
+}
+
 input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #334155;background:#0b1220;color:white}
+
 .table{width:100%;border-collapse:collapse;margin-top:10px}
-.table th,.table td{border:1px solid #334155;padding:6px;text-align:center;font-size:13px}
+.table th,.table td{border:1px solid #334155;padding:6px;text-align:center;font-size:12px}
 .table th{background:#1f2937}
+
 .title{font-weight:bold;margin:6px 0}
 .badge{background:#1d4ed8;padding:2px 6px;border-radius:6px;font-size:11px}
 .panel{background:#0b1220;padding:8px;border-radius:8px;margin-top:8px}
@@ -32,10 +52,9 @@ input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #33
 <body>
 
 <header>
-<button onclick="loadDemo()">📥 DEMO GTFS</button>
+<button onclick="loadDemo()">📥 DEMO</button>
 <button class="secondary" onclick="exportZip()">📦 EXPORT</button>
-<button onclick="toggleVehicles()">🚍 VEHICLE</button>
-<span class="small">V5 STABLE ENGINE</span>
+<span class="small">V6 FIXED DISPATCHER ENGINE</span>
 </header>
 
 <div class="container">
@@ -51,15 +70,10 @@ input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #33
 <div id="debug"></div>
 </div>
 
-<div class="panel">
-<div class="title">🚍 Jármű státusz</div>
-<div id="vehiclePanel">OFF</div>
-</div>
-
 </div>
 
 <div class="main">
-<div class="title">🚏 Megállós menetrend</div>
+<div class="title">🚏 MEGÁLLÓS MENETREND (FULL)</div>
 <div id="timetable">Válassz megállót</div>
 </div>
 
@@ -71,12 +85,9 @@ input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #33
 
 let gtfs={stops:[],trips:[],stop_times:[]};
 let map;
-let vehicleTimer=null;
-let vehicleMarkers=[];
-let vehiclesOn=false;
 
 window.onload=()=>{
-  map=L.map('map').setView([47.4979,19.0402],11);
+  map=L.map('map').setView([47.5,19.05],11);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
   loadDemo();
 };
@@ -84,50 +95,40 @@ window.onload=()=>{
 function loadDemo(){
 
   gtfs.stops=[
-    {id:"1",name:"Óbuda",lat:47.541,lon:19.045},
-    {id:"2",name:"Békásmegyer",lat:47.595,lon:19.043},
-    {id:"3",name:"Szob vasút",lat:47.82,lon:18.87}
+    {id:"1",name:"Óbuda",lat:47.541},
+    {id:"2",name:"Békásmegyer",lat:47.595},
+    {id:"3",name:"Szob vasút",lat:47.82}
   ];
 
   gtfs.trips=[
-    {id:"T1",head:"Békásmegyer",vehicle:"BUS-118-2456"},
-    {id:"T2",head:"Óbuda",vehicle:"BUS-34-1122"},
-    {id:"K1",head:"Kisvasút",vehicle:"KV-001"}
+    {id:"T1",viszonylat:"118",head:"Békásmegyer",dir:"→ Békásmegyer",vehicle:"BUS",internal:"2456"},
+    {id:"T2",viszonylat:"34",head:"Óbuda",dir:"→ Óbuda",vehicle:"BUS",internal:"1122"},
+    {id:"K1",viszonylat:"KV1",head:"Királyrét",dir:"→ Kisvasút végállomás",vehicle:"KV",internal:"001"}
   ];
 
   gtfs.stop_times=[
-    {trip:"T1",stop:"1",time:"08:00"},
-    {trip:"T1",stop:"2",time:"08:15"},
-    {trip:"T2",stop:"2",time:"09:00"},
-    {trip:"K1",stop:"3",time:"10:00"}
+    {trip:"T1",stop:"1",time:"08:00",delay:"0"},
+    {trip:"T1",stop:"2",time:"08:15",delay:"+2"},
+    {trip:"T2",stop:"2",time:"09:00",delay:"0"},
+    {trip:"K1",stop:"3",time:"10:00",delay:"-1"}
   ];
 
   renderAll();
 }
 
-function renderAll(){
-  renderStops();
-  renderDebug();
-  renderMap();
-}
+function renderAll(){renderStops();renderDebug();renderMap();}
 
 function renderStops(){
   const q=document.getElementById("search").value.toLowerCase();
   const list=document.getElementById("stopList");
   list.innerHTML="";
 
-  const f=gtfs.stops.filter(s=>s.name.toLowerCase().includes(q));
-
-  if(f.length===0){
-    list.innerHTML="<div class='small'>Nincs találat</div>";
-    return;
-  }
-
-  f.forEach(s=>{
+  gtfs.stops.filter(s=>s.name.toLowerCase().includes(q))
+  .forEach(s=>{
     const d=document.createElement("div");
     d.innerHTML=`<span class='badge'>STOP</span> ${s.name}`;
-    d.style.padding="6px";
     d.style.cursor="pointer";
+    d.style.padding="6px";
     d.onclick=()=>showTimetable(s);
     list.appendChild(d);
   });
@@ -139,20 +140,34 @@ function showTimetable(stop){
   .filter(x=>x.stop===stop.id)
   .map(x=>{
     const t=gtfs.trips.find(tr=>tr.id===x.trip);
-    return `<tr><td>${x.time}</td><td>${t?t.head:"?"}</td><td>${t?t.vehicle:"-"}</td></tr>`;
+    return `<tr>
+      <td>${t.viszonylat}</td>
+      <td>${t.dir}</td>
+      <td>${x.time}</td>
+      <td>${x.delay}</td>
+      <td>${t.internal}</td>
+      <td>${t.internal}</td>
+      <td>${t.vehicle}</td>
+    </tr>`;
   });
 
-  document.getElementById("timetable").innerHTML=
-  `<div class='title'>📍 ${stop.name}</div>
-   <table class='table'>
-   <tr><th>Idő</th><th>Hová</th><th>Jármű (belső szám)</th></tr>
-   ${rows.join("")}
-   </table>`;
+  document.getElementById("timetable").innerHTML=`
+  <div class='title'>📍 ${stop.name}</div>
+  <table class='table'>
+  <tr>
+    <th>Viszonylat</th>
+    <th>Iránya - cél</th>
+    <th>Indul</th>
+    <th>Eltérés</th>
+    <th>Belső ID</th>
+    <th>Jármű szám</th>
+    <th>Jármű típus</th>
+  </tr>
+  ${rows.join("")}
+  </table>`;
 }
 
 function renderDebug(){
-  const d=document.getElementById("debug");
-
   let ok=true;
   let msg="";
 
@@ -160,63 +175,28 @@ function renderDebug(){
   if(!gtfs.trips.length){ok=false;msg+="❌ trips hiányzik<br>";}
   if(!gtfs.stop_times.length){ok=false;msg+="❌ stop_times hiányzik<br>";}
 
-  d.innerHTML=ok?"<div class='ok'>✔ GTFS OK</div>":"<div class='err'>"+msg+"</div>";
+  document.getElementById("debug").innerHTML=
+    ok?"<div class='ok'>✔ GTFS OK</div>":"<div class='err'>"+msg+"</div>";
 }
 
 function renderMap(){
-
   map.eachLayer(l=>{if(l instanceof L.Marker) map.removeLayer(l);});
 
   gtfs.stops.forEach(s=>{
-    if(s.lat&&s.lon){
-      L.marker([s.lat,s.lon]).addTo(map).bindPopup(s.name);
-    }
+    if(s.lat) L.marker([s.lat,19.05]).addTo(map).bindPopup(s.name);
   });
-}
-
-function toggleVehicles(){
-
-  vehiclesOn=!vehiclesOn;
-  document.getElementById("vehiclePanel").innerHTML=vehiclesOn?"ON":"OFF";
-
-  if(vehiclesOn){
-    vehicleTimer=setInterval(()=>{
-
-      vehicleMarkers.forEach(m=>map.removeLayer(m));
-      vehicleMarkers=[];
-
-      gtfs.trips.forEach(t=>{
-        const base=gtfs.stops[Math.floor(Math.random()*gtfs.stops.length)];
-        if(!base) return;
-
-        const lat=base.lat+(Math.random()*0.01);
-        const lon=base.lon+(Math.random()*0.01);
-
-        const m=L.circleMarker([lat,lon],{radius:6}).addTo(map)
-        .bindPopup(t.vehicle);
-
-        vehicleMarkers.push(m);
-      });
-
-    },2000);
-  } else {
-    clearInterval(vehicleTimer);
-    vehicleMarkers.forEach(m=>map.removeLayer(m));
-    vehicleMarkers=[];
-  }
 }
 
 function exportZip(){
   const zip=new JSZip();
-
   zip.file("stops.txt","id,name\n"+gtfs.stops.map(s=>`${s.id},${s.name}`).join("\n"));
-  zip.file("trips.txt","id,head,vehicle\n"+gtfs.trips.map(t=>`${t.id},${t.head},${t.vehicle}`).join("\n"));
-  zip.file("stop_times.txt","trip,stop,time\n"+gtfs.stop_times.map(s=>`${s.trip},${s.stop},${s.time}`).join("\n"));
+  zip.file("trips.txt","id,viszonylat,dir,vehicle,internal\n"+gtfs.trips.map(t=>`${t.id},${t.viszonylat},${t.dir},${t.vehicle},${t.internal}`).join("\n"));
+  zip.file("stop_times.txt","trip,stop,time,delay\n"+gtfs.stop_times.map(s=>`${s.trip},${s.stop},${s.time},${s.delay}`).join("\n"));
 
   zip.generateAsync({type:"blob"}).then(b=>{
     const a=document.createElement("a");
     a.href=URL.createObjectURL(b);
-    a.download="gtfs_v5.zip";
+    a.download="gtfs_v6.zip";
     a.click();
   });
 }
