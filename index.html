@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>V6 GTFS DISPATCHER ENGINE (FIXED UI + FULL TIMETABLE)</title>
+<title>V7 BOOT FIX GTFS ENGINE + FULL STABILITY</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -14,11 +14,9 @@ header{display:flex;gap:8px;flex-wrap:wrap;padding:10px;background:#111827;align
 button{padding:10px 12px;border:0;border-radius:8px;background:#22c55e;color:#000;font-weight:bold;cursor:pointer}
 button.secondary{background:#38bdf8}
 
-/* FIXED LAYOUT: no overlap */
 .container{
   display:grid;
   grid-template-columns:320px 1fr;
-  grid-template-rows:100%;
   height:calc(100vh - 60px);
 }
 
@@ -32,7 +30,6 @@ button.secondary{background:#38bdf8}
   width:40%;
   height:calc(100vh - 60px);
   background:#0b1220;
-  z-index:0;
 }
 
 input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #334155;background:#0b1220;color:white}
@@ -54,7 +51,7 @@ input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #33
 <header>
 <button onclick="loadDemo()">📥 DEMO</button>
 <button class="secondary" onclick="exportZip()">📦 EXPORT</button>
-<span class="small">V6 FIXED DISPATCHER ENGINE</span>
+<span class="small">V7 BOOT FIX ENGINE</span>
 </header>
 
 <div class="container">
@@ -73,7 +70,7 @@ input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #33
 </div>
 
 <div class="main">
-<div class="title">🚏 MEGÁLLÓS MENETREND (FULL)</div>
+<div class="title">🚏 MEGÁLLÓS MENETREND (TELJES TÁBLÁZAT)</div>
 <div id="timetable">Válassz megállót</div>
 </div>
 
@@ -89,46 +86,59 @@ let map;
 window.onload=()=>{
   map=L.map('map').setView([47.5,19.05],11);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
   loadDemo();
+  document.getElementById("search").value="";
+
+  setTimeout(()=>{
+    renderAll();
+  },100);
 };
 
 function loadDemo(){
 
   gtfs.stops=[
-    {id:"1",name:"Óbuda",lat:47.541},
-    {id:"2",name:"Békásmegyer",lat:47.595},
-    {id:"3",name:"Szob vasút",lat:47.82}
+    {id:"1",name:"Óbuda",lat:47.541,lon:19.045},
+    {id:"2",name:"Békásmegyer",lat:47.595,lon:19.043},
+    {id:"3",name:"Szob vasút",lat:47.82,lon:18.87}
   ];
 
   gtfs.trips=[
-    {id:"T1",viszonylat:"118",head:"Békásmegyer",dir:"→ Békásmegyer",vehicle:"BUS",internal:"2456"},
-    {id:"T2",viszonylat:"34",head:"Óbuda",dir:"→ Óbuda",vehicle:"BUS",internal:"1122"},
-    {id:"K1",viszonylat:"KV1",head:"Királyrét",dir:"→ Kisvasút végállomás",vehicle:"KV",internal:"001"}
+    {id:"T204",viszonylat:"204",dir:"BM, Újmegyer tér",vehicle:"Ikarus 412",internal:"5-2 DE"},
+    {id:"T243",viszonylat:"243",dir:"Békásmegyer HÉV",vehicle:"Volvo 512",internal:"8-1 ÁTSZ"},
+    {id:"T32",viszonylat:"32",dir:"Örs Vezér tér",vehicle:"Van Hool csuklós",internal:"6-4 DU"}
   ];
 
   gtfs.stop_times=[
-    {trip:"T1",stop:"1",time:"08:00",delay:"0"},
-    {trip:"T1",stop:"2",time:"08:15",delay:"+2"},
-    {trip:"T2",stop:"2",time:"09:00",delay:"0"},
-    {trip:"K1",stop:"3",time:"10:00",delay:"-1"}
+    {trip:"T204",stop:"1",time:"22:35",delay:"2p18mp - SIET"},
+    {trip:"T243",stop:"2",time:"22:38",delay:"IDŐBEN"},
+    {trip:"T32",stop:"3",time:"22:40",delay:"6p43mp - KÉSIK"}
   ];
-
-  renderAll();
 }
 
-function renderAll(){renderStops();renderDebug();renderMap();}
+function renderAll(){
+  renderStops();
+  renderDebug();
+  renderMap();
+}
 
 function renderStops(){
   const q=document.getElementById("search").value.toLowerCase();
   const list=document.getElementById("stopList");
   list.innerHTML="";
 
-  gtfs.stops.filter(s=>s.name.toLowerCase().includes(q))
-  .forEach(s=>{
+  const f=gtfs.stops.filter(s=>s.name.toLowerCase().includes(q));
+
+  if(!f.length){
+    list.innerHTML="<div class='small'>Nincs találat</div>";
+    return;
+  }
+
+  f.forEach(s=>{
     const d=document.createElement("div");
     d.innerHTML=`<span class='badge'>STOP</span> ${s.name}`;
-    d.style.cursor="pointer";
     d.style.padding="6px";
+    d.style.cursor="pointer";
     d.onclick=()=>showTimetable(s);
     list.appendChild(d);
   });
@@ -140,6 +150,7 @@ function showTimetable(stop){
   .filter(x=>x.stop===stop.id)
   .map(x=>{
     const t=gtfs.trips.find(tr=>tr.id===x.trip);
+
     return `<tr>
       <td>${t.viszonylat}</td>
       <td>${t.dir}</td>
@@ -155,13 +166,13 @@ function showTimetable(stop){
   <div class='title'>📍 ${stop.name}</div>
   <table class='table'>
   <tr>
-    <th>Viszonylat</th>
-    <th>Iránya - cél</th>
+    <th>Viszonylat száma</th>
+    <th>Iránya – cél végállomás</th>
     <th>Indul</th>
-    <th>Eltérés</th>
-    <th>Belső ID</th>
-    <th>Jármű szám</th>
-    <th>Jármű típus</th>
+    <th>Időbeli eltérés</th>
+    <th>Belső azonosító</th>
+    <th>Jármű száma</th>
+    <th>Jármű típusa</th>
   </tr>
   ${rows.join("")}
   </table>`;
@@ -183,12 +194,15 @@ function renderMap(){
   map.eachLayer(l=>{if(l instanceof L.Marker) map.removeLayer(l);});
 
   gtfs.stops.forEach(s=>{
-    if(s.lat) L.marker([s.lat,19.05]).addTo(map).bindPopup(s.name);
+    if(s.lat&&s.lon){
+      L.marker([s.lat,s.lon]).addTo(map).bindPopup(s.name);
+    }
   });
 }
 
 function exportZip(){
   const zip=new JSZip();
+
   zip.file("stops.txt","id,name\n"+gtfs.stops.map(s=>`${s.id},${s.name}`).join("\n"));
   zip.file("trips.txt","id,viszonylat,dir,vehicle,internal\n"+gtfs.trips.map(t=>`${t.id},${t.viszonylat},${t.dir},${t.vehicle},${t.internal}`).join("\n"));
   zip.file("stop_times.txt","trip,stop,time,delay\n"+gtfs.stop_times.map(s=>`${s.trip},${s.stop},${s.time},${s.delay}`).join("\n"));
@@ -196,7 +210,7 @@ function exportZip(){
   zip.generateAsync({type:"blob"}).then(b=>{
     const a=document.createElement("a");
     a.href=URL.createObjectURL(b);
-    a.download="gtfs_v6.zip";
+    a.download="gtfs_v7.zip";
     a.click();
   });
 }
