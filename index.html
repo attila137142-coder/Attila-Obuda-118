@@ -2,16 +2,16 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>BKK LIGHT PRO GTFS ENGINE V3 - DEBUG + REALTIME</title>
+<title>BKK GTFS MULTI-MODULE ENGINE V4</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <style>
-body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
-header{padding:10px;background:#111827;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-button{padding:10px 12px;border:0;border-radius:8px;cursor:pointer;background:#22c55e;color:#000;font-weight:bold}
+body{margin:0;font-family:Arial;background:#0f172a;color:#e2e8f0}
+header{display:flex;gap:8px;flex-wrap:wrap;padding:10px;background:#111827;align-items:center}
+button{padding:10px 12px;border:0;border-radius:8px;background:#22c55e;color:#000;font-weight:bold;cursor:pointer}
 button.secondary{background:#38bdf8}
 .container{display:grid;grid-template-columns:320px 1fr 1fr;height:calc(100vh - 60px)}
 .sidebar{padding:10px;background:#111827;overflow:auto}
@@ -21,48 +21,40 @@ input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #33
 .table{width:100%;border-collapse:collapse;margin-top:10px}
 .table th,.table td{border:1px solid #334155;padding:6px;text-align:center;font-size:13px}
 .table th{background:#1f2937}
-.badge{padding:2px 6px;border-radius:6px;background:#1d4ed8;color:white;font-size:11px}
-.title{font-size:15px;font-weight:bold;margin:8px 0}
-.small{font-size:12px;opacity:0.8}
+.title{font-weight:bold;margin:6px 0}
+.badge{background:#1d4ed8;padding:2px 6px;border-radius:6px;font-size:11px}
 .panel{background:#0b1220;padding:8px;border-radius:8px;margin-top:8px}
-.error{color:#f87171}
 .ok{color:#4ade80}
 </style>
 </head>
 <body>
 
 <header>
-<button onclick="loadDemo()">📥 DEMO GTFS</button>
+<button onclick="loadDemo()">📥 DEMO</button>
 <button class="secondary" onclick="exportZip()">📦 EXPORT</button>
-<input type="file" id="file" style="display:none" onchange="importZip(event)">
-<button onclick="document.getElementById('file').click()">📂 GTFS IMPORT</button>
-<button onclick="toggleRealtime()">🚍 REALTIME</button>
-<span class="small">V3 DEBUG + REALTIME ENGINE</span>
+<span style="font-size:12px;opacity:.8">V4 MULTI-MODULE GTFS ENGINE</span>
 </header>
 
 <div class="container">
 
 <div class="sidebar">
 
+<div class="title">🧠 3 MODUL ARCHITEKTÚRA</div>
+<div class="panel">
+🟢 BKK CORE (II–III kerület)<br>
+🟡 DUNAKANYAR + VOLÁN + MÁV<br>
+🔵 KISVASUTAK (Börzsöny)
+</div>
+
 <div class="title">🔎 Megálló kereső</div>
-<input id="search" placeholder="pl. Óbuda..." oninput="renderStops()">
+<input id="search" oninput="renderStops()" placeholder="pl. Óbuda">
 <div id="stopList"></div>
-
-<div class="panel">
-<div class="title">🧠 GTFS DEBUG</div>
-<div id="debug"></div>
-</div>
-
-<div class="panel">
-<div class="title">🚍 Realtime járművek</div>
-<div id="vehicles"></div>
-</div>
 
 </div>
 
 <div class="main">
-<div class="title">🚏 Megállós menetrend</div>
-<div id="timetable">Nincs kiválasztva</div>
+<div class="title">🚏 Megállós menetrend (MULTI-MODULE)</div>
+<div id="timetable">Válassz megállót</div>
 </div>
 
 <div class="map" id="map"></div>
@@ -71,40 +63,41 @@ input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #33
 
 <script>
 
-let gtfs={stops:[],trips:[],stop_times:[]};
+let gtfs={stops:[],trips:[],stop_times:[],module:{} };
 let map;
-let vehicleMarkers=[];
-let realtime=false;
 
 window.onload=()=>{
-  initMap();
+  map=L.map('map').setView([47.5,19.05],11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
   loadDemo();
 };
 
-function initMap(){
-  map=L.map('map').setView([47.4979,19.0402],11);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-}
-
+// MODULE STRUCTURE
 function loadDemo(){
+
+  gtfs.module={
+    bkk_core:"II-III kerület",
+    dunakanyar:"Volán + MÁV",
+    kisvasut:"Börzsöny"
+  };
+
   gtfs.stops=[
-    {id:"1",name:"Központ",lat:47.4979,lon:19.0402},
-    {id:"2",name:"Óbuda",lat:47.5410,lon:19.0450},
-    {id:"3",name:"Békásmegyer",lat:47.5950,lon:19.0430}
+    {id:"1",name:"Óbuda",lat:47.541},
+    {id:"2",name:"Békásmegyer",lat:47.595},
+    {id:"3",name:"Szob vasút",lat:47.82}
   ];
 
   gtfs.trips=[
     {id:"T1",head:"Békásmegyer"},
-    {id:"T2",head:"Központ"}
+    {id:"T2",head:"Óbuda"},
+    {id:"K1",head:"Kisvasút Királyrét"}
   ];
 
   gtfs.stop_times=[
     {trip:"T1",stop:"1",time:"08:00"},
-    {trip:"T1",stop:"2",time:"08:10"},
-    {trip:"T1",stop:"3",time:"08:20"},
-    {trip:"T2",stop:"3",time:"09:00"},
-    {trip:"T2",stop:"2",time:"09:10"},
-    {trip:"T2",stop:"1",time:"09:20"}
+    {trip:"T1",stop:"2",time:"08:15"},
+    {trip:"T2",stop:"2",time:"09:00"},
+    {trip:"K1",stop:"3",time:"10:00"}
   ];
 
   renderAll();
@@ -112,7 +105,6 @@ function loadDemo(){
 
 function renderAll(){
   renderStops();
-  renderDebug();
   renderMap();
 }
 
@@ -121,123 +113,38 @@ function renderStops(){
   const list=document.getElementById("stopList");
   list.innerHTML="";
 
-  const filtered=gtfs.stops.filter(s=>s.name.toLowerCase().includes(q));
-
-  if(filtered.length===0){
-    list.innerHTML="<div class='small'>Nincs találat</div>";
-    return;
-  }
-
-  filtered.forEach(s=>{
+  gtfs.stops.filter(s=>s.name.toLowerCase().includes(q))
+  .forEach(s=>{
     const div=document.createElement("div");
     div.innerHTML=`<span class='badge'>STOP</span> ${s.name}`;
     div.style.cursor="pointer";
     div.style.padding="6px";
-    div.onclick=()=>showTimetable(s.id,s.name);
+    div.onclick=()=>showTimetable(s);
     list.appendChild(div);
   });
 }
 
-function showTimetable(stopId,name){
+function showTimetable(stop){
 
   const rows=gtfs.stop_times
-  .filter(x=>x.stop===stopId)
+  .filter(x=>x.stop===stop.id)
   .map(x=>{
-    const t=gtfs.trips.find(tt=>tt.id===x.trip);
+    const t=gtfs.trips.find(tr=>tr.id===x.trip);
     return `<tr><td>${x.time}</td><td>${t?t.head:"?"}</td><td>${x.trip}</td></tr>`;
   });
 
-  document.getElementById("timetable").innerHTML=
-  `<div class='title'>📍 ${name}</div>
-   <table class='table'>
-   <tr><th>Idő</th><th>Hová</th><th>Járat</th></tr>
-   ${rows.join("")}
-   </table>`;
-}
-
-function renderDebug(){
-  const d=document.getElementById("debug");
-
-  let issues=[];
-
-  if(gtfs.stops.length===0) issues.push("❌ nincs stop adat");
-  if(gtfs.trips.length===0) issues.push("❌ nincs trip adat");
-  if(gtfs.stop_times.length===0) issues.push("❌ nincs stop_times");
-
-  if(issues.length===0){
-    d.innerHTML="<div class='ok'>✔ GTFS OK</div>";
-  }else{
-    d.innerHTML=issues.map(i=>"<div class='error'>"+i+"</div>").join("");
-  }
+  document.getElementById("timetable").innerHTML=`
+    <div class='title'>📍 ${stop.name}</div>
+    <table class='table'>
+    <tr><th>Idő</th><th>Hová</th><th>Járat</th></tr>
+    ${rows.join("")}
+    </table>
+  `;
 }
 
 function renderMap(){
-  map.eachLayer(l=>{if(l._latlng) map.removeLayer(l);});
-
   gtfs.stops.forEach(s=>{
-    if(s.lat){
-      L.marker([s.lat,s.lon]).addTo(map).bindPopup(s.name);
-    }
-  });
-}
-
-function toggleRealtime(){
-  realtime=!realtime;
-  document.getElementById("vehicles").innerHTML=realtime?"<div class='ok'>REALTIME ON</div>":"REALTIME OFF";
-
-  if(realtime) startVehicles();
-  else stopVehicles();
-}
-
-function startVehicles(){
-
-  vehicleMarkers.forEach(m=>map.removeLayer(m));
-  vehicleMarkers=[];
-
-  setInterval(()=>{
-    if(!realtime) return;
-
-    vehicleMarkers.forEach(m=>map.removeLayer(m));
-    vehicleMarkers=[];
-
-    gtfs.stops.forEach(s=>{
-      const lat=s.lat+Math.random()*0.01;
-      const lon=s.lon+Math.random()*0.01;
-
-      const m=L.circleMarker([lat,lon],{radius:6}).addTo(map);
-      vehicleMarkers.push(m);
-    });
-
-  },2000);
-}
-
-function stopVehicles(){
-  vehicleMarkers.forEach(m=>map.removeLayer(m));
-  vehicleMarkers=[];
-}
-
-async function importZip(e){
-  const file=e.target.files[0];
-  const zip=await JSZip.loadAsync(file);
-
-  const stops=await zip.file("stops.txt").async("string");
-  const trips=await zip.file("trips.txt").async("string");
-  const stop_times=await zip.file("stop_times.txt").async("string");
-
-  gtfs.stops=parseCSV(stops);
-  gtfs.trips=parseCSV(trips);
-  gtfs.stop_times=parseCSV(stop_times);
-
-  renderAll();
-}
-
-function parseCSV(text){
-  const l=text.trim().split("\n");
-  const h=l[0].split(",");
-  return l.slice(1).map(r=>{
-    const o={};
-    r.split(",").forEach((v,i)=>o[h[i]]=v);
-    return o;
+    if(s.lat) L.marker([s.lat,19.05]).addTo(map).bindPopup(s.name);
   });
 }
 
@@ -251,7 +158,7 @@ function exportZip(){
   zip.generateAsync({type:"blob"}).then(b=>{
     const a=document.createElement("a");
     a.href=URL.createObjectURL(b);
-    a.download="bkk_light_pro_v3.zip";
+    a.download="gtfs_multi_module.zip";
     a.click();
   });
 }
