@@ -2,81 +2,139 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>BKK LIGHT GTFS ZIP GENERATOR</title>
+<title>BKK LIGHT PRO GTFS ENGINE</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<style>
+body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
+header{padding:16px;background:#111827;display:flex;gap:10px;align-items:center}
+button{padding:10px 14px;border:0;border-radius:8px;cursor:pointer;background:#22c55e;color:#000;font-weight:bold}
+button.secondary{background:#38bdf8}
+.container{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 60px)}
+.sidebar{padding:12px;background:#111827;overflow:auto}
+.main{padding:12px;overflow:auto}
+input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #334155;background:#0b1220;color:white}
+.table{width:100%;border-collapse:collapse;margin-top:10px}
+.table th,.table td{border:1px solid #334155;padding:6px;text-align:center;font-size:13px}
+.table th{background:#1f2937}
+.badge{padding:2px 6px;border-radius:6px;background:#1d4ed8;color:white;font-size:11px}
+.title{font-size:18px;font-weight:bold;margin:8px 0}
+.small{font-size:12px;opacity:0.8}
+</style>
 </head>
-<body style="font-family:Arial;padding:20px">
+<body>
 
-<h2>🚍 BKK LIGHT GTFS ZIP GENERÁTOR</h2>
+<header>
+<button onclick="loadDemo()">📥 DEMO GTFS</button>
+<button class="secondary" onclick="exportZip()">📦 ZIP GENERÁLÁS</button>
+<span class="small">BKK LIGHT PRO GTFS ENGINE</span>
+</header>
 
-<button onclick="generateGTFS()">📦 ZIP generálás</button>
+<div class="container">
 
-<pre id="log"></pre>
+<div class="sidebar">
+<div class="title">🔎 Megálló kereső</div>
+<input id="search" placeholder="pl. Óbuda..." oninput="renderStops()">
+<div id="stopList"></div>
+</div>
+
+<div class="main">
+<div class="title">🚍 Megállós menetrend</div>
+<div id="timetable">Válassz megállót...</div>
+</div>
+
+</div>
 
 <script>
 
-function log(msg){
-    document.getElementById("log").innerText += msg + "\n";
+let gtfs = {
+  stops: [],
+  stop_times: [],
+  trips: [],
+  routes: []
+};
+
+function loadDemo(){
+  gtfs.stops = [
+    {id:"1",name:"Központ"},
+    {id:"2",name:"Óbuda"},
+    {id:"3",name:"Békásmegyer"}
+  ];
+
+  gtfs.stop_times = [
+    {trip:"T1",stop:"1",time:"08:00"},
+    {trip:"T1",stop:"2",time:"08:10"},
+    {trip:"T1",stop:"3",time:"08:20"},
+
+    {trip:"T2",stop:"3",time:"09:00"},
+    {trip:"T2",stop:"2",time:"09:10"},
+    {trip:"T2",stop:"1",time:"09:20"}
+  ];
+
+  gtfs.trips = [
+    {id:"T1",head:"Békásmegyer"},
+    {id:"T2",head:"Központ"}
+  ];
+
+  renderStops();
 }
 
-// --- MINIMÁL GTFS ADATOK ---
-const stops = `stop_id,stop_name,stop_lat,stop_lon
-1,Központ,47.4979,19.0402
-2,Óbuda,47.5410,19.0450
-3,Békásmegyer,47.5950,19.0430
-`;
+function renderStops(){
+  const q = document.getElementById("search").value.toLowerCase();
+  const list = document.getElementById("stopList");
+  list.innerHTML = "";
 
-const routes = `route_id,route_short_name,route_long_name,route_type
-R1,118,Óbuda - Békásmegyer,3
-`;
+  gtfs.stops
+    .filter(s => s.name.toLowerCase().includes(q))
+    .forEach(s => {
+      const div = document.createElement("div");
+      div.innerHTML = `<span class='badge'>STOP</span> ${s.name}`;
+      div.style.cursor="pointer";
+      div.style.padding="6px";
+      div.onclick = () => showTimetable(s.id, s.name);
+      list.appendChild(div);
+    });
+}
 
-const trips = `route_id,service_id,trip_id,headsign
-R1,WEEKDAY,T1,Békásmegyer
-R1,WEEKDAY,T2,Óbuda
-`;
+function showTimetable(stopId, stopName){
 
-const stop_times = `trip_id,arrival_time,departure_time,stop_id,stop_sequence
-T1,08:00:00,08:00:00,1,1
-T1,08:10:00,08:10:00,2,2
-T1,08:20:00,08:20:00,3,3
-T2,09:00:00,09:00:00,3,1
-T2,09:10:00,09:10:00,2,2
-T2,09:20:00,09:20:00,1,3
-`;
+  const rows = gtfs.stop_times
+    .filter(st => st.stop === stopId)
+    .map(st => {
+      const trip = gtfs.trips.find(t => t.id === st.trip);
+      return `<tr><td>${st.time}</td><td>${trip ? trip.head : "?"}</td><td>${st.trip}</td></tr>`;
+    });
 
-const calendar = `service_id,monday,tuesday,wednesday,thursday,friday,saturday,sunday,start_date,end_date
-WEEKDAY,1,1,1,1,1,0,0,20260101,20261231
-`;
+  document.getElementById("timetable").innerHTML = `
+    <div class='title'>📍 ${stopName}</div>
+    <table class='table'>
+      <tr><th>Idő</th><th>Hová</th><th>Járat</th></tr>
+      ${rows.join("")}
+    </table>
+  `;
+}
 
-const agency = `agency_id,agency_name,agency_url,agency_timezone
-BKK,BKK,http://bkk.hu,Europe/Budapest
-`;
+function exportZip(){
 
-// --- ZIP GENERÁLÁS ---
-async function generateGTFS(){
+  const zip = new JSZip();
 
-    log("GTFS csomag generálása...");
+  zip.file("stops.txt", "stop_id,stop_name\n" + gtfs.stops.map(s=>`${s.id},${s.name}`).join("\n"));
 
-    const zip = new JSZip();
+  zip.file("stop_times.txt", "trip_id,stop_id,time\n" +
+    gtfs.stop_times.map(s=>`${s.trip},${s.stop},${s.time}`).join("\n"));
 
-    zip.file("stops.txt", stops);
-    zip.file("routes.txt", routes);
-    zip.file("trips.txt", trips);
-    zip.file("stop_times.txt", stop_times);
-    zip.file("calendar.txt", calendar);
-    zip.file("agency.txt", agency);
+  zip.file("trips.txt", "trip_id,headsign\n" +
+    gtfs.trips.map(t=>`${t.id},${t.head}`).join("\n"));
 
-    const content = await zip.generateAsync({type:"blob"});
-
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(content);
-    a.download = "bkk_light.zip";
+  zip.generateAsync({type:"blob"}).then(content=>{
+    const a=document.createElement("a");
+    a.href=URL.createObjectURL(content);
+    a.download="bkk_light_pro.zip";
     a.click();
-
-    log("✔ bkk_light.zip kész!");
+  });
 }
 
 </script>
 
 </body>
 </html>
+
