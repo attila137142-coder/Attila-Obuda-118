@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA NAVI PRO MAX</title>
+<title>NAVI PRO REALTIME</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -10,53 +10,34 @@
 
 <style>
 body{margin:0;background:#111;color:#fff;font-family:Arial;}
-#map{height:50vh;}
+#map{height:60vh;}
 .panel{padding:8px;}
 .box{background:#222;padding:8px;border-radius:8px;}
-button{margin:2px;padding:6px;border-radius:6px;}
-#departures{position:fixed;bottom:0;width:100%;background:#000;max-height:45%;overflow:auto;}
+#panel{position:fixed;bottom:0;width:100%;background:#000;max-height:40%;overflow:auto;}
 </style>
 </head>
 
 <body>
 
 <div class="panel">
-
-<input id="searchInput" placeholder="Keresés (megálló / utca)">
-<button onclick="search()">🔎</button><br>
-
-<button onclick="setBase('street')">UTCAI</button>
-<button onclick="setBase('topo')">TOPO</button>
-<button onclick="toggleRail()">VASÚT</button>
-<button onclick="toggleHike()">TURISTA</button>
-
-<div id="info" class="box"></div>
-
+<button onclick="loadGTFS()">GTFS betöltés</button>
+<div id="info" class="box">Indítás...</div>
 </div>
 
 <div id="map"></div>
-<div id="departures"></div>
+<div id="panel"></div>
 
 <script>
 
 // MAP
 let map=L.map('map').setView([47.49,19.04],13);
 
-let base={
- street:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
- topo:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
-};
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/{z}/{x}/{y}.png');
-let hike=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
+let stopLayer=L.layerGroup().addTo(map);
+let vehicleLayer=L.layerGroup().addTo(map);
 
-base.street.addTo(map);
-
-function setBase(b){map.eachLayer(l=>map.removeLayer(l));base[b].addTo(map);}
-function toggleRail(){map.hasLayer(rail)?map.removeLayer(rail):rail.addTo(map);}
-function toggleHike(){map.hasLayer(hike)?map.removeLayer(hike):hike.addTo(map);}
-
-// GPS + SPEED
+// GPS
 let userLat,userLng,lastT;
 
 navigator.geolocation.watchPosition(p=>{
@@ -65,19 +46,18 @@ navigator.geolocation.watchPosition(p=>{
  let t=Date.now();
 
  if(userLat){
-  let d=dist(userLat,userLng,lat,lng);
-  let dt=(t-lastT)/1000;
-  let ms=d/dt;
-  let kmh=ms*3.6;
+   let d=dist(userLat,userLng,lat,lng);
+   let dt=(t-lastT)/1000;
+   let ms=d/dt;
+   let kmh=ms*3.6;
 
-  document.getElementById("info").innerHTML=
-   `🚀 ${kmh.toFixed(1)} km/h<br>⚡ ${ms.toFixed(2)} m/s`;
+   document.getElementById("info").innerHTML=
+    `🚀 ${kmh.toFixed(1)} km/h<br>⚡ ${ms.toFixed(2)} m/s`;
  }
 
- userLat=lat; userLng=lng; lastT=t;
-
- loadRegion(lat,lng);
-
+ userLat=lat;
+ userLng=lng;
+ lastT=t;
 });
 
 // DIST
@@ -91,111 +71,112 @@ function dist(a,b,c,d){
  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// REGION
-let currentRegion=null;
+// GTFS
+let stops=[];
 
-function detectRegion(lat,lng){
- if(lat>47.3 && lat<47.7) return "BKK";
- if(lat>47.8) return "BORZSONY";
- if(lat<47.3) return "ZALA";
- return "PEST";
-}
+async function loadGTFS(){
 
-// GTFS URLS
-const URLS={
- BKK:"bkk_light.zip",
- BORZSONY:"borzsony.zip",
- ZALA:"zala.zip",
- PEST:"pest.zip"
-};
+ stopLayer.clearLayers();
 
-// LOAD REGION
-async function loadRegion(lat,lng){
-
- let r=detectRegion(lat,lng);
- if(r===currentRegion) return;
-
- currentRegion=r;
-
- let res=await fetch(URLS[r]);
+ let res=await fetch("https://bkk.hu/gtfs/budapest_gtfs.zip");
  let zip=await JSZip.loadAsync(await res.blob());
 
- let stopsTxt=await zip.file("stops.txt").async("string");
- let shapesTxt=await zip.file("shapes.txt").async("string");
+ let txt=await zip.file("stops.txt").async("string");
 
- drawStops(stopsTxt);
- drawLines(shapesTxt);
+ stops = txt.split("\n").slice(1).map(r=>{
+   let c=r.split(",");
+   return {id:c[0],name:c[2],lat:+c[4],lng:+c[5]};
+ });
+
+ drawStops();
+ generateVehicles();
+
 }
 
-// DRAW STOPS
-function drawStops(txt){
+// STOPS
+function drawStops(){
 
- txt.split("\n").slice(1).forEach(r=>{
-  let c=r.split(",");
-  let lat=+c[4], lng=+c[5];
+ stops.forEach(s=>{
 
-  let m=L.circleMarker([lat,lng],{radius:3,color:"yellow"}).addTo(map);
+   let m=L.circleMarker([s.lat,s.lng],{
+     radius:4,
+     color:"yellow"
+   }).addTo(stopLayer);
 
-  m.on("click",()=>showStop(c[2],lat,lng));
+   m.bindTooltip(s.name);
+
+   m.on("click",()=>showStop(s));
  });
 }
 
-// DRAW LINES
-function drawLines(txt){
+// PANEL
+function showStop(s){
 
- let lines={};
+ let d=dist(userLat,userLng,s.lat,s.lng);
 
- txt.split("\n").slice(1).forEach(r=>{
-  let c=r.split(",");
-  if(!lines[c[0]]) lines[c[0]]=[];
-  lines[c[0]].push([+c[1],+c[2]]);
- });
+ document.getElementById("panel").innerHTML=
+ `<h3>${s.name}</h3>
+ ✈️ ${Math.round(d)} m`;
+}
 
- Object.values(lines).forEach(l=>{
-  L.polyline(l,{color:"cyan"}).addTo(map);
+// ================= REALTIME =================
+
+// ICONOK
+function getIcon(type){
+ let emoji = type==="bus"?"🚌":type==="tram"?"🚋":"🚆";
+
+ return L.divIcon({
+   html:`<div style="font-size:16px">${emoji}</div>`,
+   iconSize:[20,20]
  });
 }
 
-// SEARCH
-async function search(){
+// JÁRMŰ LISTA
+let vehicles=[];
 
- let q=document.getElementById("searchInput").value.toLowerCase();
+// GENERÁLÁS
+function generateVehicles(){
 
- // GTFS
- let found=[];
+ vehicles = stops.slice(0,40).map((s,i)=>({
+   id:i,
+   lat:s.lat,
+   lng:s.lng,
+   type: i%3===0?"tram":i%2===0?"bus":"train",
+   delay: Math.floor(Math.random()*10)
+ }));
 
- document.querySelectorAll(".leaflet-tooltip").forEach(t=>{
-  if(t.innerText.toLowerCase().includes(q)){
-    found.push(t);
-  }
+ updateVehicles();
+}
+
+// MOZGÁS
+function updateVehicles(){
+
+ vehicleLayer.clearLayers();
+
+ vehicles.forEach(v=>{
+
+   // random mozgás
+   v.lat += (Math.random()-0.5)*0.001;
+   v.lng += (Math.random()-0.5)*0.001;
+
+   let color = v.delay<3?"lime":v.delay<7?"orange":"red";
+
+   let m=L.marker([v.lat,v.lng],{
+     icon:getIcon(v.type)
+   }).addTo(vehicleLayer);
+
+   m.bindPopup(`
+     ${v.type}<br>
+     ⏱️ késés: ${v.delay}p
+   `);
+
  });
 
- if(found[0]){
-   let p=found[0]._source._latlng;
-   map.setView(p,17);
-   return;
- }
-
- // OSM
- let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let d=await r.json();
- if(d[0]) map.setView([d[0].lat,d[0].lon],15);
 }
 
-// STOP PANEL
-async function showStop(name,lat,lng){
-
- let air=dist(userLat,userLng,lat,lng);
-
- let html=`
- <h3>${name}</h3>
- ✈️ ${Math.round(air)} m
- <br>🛣️ számol...
- `;
-
- document.getElementById("departures").innerHTML=html;
-}
+setInterval(updateVehicles,3000);
 
 </script>
+
 </body>
 </html>
