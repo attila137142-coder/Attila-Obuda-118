@@ -2,145 +2,171 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V11 GTFS REAL TIMETABLE ENGINE</title>
+<title>V13 UNIFIED DISPATCHER (BKK + MÁV + VOLÁN)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-body{font-family:Arial;background:#0f172a;color:#e2e8f0;padding:20px}
-button{padding:10px;margin:5px;cursor:pointer}
+body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
+button,select{padding:10px;margin:5px;cursor:pointer}
 .box{background:#111827;padding:10px;margin-top:10px;border-radius:10px;overflow:auto}
 table{width:100%;border-collapse:collapse;margin-top:10px}
 th,td{border:1px solid #334155;padding:6px;font-size:12px}
 .ok{color:#4ade80}
 .bad{color:#f87171}
+.title{font-size:20px;font-weight:bold}
+.tab{margin-top:10px}
 </style>
 </head>
 <body>
 
-<h2>🚀 V11 GTFS REAL TIMETABLE ENGINE</h2>
+<div class="title">🚍🚆🚌 V13 UNIFIED DISPATCHER ENGINE</div>
+<div>👉 BKK + MÁV + VOLÁN egy közös térben</div>
 
-<button onclick="pickGTFS()">📦 GTFS betöltés / újrahasználás</button>
-<button onclick="reloadLast()">♻️ Utolsó GTFS újranyitás</button>
+
+<input type="file" id="file" multiple />
+<button onclick="loadAllGTFS()">📦 GTFS betöltés (multi)</button>
+
+<select id="datasetSelect" onchange="switchDataset()"></select>
 
 <div class="box" id="status">Várakozás...</div>
 <div class="box" id="log"></div>
 
-<h3>📦 ZIP tartalom</h3>
-<div class="box" id="files"></div>
+<h3>🌍 Összes GTFS forrás</h3>
+<div class="box" id="sources"></div>
 
-<h3>🚏 Megállók</h3>
+<h3>🚏 Unified megállók (aktív dataset)</h3>
 <table id="stopsTable"></table>
 
 <script>
-let zipData;
-let lastFileHandle = null;
 
-function log(msg){
-  document.getElementById('log').innerHTML += msg+"<br>";
+let datasets = {};
+let active = null;
+
+function log(m){document.getElementById('log').innerHTML+=m+"<br>";}
+function setStatus(m,ok=true){document.getElementById('status').innerHTML=ok?"<span class='ok'>"+m+"</span>":"<span class='bad'>"+m+"</span>";}
+
+function detectDelimiter(l){return l.includes("\t")?"\t":",";}
+
+function split(l,d){
+ let r=[],c="",q=false;
+ for(let x of l){
+  if(x==='"')q=!q;
+  else if(x===d&&!q){r.push(c);c="";}
+  else c+=x;
+ }
+ r.push(c);
+ return r;
 }
 
-function setStatus(msg, ok=true){
-  document.getElementById('status').innerHTML = ok ? 
-  "<span class='ok'>"+msg+"</span>" : 
-  "<span class='bad'>"+msg+"</span>";
-}
+function parseStops(text){
+ const lines=text.split(/\r?\n/).filter(l=>l.trim());
+ const d=detectDelimiter(lines[0]);
+ const h=split(lines[0],d);
+ const i={
+  id:h.indexOf("stop_id"),
+  name:h.indexOf("stop_name"),
+  lat:h.indexOf("stop_lat"),
+  lon:h.indexOf("stop_lon")
+ };
 
-// 💾 IndexedDB simple store
-async function saveHandle(handle){
-  const db = await indexedDB.open("gtfsDB",1);
-  db.onupgradeneeded = ()=> db.result.createObjectStore("files");
-  db.onsuccess = ()=>{
-    const tx = db.result.transaction("files","readwrite");
-    tx.objectStore("files").put(handle,"last");
-  };
-}
-
-async function loadHandle(){
-  return new Promise(res=>{
-    const req = indexedDB.open("gtfsDB",1);
-    req.onsuccess = ()=>{
-      const tx = req.result.transaction("files");
-      const store = tx.objectStore("files");
-      const getReq = store.get("last");
-      getReq.onsuccess = ()=> res(getReq.result);
-    };
+ let out=[];
+ for(let k=1;k<lines.length;k++){
+  const p=split(lines[k],d);
+  out.push({
+    id:p[i.id],
+    name:p[i.name],
+    lat:p[i.lat],
+    lon:p[i.lon]
   });
+ }
+ return out;
 }
 
-// 📦 File picker (új GTFS)
-async function pickGTFS(){
-
-  if(window.showOpenFilePicker){
-    const [handle] = await window.showOpenFilePicker({
-      types:[{description:"GTFS ZIP",accept:{"application/zip":[".zip"]}}]
-    });
-
-    lastFileHandle = handle;
-    await saveHandle(handle);
-
-    const file = await handle.getFile();
-    await processGTFS(file);
-  } else {
-    alert("Browser nem támogatja File System API-t");
-  }
+function detectSource(name){
+ name=name.toLowerCase();
+ if(name.includes("bkk"))return "BKK";
+ if(name.includes("mav"))return "MÁV";
+ if(name.includes("volan"))return "VOLÁN";
+ return "UNKNOWN";
 }
 
-// ♻️ reload last file
-async function reloadLast(){
-  const handle = await loadHandle();
-  if(!handle){alert("Nincs mentett GTFS");return;}
+async function loadAllGTFS(){
+ const files=document.getElementById('file').files;
+ if(!files.length){alert("Nincs fájl!");return;}
 
-  const file = await handle.getFile();
-  await processGTFS(file);
+ for(let f of files){
+  log("📦 betöltés: "+f.name);
+  const buf=await f.arrayBuffer();
+
+  if(buf.byteLength<50000){log("❌ hibás: "+f.name);continue;}
+
+  const zip=await JSZip.loadAsync(buf);
+
+  const stopsFile=Object.keys(zip.files).find(x=>x.toLowerCase().includes("stops.txt"));
+  if(!stopsFile){log("❌ nincs stops: "+f.name);continue;}
+
+  const text=await zip.file(stopsFile).async("string");
+  const stops=parseStops(text);
+
+  const source=detectSource(f.name);
+
+  const key=source+"_"+Date.now();
+
+  datasets[key]={
+   name:f.name,
+   source,
+   stops
+  };
+
+  log("✅ "+source+" betöltve ("+stops.length+")");
+ }
+
+ refresh();
 }
 
-// 🧠 GTFS processor
-async function processGTFS(file){
+function refresh(){
+ const sel=document.getElementById('datasetSelect');
+ sel.innerHTML="";
 
-  log("📦 betöltés...");
+ for(let k in datasets){
+  const o=document.createElement("option");
+  o.value=k;
+  o.text=datasets[k].source+" - "+datasets[k].name;
+  sel.appendChild(o);
+ }
 
-  const buffer = await file.arrayBuffer();
-  log("ZIP méret: " + buffer.byteLength);
+ active=Object.keys(datasets)[0];
+ sel.value=active;
+ render();
 
-  if(buffer.byteLength < 50000){
-    setStatus("❌ Hibás ZIP",false);
-    return;
-  }
-
-  const zip = await JSZip.loadAsync(buffer);
-  zipData = zip;
-
-  const files = Object.keys(zip.files);
-  document.getElementById('files').innerHTML = files.map(f=>"• "+f).join("<br>");
-
-  const stopsFile = files.find(f=>f.toLowerCase().includes("stops.txt"));
-  if(!stopsFile){setStatus("❌ nincs stops.txt",false);return;}
-
-  const text = await zip.file(stopsFile).async("string");
-
-  const lines = text.split(/\r?\n/).filter(l=>l.length);
-  const headers = lines[0].split(",");
-
-  const idI = headers.indexOf("stop_id");
-  const nameI = headers.indexOf("stop_name");
-  const latI = headers.indexOf("stop_lat");
-  const lonI = headers.indexOf("stop_lon");
-
-  let html = "<tr><th>ID</th><th>Név</th><th>Lat</th><th>Lon</th></tr>";
-
-  for(let i=1;i<Math.min(30,lines.length);i++){
-    const p = lines[i].split(",");
-    html += `<tr>
-      <td>${p[idI]}</td>
-      <td>${p[nameI]}</td>
-      <td>${p[latI]}</td>
-      <td>${p[lonI]}</td>
-    </tr>`;
-  }
-
-  document.getElementById('stopsTable').innerHTML = html;
-
-  setStatus("✅ GTFS betöltve + mentve (V11 READY)");
+ document.getElementById('sources').innerHTML=
+ Object.values(datasets).map(d=>"• "+d.source+" ("+d.stops.length+")").join("<br>");
 }
+
+function switchDataset(){
+ active=document.getElementById('datasetSelect').value;
+ render();
+}
+
+function render(){
+ if(!active)return;
+ const d=datasets[active].stops;
+
+ let h="<tr><th>ID</th><th>Név</th><th>Lat</th><th>Lon</th></tr>";
+
+ for(let i=0;i<Math.min(40,d.length);i++){
+  const s=d[i];
+  h+=`<tr>
+   <td>${s.id||''}</td>
+   <td>${s.name||''}</td>
+   <td>${s.lat||''}</td>
+   <td>${s.lon||''}</td>
+  </tr>`;
+ }
+
+ document.getElementById('stopsTable').innerHTML=h;
+ setStatus("🚀 V13 UNIFIED DISPATCHER READY");
+}
+
 </script>
 
 </body>
