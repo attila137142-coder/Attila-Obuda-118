@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V14 UNIFIED DISPATCHER + SEARCH</title>
+<title>V15 PERSISTENT DISPATCHER (BKK + MÁV + VOLÁN)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
@@ -17,10 +17,12 @@ th,td{border:1px solid #334155;padding:6px;font-size:12px}
 </head>
 <body>
 
-<div class="title">🚍🚆🚌 V14 UNIFIED DISPATCHER + STOP SEARCH</div>
+<div class="title">🚍🚆🚌 V15 PERSISTENT DISPATCHER ENGINE</div>
+<div>👉 BKK + MÁV + VOLÁN (MENTETT MEMÓRIA + AUTO RESTORE)</div>
 
 <input type="file" id="file" multiple />
 <button onclick="loadAllGTFS()">📦 GTFS betöltés</button>
+<button onclick="clearMemory()">🧹 Memória törlés</button>
 
 <input id="search" placeholder="🚏 Megálló keresés..." oninput="searchStops()" />
 
@@ -29,19 +31,31 @@ th,td{border:1px solid #334155;padding:6px;font-size:12px}
 <div class="box" id="status">Várakozás...</div>
 <div class="box" id="log"></div>
 
-<h3>🌍 Források</h3>
+<h3>🌍 Források (PERSISTENT)</h3>
 <div class="box" id="sources"></div>
 
-<h3>🚏 Megállók táblázat</h3>
+<h3>🚏 Megállók</h3>
 <table id="stopsTable"></table>
 
 <script>
 
-let datasets = {};
+// 🧠 PERSISTENT STORAGE
+let datasets = JSON.parse(localStorage.getItem("gtfs_datasets") || "{}");
 let active = null;
 
 function log(m){document.getElementById('log').innerHTML+=m+"<br>";}
 function setStatus(m,ok=true){document.getElementById('status').innerHTML=ok?"<span class='ok'>"+m+"</span>":"<span class='bad'>"+m+"</span>";}
+
+function saveMemory(){
+  localStorage.setItem("gtfs_datasets", JSON.stringify(datasets));
+}
+
+function clearMemory(){
+  localStorage.removeItem("gtfs_datasets");
+  datasets={};
+  refresh();
+  setStatus("🧹 memória törölve");
+}
 
 function detectDelimiter(l){return l.includes("\t")?"\t":",";}
 
@@ -104,6 +118,7 @@ async function loadAllGTFS(){
   log("✅ "+source+" kész ("+stops.length+")");
  }
 
+ saveMemory();
  refresh();
 }
 
@@ -118,8 +133,12 @@ function refresh(){
   sel.appendChild(o);
  }
 
- active=Object.keys(datasets)[0];
- sel.value=active;
+ const keys=Object.keys(datasets);
+ if(keys.length){
+  active=keys[0];
+  sel.value=active;
+ }
+
  render();
 }
 
@@ -130,7 +149,6 @@ function switchDataset(){
 
 function render(list){
  if(!active)return;
-
  const data=list || datasets[active].stops;
 
  let h="<tr><th>ID</th><th>Név</th><th>Lat</th><th>Lon</th></tr>";
@@ -146,7 +164,10 @@ function render(list){
  }
 
  document.getElementById('stopsTable').innerHTML=h;
- setStatus("🚀 V14 READY (SEARCH + TABLE RESTORED)");
+ setStatus("🚀 V15 PERSISTENT READY (AUTO RESTORE ACTIVE)");
+
+ document.getElementById('sources').innerHTML=
+ Object.values(datasets).map(d=>"• "+d.source+" ("+d.stops.length+")").join("<br>");
 }
 
 function searchStops(){
@@ -163,6 +184,14 @@ function searchStops(){
 
  render(filtered);
 }
+
+// 🧠 AUTO RESTORE ON LOAD
+window.onload=()=>{
+ if(Object.keys(datasets).length){
+  setStatus("🔄 GTFS visszatöltve memóriából");
+ }
+ refresh();
+};
 
 </script>
 
