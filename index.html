@@ -2,20 +2,21 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila NAVI PRO MAX</title>
+<title>Attila NAVI PRO MAX FUTÁR</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body { margin:0; background:#111; color:#fff; font-family:Arial; }
-#map { height: 40vh; }
+#map { height: 45vh; }
 .panel { padding:8px; }
 button { margin:3px; padding:8px; border-radius:6px; border:0; font-weight:bold; }
 .box { background:#1e1e1e; padding:8px; border-radius:8px; font-size:12px; }
+input { width:95%; padding:6px; border-radius:6px; border:0; }
 #searchResults { max-height:120px; overflow:auto; }
-input { width:95%; padding:6px; border-radius:6px; border:0; margin-bottom:5px; }
 </style>
 </head>
 
@@ -23,8 +24,8 @@ input { width:95%; padding:6px; border-radius:6px; border:0; margin-bottom:5px; 
 
 <div class="panel">
 
-<input id="searchInput" placeholder="Keresés: utca, házszám, erdő..." />
-<button onclick="searchPlace()">🔎 Keresés</button><br>
+<input id="searchInput" placeholder="Keresés..." />
+<button onclick="searchPlace()">🔎</button><br>
 
 <button onclick="setLayer('street')">UTCAI</button>
 <button onclick="setLayer('topo')">TOPO</button>
@@ -32,7 +33,7 @@ input { width:95%; padding:6px; border-radius:6px; border:0; margin-bottom:5px; 
 <button onclick="toggleHike()">TURISTA</button><br>
 
 <button onclick="searchPOI()">📍 POI</button>
-<button onclick="resetTrack()">🔄 Reset</button>
+<button onclick="loadBKK()">🚌 BKK</button>
 
 <div id="info" class="box">Indítás...</div>
 <div id="searchResults" class="box"></div>
@@ -57,48 +58,20 @@ let hikeLayer = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}
 let currentBase = baseLayers.street;
 currentBase.addTo(map);
 
-function setLayer(type){
+function setLayer(t){
   map.removeLayer(currentBase);
-  currentBase = baseLayers[type];
+  currentBase = baseLayers[t];
   map.addLayer(currentBase);
 }
 
-function toggleRail(){
-  map.hasLayer(railLayer) ? map.removeLayer(railLayer) : map.addLayer(railLayer);
-}
-
-function toggleHike(){
-  map.hasLayer(hikeLayer) ? map.removeLayer(hikeLayer) : map.addLayer(hikeLayer);
-}
+function toggleRail(){ map.hasLayer(railLayer)?map.removeLayer(railLayer):map.addLayer(railLayer);}
+function toggleHike(){ map.hasLayer(hikeLayer)?map.removeLayer(hikeLayer):map.addLayer(hikeLayer);}
 
 // ---------- DATA
-let track=[], marker, polyline, poiLayer;
-let totalDist=0, lastTime=null, speedKmh=0, speedMs=0;
-
-// ---------- GTFS DB
-let db, gtfsStops=[], stopTimes=[];
-
-function initDB(){
-  let req = indexedDB.open("ATTILA_NAV_DB",1);
-
-  req.onupgradeneeded = e=>{
-    db = e.target.result;
-    db.createObjectStore("stops",{keyPath:"id"});
-  };
-
-  req.onsuccess = e=>{
-    db = e.target.result;
-    loadStops();
-  };
-}
-
-function loadStops(){
-  let tx = db.transaction("stops","readonly");
-  tx.objectStore("stops").getAll().onsuccess = e=>{
-    gtfsStops = e.target.result;
-    console.log("Stops:",gtfsStops.length);
-  };
-}
+let track=[], marker, polyline;
+let lastTime=null, speedKmh=0, speedMs=0;
+let gtfsStops=[], stopTimes=[];
+let vehiclesLayer = L.layerGroup().addTo(map);
 
 // ---------- DIST
 function dist(a,b,c,d){
@@ -111,24 +84,23 @@ function dist(a,b,c,d){
   return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ---------- UPDATE GPS
-function updatePosition(lat,lng,ele,acc){
+// ---------- GPS
+navigator.geolocation.watchPosition(pos=>{
+  let lat=pos.coords.latitude;
+  let lng=pos.coords.longitude;
 
   let now=Date.now();
 
   if(track.length){
     let last=track[track.length-1];
     let d=dist(last.lat,last.lng,lat,lng);
-
     if(d<2) return;
 
     let dt=(now-lastTime)/1000;
     if(dt>0.5){
       speedMs=d/dt;
-      speedKmh = speedKmh*0.7 + (speedMs*3.6)*0.3;
+      speedKmh=speedMs*3.6;
     }
-
-    totalDist+=d;
   }
 
   lastTime=now;
@@ -144,40 +116,14 @@ function updatePosition(lat,lng,ele,acc){
   if(polyline) polyline.setLatLngs(track.map(p=>[p.lat,p.lng]));
   else polyline=L.polyline(track.map(p=>[p.lat,p.lng]),{color:'red'}).addTo(map);
 
-  renderUI(lat,lng,acc);
-  showStops(lat,lng);
-}
+  document.getElementById("info").innerHTML=
+    `🚀 ${speedKmh.toFixed(1)} km/h<br>⚡ ${speedMs.toFixed(2)} m/s`;
 
-// ---------- UI
-function renderUI(lat,lng,acc){
-  document.getElementById("info").innerHTML=`
-  📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br>
-  📏 ${Math.round(acc)} m<br>
-  🚀 ${speedKmh.toFixed(1)} km/h<br>
-  ⚡ ${speedMs.toFixed(2)} m/s<br>
-  📊 ${Math.round(totalDist)} m
-  `;
-}
-
-// ---------- STOPS
-function showStops(lat,lng){
-
-  if(!gtfsStops.length) return;
-
-  gtfsStops.forEach(s=>{
-    let d = dist(lat,lng,s.la,s.lo);
-
-    if(d<300){
-      let m=L.circleMarker([s.la,s.lo],{radius:5,color:"yellow"}).addTo(map);
-      m.bindPopup(`🚌 ${s.n}<br>${Math.round(d)} m`);
-    }
-  });
-}
+});
 
 // ---------- SEARCH
 async function searchPlace(){
   let q=document.getElementById("searchInput").value;
-
   let res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
   let data=await res.json();
 
@@ -191,7 +137,6 @@ async function searchPlace(){
 
 function goTo(lat,lng){
   map.setView([lat,lng],15);
-  L.marker([lat,lng]).addTo(map);
 }
 
 // ---------- POI
@@ -199,37 +144,80 @@ async function searchPOI(){
   if(!track.length) return;
   let last=track[track.length-1];
 
-  let query=`[out:json];node(around:500,${last.lat},${last.lng})["amenity"];out;`;
-  let res=await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(query));
+  let q=`[out:json];node(around:500,${last.lat},${last.lng})["amenity"];out;`;
+  let res=await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q));
   let data=await res.json();
 
-  if(poiLayer) map.removeLayer(poiLayer);
-  poiLayer=L.layerGroup().addTo(map);
-
   data.elements.forEach(p=>{
-    let m=L.marker([p.lat,p.lon]).addTo(poiLayer);
-    m.bindPopup(p.tags.name||"POI");
+    L.marker([p.lat,p.lon]).addTo(map)
+      .bindPopup(p.tags.name||"POI");
   });
 }
 
-// ---------- RESET
-function resetTrack(){
-  track=[]; totalDist=0;
-  if(polyline) map.removeLayer(polyline);
+// ---------- GTFS LOAD
+async function loadBKK(){
+
+  let url="https://bkk.hu/gtfs/budapest_gtfs.zip";
+
+  let res=await fetch(url);
+  let blob=await res.blob();
+
+  let zip=await JSZip.loadAsync(blob);
+
+  let stopsTxt=await zip.file("stops.txt").async("string");
+  let timesTxt=await zip.file("stop_times.txt").async("string");
+
+  gtfsStops = stopsTxt.split("\n").slice(1).map(r=>{
+    let c=r.split(",");
+    return {id:c[0],n:c[2],la:+c[4],lo:+c[5]};
+  });
+
+  stopTimes = timesTxt.split("\n").slice(1).map(r=>{
+    let c=r.split(",");
+    return {stop_id:c[3],time:c[2]};
+  });
+
+  console.log("BKK betöltve!");
 }
 
-// ---------- GPS START
-navigator.geolocation.watchPosition(pos=>{
-  updatePosition(
-    pos.coords.latitude,
-    pos.coords.longitude,
-    pos.coords.altitude||0,
-    pos.coords.accuracy
-  );
-},{enableHighAccuracy:true});
+// ---------- STOPS
+function showStops(){
+  if(!track.length) return;
+  let last=track[track.length-1];
 
-// ---------- INIT
-initDB();
+  gtfsStops.forEach(s=>{
+    let d=dist(last.lat,last.lng,s.la,s.lo);
+    if(d<300){
+      let deps = stopTimes
+        .filter(t=>t.stop_id===s.id)
+        .slice(0,5)
+        .map(t=>t.time)
+        .join("<br>");
+
+      L.circleMarker([s.la,s.lo],{radius:5,color:"yellow"})
+        .addTo(map)
+        .bindPopup(`🚌 ${s.n}<br>${deps}`);
+    }
+  });
+}
+
+// ---------- REALTIME (FAKE DEMO / READY)
+function loadVehicles(){
+
+  vehiclesLayer.clearLayers();
+
+  gtfsStops.slice(0,20).forEach(s=>{
+    let m = L.circleMarker([s.la,s.lo],{
+      radius:6,
+      color:"cyan"
+    }).addTo(vehiclesLayer);
+
+    m.bindPopup(`🚌 Jármű (demo)<br>${s.n}`);
+  });
+}
+
+// refresh
+setInterval(loadVehicles,5000);
 
 </script>
 </body>
