@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>BKK GTFS MULTI-MODULE ENGINE V4</title>
+<title>V5 STABLE GTFS ENGINE + VEHICLE SYSTEM</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -25,35 +25,41 @@ input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #33
 .badge{background:#1d4ed8;padding:2px 6px;border-radius:6px;font-size:11px}
 .panel{background:#0b1220;padding:8px;border-radius:8px;margin-top:8px}
 .ok{color:#4ade80}
+.err{color:#f87171}
+.small{font-size:12px;opacity:.8}
 </style>
 </head>
 <body>
 
 <header>
-<button onclick="loadDemo()">📥 DEMO</button>
+<button onclick="loadDemo()">📥 DEMO GTFS</button>
 <button class="secondary" onclick="exportZip()">📦 EXPORT</button>
-<span style="font-size:12px;opacity:.8">V4 MULTI-MODULE GTFS ENGINE</span>
+<button onclick="toggleVehicles()">🚍 VEHICLE</button>
+<span class="small">V5 STABLE ENGINE</span>
 </header>
 
 <div class="container">
 
 <div class="sidebar">
 
-<div class="title">🧠 3 MODUL ARCHITEKTÚRA</div>
-<div class="panel">
-🟢 BKK CORE (II–III kerület)<br>
-🟡 DUNAKANYAR + VOLÁN + MÁV<br>
-🔵 KISVASUTAK (Börzsöny)
-</div>
-
 <div class="title">🔎 Megálló kereső</div>
 <input id="search" oninput="renderStops()" placeholder="pl. Óbuda">
 <div id="stopList"></div>
 
+<div class="panel">
+<div class="title">🧠 DEBUG</div>
+<div id="debug"></div>
+</div>
+
+<div class="panel">
+<div class="title">🚍 Jármű státusz</div>
+<div id="vehiclePanel">OFF</div>
+</div>
+
 </div>
 
 <div class="main">
-<div class="title">🚏 Megállós menetrend (MULTI-MODULE)</div>
+<div class="title">🚏 Megállós menetrend</div>
 <div id="timetable">Válassz megállót</div>
 </div>
 
@@ -63,34 +69,30 @@ input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #33
 
 <script>
 
-let gtfs={stops:[],trips:[],stop_times:[],module:{} };
+let gtfs={stops:[],trips:[],stop_times:[]};
 let map;
+let vehicleTimer=null;
+let vehicleMarkers=[];
+let vehiclesOn=false;
 
 window.onload=()=>{
-  map=L.map('map').setView([47.5,19.05],11);
+  map=L.map('map').setView([47.4979,19.0402],11);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
   loadDemo();
 };
 
-// MODULE STRUCTURE
 function loadDemo(){
 
-  gtfs.module={
-    bkk_core:"II-III kerület",
-    dunakanyar:"Volán + MÁV",
-    kisvasut:"Börzsöny"
-  };
-
   gtfs.stops=[
-    {id:"1",name:"Óbuda",lat:47.541},
-    {id:"2",name:"Békásmegyer",lat:47.595},
-    {id:"3",name:"Szob vasút",lat:47.82}
+    {id:"1",name:"Óbuda",lat:47.541,lon:19.045},
+    {id:"2",name:"Békásmegyer",lat:47.595,lon:19.043},
+    {id:"3",name:"Szob vasút",lat:47.82,lon:18.87}
   ];
 
   gtfs.trips=[
-    {id:"T1",head:"Békásmegyer"},
-    {id:"T2",head:"Óbuda"},
-    {id:"K1",head:"Kisvasút Királyrét"}
+    {id:"T1",head:"Békásmegyer",vehicle:"BUS-118-2456"},
+    {id:"T2",head:"Óbuda",vehicle:"BUS-34-1122"},
+    {id:"K1",head:"Kisvasút",vehicle:"KV-001"}
   ];
 
   gtfs.stop_times=[
@@ -105,6 +107,7 @@ function loadDemo(){
 
 function renderAll(){
   renderStops();
+  renderDebug();
   renderMap();
 }
 
@@ -113,14 +116,20 @@ function renderStops(){
   const list=document.getElementById("stopList");
   list.innerHTML="";
 
-  gtfs.stops.filter(s=>s.name.toLowerCase().includes(q))
-  .forEach(s=>{
-    const div=document.createElement("div");
-    div.innerHTML=`<span class='badge'>STOP</span> ${s.name}`;
-    div.style.cursor="pointer";
-    div.style.padding="6px";
-    div.onclick=()=>showTimetable(s);
-    list.appendChild(div);
+  const f=gtfs.stops.filter(s=>s.name.toLowerCase().includes(q));
+
+  if(f.length===0){
+    list.innerHTML="<div class='small'>Nincs találat</div>";
+    return;
+  }
+
+  f.forEach(s=>{
+    const d=document.createElement("div");
+    d.innerHTML=`<span class='badge'>STOP</span> ${s.name}`;
+    d.style.padding="6px";
+    d.style.cursor="pointer";
+    d.onclick=()=>showTimetable(s);
+    list.appendChild(d);
   });
 }
 
@@ -130,35 +139,84 @@ function showTimetable(stop){
   .filter(x=>x.stop===stop.id)
   .map(x=>{
     const t=gtfs.trips.find(tr=>tr.id===x.trip);
-    return `<tr><td>${x.time}</td><td>${t?t.head:"?"}</td><td>${x.trip}</td></tr>`;
+    return `<tr><td>${x.time}</td><td>${t?t.head:"?"}</td><td>${t?t.vehicle:"-"}</td></tr>`;
   });
 
-  document.getElementById("timetable").innerHTML=`
-    <div class='title'>📍 ${stop.name}</div>
-    <table class='table'>
-    <tr><th>Idő</th><th>Hová</th><th>Járat</th></tr>
-    ${rows.join("")}
-    </table>
-  `;
+  document.getElementById("timetable").innerHTML=
+  `<div class='title'>📍 ${stop.name}</div>
+   <table class='table'>
+   <tr><th>Idő</th><th>Hová</th><th>Jármű (belső szám)</th></tr>
+   ${rows.join("")}
+   </table>`;
+}
+
+function renderDebug(){
+  const d=document.getElementById("debug");
+
+  let ok=true;
+  let msg="";
+
+  if(!gtfs.stops.length){ok=false;msg+="❌ stops hiányzik<br>";}
+  if(!gtfs.trips.length){ok=false;msg+="❌ trips hiányzik<br>";}
+  if(!gtfs.stop_times.length){ok=false;msg+="❌ stop_times hiányzik<br>";}
+
+  d.innerHTML=ok?"<div class='ok'>✔ GTFS OK</div>":"<div class='err'>"+msg+"</div>";
 }
 
 function renderMap(){
+
+  map.eachLayer(l=>{if(l instanceof L.Marker) map.removeLayer(l);});
+
   gtfs.stops.forEach(s=>{
-    if(s.lat) L.marker([s.lat,19.05]).addTo(map).bindPopup(s.name);
+    if(s.lat&&s.lon){
+      L.marker([s.lat,s.lon]).addTo(map).bindPopup(s.name);
+    }
   });
+}
+
+function toggleVehicles(){
+
+  vehiclesOn=!vehiclesOn;
+  document.getElementById("vehiclePanel").innerHTML=vehiclesOn?"ON":"OFF";
+
+  if(vehiclesOn){
+    vehicleTimer=setInterval(()=>{
+
+      vehicleMarkers.forEach(m=>map.removeLayer(m));
+      vehicleMarkers=[];
+
+      gtfs.trips.forEach(t=>{
+        const base=gtfs.stops[Math.floor(Math.random()*gtfs.stops.length)];
+        if(!base) return;
+
+        const lat=base.lat+(Math.random()*0.01);
+        const lon=base.lon+(Math.random()*0.01);
+
+        const m=L.circleMarker([lat,lon],{radius:6}).addTo(map)
+        .bindPopup(t.vehicle);
+
+        vehicleMarkers.push(m);
+      });
+
+    },2000);
+  } else {
+    clearInterval(vehicleTimer);
+    vehicleMarkers.forEach(m=>map.removeLayer(m));
+    vehicleMarkers=[];
+  }
 }
 
 function exportZip(){
   const zip=new JSZip();
 
   zip.file("stops.txt","id,name\n"+gtfs.stops.map(s=>`${s.id},${s.name}`).join("\n"));
-  zip.file("trips.txt","id,head\n"+gtfs.trips.map(t=>`${t.id},${t.head}`).join("\n"));
+  zip.file("trips.txt","id,head,vehicle\n"+gtfs.trips.map(t=>`${t.id},${t.head},${t.vehicle}`).join("\n"));
   zip.file("stop_times.txt","trip,stop,time\n"+gtfs.stop_times.map(s=>`${s.trip},${s.stop},${s.time}`).join("\n"));
 
   zip.generateAsync({type:"blob"}).then(b=>{
     const a=document.createElement("a");
     a.href=URL.createObjectURL(b);
-    a.download="gtfs_multi_module.zip";
+    a.download="gtfs_v5.zip";
     a.click();
   });
 }
