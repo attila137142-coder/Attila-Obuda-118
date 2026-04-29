@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila NAVI PRO+</title>
+<title>Attila NAVI PRO+++</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
@@ -10,28 +10,39 @@
 
 <style>
 body { margin:0; background:#111; color:#fff; font-family:Arial; }
-#map { height: 45vh; }
+#map { height: 40vh; }
 #chart { height:120px; background:#000; }
 .panel { padding:8px; }
 button { margin:3px; padding:8px; border-radius:6px; border:0; font-weight:bold; }
 .box { background:#1e1e1e; padding:8px; border-radius:8px; font-size:12px; }
-#segments { max-height:150px; overflow:auto; font-size:11px; }
+#segments { max-height:120px; overflow:auto; font-size:11px; }
+#searchResults { max-height:120px; overflow:auto; font-size:12px; }
+input { width:95%; padding:6px; border-radius:6px; border:0; margin-bottom:5px; }
+.result { padding:5px; border-bottom:1px solid #333; cursor:pointer; }
 </style>
 </head>
 
 <body>
 
 <div class="panel">
+
+<input id="searchInput" placeholder="Keresés: utca, házszám, erdő..." />
+<button onclick="searchPlace()">🔎 Keresés</button>
+
+<br>
+
 <button onclick="toggleElevation()">⛰️ Magasság</button>
 <button onclick="resetTrack()">🔄 Reset</button>
 <button onclick="searchPOI()">📍 Közeli helyek</button><br>
 
 <button onclick="setLayer('street')">UTCAI</button>
 <button onclick="setLayer('topo')">TOPO</button>
-<button onclick="setLayer('rail')">VASÚTI</button>
-<button onclick="setLayer('hike')">TURISTA</button>
+<button onclick="toggleRail()">VASÚTI</button>
+<button onclick="toggleHike()">TURISTA</button>
 
 <div id="info" class="box">Indítás...</div>
+<div id="searchResults" class="box"></div>
+
 </div>
 
 <div id="map"></div>
@@ -43,47 +54,45 @@ button { margin:3px; padding:8px; border-radius:6px; border:0; font-weight:bold;
 // ---------- MAP
 let map = L.map('map').setView([47.49,19.04],13);
 
-let layers = {
+let baseLayers = {
   street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
-  topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png'),
-  rail: L.tileLayer('https://{s}.tile.openrailwaymap.org/standard/{z}/{x}/{y}.png'),
-  hike: L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png')
+  topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
 };
 
-layers.street.addTo(map);
-let currentLayer = layers.street;
+let railLayer = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.8});
+let hikeLayer = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',{opacity:0.9});
+
+let currentBase = baseLayers.street;
+currentBase.addTo(map);
 
 function setLayer(type){
-  map.removeLayer(currentLayer);
-  currentLayer = layers[type];
-  map.addLayer(currentLayer);
+  map.removeLayer(currentBase);
+  currentBase = baseLayers[type];
+  map.addLayer(currentBase);
+}
+
+function toggleRail(){
+  map.hasLayer(railLayer) ? map.removeLayer(railLayer) : map.addLayer(railLayer);
+}
+
+function toggleHike(){
+  map.hasLayer(hikeLayer) ? map.removeLayer(hikeLayer) : map.addLayer(hikeLayer);
 }
 
 // ---------- DATA
-let track=[];
-let marker, polyline, poiLayer;
-
-let totalDist=0;
-let totalUp=0;
-
-let lastTime=null;
-let speedKmh=0;
-let speedMs=0;
-
-let ctx = document.getElementById("chart").getContext("2d");
+let track=[], marker, polyline, poiLayer;
+let totalDist=0, totalUp=0;
+let lastTime=null, speedKmh=0, speedMs=0;
+let ctx=document.getElementById("chart").getContext("2d");
 
 // ---------- DIST
 function dist(a,b,c,d){
   let R=6371e3;
-  let φ1=a*Math.PI/180;
-  let φ2=c*Math.PI/180;
+  let φ1=a*Math.PI/180, φ2=c*Math.PI/180;
   let Δφ=(c-a)*Math.PI/180;
   let Δλ=(d-b)*Math.PI/180;
-
   let x=Math.sin(Δφ/2)**2+
-    Math.cos(φ1)*Math.cos(φ2)*
-    Math.sin(Δλ/2)**2;
-
+    Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
   return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
@@ -95,13 +104,14 @@ function updatePosition(lat,lng,ele,acc){
   if(track.length){
     let last=track[track.length-1];
     let d=dist(last.lat,last.lng,lat,lng);
-
     if(d<2) return;
 
     if(lastTime){
       let dt=(now-lastTime)/1000;
-      speedMs=d/dt;
-      speedKmh=speedMs*3.6;
+      if(dt>0.5){
+        speedMs=d/dt;
+        speedKmh = speedKmh*0.7 + (speedMs*3.6)*0.3;
+      }
     }
 
     totalDist+=d;
@@ -111,9 +121,7 @@ function updatePosition(lat,lng,ele,acc){
   }
 
   lastTime=now;
-
   track.push({lat,lng,ele});
-  if(track.length>300) track.shift();
 
   if(!marker){
     marker=L.marker([lat,lng]).addTo(map);
@@ -124,7 +132,6 @@ function updatePosition(lat,lng,ele,acc){
   }
 
   let latlngs=track.map(p=>[p.lat,p.lng]);
-
   if(polyline) polyline.setLatLngs(latlngs);
   else polyline=L.polyline(latlngs,{color:'red'}).addTo(map);
 
@@ -133,81 +140,97 @@ function updatePosition(lat,lng,ele,acc){
   drawSegments();
 }
 
-// ---------- SEGMENT ANALYSIS
+// ---------- SEGMENTS
 function drawSegments(){
-
   let html="";
-
   for(let i=1;i<track.length;i++){
-    let a=track[i-1];
-    let b=track[i];
-
+    let a=track[i-1], b=track[i];
     let d=dist(a.lat,a.lng,b.lat,b.lng);
-    let elev=(b.ele||0)-(a.ele||0);
-
-    let slope = d>0 ? (elev/d)*100 : 0;
-
-    html+=`
-    ${i}. szakasz<br>
-    📏 ${Math.round(d)} m<br>
-    ⛰️ ${slope.toFixed(1)} %<br><br>
-    `;
+    let slope=((b.ele-a.ele)/d)*100;
+    html+=`${i}. szakasz: ${Math.round(d)} m | ${slope.toFixed(1)}%<br>`;
   }
-
   document.getElementById("segments").innerHTML=html;
 }
 
 // ---------- CHART
 function drawChart(){
   ctx.clearRect(0,0,800,120);
-
   if(track.length<2) return;
 
-  let max = Math.max(...track.map(p=>p.ele));
-  let min = Math.min(...track.map(p=>p.ele));
+  let max=Math.max(...track.map(p=>p.ele));
+  let min=Math.min(...track.map(p=>p.ele));
 
   ctx.beginPath();
-
   track.forEach((p,i)=>{
-    let x = i*(800/track.length);
-    let y = 120 - ((p.ele-min)/(max-min+1))*120;
-
-    if(i===0) ctx.moveTo(x,y);
-    else ctx.lineTo(x,y);
+    let x=i*(800/track.length);
+    let y=120-((p.ele-min)/(max-min+1))*120;
+    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
   });
-
   ctx.strokeStyle="lime";
   ctx.stroke();
 }
 
 // ---------- UI
-async function renderUI(lat,lng,ele,acc){
-
-  document.getElementById("info").innerHTML = `
+function renderUI(lat,lng,ele,acc){
+  document.getElementById("info").innerHTML=`
   📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br>
-  📏 Pontosság: ${Math.round(acc)} m<br>
+  📏 ${Math.round(acc)} m<br>
   🚀 ${speedKmh.toFixed(1)} km/h<br>
   ⚡ ${speedMs.toFixed(2)} m/s<br>
   ⛰️ ${Math.round(ele)} m<br><br>
-
   📊 ${Math.round(totalDist)} m<br>
-  ⛰️ ${Math.round(totalUp)} m<br>
+  ⛰️ ${Math.round(totalUp)} m
   `;
 }
 
-// ---------- POI
-async function searchPOI(){
+// ---------- SEARCH
+async function searchPlace(){
+  let q=document.getElementById("searchInput").value;
+
+  let url=`https://nominatim.openstreetmap.org/search?format=json&q=${q}`;
+  let res=await fetch(url);
+  let data=await res.json();
+
+  let html="";
+
+  data.forEach(p=>{
+    html+=`<div class="result" onclick="goToPlace(${p.lat},${p.lon})">
+      ${p.display_name}
+    </div>`;
+  });
+
+  document.getElementById("searchResults").innerHTML=html;
+}
+
+async function goToPlace(lat,lng){
+
+  map.setView([lat,lng],15);
+  L.marker([lat,lng]).addTo(map);
 
   if(!track.length) return;
 
   let last=track[track.length-1];
 
-  let query=`
-  [out:json];
-  node(around:500,${last.lat},${last.lng})["amenity"];
-  out;
-  `;
+  let d=dist(last.lat,last.lng,lat,lng);
 
+  let route=await fetch(`https://router.project-osrm.org/route/v1/driving/${last.lng},${last.lat};${lng},${lat}?overview=false`);
+  let r=await route.json();
+
+  let road = r.routes?.[0]?.distance || 0;
+
+  alert(`
+Légvonal: ${Math.round(d)} m
+Úton: ${Math.round(road)} m
+Turista: ~${Math.round(d*1.4)} m
+  `);
+}
+
+// ---------- POI
+async function searchPOI(){
+  if(!track.length) return;
+  let last=track[track.length-1];
+
+  let query=`[out:json];node(around:500,${last.lat},${last.lng})["amenity"];out;`;
   let url="https://overpass-api.de/api/interpreter?data="+encodeURIComponent(query);
 
   let res=await fetch(url);
@@ -217,16 +240,9 @@ async function searchPOI(){
   poiLayer=L.layerGroup().addTo(map);
 
   data.elements.forEach(p=>{
-
     let d=dist(last.lat,last.lng,p.lat,p.lon);
-
     let m=L.marker([p.lat,p.lon]).addTo(poiLayer);
-
-    m.bindPopup(`
-      ${p.tags.name||"POI"}<br>
-      📏 ${Math.round(d)} m<br>
-      🛣️ ~${Math.round(d*1.3)} m
-    `);
+    m.bindPopup(`${p.tags.name||"POI"}<br>${Math.round(d)} m`);
   });
 }
 
@@ -240,12 +256,8 @@ navigator.geolocation.watchPosition(pos=>{
   );
 },{enableHighAccuracy:true});
 
-// ---------- BUTTONS
-function toggleElevation(){}
 function resetTrack(){
-  track=[];
-  totalDist=0;
-  totalUp=0;
+  track=[]; totalDist=0; totalUp=0;
   if(polyline) map.removeLayer(polyline);
 }
 
