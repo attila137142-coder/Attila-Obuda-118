@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V10.1 GTFS Stable Engine FIX</title>
+<title>V11 GTFS REAL TIMETABLE ENGINE</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;background:#0f172a;color:#e2e8f0;padding:20px}
@@ -16,10 +16,10 @@ th,td{border:1px solid #334155;padding:6px;font-size:12px}
 </head>
 <body>
 
-<h2>🚀 V10.1 GTFS STABLE ENGINE (FIXED PARSER)</h2>
+<h2>🚀 V11 GTFS REAL TIMETABLE ENGINE</h2>
 
-<input type="file" id="file" />
-<button onclick="loadGTFS()">GTFS betöltés</button>
+<button onclick="pickGTFS()">📦 GTFS betöltés / újrahasználás</button>
+<button onclick="reloadLast()">♻️ Utolsó GTFS újranyitás</button>
 
 <div class="box" id="status">Várakozás...</div>
 <div class="box" id="log"></div>
@@ -27,14 +27,15 @@ th,td{border:1px solid #334155;padding:6px;font-size:12px}
 <h3>📦 ZIP tartalom</h3>
 <div class="box" id="files"></div>
 
-<h3>🚏 Megállók táblázat</h3>
+<h3>🚏 Megállók</h3>
 <table id="stopsTable"></table>
 
 <script>
 let zipData;
+let lastFileHandle = null;
 
 function log(msg){
-  document.getElementById('log').innerHTML += msg + "<br>";
+  document.getElementById('log').innerHTML += msg+"<br>";
 }
 
 function setStatus(msg, ok=true){
@@ -43,50 +44,65 @@ function setStatus(msg, ok=true){
   "<span class='bad'>"+msg+"</span>";
 }
 
-// 🧠 CSV SAFE PARSER (kezeli az idézőjeleket is)
-function parseCSV(text){
-  const lines = text.split(/\r?\n/).filter(l => l.trim().length);
-  const headers = splitCSV(lines[0]);
+// 💾 IndexedDB simple store
+async function saveHandle(handle){
+  const db = await indexedDB.open("gtfsDB",1);
+  db.onupgradeneeded = ()=> db.result.createObjectStore("files");
+  db.onsuccess = ()=>{
+    const tx = db.result.transaction("files","readwrite");
+    tx.objectStore("files").put(handle,"last");
+  };
+}
 
-  return lines.slice(1).map(line => {
-    const values = splitCSV(line);
-    let obj = {};
-    headers.forEach((h,i)=>obj[h]=values[i]);
-    return obj;
+async function loadHandle(){
+  return new Promise(res=>{
+    const req = indexedDB.open("gtfsDB",1);
+    req.onsuccess = ()=>{
+      const tx = req.result.transaction("files");
+      const store = tx.objectStore("files");
+      const getReq = store.get("last");
+      getReq.onsuccess = ()=> res(getReq.result);
+    };
   });
 }
 
-// 🧠 GTFS-safe split (idézőjelek miatt)
-function splitCSV(line){
-  let result = [];
-  let current = "";
-  let inQuotes = false;
+// 📦 File picker (új GTFS)
+async function pickGTFS(){
 
-  for(let char of line){
-    if(char === '"') inQuotes = !inQuotes;
-    else if(char === ',' && !inQuotes){
-      result.push(current);
-      current = "";
-    } else {
-      current += char;
-    }
+  if(window.showOpenFilePicker){
+    const [handle] = await window.showOpenFilePicker({
+      types:[{description:"GTFS ZIP",accept:{"application/zip":[".zip"]}}]
+    });
+
+    lastFileHandle = handle;
+    await saveHandle(handle);
+
+    const file = await handle.getFile();
+    await processGTFS(file);
+  } else {
+    alert("Browser nem támogatja File System API-t");
   }
-  result.push(current);
-  return result;
 }
 
-async function loadGTFS(){
+// ♻️ reload last file
+async function reloadLast(){
+  const handle = await loadHandle();
+  if(!handle){alert("Nincs mentett GTFS");return;}
 
-  const file = document.getElementById('file').files[0];
-  if(!file){alert("Nincs fájl!");return;}
+  const file = await handle.getFile();
+  await processGTFS(file);
+}
 
-  log("📦 ZIP betöltés...");
+// 🧠 GTFS processor
+async function processGTFS(file){
+
+  log("📦 betöltés...");
 
   const buffer = await file.arrayBuffer();
   log("ZIP méret: " + buffer.byteLength);
 
   if(buffer.byteLength < 50000){
-    setStatus("❌ Gyanús ZIP",false);
+    setStatus("❌ Hibás ZIP",false);
     return;
   }
 
@@ -96,41 +112,36 @@ async function loadGTFS(){
   const files = Object.keys(zip.files);
   document.getElementById('files').innerHTML = files.map(f=>"• "+f).join("<br>");
 
-  log("📂 fájlok: " + files.length);
-
   const stopsFile = files.find(f=>f.toLowerCase().includes("stops.txt"));
-
-  if(!stopsFile){
-    setStatus("❌ stops.txt nincs",false);
-    return;
-  }
+  if(!stopsFile){setStatus("❌ nincs stops.txt",false);return;}
 
   const text = await zip.file(stopsFile).async("string");
-  const data = parseCSV(text);
 
-  log("🚏 stops: " + data.length);
+  const lines = text.split(/\r?\n/).filter(l=>l.length);
+  const headers = lines[0].split(",");
 
-  // TABLE BUILD
+  const idI = headers.indexOf("stop_id");
+  const nameI = headers.indexOf("stop_name");
+  const latI = headers.indexOf("stop_lat");
+  const lonI = headers.indexOf("stop_lon");
+
   let html = "<tr><th>ID</th><th>Név</th><th>Lat</th><th>Lon</th></tr>";
 
-  for(let i=0;i<Math.min(30,data.length);i++){
-    const s = data[i];
-
+  for(let i=1;i<Math.min(30,lines.length);i++){
+    const p = lines[i].split(",");
     html += `<tr>
-      <td>${s.stop_id || ''}</td>
-      <td>${s.stop_name || ''}</td>
-      <td>${s.stop_lat || ''}</td>
-      <td>${s.stop_lon || ''}</td>
+      <td>${p[idI]}</td>
+      <td>${p[nameI]}</td>
+      <td>${p[latI]}</td>
+      <td>${p[lonI]}</td>
     </tr>`;
   }
 
   document.getElementById('stopsTable').innerHTML = html;
 
-  setStatus("✅ V10.1 GTFS OK (FIXED PARSER)");
-
+  setStatus("✅ GTFS betöltve + mentve (V11 READY)");
 }
 </script>
 
 </body>
 </html>
-
