@@ -2,31 +2,19 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA NAVI PRO MAX FUTÁR</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ATTILA NAVI PRO MAX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body { margin:0; background:#111; color:#fff; font-family:Arial; }
-#map { height:50vh; }
-.panel { padding:8px; }
-button { margin:3px; padding:8px; border-radius:6px; border:0; font-weight:bold; }
-.box { background:#1e1e1e; padding:8px; border-radius:8px; font-size:12px; }
-input { width:95%; padding:6px; border-radius:6px; border:0; }
-#departuresPanel{
-position:fixed;
-bottom:0;
-left:0;
-right:0;
-background:#000;
-max-height:45%;
-overflow:auto;
-padding:10px;
-display:none;
-}
+body{margin:0;background:#111;color:#fff;font-family:Arial;}
+#map{height:50vh;}
+.panel{padding:8px;}
+.box{background:#222;padding:8px;border-radius:8px;}
+button{margin:2px;padding:6px;border-radius:6px;}
+#departures{position:fixed;bottom:0;width:100%;background:#000;max-height:45%;overflow:auto;}
 </style>
 </head>
 
@@ -34,71 +22,65 @@ display:none;
 
 <div class="panel">
 
-<input id="searchInput" placeholder="Keresés..." />
-<button onclick="searchPlace()">🔎</button><br>
+<input id="searchInput" placeholder="Keresés (megálló / utca)">
+<button onclick="search()">🔎</button><br>
 
-<button onclick="setLayer('street')">UTCAI</button>
-<button onclick="setLayer('topo')">TOPO</button>
-<button onclick="toggleRail()">VASÚTI</button>
+<button onclick="setBase('street')">UTCAI</button>
+<button onclick="setBase('topo')">TOPO</button>
+<button onclick="toggleRail()">VASÚT</button>
 <button onclick="toggleHike()">TURISTA</button>
 
-<div id="info" class="box">Indítás...</div>
+<div id="info" class="box"></div>
 
 </div>
 
 <div id="map"></div>
-<div id="departuresPanel"></div>
+<div id="departures"></div>
 
 <script>
 
-// ---------- MAP
-let map = L.map('map').setView([47.49,19.04],13);
+// MAP
+let map=L.map('map').setView([47.49,19.04],13);
 
-let baseLayers = {
- street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
- topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
+let base={
+ street:L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
+ topo:L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
 };
 
-let railLayer = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.8});
-let hikeLayer = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',{opacity:0.9});
+let rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/{z}/{x}/{y}.png');
+let hike=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
 
-let currentBase = baseLayers.street;
-currentBase.addTo(map);
+base.street.addTo(map);
 
-function setLayer(t){
- map.removeLayer(currentBase);
- currentBase = baseLayers[t];
- map.addLayer(currentBase);
-}
-function toggleRail(){ map.hasLayer(railLayer)?map.removeLayer(railLayer):map.addLayer(railLayer);}
-function toggleHike(){ map.hasLayer(hikeLayer)?map.removeLayer(hikeLayer):map.addLayer(hikeLayer);}
+function setBase(b){map.eachLayer(l=>map.removeLayer(l));base[b].addTo(map);}
+function toggleRail(){map.hasLayer(rail)?map.removeLayer(rail):rail.addTo(map);}
+function toggleHike(){map.hasLayer(hike)?map.removeLayer(hike):hike.addTo(map);}
 
-// ---------- GPS + SPEED
-let userLat,userLng,lastTime=null,speedKmh=0,speedMs=0;
+// GPS + SPEED
+let userLat,userLng,lastT;
 
-navigator.geolocation.watchPosition(pos=>{
- let lat=pos.coords.latitude;
- let lng=pos.coords.longitude;
- let now=Date.now();
+navigator.geolocation.watchPosition(p=>{
+ let lat=p.coords.latitude;
+ let lng=p.coords.longitude;
+ let t=Date.now();
 
  if(userLat){
-   let d=dist(userLat,userLng,lat,lng);
-   let dt=(now-lastTime)/1000;
-   if(dt>0.5){
-     speedMs=d/dt;
-     speedKmh=speedMs*3.6;
-   }
+  let d=dist(userLat,userLng,lat,lng);
+  let dt=(t-lastT)/1000;
+  let ms=d/dt;
+  let kmh=ms*3.6;
+
+  document.getElementById("info").innerHTML=
+   `🚀 ${kmh.toFixed(1)} km/h<br>⚡ ${ms.toFixed(2)} m/s`;
  }
 
- userLat=lat;
- userLng=lng;
- lastTime=now;
+ userLat=lat; userLng=lng; lastT=t;
 
- document.getElementById("info").innerHTML=
- `🚀 ${speedKmh.toFixed(1)} km/h<br>⚡ ${speedMs.toFixed(2)} m/s`;
+ loadRegion(lat,lng);
+
 });
 
-// ---------- DIST
+// DIST
 function dist(a,b,c,d){
  let R=6371e3;
  let φ1=a*Math.PI/180, φ2=c*Math.PI/180;
@@ -109,94 +91,110 @@ function dist(a,b,c,d){
  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ---------- ROUTE DIST
-async function getRouteDistance(lat,lng){
- try{
-   let r=await fetch(`https://router.project-osrm.org/route/v1/foot/${userLng},${userLat};${lng},${lat}?overview=false`);
-   let d=await r.json();
-   return d.routes[0].distance;
- }catch(e){return null;}
+// REGION
+let currentRegion=null;
+
+function detectRegion(lat,lng){
+ if(lat>47.3 && lat<47.7) return "BKK";
+ if(lat>47.8) return "BORZSONY";
+ if(lat<47.3) return "ZALA";
+ return "PEST";
 }
 
-// ---------- SEARCH
-async function searchPlace(){
- let q=document.getElementById("searchInput").value;
+// GTFS URLS
+const URLS={
+ BKK:"bkk_light.zip",
+ BORZSONY:"borzsony.zip",
+ ZALA:"zala.zip",
+ PEST:"pest.zip"
+};
+
+// LOAD REGION
+async function loadRegion(lat,lng){
+
+ let r=detectRegion(lat,lng);
+ if(r===currentRegion) return;
+
+ currentRegion=r;
+
+ let res=await fetch(URLS[r]);
+ let zip=await JSZip.loadAsync(await res.blob());
+
+ let stopsTxt=await zip.file("stops.txt").async("string");
+ let shapesTxt=await zip.file("shapes.txt").async("string");
+
+ drawStops(stopsTxt);
+ drawLines(shapesTxt);
+}
+
+// DRAW STOPS
+function drawStops(txt){
+
+ txt.split("\n").slice(1).forEach(r=>{
+  let c=r.split(",");
+  let lat=+c[4], lng=+c[5];
+
+  let m=L.circleMarker([lat,lng],{radius:3,color:"yellow"}).addTo(map);
+
+  m.on("click",()=>showStop(c[2],lat,lng));
+ });
+}
+
+// DRAW LINES
+function drawLines(txt){
+
+ let lines={};
+
+ txt.split("\n").slice(1).forEach(r=>{
+  let c=r.split(",");
+  if(!lines[c[0]]) lines[c[0]]=[];
+  lines[c[0]].push([+c[1],+c[2]]);
+ });
+
+ Object.values(lines).forEach(l=>{
+  L.polyline(l,{color:"cyan"}).addTo(map);
+ });
+}
+
+// SEARCH
+async function search(){
+
+ let q=document.getElementById("searchInput").value.toLowerCase();
+
+ // GTFS
+ let found=[];
+
+ document.querySelectorAll(".leaflet-tooltip").forEach(t=>{
+  if(t.innerText.toLowerCase().includes(q)){
+    found.push(t);
+  }
+ });
+
+ if(found[0]){
+   let p=found[0]._source._latlng;
+   map.setView(p,17);
+   return;
+ }
+
+ // OSM
  let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
  let d=await r.json();
  if(d[0]) map.setView([d[0].lat,d[0].lon],15);
 }
 
-// ---------- GTFS
-let gtfsStops=[];
+// STOP PANEL
+async function showStop(name,lat,lng){
 
-async function loadGTFS(url){
+ let air=dist(userLat,userLng,lat,lng);
 
- let res=await fetch(url);
- let zip=await JSZip.loadAsync(await res.blob());
-
- let stopsTxt=await zip.file("stops.txt").async("string");
-
- gtfsStops = stopsTxt.split("\n").slice(1).map(r=>{
-   let c=r.split(",");
-   return {id:c[0],name:c[2],lat:+c[4],lng:+c[5]};
- });
-
- drawStops();
-}
-
-// ---------- STOPS
-function drawStops(){
-
- gtfsStops.forEach(s=>{
-
-   let m=L.circleMarker([s.lat,s.lng],{radius:5,color:"yellow"})
-     .addTo(map);
-
-   m.on("click",()=>showDepartures(s));
- });
-}
-
-// ---------- LIVE DEPS (BACKEND)
-async function showDepartures(stop){
-
- let air = dist(userLat,userLng,stop.lat,stop.lng);
- let road = await getRouteDistance(stop.lat,stop.lng);
-
- let html = `
- <h3>${stop.name}</h3>
- ✈️ ${Math.round(air)} m |
- 🛣️ ${road?Math.round(road)+" m":"..."}<br><br>
-
- <table width="100%">
- <tr><th>Visz</th><th>Indul</th><th>Késés</th></tr>
+ let html=`
+ <h3>${name}</h3>
+ ✈️ ${Math.round(air)} m
+ <br>🛣️ számol...
  `;
 
- try{
-   let res = await fetch("http://localhost:3000/liveDepartures/"+stop.id);
-   let data = await res.json();
-
-   data.forEach(d=>{
-     let col = d.delay==0?"lime":d.delay<5?"orange":"red";
-     html += `<tr>
-       <td>${d.route}</td>
-       <td>${d.time}</td>
-       <td style="color:${col}">${d.delay}p</td>
-     </tr>`;
-   });
-
- }catch(e){
-   html += `<tr><td colspan=3>Nincs backend</td></tr>`;
- }
-
- html += "</table>";
-
- let panel=document.getElementById("departuresPanel");
- panel.innerHTML=html;
- panel.style.display="block";
+ document.getElementById("departures").innerHTML=html;
 }
-
-// ---------- LOAD BKK
-loadGTFS("https://bkk.hu/gtfs/budapest_gtfs.zip");
 
 </script>
 </body>
