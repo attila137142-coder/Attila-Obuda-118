@@ -1,131 +1,98 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<title>V9 GTFS IMPORT ENGINE</title>
-
+<meta charset="UTF-8" />
+<title>V10 GTFS Stable Engine</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
 <style>
-body {
-  font-family: Arial;
-  background:#0f172a;
-  color:white;
-  padding:20px;
-}
-
-button {
-  padding:10px;
-  margin:5px;
-  cursor:pointer;
-}
-
-.panel {
-  background:#1e293b;
-  padding:10px;
-  margin-top:10px;
-  border-radius:8px;
-  max-height:300px;
-  overflow:auto;
-  font-size:12px;
-}
+body{font-family:Arial;background:#0f172a;color:#e2e8f0;padding:20px}
+button{padding:10px;margin:5px;cursor:pointer}
+.box{background:#111827;padding:10px;margin-top:10px;border-radius:10px}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+td,th{border:1px solid #334155;padding:6px;font-size:12px}
+.bad{color:#f87171}
+.ok{color:#4ade80}
 </style>
 </head>
-
 <body>
 
-<h2>🚍 V9 – REAL GTFS IMPORT (BKK ZIP)</h2>
+<h2>🚀 V10 GTFS STABLE ENGINE</h2>
 
-<input type="file" id="zipFile" accept=".zip">
+<input type="file" id="file" />
 <button onclick="loadGTFS()">GTFS betöltés</button>
 
-<div class="panel" id="status">Várakozás GTFS ZIP-re...</div>
+<div class="box" id="status">Várakozás...</div>
+<div class="box" id="log"></div>
 
-<div class="panel" id="output"></div>
+<h3>📦 ZIP fájlok</h3>
+<div class="box" id="files"></div>
+
+<h3>🚏 Megállók (első 20)</h3>
+<table id="stopsTable"></table>
 
 <script>
-let GTFS = {
-  stops: [],
-  routes: [],
-  trips: [],
-  stop_times: []
-};
+let zipData;
 
 function log(msg){
-  document.getElementById("status").innerText = msg;
+  document.getElementById('log').innerHTML += msg+"<br>";
 }
 
-function parseCSV(text){
-  const lines = text.split("\n").filter(l => l.trim().length>0);
-  const headers = lines[0].split(",");
-
-  return lines.slice(1).map(line => {
-    const values = line.split(",");
-    let obj = {};
-    headers.forEach((h,i)=> obj[h.trim()] = values[i]);
-    return obj;
-  });
+function setStatus(msg, ok=true){
+  document.getElementById('status').innerHTML = ok ? "<span class='ok'>"+msg+"</span>" : "<span class='bad'>"+msg+"</span>";
 }
 
 async function loadGTFS(){
-  const file = document.getElementById("zipFile").files[0];
-  if(!file){
-    log("❌ Nincs ZIP kiválasztva!");
+  const file = document.getElementById('file').files[0];
+  if(!file){alert("Nincs fájl!");return;}
+
+  log("📦 ZIP betöltés...");
+
+  const arrayBuffer = await file.arrayBuffer();
+  log("ZIP méret: " + arrayBuffer.byteLength);
+
+  if(arrayBuffer.byteLength < 50000){
+    setStatus("❌ Gyanúsan kicsi ZIP (nem GTFS)",false);
     return;
   }
 
-  log("📦 ZIP betöltése...");
+  const zip = await JSZip.loadAsync(arrayBuffer);
+  zipData = zip;
 
-  const zip = await JSZip.loadAsync(file);
+  const fileList = Object.keys(zip.files);
+  document.getElementById('files').innerHTML = fileList.map(f=>"• "+f).join("<br>");
 
-  // STOPS
-  if(zip.file("stops.txt")){
-    const stopsText = await zip.file("stops.txt").async("string");
-    GTFS.stops = parseCSV(stopsText);
+  log("📂 Fájlok száma: " + fileList.length);
+
+  const stopsFile = fileList.find(f=>f.toLowerCase().includes("stops.txt"));
+  const routesFile = fileList.find(f=>f.toLowerCase().includes("routes.txt"));
+  const tripsFile = fileList.find(f=>f.toLowerCase().includes("trips.txt"));
+
+  if(!stopsFile || !routesFile || !tripsFile){
+    setStatus("❌ Hiányzó GTFS fájlok",false);
+    log("Hiány: stops/routes/trips");
+    return;
   }
 
-  // ROUTES
-  if(zip.file("routes.txt")){
-    const routesText = await zip.file("routes.txt").async("string");
-    GTFS.routes = parseCSV(routesText);
+  const stopsText = await zip.file(stopsFile).async("string");
+  const lines = stopsText.split("\n");
+
+  log("🚏 stops sorok: " + lines.length);
+
+  let html = "<tr><th>ID</th><th>Név</th></tr>";
+
+  for(let i=1;i<Math.min(20,lines.length);i++){
+    const parts = lines[i].split(",");
+    if(parts.length>2){
+      html += `<tr><td>${parts[0]}</td><td>${parts[2]}</td></tr>`;
+    }
   }
 
-  // TRIPS
-  if(zip.file("trips.txt")){
-    const tripsText = await zip.file("trips.txt").async("string");
-    GTFS.trips = parseCSV(tripsText);
-  }
+  document.getElementById('stopsTable').innerHTML = html;
 
-  // STOP TIMES
-  if(zip.file("stop_times.txt")){
-    const stText = await zip.file("stop_times.txt").async("string");
-    GTFS.stop_times = parseCSV(stText);
-  }
+  setStatus("✅ GTFS betöltve OK");
 
-  log("✅ GTFS betöltve!");
-
-  renderPreview();
-}
-
-function renderPreview(){
-  let out = "";
-
-  out += `<b>🚏 Megállók:</b> ${GTFS.stops.length}<br>`;
-  out += `<b>🚌 Járatok (routes):</b> ${GTFS.routes.length}<br>`;
-  out += `<b>🚍 Trips:</b> ${GTFS.trips.length}<br>`;
-  out += `<b>⏱ Stop times:</b> ${GTFS.stop_times.length}<br><br>`;
-
-  out += "<b>Első 5 megálló:</b><br>";
-  GTFS.stops.slice(0,5).forEach(s=>{
-    out += `• ${s.stop_name} (${s.stop_id})<br>`;
-  });
-
-  out += "<br><b>Első 5 route:</b><br>";
-  GTFS.routes.slice(0,5).forEach(r=>{
-    out += `• ${r.route_short_name || ""} ${r.route_long_name || ""}<br>`;
-  });
-
-  document.getElementById("output").innerHTML = out;
+  log("🧠 Routes file: " + routesFile);
+  log("🧠 Trips file: " + tripsFile);
 }
 </script>
 
