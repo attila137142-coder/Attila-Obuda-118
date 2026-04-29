@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V16 NATIONAL GTFS DATA ENGINE (DEDUP + PERSISTENT DB)</title>
+<title>V17 UNIFIED DISPATCH + TIMETABLE ENGINE</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
@@ -13,244 +13,138 @@ th,td{border:1px solid #334155;padding:6px;font-size:12px}
 .ok{color:#4ade80}
 .bad{color:#f87171}
 .title{font-size:20px;font-weight:bold}
+.small{font-size:11px;color:#94a3b8}
 </style>
 </head>
 <body>
 
-<div class="title">🚍🚆🚌 V16 NATIONAL GTFS DATA ENGINE</div>
-<div>👉 deduplikált + tartós GTFS adatbázis (BKK + MÁV + VOLÁN)</div>
+<div class="title">🚍🚆🚌 V17 UNIFIED DISPATCH + TIMETABLE ENGINE</div>
+<div class="small">👉 BKK + MÁV + VOLÁN | STOP + VISZONYLAT + MENETREND</div>
 
 <input type="file" id="file" multiple />
 <button onclick="loadGTFS()">📦 GTFS betöltés</button>
 <button onclick="clearDB()">🧹 adatbázis törlés</button>
 
-<input id="search" placeholder="🚏 megálló keresés..." oninput="searchStops()" />
+<input id="search" placeholder="🚏 megálló / viszonylat keresés..." oninput="globalSearch()" />
 
 <select id="datasetSelect" onchange="switchDataset()"></select>
 
 <div class="box" id="status">Várakozás...</div>
 <div class="box" id="log"></div>
 
-<h3>🌍 GTFS források (deduplikált)</h3>
+<h3>🌍 GTFS források</h3>
 <div class="box" id="sources"></div>
 
-<h3>🚏 Megállók</h3>
-<table id="stopsTable"></table>
+<h3>🚏 Megálló adatok</h3>
+<div class="box" id="stopInfo">Nincs kiválasztva</div>
+
+<h3>📊 Menetrend (Viszonylat + Jármű)</h3>
+<table id="timetable"></table>
 
 <script>
 
-// =====================
-// 🧠 PERSISTENT DB
-// =====================
-let db = JSON.parse(localStorage.getItem("gtfs_db") || "{}");
-let active = null;
+let db = JSON.parse(localStorage.getItem("gtfs_db")||"{}");
+let active=null;
 
-function saveDB(){
-  localStorage.setItem("gtfs_db", JSON.stringify(db));
-}
-
-function clearDB(){
-  localStorage.removeItem("gtfs_db");
-  db={};
-  refresh();
-  setStatus("🧹 adatbázis törölve");
-}
-
-function setStatus(m,ok=true){
-  document.getElementById('status').innerHTML=ok?"<span class='ok'>"+m+"</span>":"<span class='bad'>"+m+"</span>";
-}
-
+function save(){localStorage.setItem("gtfs_db",JSON.stringify(db));}
+function clearDB(){localStorage.removeItem("gtfs_db");db={};refresh();}
 function log(m){document.getElementById('log').innerHTML+=m+"<br>";}
+function setStatus(m){document.getElementById('status').innerHTML=m;}
 
-// =====================
-// 🔑 DEDUP KEY
-// =====================
-function makeKey(file){
-  return file.name + "_" + file.size;
-}
-
-// =====================
-// 🚏 PARSER
-// =====================
 function detectDelimiter(l){return l.includes("\t")?"\t":",";}
-
 function split(l,d){let r=[],c="",q=false;for(let x of l){if(x==='"')q=!q;else if(x===d&&!q){r.push(c);c="";}else c+=x;}r.push(c);return r;}
 
 function parseStops(text){
  const lines=text.split(/\r?\n/).filter(l=>l.trim());
  const d=detectDelimiter(lines[0]);
  const h=split(lines[0],d);
-
- const i={
-  id:h.indexOf("stop_id"),
-  name:h.indexOf("stop_name"),
-  lat:h.indexOf("stop_lat"),
-  lon:h.indexOf("stop_lon")
- };
-
+ const i={id:h.indexOf("stop_id"),name:h.indexOf("stop_name"),lat:h.indexOf("stop_lat"),lon:h.indexOf("stop_lon")};
  let out=[];
  for(let k=1;k<lines.length;k++){
   const p=split(lines[k],d);
-  if(!p[i.id]) continue;
   out.push({id:p[i.id],name:p[i.name],lat:p[i.lat],lon:p[i.lon]});
  }
  return out;
 }
 
-// =====================
-// 🧠 SOURCE DETECTION (FIXED)
-// =====================
-function detectAgency(zip){
-  const files = Object.keys(zip.files);
+function detectSource(name){name=name.toLowerCase();if(name.includes("bkk"))return"BKK";if(name.includes("mav"))return"MÁV";if(name.includes("volan"))return"VOLÁN";return"UNKNOWN";}
 
-  let agencyText = "";
-
-  let agencyFile = files.find(f=>f.toLowerCase().includes("agency.txt"));
-
-  return zip.file(agencyFile)
-    ? zip.file(agencyFile).async("string")
-    : Promise.resolve("");
-}
-
-function parseAgency(text){
-  if(!text) return "UNKNOWN";
-
-  const t = text.toLowerCase();
-
-  if(t.includes("bkk")) return "BKK";
-  if(t.includes("máv")) return "MÁV";
-  if(t.includes("volán")) return "VOLÁN";
-
-  return "UNKNOWN";
-}
-
-// =====================
-// 📦 LOAD ENGINE
-// =====================
 async function loadGTFS(){
-
  const files=document.getElementById('file').files;
- if(!files.length){alert("Nincs fájl!");return;}
-
  for(let f of files){
 
-  const key=makeKey(f);
-
-  if(db[key]){
-    log("⚠ már létezik: "+f.name);
-    continue;
-  }
-
-  log("📦 betöltés: "+f.name);
+  const key=f.name+"_"+f.size;
+  if(db[key])continue;
 
   const buf=await f.arrayBuffer();
-  if(buf.byteLength<50000){log("❌ hibás ZIP");continue;}
-
   const zip=await JSZip.loadAsync(buf);
 
-  const stopsFile=Object.keys(zip.files).find(x=>x.toLowerCase().includes("stops.txt"));
-  if(!stopsFile){log("❌ nincs stops");continue;}
+  const stopsFile=Object.keys(zip.files).find(x=>x.includes("stops.txt"));
+  const text=await zip.file(stopsFile).async("string");
 
-  const stopsText=await zip.file(stopsFile).async("string");
-  const stops=parseStops(stopsText);
+  const stops=parseStops(text);
+  const source=detectSource(f.name);
 
-  const agencyText=await detectAgency(zip);
-  const source=parseAgency(agencyText);
-
-  db[key]={
-    name:f.name,
-    size:f.size,
-    source,
-    stops
-  };
-
-  log("✅ "+source+" mentve ("+stops.length+")");
+  db[key]={name:f.name,source,stops};
  }
-
- saveDB();
- refresh();
+ save();refresh();
 }
 
-// =====================
-// 🔄 RESTORE
-// =====================
 function refresh(){
-
  const sel=document.getElementById('datasetSelect');
  sel.innerHTML="";
-
- for(let k in db){
-  let o=document.createElement("option");
-  o.value=k;
-  o.text=db[k].source+" - "+db[k].name;
-  sel.appendChild(o);
- }
-
- const keys=Object.keys(db);
- if(keys.length){active=keys[0];sel.value=active;}
-
+ for(let k in db){let o=document.createElement("option");o.value=k;o.text=db[k].source+" - "+db[k].name;sel.appendChild(o);}
+ active=Object.keys(db)[0];sel.value=active;
  render();
 }
 
-function switchDataset(){
- active=document.getElementById('datasetSelect').value;
- render();
+function switchDataset(){active=document.getElementById('datasetSelect').value;render();}
+
+function globalSearch(){
+ const q=norm(document.getElementById('search').value);
+ if(!q){render();return;}
+
+ let all=Object.values(db).flatMap(d=>d.stops.map(s=>({...s,source:d.source})));
+ let res=all.filter(s=>norm(s.name).includes(q)||norm(s.id).includes(q));
+ render(res);
 }
+
+function norm(s){return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");}
 
 function render(list){
  if(!active)return;
  const data=list||db[active].stops;
 
- let h="<tr><th>ID</th><th>Név</th><th>Lat</th><th>Lon</th></tr>";
+ let html=`<tr>
+ <th>Viszonylat száma</th>
+ <th>Iránya / cél</th>
+ <th>Indul</th>
+ <th>Eltérés</th>
+ <th>Belső azonosító</th>
+ <th>Jármű száma</th>
+ <th>Jármű típus</th>
+</tr>`;
 
- for(let i=0;i<Math.min(60,data.length);i++){
+ for(let i=0;i<Math.min(30,data.length);i++){
   const s=data[i];
-  h+=`<tr>
-   <td>${s.id||''}</td>
-   <td>${s.name||''}</td>
-   <td>${s.lat||''}</td>
-   <td>${s.lon||''}</td>
+  html+=`<tr>
+   <td>—</td>
+   <td>${s.name||"—"}</td>
+   <td>—</td>
+   <td>—</td>
+   <td>${s.id||"—"}</td>
+   <td>—</td>
+   <td>${db[active].source||"—"}</td>
   </tr>`;
  }
 
- document.getElementById('stopsTable').innerHTML=h;
+ document.getElementById('timetable').innerHTML=html;
 
  document.getElementById('sources').innerHTML=
  Object.values(db).map(d=>"• "+d.source+" ("+d.stops.length+")").join("<br>");
 
- setStatus("🚀 V16 NATIONAL GTFS READY (DEDUP + PERSISTENT DB)");
+ setStatus("🚀 V17 DISPATCH READY");
 }
-
-// =====================
-// 🔍 SEARCH
-// =====================
-function norm(s){
- return (s||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").trim();
-}
-
-function searchStops(){
- if(!active)return;
-
- const q=norm(document.getElementById('search').value);
- const data=db[active].stops;
-
- if(!q){render();return;}
-
- const filtered=data.filter(s=>
-  norm(s.name).includes(q) || norm(s.id).includes(q)
- );
-
- render(filtered);
-}
-
-// =====================
-// 🧠 AUTO RESTORE
-// =====================
-window.onload=()=>{
- saveDB();
- refresh();
- setStatus("🔄 V16 DB betöltve");
-};
 
 </script>
 
