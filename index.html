@@ -2,38 +2,37 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V13 UNIFIED DISPATCHER (BKK + MÁV + VOLÁN)</title>
+<title>V14 UNIFIED DISPATCHER + SEARCH</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
-button,select{padding:10px;margin:5px;cursor:pointer}
+button,select,input{padding:10px;margin:5px}
 .box{background:#111827;padding:10px;margin-top:10px;border-radius:10px;overflow:auto}
 table{width:100%;border-collapse:collapse;margin-top:10px}
 th,td{border:1px solid #334155;padding:6px;font-size:12px}
 .ok{color:#4ade80}
 .bad{color:#f87171}
 .title{font-size:20px;font-weight:bold}
-.tab{margin-top:10px}
 </style>
 </head>
 <body>
 
-<div class="title">🚍🚆🚌 V13 UNIFIED DISPATCHER ENGINE</div>
-<div>👉 BKK + MÁV + VOLÁN egy közös térben</div>
-
+<div class="title">🚍🚆🚌 V14 UNIFIED DISPATCHER + STOP SEARCH</div>
 
 <input type="file" id="file" multiple />
-<button onclick="loadAllGTFS()">📦 GTFS betöltés (multi)</button>
+<button onclick="loadAllGTFS()">📦 GTFS betöltés</button>
+
+<input id="search" placeholder="🚏 Megálló keresés..." oninput="searchStops()" />
 
 <select id="datasetSelect" onchange="switchDataset()"></select>
 
 <div class="box" id="status">Várakozás...</div>
 <div class="box" id="log"></div>
 
-<h3>🌍 Összes GTFS forrás</h3>
+<h3>🌍 Források</h3>
 <div class="box" id="sources"></div>
 
-<h3>🚏 Unified megállók (aktív dataset)</h3>
+<h3>🚏 Megállók táblázat</h3>
 <table id="stopsTable"></table>
 
 <script>
@@ -46,21 +45,13 @@ function setStatus(m,ok=true){document.getElementById('status').innerHTML=ok?"<s
 
 function detectDelimiter(l){return l.includes("\t")?"\t":",";}
 
-function split(l,d){
- let r=[],c="",q=false;
- for(let x of l){
-  if(x==='"')q=!q;
-  else if(x===d&&!q){r.push(c);c="";}
-  else c+=x;
- }
- r.push(c);
- return r;
-}
+function split(l,d){let r=[],c="",q=false;for(let x of l){if(x==='"')q=!q;else if(x===d&&!q){r.push(c);c="";}else c+=x;}r.push(c);return r;}
 
 function parseStops(text){
  const lines=text.split(/\r?\n/).filter(l=>l.trim());
  const d=detectDelimiter(lines[0]);
  const h=split(lines[0],d);
+
  const i={
   id:h.indexOf("stop_id"),
   name:h.indexOf("stop_name"),
@@ -71,12 +62,7 @@ function parseStops(text){
  let out=[];
  for(let k=1;k<lines.length;k++){
   const p=split(lines[k],d);
-  out.push({
-    id:p[i.id],
-    name:p[i.name],
-    lat:p[i.lat],
-    lon:p[i.lon]
-  });
+  out.push({id:p[i.id],name:p[i.name],lat:p[i.lat],lon:p[i.lon]});
  }
  return out;
 }
@@ -94,7 +80,9 @@ async function loadAllGTFS(){
  if(!files.length){alert("Nincs fájl!");return;}
 
  for(let f of files){
+
   log("📦 betöltés: "+f.name);
+
   const buf=await f.arrayBuffer();
 
   if(buf.byteLength<50000){log("❌ hibás: "+f.name);continue;}
@@ -105,19 +93,15 @@ async function loadAllGTFS(){
   if(!stopsFile){log("❌ nincs stops: "+f.name);continue;}
 
   const text=await zip.file(stopsFile).async("string");
-  const stops=parseStops(text);
 
+  const stops=parseStops(text);
   const source=detectSource(f.name);
 
   const key=source+"_"+Date.now();
 
-  datasets[key]={
-   name:f.name,
-   source,
-   stops
-  };
+  datasets[key]={name:f.name,source,stops};
 
-  log("✅ "+source+" betöltve ("+stops.length+")");
+  log("✅ "+source+" kész ("+stops.length+")");
  }
 
  refresh();
@@ -128,7 +112,7 @@ function refresh(){
  sel.innerHTML="";
 
  for(let k in datasets){
-  const o=document.createElement("option");
+  let o=document.createElement("option");
   o.value=k;
   o.text=datasets[k].source+" - "+datasets[k].name;
   sel.appendChild(o);
@@ -137,9 +121,6 @@ function refresh(){
  active=Object.keys(datasets)[0];
  sel.value=active;
  render();
-
- document.getElementById('sources').innerHTML=
- Object.values(datasets).map(d=>"• "+d.source+" ("+d.stops.length+")").join("<br>");
 }
 
 function switchDataset(){
@@ -147,14 +128,15 @@ function switchDataset(){
  render();
 }
 
-function render(){
+function render(list){
  if(!active)return;
- const d=datasets[active].stops;
+
+ const data=list || datasets[active].stops;
 
  let h="<tr><th>ID</th><th>Név</th><th>Lat</th><th>Lon</th></tr>";
 
- for(let i=0;i<Math.min(40,d.length);i++){
-  const s=d[i];
+ for(let i=0;i<Math.min(50,data.length);i++){
+  const s=data[i];
   h+=`<tr>
    <td>${s.id||''}</td>
    <td>${s.name||''}</td>
@@ -164,7 +146,22 @@ function render(){
  }
 
  document.getElementById('stopsTable').innerHTML=h;
- setStatus("🚀 V13 UNIFIED DISPATCHER READY");
+ setStatus("🚀 V14 READY (SEARCH + TABLE RESTORED)");
+}
+
+function searchStops(){
+ if(!active)return;
+ const q=document.getElementById('search').value.toLowerCase();
+ const data=datasets[active].stops;
+
+ if(!q){render();return;}
+
+ const filtered=data.filter(s=>
+  (s.name||"").toLowerCase().includes(q) ||
+  (s.id||"").toLowerCase().includes(q)
+ );
+
+ render(filtered);
 }
 
 </script>
