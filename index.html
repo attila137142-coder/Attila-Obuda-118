@@ -2,21 +2,21 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V10 GTFS Stable Engine</title>
+<title>V10.1 GTFS Stable Engine FIX</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;background:#0f172a;color:#e2e8f0;padding:20px}
 button{padding:10px;margin:5px;cursor:pointer}
-.box{background:#111827;padding:10px;margin-top:10px;border-radius:10px}
+.box{background:#111827;padding:10px;margin-top:10px;border-radius:10px;overflow:auto}
 table{width:100%;border-collapse:collapse;margin-top:10px}
-td,th{border:1px solid #334155;padding:6px;font-size:12px}
-.bad{color:#f87171}
+th,td{border:1px solid #334155;padding:6px;font-size:12px}
 .ok{color:#4ade80}
+.bad{color:#f87171}
 </style>
 </head>
 <body>
 
-<h2>🚀 V10 GTFS STABLE ENGINE</h2>
+<h2>🚀 V10.1 GTFS STABLE ENGINE (FIXED PARSER)</h2>
 
 <input type="file" id="file" />
 <button onclick="loadGTFS()">GTFS betöltés</button>
@@ -24,77 +24,113 @@ td,th{border:1px solid #334155;padding:6px;font-size:12px}
 <div class="box" id="status">Várakozás...</div>
 <div class="box" id="log"></div>
 
-<h3>📦 ZIP fájlok</h3>
+<h3>📦 ZIP tartalom</h3>
 <div class="box" id="files"></div>
 
-<h3>🚏 Megállók (első 20)</h3>
+<h3>🚏 Megállók táblázat</h3>
 <table id="stopsTable"></table>
 
 <script>
 let zipData;
 
 function log(msg){
-  document.getElementById('log').innerHTML += msg+"<br>";
+  document.getElementById('log').innerHTML += msg + "<br>";
 }
 
 function setStatus(msg, ok=true){
-  document.getElementById('status').innerHTML = ok ? "<span class='ok'>"+msg+"</span>" : "<span class='bad'>"+msg+"</span>";
+  document.getElementById('status').innerHTML = ok ? 
+  "<span class='ok'>"+msg+"</span>" : 
+  "<span class='bad'>"+msg+"</span>";
+}
+
+// 🧠 CSV SAFE PARSER (kezeli az idézőjeleket is)
+function parseCSV(text){
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length);
+  const headers = splitCSV(lines[0]);
+
+  return lines.slice(1).map(line => {
+    const values = splitCSV(line);
+    let obj = {};
+    headers.forEach((h,i)=>obj[h]=values[i]);
+    return obj;
+  });
+}
+
+// 🧠 GTFS-safe split (idézőjelek miatt)
+function splitCSV(line){
+  let result = [];
+  let current = "";
+  let inQuotes = false;
+
+  for(let char of line){
+    if(char === '"') inQuotes = !inQuotes;
+    else if(char === ',' && !inQuotes){
+      result.push(current);
+      current = "";
+    } else {
+      current += char;
+    }
+  }
+  result.push(current);
+  return result;
 }
 
 async function loadGTFS(){
+
   const file = document.getElementById('file').files[0];
   if(!file){alert("Nincs fájl!");return;}
 
   log("📦 ZIP betöltés...");
 
-  const arrayBuffer = await file.arrayBuffer();
-  log("ZIP méret: " + arrayBuffer.byteLength);
+  const buffer = await file.arrayBuffer();
+  log("ZIP méret: " + buffer.byteLength);
 
-  if(arrayBuffer.byteLength < 50000){
-    setStatus("❌ Gyanúsan kicsi ZIP (nem GTFS)",false);
+  if(buffer.byteLength < 50000){
+    setStatus("❌ Gyanús ZIP",false);
     return;
   }
 
-  const zip = await JSZip.loadAsync(arrayBuffer);
+  const zip = await JSZip.loadAsync(buffer);
   zipData = zip;
 
-  const fileList = Object.keys(zip.files);
-  document.getElementById('files').innerHTML = fileList.map(f=>"• "+f).join("<br>");
+  const files = Object.keys(zip.files);
+  document.getElementById('files').innerHTML = files.map(f=>"• "+f).join("<br>");
 
-  log("📂 Fájlok száma: " + fileList.length);
+  log("📂 fájlok: " + files.length);
 
-  const stopsFile = fileList.find(f=>f.toLowerCase().includes("stops.txt"));
-  const routesFile = fileList.find(f=>f.toLowerCase().includes("routes.txt"));
-  const tripsFile = fileList.find(f=>f.toLowerCase().includes("trips.txt"));
+  const stopsFile = files.find(f=>f.toLowerCase().includes("stops.txt"));
 
-  if(!stopsFile || !routesFile || !tripsFile){
-    setStatus("❌ Hiányzó GTFS fájlok",false);
-    log("Hiány: stops/routes/trips");
+  if(!stopsFile){
+    setStatus("❌ stops.txt nincs",false);
     return;
   }
 
-  const stopsText = await zip.file(stopsFile).async("string");
-  const lines = stopsText.split("\n");
+  const text = await zip.file(stopsFile).async("string");
+  const data = parseCSV(text);
 
-  log("🚏 stops sorok: " + lines.length);
+  log("🚏 stops: " + data.length);
 
-  let html = "<tr><th>ID</th><th>Név</th></tr>";
+  // TABLE BUILD
+  let html = "<tr><th>ID</th><th>Név</th><th>Lat</th><th>Lon</th></tr>";
 
-  for(let i=1;i<Math.min(20,lines.length);i++){
-    const parts = lines[i].split(",");
-    if(parts.length>2){
-      html += `<tr><td>${parts[0]}</td><td>${parts[2]}</td></tr>`;
-    }
+  for(let i=0;i<Math.min(30,data.length);i++){
+    const s = data[i];
+
+    html += `<tr>
+      <td>${s.stop_id || ''}</td>
+      <td>${s.stop_name || ''}</td>
+      <td>${s.stop_lat || ''}</td>
+      <td>${s.stop_lon || ''}</td>
+    </tr>`;
   }
 
   document.getElementById('stopsTable').innerHTML = html;
 
-  setStatus("✅ GTFS betöltve OK");
+  setStatus("✅ V10.1 GTFS OK (FIXED PARSER)");
 
-  log("🧠 Routes file: " + routesFile);
-  log("🧠 Trips file: " + tripsFile);
 }
 </script>
 
 </body>
 </html>
+
