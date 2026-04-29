@@ -2,31 +2,37 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>BKK LIGHT PRO GTFS ENGINE</title>
+<title>BKK LIGHT PRO GTFS ENGINE V2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <style>
 body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
-header{padding:16px;background:#111827;display:flex;gap:10px;align-items:center}
+header{padding:12px;background:#111827;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 button{padding:10px 14px;border:0;border-radius:8px;cursor:pointer;background:#22c55e;color:#000;font-weight:bold}
 button.secondary{background:#38bdf8}
-.container{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 60px)}
+.container{display:grid;grid-template-columns:320px 1fr 1fr;height:calc(100vh - 60px)}
 .sidebar{padding:12px;background:#111827;overflow:auto}
 .main{padding:12px;overflow:auto}
+.map{height:100%;background:#0b1220}
 input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #334155;background:#0b1220;color:white}
 .table{width:100%;border-collapse:collapse;margin-top:10px}
 .table th,.table td{border:1px solid #334155;padding:6px;text-align:center;font-size:13px}
 .table th{background:#1f2937}
 .badge{padding:2px 6px;border-radius:6px;background:#1d4ed8;color:white;font-size:11px}
-.title{font-size:18px;font-weight:bold;margin:8px 0}
+.title{font-size:16px;font-weight:bold;margin:8px 0}
 .small{font-size:12px;opacity:0.8}
+.drop{border:2px dashed #334155;padding:10px;margin-top:10px;text-align:center}
 </style>
 </head>
 <body>
 
 <header>
 <button onclick="loadDemo()">📥 DEMO GTFS</button>
-<button class="secondary" onclick="exportZip()">📦 ZIP GENERÁLÁS</button>
-<span class="small">BKK LIGHT PRO GTFS ENGINE</span>
+<button class="secondary" onclick="exportZip()">📦 ZIP</button>
+<input type="file" id="file" style="display:none" onchange="importZip(event)">
+<button onclick="document.getElementById('file').click()">📂 GTFS IMPORT</button>
+<span class="small">BKK LIGHT PRO ENGINE V2 (FIXED SEARCH + MAP + IMPORT)</span>
 </header>
 
 <div class="container">
@@ -35,109 +41,155 @@ input{width:100%;padding:8px;margin:6px 0;border-radius:6px;border:1px solid #33
 <div class="title">🔎 Megálló kereső</div>
 <input id="search" placeholder="pl. Óbuda..." oninput="renderStops()">
 <div id="stopList"></div>
+<div class="drop" ondrop="dropHandler(event)" ondragover="event.preventDefault()">
+📦 Húzd ide a GTFS ZIP-et
+</div>
 </div>
 
 <div class="main">
 <div class="title">🚍 Megállós menetrend</div>
-<div id="timetable">Válassz megállót...</div>
+<div id="timetable">Nincs kiválasztva</div>
 </div>
+
+<div class="map" id="map"></div>
 
 </div>
 
 <script>
 
-let gtfs = {
-  stops: [],
-  stop_times: [],
-  trips: [],
-  routes: []
+let gtfs = {stops:[],stop_times:[],trips:[],routes:[]};
+let map;
+
+window.onload = () => {
+  initMap();
+  loadDemo();
 };
 
+function initMap(){
+  map = L.map('map').setView([47.4979,19.0402], 11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+}
+
 function loadDemo(){
-  gtfs.stops = [
-    {id:"1",name:"Központ"},
-    {id:"2",name:"Óbuda"},
-    {id:"3",name:"Békásmegyer"}
+  gtfs.stops=[
+    {id:"1",name:"Központ",lat:47.4979,lon:19.0402},
+    {id:"2",name:"Óbuda",lat:47.5410,lon:19.0450},
+    {id:"3",name:"Békásmegyer",lat:47.5950,lon:19.0430}
   ];
 
-  gtfs.stop_times = [
+  gtfs.trips=[
+    {id:"T1",head:"Békásmegyer"},
+    {id:"T2",head:"Központ"}
+  ];
+
+  gtfs.stop_times=[
     {trip:"T1",stop:"1",time:"08:00"},
     {trip:"T1",stop:"2",time:"08:10"},
     {trip:"T1",stop:"3",time:"08:20"},
-
     {trip:"T2",stop:"3",time:"09:00"},
     {trip:"T2",stop:"2",time:"09:10"},
     {trip:"T2",stop:"1",time:"09:20"}
   ];
 
-  gtfs.trips = [
-    {id:"T1",head:"Békásmegyer"},
-    {id:"T2",head:"Központ"}
-  ];
-
   renderStops();
+  renderMap();
 }
 
 function renderStops(){
-  const q = document.getElementById("search").value.toLowerCase();
-  const list = document.getElementById("stopList");
-  list.innerHTML = "";
+  const q=document.getElementById("search").value.toLowerCase();
+  const list=document.getElementById("stopList");
+  list.innerHTML="";
 
-  gtfs.stops
-    .filter(s => s.name.toLowerCase().includes(q))
-    .forEach(s => {
-      const div = document.createElement("div");
-      div.innerHTML = `<span class='badge'>STOP</span> ${s.name}`;
-      div.style.cursor="pointer";
-      div.style.padding="6px";
-      div.onclick = () => showTimetable(s.id, s.name);
-      list.appendChild(div);
-    });
+  const filtered=gtfs.stops.filter(s=>s.name.toLowerCase().includes(q));
+
+  if(filtered.length===0){
+    list.innerHTML="<div class='small'>Nincs találat</div>";
+    return;
+  }
+
+  filtered.forEach(s=>{
+    const div=document.createElement("div");
+    div.innerHTML=`<span class='badge'>STOP</span> ${s.name}`;
+    div.style.cursor="pointer";
+    div.style.padding="6px";
+    div.onclick=()=>showTimetable(s.id,s.name);
+    list.appendChild(div);
+  });
 }
 
-function showTimetable(stopId, stopName){
+function showTimetable(stopId,stopName){
 
-  const rows = gtfs.stop_times
-    .filter(st => st.stop === stopId)
-    .map(st => {
-      const trip = gtfs.trips.find(t => t.id === st.trip);
-      return `<tr><td>${st.time}</td><td>${trip ? trip.head : "?"}</td><td>${st.trip}</td></tr>`;
-    });
+  const rows=gtfs.stop_times
+  .filter(st=>st.stop===stopId)
+  .map(st=>{
+    const t=gtfs.trips.find(x=>x.id===st.trip);
+    return `<tr><td>${st.time}</td><td>${t?t.head:"?"}</td><td>${st.trip}</td></tr>`;
+  });
 
-  document.getElementById("timetable").innerHTML = `
-    <div class='title'>📍 ${stopName}</div>
-    <table class='table'>
-      <tr><th>Idő</th><th>Hová</th><th>Járat</th></tr>
-      ${rows.join("")}
-    </table>
-  `;
+  document.getElementById("timetable").innerHTML=
+  `<div class='title'>📍 ${stopName}</div>
+   <table class='table'>
+   <tr><th>Idő</th><th>Hová</th><th>Járat</th></tr>
+   ${rows.join("")}
+   </table>`;
+}
+
+function renderMap(){
+  gtfs.stops.forEach(s=>{
+    if(s.lat){
+      L.marker([s.lat,s.lon]).addTo(map).bindPopup(s.name);
+    }
+  });
+}
+
+async function importZip(e){
+  const file=e.target.files[0];
+  const zip=await JSZip.loadAsync(file);
+
+  const stops=await zip.file("stops.txt").async("string");
+  const trips=await zip.file("trips.txt").async("string");
+  const stop_times=await zip.file("stop_times.txt").async("string");
+
+  gtfs.stops=parseCSV(stops);
+  gtfs.trips=parseCSV(trips);
+  gtfs.stop_times=parseCSV(stop_times);
+
+  renderStops();
+  renderMap();
+}
+
+function parseCSV(text){
+  const lines=text.trim().split("\n");
+  const headers=lines[0].split(",");
+  return lines.slice(1).map(l=>{
+    const obj={};
+    l.split(",").forEach((v,i)=>obj[headers[i]]=v);
+    return obj;
+  });
 }
 
 function exportZip(){
+  const zip=new JSZip();
+  zip.file("stops.txt","stop_id,name\n"+gtfs.stops.map(s=>`${s.id},${s.name}`).join("\n"));
+  zip.file("trips.txt","trip_id,head\n"+gtfs.trips.map(t=>`${t.id},${t.head}`).join("\n"));
+  zip.file("stop_times.txt","trip,stop,time\n"+gtfs.stop_times.map(s=>`${s.trip},${s.stop},${s.time}`).join("\n"));
 
-  const zip = new JSZip();
-
-  zip.file("stops.txt", "stop_id,stop_name\n" + gtfs.stops.map(s=>`${s.id},${s.name}`).join("\n"));
-
-  zip.file("stop_times.txt", "trip_id,stop_id,time\n" +
-    gtfs.stop_times.map(s=>`${s.trip},${s.stop},${s.time}`).join("\n"));
-
-  zip.file("trips.txt", "trip_id,headsign\n" +
-    gtfs.trips.map(t=>`${t.id},${t.head}`).join("\n"));
-
-  zip.generateAsync({type:"blob"}).then(content=>{
+  zip.generateAsync({type:"blob"}).then(b=>{
     const a=document.createElement("a");
-    a.href=URL.createObjectURL(content);
-    a.download="bkk_light_pro.zip";
+    a.href=URL.createObjectURL(b);
+    a.download="bkk_light_pro_v2.zip";
     a.click();
-
-    loadDemo();
-    
   });
+}
+
+function dropHandler(ev){
+  ev.preventDefault();
+  importZip({target:{files:ev.dataTransfer.files}});
 }
 
 </script>
 
 </body>
 </html>
+
 
