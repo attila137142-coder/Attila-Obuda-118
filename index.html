@@ -3,21 +3,27 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GTFS PRO V21 SMART MODE</title>
+<title>GTFS PRO V22 MAP ENGINE</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
 body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
-header{padding:10px;background:#111827;position:sticky;top:0}
+header{padding:10px;background:#111827;position:sticky;top:0;z-index:999}
 button,input,select{padding:6px;margin:5px;border-radius:6px;border:0}
 .card{background:#111827;margin:10px;padding:10px;border-radius:8px}
-small{opacity:.7}
+#map{height:300px;margin:10px;border-radius:10px}
 .mode{font-weight:bold}
 </style>
 </head>
 <body>
+
 <header>
-<b>🚀 GTFS PRO V21 SMART MODE</b><br>
+<b>🚀 GTFS PRO V22 MAP ENGINE</b><br>
 <span class="mode" id="mode">SMART: UNKNOWN</span><br>
 <select id="source">
   <option value="github">📦 GitHub</option>
@@ -28,6 +34,8 @@ small{opacity:.7}
 <button onclick="startGPS()">📍 GPS</button>
 <input id="search" placeholder="Megálló kereső..." oninput="searchStops()" />
 </header>
+
+<div id="map"></div>
 
 <div class="card">
 <b>📍 GPS + SPEED</b>
@@ -52,135 +60,68 @@ small{opacity:.7}
 
 <script>
 let GTFS={stops:[]};
-let userLat=null,userLon=null;
+let userLat=47.4979,userLon=19.0402;
 let history=[];
+let map, userMarker;
+let stopMarkers=[];
+
+// ================= MAP INIT =================
+function initMap(){
+  map=L.map('map').setView([userLat,userLon],13);
+
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'OSM'}).addTo(map);
+
+  userMarker=L.marker([userLat,userLon]).addTo(map).bindPopup("Te");
+}
+
+initMap();
 
 // ================= SMART MODE =================
-function isOnline(){
-  return navigator.onLine;
-}
+function isOnline(){return navigator.onLine;}
 
 function updateMode(){
-  const mode=document.getElementById("mode");
-  mode.innerText = isOnline() ? "SMART: ONLINE" : "SMART: OFFLINE";
+  document.getElementById("mode").innerText = isOnline()?"SMART: ONLINE":"SMART: OFFLINE";
 }
-
 window.addEventListener("online",updateMode);
 window.addEventListener("offline",updateMode);
 updateMode();
 
-// ================= CACHE =================
-function saveCache(){
-  try{ localStorage.setItem("gtfs_cache",JSON.stringify(GTFS.stops)); }catch{}
-}
-function loadCache(){
-  try{
-    const c=localStorage.getItem("gtfs_cache");
-    if(c){ GTFS.stops=JSON.parse(c); return true; }
-  }catch{}
-  return false;
-}
+// ================= GTFS =================
+function saveCache(){localStorage.setItem("gtfs",JSON.stringify(GTFS.stops));}
+function loadCache(){const c=localStorage.getItem("gtfs");if(c){GTFS.stops=JSON.parse(c);}}
 
-// ================= GTFS LOAD =================
 async function loadGTFS(){
-  const mode=document.getElementById("source").value;
-
   try{
-    if(mode=="github") return await loadGitHub();
-    if(mode=="auto") return await loadAuto();
-    return await loadManual();
-  }catch(e){
-    console.warn(e);
-    if(loadCache()) return alert("⚠️ CACHE betöltve");
-    alert("❌ nincs adat");
-  }
-}
-
-async function loadGitHub(){
-  const url="https://raw.githubusercontent.com/USER/REPO/main/gtfs/budapest_gtfs.zip";
-
-  const res=await fetch(url);
-  if(!res.ok) throw new Error("GitHub fail");
-
-  const buf=await res.arrayBuffer();
-  const zip=await JSZip.loadAsync(buf);
-
-  const txt=await zip.file("stops.txt").async("string");
-
-  GTFS.stops=Papa.parse(txt,{header:true}).data
-    .filter(s=>s.stop_lat && s.stop_lon);
-
-  saveCache();
-  alert("✔ GitHub + cache");
-}
-
-async function loadAuto(){
-  try{
-    const res=await fetch("https://bkk.hu/gtfs/budapest_gtfs.zip");
+    const url="https://raw.githubusercontent.com/USER/REPO/main/gtfs/budapest_gtfs.zip";
+    const res=await fetch(url);
     const buf=await res.arrayBuffer();
     const zip=await JSZip.loadAsync(buf);
-
     const txt=await zip.file("stops.txt").async("string");
 
-    GTFS.stops=Papa.parse(txt,{header:true}).data
-      .filter(s=>s.stop_lat && s.stop_lon);
-
+    GTFS.stops=Papa.parse(txt,{header:true}).data.filter(s=>s.stop_lat);
     saveCache();
-    alert("✔ AUTO");
-  }catch{
-    if(loadCache()) alert("⚠️ fallback cache");
+    drawStops();
+    alert("✔ GTFS betöltve");
+  }catch(e){
+    loadCache();
+    alert("⚠️ cache fallback");
   }
-}
-
-async function loadManual(){
-  const file=document.querySelector("input[type=file]")?.files?.[0];
-  if(!file) return alert("ZIP kell");
-
-  const buf=await file.arrayBuffer();
-  const zip=await JSZip.loadAsync(buf);
-
-  const txt=await zip.file("stops.txt").async("string");
-
-  GTFS.stops=Papa.parse(txt,{header:true}).data
-    .filter(s=>s.stop_lat && s.stop_lon);
-
-  saveCache();
-  alert("✔ MANUAL");
 }
 
 // ================= GPS =================
 function startGPS(){
   navigator.geolocation.watchPosition(pos=>{
-    const lat=pos.coords.latitude;
-    const lon=pos.coords.longitude;
-    const t=Date.now();
+    userLat=pos.coords.latitude;
+    userLon=pos.coords.longitude;
 
-    userLat=lat; userLon=lon;
+    document.getElementById("gps").innerText=`📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`;
 
-    document.getElementById("gps").innerHTML=`📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-
-    history.push({lat,lon,t});
-    if(history.length>6) history.shift();
-
-    let speed=0;
-    if(history.length>=2){
-      let d=0,dt=0;
-      for(let i=1;i<history.length;i++){
-        const a=history[i-1];
-        const b=history[i];
-        d+=dist(a.lat,a.lon,b.lat,b.lon);
-        dt+=(b.t-a.t)/1000;
-      }
-      speed=dt>0?d/dt:0;
-    }
-
-    document.getElementById("speed").innerHTML=
-      `🚀 ${(speed*3.6).toFixed(1)} km/h (${speed.toFixed(2)} m/s)`;
+    userMarker.setLatLng([userLat,userLon]);
+    map.setView([userLat,userLon]);
 
     nearest();
-    poiSmart();
-
-  },null,{enableHighAccuracy:true});
+    poi();
+  });
 }
 
 // ================= DIST =================
@@ -189,83 +130,59 @@ function dist(a,b,c,d){
   const x=x=>x*Math.PI/180;
   const dLat=x(c-a);
   const dLon=x(d-b);
-  const s=Math.sin(dLat/2)**2+
-    Math.cos(x(a))*Math.cos(x(c))*Math.sin(dLon/2)**2;
+  const s=Math.sin(dLat/2)**2+Math.cos(x(a))*Math.cos(x(c))*Math.sin(dLon/2)**2;
   return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
+}
+
+// ================= MARKERS =================
+function drawStops(){
+  stopMarkers.forEach(m=>map.removeLayer(m));
+  stopMarkers=[];
+
+  GTFS.stops.slice(0,200).forEach(s=>{
+    const m=L.marker([+s.stop_lat,+s.stop_lon]).addTo(map)
+      .bindPopup(`🚏 ${s.stop_name}<br>🆔 ${s.stop_id}`);
+    stopMarkers.push(m);
+  });
 }
 
 // ================= NEAREST =================
 function nearest(){
-  if(!userLat) return;
-
   const list=GTFS.stops
     .map(s=>({...s,d:dist(userLat,userLon,+s.stop_lat,+s.stop_lon)}))
-    .filter(s=>s.d<3000)
     .sort((a,b)=>a.d-b.d)
-    .slice(0,6);
+    .slice(0,5);
 
   document.getElementById("nearest").innerHTML=
-    list.map(s=>`🚏 <b>${s.stop_name}</b><br>📏 ${Math.round(s.d)} m<br>🆔 ${s.stop_id}<hr>`).join("");
+    list.map(s=>`🚏 ${s.stop_name}<br>📏 ${Math.round(s.d)} m<br>🆔 ${s.stop_id}<hr>`).join("");
 }
 
-// ================= SMART POI =================
-async function poiSmart(){
-  if(!userLat) return;
-
-  updateMode();
-
-  // 🔵 ONLINE MODE
-  if(isOnline()){
-    try{
-      const q=`[out:json];node(around:600,${userLat},${userLon})["amenity"];out;`;
-
-      const r=await fetch("https://overpass-api.de/api/interpreter",{
-        method:"POST",
-        body:q
-      });
-
-      const j=await r.json();
-
-      document.getElementById("poi").innerHTML=
-        j.elements.slice(0,8).map(p=>{
-          const d=dist(userLat,userLon,p.lat,p.lon);
-          return `📍 <b>${p.tags.name||"POI"}</b><br>📏 ${Math.round(d)} m<br>📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
-        }).join("");
-
-      return;
-
-    }catch(e){
-      console.warn("POI online fail → offline fallback");
-    }
-  }
-
-  // 🔴 OFFLINE MODE
+// ================= POI (SAFE) =================
+function poi(){
   const fake=[
-    {name:"Offline bolt",lat:userLat+0.001,lon:userLon+0.001},
-    {name:"Offline megálló környék",lat:userLat-0.001,lon:userLon-0.001}
+    {name:"Közeli bolt",lat:userLat+0.001,lon:userLon+0.001},
+    {name:"Megálló környék",lat:userLat-0.001,lon:userLon-0.001}
   ];
 
   document.getElementById("poi").innerHTML=
     fake.map(p=>{
       const d=dist(userLat,userLon,p.lat,p.lon);
-      return `📍 <b>${p.name}</b><br>📏 ${Math.round(d)} m<br>📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
+      return `📍 ${p.name}<br>📏 ${Math.round(d)} m<br>📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
     }).join("");
 }
 
 // ================= SEARCH =================
 function searchStops(){
   const q=document.getElementById("search").value.toLowerCase();
-  if(q.length<2) return;
 
   const res=GTFS.stops
     .filter(s=>s.stop_name.toLowerCase().includes(q))
-    .map(s=>({...s,d:userLat?dist(userLat,userLon,+s.stop_lat,+s.stop_lon):999999}))
-    .sort((a,b)=>a.d-b.d)
     .slice(0,20);
 
   document.getElementById("results").innerHTML=
-    res.map(s=>`🚏 <b>${s.stop_name}</b><br>🆔 ${s.stop_id}<br>📏 ${Math.round(s.d)} m<hr>`).join("");
+    res.map(s=>`🚏 ${s.stop_name}<br>🆔 ${s.stop_id}<hr>`).join("");
 }
 </script>
+
 </body>
 </html>
