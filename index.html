@@ -3,141 +3,140 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Attila Közlekedés - GTFS Pro</title>
+<title>Attila Közlekedés - GTFS PRO V10</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
 header{padding:10px;background:#111827;position:sticky;top:0}
 button{padding:8px 10px;margin:5px;border:0;border-radius:6px;background:#2563eb;color:white}
-#map{height:35vh;background:#1f2937;display:flex;align-items:center;justify-content:center}
 .panel{padding:10px}
 .card{background:#111827;padding:10px;margin:8px 0;border-radius:8px}
-small{opacity:.8}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+td,th{border-bottom:1px solid #334155;padding:6px;text-align:left}
+tr:hover{background:#1e293b;cursor:pointer}
 </style>
 </head>
 <body>
 <header>
-<b>🚍 Attila GTFS Pro</b>
+<b>🚍 GTFS PRO V10</b>
 <input type="file" id="zipInput" accept=".zip" />
 <button onclick="loadGTFS()">GTFS betöltés</button>
-<button onclick="getLocation()">📍 GPS + sebesség</button>
-<button onclick="startCompass()">🧭 Iránytű</button>
+<button onclick="getLocation()">📍 GPS</button>
 </header>
-
-<div id="map">TÉRKÉP (később Leaflet)</div>
 
 <div class="panel">
 <div class="card">
-<b>📏 Legközelebbi megálló</b>
+<b>🚏 Legközelebbi megálló</b>
 <div id="nearest">Nincs adat</div>
 </div>
 
 <div class="card">
-<b>📡 GPS + Sebesség</b>
-<div id="gps">Nincs adat</div>
-<div id="speed">Sebesség: 0 km/h (0 m/s)</div>
+<b>📊 Indulási tábla</b>
+<table id="departures">
+<thead><tr><th>Idő</th><th>Járat</th><th>Irány</th></tr></thead>
+<tbody></tbody>
+</table>
 </div>
 
 <div class="card">
-<b>🧭 Iránytű</b>
-<div id="compass">--</div>
+<b>🚌 STOP → JÁRAT LISTA</b>
+<div id="routes">Kattints egy megállóra</div>
 </div>
 </div>
 
 <script>
-let stops = [];
-let userLat = null;
-let userLon = null;
-let lastPos = null;
-let lastTime = null;
+let stops=[], stopTimes=[], trips=[], routes=[];
+let userLat=null,userLon=null;
 
 function haversine(lat1, lon1, lat2, lon2){
-  const R = 6371000;
-  const toRad = x => x * Math.PI/180;
-  const dLat = toRad(lat2-lat1);
-  const dLon = toRad(lon2-lon1);
-  const a = Math.sin(dLat/2)**2 +
-    Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R*c;
+  const R=6371000;
+  const toRad=x=>x*Math.PI/180;
+  const dLat=toRad(lat2-lat1);
+  const dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// ZIP GTFS BETÖLTÉS (JAVÍTOTT!)
-function loadGTFS(){
-  const file = document.getElementById("zipInput").files[0];
-  if(!file){ alert("Válassz GTFS ZIP-et!"); return; }
+async function loadGTFS(){
+  const file=document.getElementById("zipInput").files[0];
+  if(!file) return alert("Válassz ZIP-et");
 
-  JSZip.loadAsync(file).then(zip=>{
-    return zip.file("stops.txt").async("string");
-  }).then(text=>{
-    const parsed = Papa.parse(text,{header:true});
-    stops = parsed.data.filter(s=>s.stop_lat && s.stop_lon);
-    alert("GTFS betöltve: " + stops.length + " megálló");
-  }).catch(err=>{
-    console.error(err);
-    alert("Hiba: stops.txt nem található a ZIP-ben");
-  });
+  const zip=await JSZip.loadAsync(file);
+
+  const parse=async(name)=>{
+    const txt=await zip.file(name).async("string");
+    return Papa.parse(txt,{header:true}).data;
+  }
+
+  stops=await parse("stops.txt");
+  stopTimes=await parse("stop_times.txt");
+  trips=await parse("trips.txt");
+  routes=await parse("routes.txt");
+
+  alert("GTFS betöltve ✔");
 }
 
-// GPS + SEBESSÉG
 function getLocation(){
-  navigator.geolocation.watchPosition(pos=>{
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
-    const t = Date.now();
-
-    userLat = lat;
-    userLon = lon;
-
-    document.getElementById("gps").innerHTML =
-      `Lat: ${lat.toFixed(5)}<br>Lon: ${lon.toFixed(5)}`;
-
-    // SPEED CALC
-    let speedKmh = 0;
-    let speedMs = 0;
-
-    if(lastPos){
-      const dist = haversine(lastPos.lat,lastPos.lon,lat,lon);
-      const dt = (t - lastTime)/1000;
-      speedMs = dt > 0 ? dist/dt : 0;
-      speedKmh = speedMs * 3.6;
-    }
-
-    lastPos = {lat,lon};
-    lastTime = t;
-
-    document.getElementById("speed").innerHTML =
-      `Sebesség: ${speedKmh.toFixed(1)} km/h (${speedMs.toFixed(2)} m/s)`;
-
+  navigator.geolocation.getCurrentPosition(pos=>{
+    userLat=pos.coords.latitude;
+    userLon=pos.coords.longitude;
     findNearest();
   });
 }
 
 function findNearest(){
-  if(!userLat || !stops.length) return;
-
-  let min = Infinity;
-  let best = null;
-
+  let min=Infinity,best=null;
   stops.forEach(s=>{
-    const d = haversine(userLat,userLon,parseFloat(s.stop_lat),parseFloat(s.stop_lon));
-    if(d < min){ min = d; best = s; }
+    const d=haversine(userLat,userLon,+s.stop_lat,+s.stop_lon);
+    if(d<min){min=d;best=s}
   });
 
   if(best){
-    document.getElementById("nearest").innerHTML =
-      `🚏 <b>${best.stop_name}</b><br>🆔 ${best.stop_id || "-"}<br>📏 ${Math.round(min)} m`;
+    document.getElementById("nearest").innerHTML=
+      `🚏 <b>${best.stop_name}</b><br>ID: ${best.stop_id}<br>${Math.round(min)} m`;
+
+    loadDepartures(best.stop_id);
   }
 }
 
-function startCompass(){
-  if(window.DeviceOrientationEvent){
-    window.addEventListener("deviceorientation", e=>{
-      document.getElementById("compass").innerText =
-        "Észak: " + Math.round(e.alpha) + "°";
-    });
-  }
+function loadDepartures(stopId){
+  const tbody=document.querySelector("#departures tbody");
+  tbody.innerHTML="";
+
+  const list=stopTimes
+    .filter(s=>s.stop_id===stopId)
+    .slice(0,20);
+
+  list.forEach(st=>{
+    const trip=trips.find(t=>t.trip_id===st.trip_id);
+    const route=routes.find(r=>r.route_id===trip.route_id);
+
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
+      <td>${st.departure_time}</td>
+      <td>${route.route_short_name||"?"}</td>
+      <td>${trip.trip_headsign||"-"}</td>`;
+
+    tr.onclick=()=>showRoutes(stopId);
+
+    tbody.appendChild(tr);
+  });
+}
+
+function showRoutes(stopId){
+  const related=stopTimes.filter(s=>s.stop_id===stopId);
+
+  let html="";
+
+  related.slice(0,30).forEach(st=>{
+    const trip=trips.find(t=>t.trip_id===st.trip_id);
+    const route=routes.find(r=>r.route_id===trip.route_id);
+
+    html+=`🚍 ${route.route_short_name} → ${trip.trip_headsign}<br>`;
+  });
+
+  document.getElementById("routes").innerHTML=html;
 }
 </script>
 </body>
