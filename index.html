@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GTFS PRO V20 ZERO FAIL</title>
+<title>GTFS PRO V21 SMART MODE</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -12,14 +12,16 @@ header{padding:10px;background:#111827;position:sticky;top:0}
 button,input,select{padding:6px;margin:5px;border-radius:6px;border:0}
 .card{background:#111827;margin:10px;padding:10px;border-radius:8px}
 small{opacity:.7}
+.mode{font-weight:bold}
 </style>
 </head>
 <body>
 <header>
-<b>🚀 GTFS PRO V20 ZERO FAIL</b><br>
+<b>🚀 GTFS PRO V21 SMART MODE</b><br>
+<span class="mode" id="mode">SMART: UNKNOWN</span><br>
 <select id="source">
-  <option value="github">📦 GitHub (cache)</option>
-  <option value="auto">⚡ Auto (online)</option>
+  <option value="github">📦 GitHub</option>
+  <option value="auto">⚡ Auto</option>
   <option value="manual">📁 Manual ZIP</option>
 </select>
 <button onclick="loadGTFS()">LOAD</button>
@@ -44,7 +46,7 @@ small{opacity:.7}
 </div>
 
 <div class="card">
-<b>📌 POI (OFFLINE SAFE)</b>
+<b>📌 POI (SMART)</b>
 <div id="poi">-</div>
 </div>
 
@@ -52,6 +54,20 @@ small{opacity:.7}
 let GTFS={stops:[]};
 let userLat=null,userLon=null;
 let history=[];
+
+// ================= SMART MODE =================
+function isOnline(){
+  return navigator.onLine;
+}
+
+function updateMode(){
+  const mode=document.getElementById("mode");
+  mode.innerText = isOnline() ? "SMART: ONLINE" : "SMART: OFFLINE";
+}
+
+window.addEventListener("online",updateMode);
+window.addEventListener("offline",updateMode);
+updateMode();
 
 // ================= CACHE =================
 function saveCache(){
@@ -65,7 +81,7 @@ function loadCache(){
   return false;
 }
 
-// ================= ENTRY =================
+// ================= GTFS LOAD =================
 async function loadGTFS(){
   const mode=document.getElementById("source").value;
 
@@ -75,17 +91,11 @@ async function loadGTFS(){
     return await loadManual();
   }catch(e){
     console.warn(e);
-
-    if(loadCache()){
-      alert("⚠️ Offline cache betöltve");
-      return;
-    }
-
-    alert("❌ Nincs adat (sem online, sem cache)");
+    if(loadCache()) return alert("⚠️ CACHE betöltve");
+    alert("❌ nincs adat");
   }
 }
 
-// ================= GITHUB =================
 async function loadGitHub(){
   const url="https://raw.githubusercontent.com/USER/REPO/main/gtfs/budapest_gtfs.zip";
 
@@ -101,15 +111,12 @@ async function loadGitHub(){
     .filter(s=>s.stop_lat && s.stop_lon);
 
   saveCache();
-  alert("✔ GitHub GTFS + cache");
+  alert("✔ GitHub + cache");
 }
 
-// ================= AUTO =================
 async function loadAuto(){
   try{
     const res=await fetch("https://bkk.hu/gtfs/budapest_gtfs.zip");
-    if(!res.ok) throw new Error();
-
     const buf=await res.arrayBuffer();
     const zip=await JSZip.loadAsync(buf);
 
@@ -119,15 +126,12 @@ async function loadAuto(){
       .filter(s=>s.stop_lat && s.stop_lon);
 
     saveCache();
-    alert("✔ Auto GTFS");
-
+    alert("✔ AUTO");
   }catch{
-    alert("⚠️ Auto fail → cache próbálva");
-    loadCache();
+    if(loadCache()) alert("⚠️ fallback cache");
   }
 }
 
-// ================= MANUAL =================
 async function loadManual(){
   const file=document.querySelector("input[type=file]")?.files?.[0];
   if(!file) return alert("ZIP kell");
@@ -141,7 +145,7 @@ async function loadManual(){
     .filter(s=>s.stop_lat && s.stop_lon);
 
   saveCache();
-  alert("✔ Manual + cache");
+  alert("✔ MANUAL");
 }
 
 // ================= GPS =================
@@ -153,8 +157,7 @@ function startGPS(){
 
     userLat=lat; userLon=lon;
 
-    document.getElementById("gps").innerHTML=
-      `📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+    document.getElementById("gps").innerHTML=`📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 
     history.push({lat,lon,t});
     if(history.length>6) history.shift();
@@ -175,7 +178,7 @@ function startGPS(){
       `🚀 ${(speed*3.6).toFixed(1)} km/h (${speed.toFixed(2)} m/s)`;
 
     nearest();
-    poi();
+    poiSmart();
 
   },null,{enableHighAccuracy:true});
 }
@@ -205,20 +208,47 @@ function nearest(){
     list.map(s=>`🚏 <b>${s.stop_name}</b><br>📏 ${Math.round(s.d)} m<br>🆔 ${s.stop_id}<hr>`).join("");
 }
 
-// ================= POI (OFFLINE SAFE) =================
-function poi(){
+// ================= SMART POI =================
+async function poiSmart(){
   if(!userLat) return;
 
-  // NO EXTERNAL API → ZERO FAIL
+  updateMode();
+
+  // 🔵 ONLINE MODE
+  if(isOnline()){
+    try{
+      const q=`[out:json];node(around:600,${userLat},${userLon})["amenity"];out;`;
+
+      const r=await fetch("https://overpass-api.de/api/interpreter",{
+        method:"POST",
+        body:q
+      });
+
+      const j=await r.json();
+
+      document.getElementById("poi").innerHTML=
+        j.elements.slice(0,8).map(p=>{
+          const d=dist(userLat,userLon,p.lat,p.lon);
+          return `📍 <b>${p.tags.name||"POI"}</b><br>📏 ${Math.round(d)} m<br>📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
+        }).join("");
+
+      return;
+
+    }catch(e){
+      console.warn("POI online fail → offline fallback");
+    }
+  }
+
+  // 🔴 OFFLINE MODE
   const fake=[
-    {name:"Közeli bolt",lat:userLat+0.001,lon:userLon+0.001},
-    {name:"Buszmegálló környék",lat:userLat-0.001,lon:userLon-0.001}
+    {name:"Offline bolt",lat:userLat+0.001,lon:userLon+0.001},
+    {name:"Offline megálló környék",lat:userLat-0.001,lon:userLon-0.001}
   ];
 
   document.getElementById("poi").innerHTML=
     fake.map(p=>{
       const d=dist(userLat,userLon,p.lat,p.lon);
-      return `📍 ${p.name}<br>📏 ${Math.round(d)} m<br>📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
+      return `📍 <b>${p.name}</b><br>📏 ${Math.round(d)} m<br>📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
     }).join("");
 }
 
