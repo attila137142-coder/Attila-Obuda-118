@@ -3,45 +3,48 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Attila GTFS PRO V17 BACKEND</title>
+<title>Attila GTFS PRO V18 GITHUB</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
 header{padding:10px;background:#111827;position:sticky;top:0}
-button,input{padding:6px;margin:5px;border-radius:6px;border:0}
+button,input,select{padding:6px;margin:5px;border-radius:6px;border:0}
 .card{background:#111827;padding:10px;margin:10px;border-radius:8px}
 small{opacity:.75}
 </style>
 </head>
 <body>
 <header>
-<b>🚀 GTFS PRO V17 BACKEND</b><br>
-<input type="file" id="zipInput" accept=".zip" />
-<button onclick="loadGTFS()">📦 Manual</button>
-<button onclick="autoBackendGTFS()">⚡ BACKEND GTFS</button>
+<b>🚀 GTFS PRO V18 GITHUB ARCH</b><br>
+<select id="source">
+  <option value="github">📦 GitHub GTFS</option>
+  <option value="manual">📁 Manual ZIP</option>
+  <option value="auto">⚡ Auto BKK</option>
+</select>
+<button onclick="loadGTFS()">LOAD</button>
 <button onclick="startGPS()">📍 GPS</button>
 <input id="search" placeholder="Megálló kereső..." oninput="searchStops()" />
 </header>
 
 <div class="card">
-<b>📍 HELY + SEBESSÉG</b>
+<b>📍 GPS + SPEED</b>
 <div id="gps">-</div>
 <div id="speed">0 km/h (0 m/s)</div>
 </div>
 
 <div class="card">
-<b>🚏 MEGÁLLÓK</b>
+<b>🚏 NEAREST</b>
 <div id="nearest">-</div>
 </div>
 
 <div class="card">
-<b>🔎 KERESÉS</b>
+<b>🔎 SEARCH</b>
 <div id="results"></div>
 </div>
 
 <div class="card">
-<b>📌 POI + ÚTVONAL TÁVOLSÁG</b>
+<b>📌 POI</b>
 <div id="poi">-</div>
 </div>
 
@@ -50,45 +53,66 @@ let GTFS={stops:[]};
 let userLat=null,userLon=null;
 let history=[];
 
-// ================= BACKEND GTFS =================
-async function autoBackendGTFS(){
+// ================= GTFS LOADER =================
+async function loadGTFS(){
+  const mode=document.getElementById("source").value;
+
+  if(mode==="github") return loadGitHubGTFS();
+  if(mode=="auto") return autoGTFS();
+  return loadManual();
+}
+
+// ================= GITHUB GTFS =================
+async function loadGitHubGTFS(){
   try{
-    alert("⚡ BACKEND GTFS indul...");
+    alert("📦 GitHub GTFS betöltés...");
 
-    // 1. backend (AJÁNLOTT)
-    let res;
-    try{
-      res = await fetch("/api/gtfs.zip");
-    }catch(e){
-      console.warn("Backend nincs, fallback");
-    }
+    // 🔥 ide kell saját repo
+    const url="https://raw.githubusercontent.com/USER/REPO/main/gtfs/budapest_gtfs.zip";
 
-    // 2. fallback public
-    if(!res || !res.ok){
-      res = await fetch("https://bkk.hu/gtfs/budapest_gtfs.zip");
-    }
+    const res=await fetch(url);
+    if(!res.ok) throw new Error("GitHub nem elérhető");
 
-    if(!res.ok) throw new Error("GTFS nem elérhető");
+    const blob=await res.blob();
+    const zip=await JSZip.loadAsync(blob);
 
-    const blob = await res.blob();
-    const zip = await JSZip.loadAsync(blob);
+    const txt=await zip.file("stops.txt").async("string");
 
-    const txt = await zip.file("stops.txt").async("string");
-
-    GTFS.stops = Papa.parse(txt,{header:true}).data
+    GTFS.stops=Papa.parse(txt,{header:true}).data
       .filter(s=>s.stop_lat && s.stop_lon);
 
-    alert("✔ BACKEND GTFS kész: "+GTFS.stops.length);
+    alert("✔ GitHub GTFS kész: "+GTFS.stops.length);
 
   }catch(e){
     console.error(e);
-    alert("❌ BACKEND GTFS hiba");
+    alert("❌ GitHub GTFS hiba");
+  }
+}
+
+// ================= AUTO BKK =================
+async function autoGTFS(){
+  try{
+    alert("⚡ Auto BKK...");
+
+    const res=await fetch("https://bkk.hu/gtfs/budapest_gtfs.zip");
+    const blob=await res.blob();
+
+    const zip=await JSZip.loadAsync(blob);
+    const txt=await zip.file("stops.txt").async("string");
+
+    GTFS.stops=Papa.parse(txt,{header:true}).data
+      .filter(s=>s.stop_lat && s.stop_lon);
+
+    alert("✔ Auto GTFS: "+GTFS.stops.length);
+
+  }catch{
+    alert("❌ Auto nem elérhető");
   }
 }
 
 // ================= MANUAL =================
-async function loadGTFS(){
-  const file=document.getElementById("zipInput").files[0];
+async function loadManual(){
+  const file=document.getElementById("zipInput")?.files?.[0];
   if(!file) return alert("ZIP kell");
 
   const zip=await JSZip.loadAsync(file);
@@ -97,131 +121,88 @@ async function loadGTFS(){
   GTFS.stops=Papa.parse(txt,{header:true}).data
     .filter(s=>s.stop_lat && s.stop_lon);
 
-  alert("✔ Manual: "+GTFS.stops.length);
+  alert("✔ Manual OK");
 }
 
 // ================= GPS =================
 function startGPS(){
-  navigator.geolocation.watchPosition(async pos=>{
+  navigator.geolocation.watchPosition(pos=>{
     const lat=pos.coords.latitude;
     const lon=pos.coords.longitude;
     const t=Date.now();
 
     userLat=lat; userLon=lon;
 
-    const addr = await reverseGeocode(lat,lon);
-
     document.getElementById("gps").innerHTML=
-      `📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>
-       🌍 ${addr?.country||""} ${addr?.city||""}<br>
-       🏠 ${addr?.road||""} ${addr?.house||""}<br>
-       <small>${addr?.full||""}</small>`;
+      `📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 
     history.push({lat,lon,t});
     if(history.length>5) history.shift();
 
-    let speedMs=0;
+    let speed=0;
     if(history.length>=2){
       let d=0,dt=0;
       for(let i=1;i<history.length;i++){
         const a=history[i-1];
         const b=history[i];
-        d+=haversine(a.lat,a.lon,b.lat,b.lon);
+        d+=dist(a.lat,a.lon,b.lat,b.lon);
         dt+=(b.t-a.t)/1000;
       }
-      speedMs=dt>0?d/dt:0;
+      speed=dt>0?d/dt:0;
     }
 
-    if(speedMs<0.5) speedMs=0;
-
     document.getElementById("speed").innerHTML=
-      `🚀 ${(speedMs*3.6).toFixed(1)} km/h (${speedMs.toFixed(2)} m/s)`;
+      `🚀 ${(speed*3.6).toFixed(1)} km/h (${speed.toFixed(2)} m/s)`;
 
-    findNearest();
-    loadPOI();
+    nearest();
+    poi();
 
   },null,{enableHighAccuracy:true});
 }
 
-// ================= REVERSE GEOCODE =================
-async function reverseGeocode(lat,lon){
-  try{
-    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-    const d=await r.json();
-    return {
-      full:d.display_name,
-      country:d.address?.country,
-      city:d.address?.city||d.address?.town,
-      road:d.address?.road,
-      house:d.address?.house_number
-    };
-  }catch{return null;}
-}
-
 // ================= DIST =================
-function haversine(lat1,lon1,lat2,lon2){
+function dist(a,b,c,d){
   const R=6371000;
-  const toRad=x=>x*Math.PI/180;
-  const dLat=toRad(lat2-lat1);
-  const dLon=toRad(lon2-lon1);
-  const a=Math.sin(dLat/2)**2+
-    Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  const x=x=>x*Math.PI/180;
+  const dLat=x(c-a);
+  const dLon=x(d-b);
+  const s=Math.sin(dLat/2)**2+
+    Math.cos(x(a))*Math.cos(x(c))*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
 }
 
 // ================= NEAREST =================
-function findNearest(){
+function nearest(){
   if(!userLat) return;
 
   const list=GTFS.stops
-    .map(s=>{
-      const d=haversine(userLat,userLon,+s.stop_lat,+s.stop_lon);
-      return {...s,dist:d};
-    })
-    .filter(s=>s.dist<3000)
-    .sort((a,b)=>a.dist-b.dist)
-    .slice(0,6);
+    .map(s=>({
+      ...s,
+      d:dist(userLat,userLon,+s.stop_lat,+s.stop_lon)
+    }))
+    .filter(s=>s.d<3000)
+    .sort((a,b)=>a.d-b.d)
+    .slice(0,5);
 
   document.getElementById("nearest").innerHTML=
-    list.map(s=>`🚏 <b>${s.stop_name}</b><br>🆔 ${s.stop_id}<br>📏 ${Math.round(s.dist)} m<hr>`).join("");
+    list.map(s=>`🚏 ${s.stop_name}<br>📏 ${Math.round(s.d)} m<br>🆔 ${s.stop_id}<hr>`).join("");
 }
 
-// ================= POI + ROAD DIST =================
-async function loadPOI(){
+// ================= POI =================
+async function poi(){
   if(!userLat) return;
 
   const q=`[out:json];node(around:600,${userLat},${userLon})["amenity"];out;`;
 
   try{
-    const res=await fetch("https://overpass-api.de/api/interpreter",{
-      method:"POST",
-      body:q
-    });
+    const r=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:q});
+    const j=await r.json();
 
-    const data=await res.json();
-
-    let html="";
-
-    for(const p of data.elements.slice(0,8)){
-      const d=haversine(userLat,userLon,p.lat,p.lon);
-
-      // 🚗 road distance (OSRM)
-      let road="n/a";
-      try{
-        const r=await fetch(
-          `https://router.project-osrm.org/route/v1/foot/${userLon},${userLat};${p.lon},${p.lat}?overview=false`
-        );
-        const j=await r.json();
-        road = j.routes?.[0]?.distance ? Math.round(j.routes[0].distance)+" m" : "n/a";
-      }catch{}
-
-      html+=`📍 <b>${p.tags.name||"POI"}</b><br>
-      📏 légvonal: ${Math.round(d)} m<br>
-      🛣️ út: ${road}<br>
-      📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
-    }
-
-    document.getElementById("poi").innerHTML=html;
+    document.getElementById("poi").innerHTML=
+      j.elements.slice(0,8).map(p=>{
+        const d=dist(userLat,userLon,p.lat,p.lon);
+        return `📍 ${p.tags.name||"POI"}<br>📏 ${Math.round(d)} m<br>📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
+      }).join("");
 
   }catch{
     document.getElementById("poi").innerText="POI hiba";
@@ -229,28 +210,21 @@ async function loadPOI(){
 }
 
 // ================= SEARCH =================
-function similarity(a,b){
-  let c=0;
-  for(let i=0;i<b.length;i++) if(a.includes(b[i])) c++;
-  return c/a.length;
-}
-
 function searchStops(){
   const q=document.getElementById("search").value.toLowerCase();
   if(q.length<2) return;
 
   const res=GTFS.stops
-    .map(s=>{
-      const d=userLat?haversine(userLat,userLon,+s.stop_lat,+s.stop_lon):null;
-      const sim=similarity(s.stop_name.toLowerCase(),q);
-      return {...s,dist:d,sim};
-    })
-    .filter(s=>s.sim>0.3)
-    .sort((a,b)=>(a.dist||999999)-(b.dist||999999))
+    .map(s=>({
+      ...s,
+      d:userLat?dist(userLat,userLon,+s.stop_lat,+s.stop_lon):999999
+    }))
+    .filter(s=>s.stop_name.toLowerCase().includes(q))
+    .sort((a,b)=>a.d-b.d)
     .slice(0,20);
 
   document.getElementById("results").innerHTML=
-    res.map(s=>`🚏 <b>${s.stop_name}</b><br>🆔 ${s.stop_id}<br>${s.dist?"📏 "+Math.round(s.dist)+" m":""}<hr>`).join("");
+    res.map(s=>`🚏 ${s.stop_name}<br>🆔 ${s.stop_id}<br>${Math.round(s.d)} m<hr>`).join("");
 }
 </script>
 </body>
