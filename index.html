@@ -2,21 +2,29 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V23.1 CLEAN DISPATCH</title>
+<title>V23.2 DISPATCH + MAP</title>
+
+<!-- LIBEK -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
-input,button{padding:10px;margin:5px}
+body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:10px}
+input,button{padding:8px;margin:4px}
+
+#map{height:300px;margin-top:10px;border-radius:10px}
 
 table{width:100%;border-collapse:collapse;margin-top:10px}
 th,td{
-  border:1px solid #334155;
-  padding:6px;
-  font-size:12px;
-  white-space:nowrap;
-  overflow:hidden;
-  text-overflow:ellipsis;
+ border:1px solid #334155;
+ padding:6px;
+ font-size:12px;
+ white-space:nowrap;
+ overflow:hidden;
+ text-overflow:ellipsis;
 }
 tr:hover{background:#1f2937}
 
@@ -28,13 +36,15 @@ tr:hover{background:#1f2937}
 
 <body>
 
-<h2>🚀 V23.1 CLEAN DISPATCH</h2>
+<h2>🚀 V23.2 DISPATCH + MAP</h2>
 
 <input type="file" id="file" multiple />
 <button onclick="loadGTFS()">📦 Betöltés</button>
 <button onclick="clearDB()">🧹 Törlés</button>
 
 <input id="search" placeholder="🚏 megálló keresés..." oninput="searchStops()" />
+
+<div id="map"></div>
 
 <h3>🚏 Megállók</h3>
 <table id="stops"></table>
@@ -51,8 +61,38 @@ let index = {stopTimes:{},trips:{},routes:{}};
 function save(){localStorage.setItem("gtfs_db",JSON.stringify(db));}
 function clearDB(){localStorage.removeItem("gtfs_db");location.reload();}
 
+// ================= MAP =================
+let map = L.map('map').setView([47.4979,19.0402], 11);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+ attribution:'© OSM'
+}).addTo(map);
+
+let markers = [];
+
+function showOnMap(stop){
+ markers.forEach(m=>map.removeLayer(m));
+ markers=[];
+
+ if(!stop.lat) return;
+
+ let m = L.marker([stop.lat, stop.lon]).addTo(map)
+  .bindPopup(stop.name).openPopup();
+
+ markers.push(m);
+ map.setView([stop.lat, stop.lon],15);
+}
+
 // ================= HELPERS =================
 function norm(s){return (s||"").toLowerCase().trim();}
+
+function getPrefix(name){
+ name=name.toLowerCase();
+ if(name.includes("budapest")) return "BKK";
+ if(name.includes("volan")) return "VOLÁN";
+ if(name.includes("mav")) return "MÁV";
+ return "GTFS";
+}
 
 function nowSec(){
  let d=new Date();
@@ -67,14 +107,6 @@ function normalizeTime(t){
  return {sec:h*3600+m*60+(s||0),day};
 }
 
-function getPrefix(name){
- name=name.toLowerCase();
- if(name.includes("budapest")) return "BKK";
- if(name.includes("volan")) return "VOLÁN";
- if(name.includes("mav")) return "MÁV";
- return "GTFS";
-}
-
 // ================= LOAD =================
 async function loadGTFS(){
  const files=document.getElementById('file').files;
@@ -82,7 +114,6 @@ async function loadGTFS(){
  for(let f of files){
 
   const prefix=getPrefix(f.name);
-
   const zip=await JSZip.loadAsync(await f.arrayBuffer());
   const keys=Object.keys(zip.files);
 
@@ -102,79 +133,67 @@ async function loadGTFS(){
 }
 
 // ================= PARSERS =================
-function split(l){return l.split(",");}
+function parseStops(text,prefix){
+ const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
 
-function parseStops(t,prefix){
- let l=t.split("\n");
- let h=split(l[0]);
- let i={id:h.indexOf("stop_id"),name:h.indexOf("stop_name")};
+ data.forEach(r=>{
+  if(!r.stop_id) return;
 
- for(let k=1;k<l.length;k++){
-  let p=split(l[k]);
-  if(!p[i.id]) continue;
-
-  let id=prefix+"_"+p[i.id];
+  let id = prefix+"_"+r.stop_id;
 
   db[id]={
-   id,
-   name:p[i.name],
-   prefix
+    id,
+    name:r.stop_name,
+    lat:parseFloat(r.stop_lat),
+    lon:parseFloat(r.stop_lon),
+    prefix
   };
- }
+ });
 }
 
-function parseTrips(t,prefix){
- let l=t.split("\n");
- let h=split(l[0]);
- let i={trip:h.indexOf("trip_id"),route:h.indexOf("route_id"),head:h.indexOf("trip_headsign")};
+function parseTrips(text,prefix){
+ const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
 
- for(let k=1;k<l.length;k++){
-  let p=split(l[k]);
-  if(!p[i.trip]) continue;
+ data.forEach(r=>{
+  if(!r.trip_id) return;
 
-  index.trips[prefix+"_"+p[i.trip]]={
-   route:prefix+"_"+p[i.route],
-   head:(p[i.head]||"").replace(/\n/g," ").trim(),
-   prefix
+  index.trips[prefix+"_"+r.trip_id]={
+    route:prefix+"_"+r.route_id,
+    head:(r.trip_headsign||"").trim(),
+    prefix
   };
- }
+ });
 }
 
-function parseRoutes(t,prefix){
- let l=t.split("\n");
- let h=split(l[0]);
- let i={id:h.indexOf("route_id"),name:h.indexOf("route_short_name")};
+function parseRoutes(text,prefix){
+ const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
 
- for(let k=1;k<l.length;k++){
-  let p=split(l[k]);
-  if(!p[i.id]) continue;
+ data.forEach(r=>{
+  if(!r.route_id) return;
 
-  index.routes[prefix+"_"+p[i.id]]={
-   name:p[i.name],
-   prefix
+  index.routes[prefix+"_"+r.route_id]={
+    name:r.route_short_name,
+    prefix
   };
- }
+ });
 }
 
-function parseStopTimes(t,prefix){
- let l=t.split("\n");
- let h=split(l[0]);
- let i={stop:h.indexOf("stop_id"),trip:h.indexOf("trip_id"),time:h.indexOf("departure_time")};
+function parseStopTimes(text,prefix){
+ const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
 
- for(let k=1;k<l.length;k++){
-  let p=split(l[k]);
-  if(!p[i.stop]) continue;
+ data.forEach(r=>{
+  if(!r.stop_id) return;
 
-  let stop=prefix+"_"+p[i.stop];
+  let stop=prefix+"_"+r.stop_id;
 
   if(!index.stopTimes[stop]) index.stopTimes[stop]=[];
 
   index.stopTimes[stop].push({
-   trip:prefix+"_"+p[i.trip],
-   time:p[i.time],
-   prefix
+    trip:prefix+"_"+r.trip_id,
+    time:r.departure_time,
+    prefix
   });
- }
+ });
 }
 
 // ================= UI =================
@@ -185,7 +204,7 @@ function renderStops(list){
  let h="<tr><th>Szolg.</th><th>Név</th></tr>";
 
  data.slice(0,100).forEach(s=>{
-  h+=`<tr onclick="live('${s.id}')">
+  h+=`<tr onclick="live('${s.id}');showOnMap(${JSON.stringify(s)})">
    <td>${s.prefix}</td>
    <td>${s.name}</td>
   </tr>`;
@@ -219,7 +238,7 @@ function live(stopId){
  .filter(r=>{
    let trip=index.trips[r.trip]||{};
    let route=index.routes[trip.route]||{};
-   let key = (route.name||"") + "|" + (trip.head||"") + "|" + r.time;
+   let key=(route.name||"")+"|"+(trip.head||"")+"|"+r.time;
 
    if(seen.has(key)) return false;
    seen.add(key);
@@ -228,7 +247,7 @@ function live(stopId){
 
  enriched.sort((a,b)=>a.sec-b.sec);
 
- let h="<tr><th>Szolg.</th><th>Járat</th><th>Irány</th><th>Indul</th><th>Eltérés</th><th>Trip</th></tr>";
+ let h="<tr><th>Szolg.</th><th>Járat</th><th>Irány</th><th>Indul</th><th>Eltérés</th></tr>";
 
  enriched.slice(0,10).forEach(r=>{
   let trip=index.trips[r.trip]||{};
@@ -241,22 +260,19 @@ function live(stopId){
   let m=Math.floor(r.delta/60);
   let s=Math.abs(r.delta%60);
 
-  let shortTrip = r.trip.split("_").pop();
-
   h+=`<tr>
    <td>${r.prefix}</td>
    <td>${route.name||"—"}</td>
    <td>${trip.head||"—"}</td>
    <td>${r.time}</td>
    <td class="${cls}">${m}m ${s}s</td>
-   <td>${shortTrip}</td>
   </tr>`;
  });
 
  document.getElementById('live').innerHTML=h;
 }
 
-// ================= AUTO RESTORE =================
+// ================= INIT =================
 window.onload=()=>{
  renderStops();
 };
