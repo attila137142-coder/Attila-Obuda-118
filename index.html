@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Attila GTFS PRO V14</title>
+<title>Attila GTFS PRO V15 + POI</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -15,10 +15,10 @@ button,input{padding:6px;margin:5px;border-radius:6px;border:0}
 </head>
 <body>
 <header>
-<b>🚀 GTFS PRO V14</b>
+<b>🚀 GTFS PRO V15 + POI</b>
 <input type="file" id="zipInput" accept=".zip" />
 <button onclick="loadGTFS()">GTFS</button>
-<button onclick="startGPS()">GPS + SPEED</button>
+<button onclick="startGPS()">GPS</button>
 <input id="search" placeholder="Megálló kereső..." oninput="searchStops()" />
 </header>
 
@@ -29,7 +29,7 @@ button,input{padding:6px;margin:5px;border-radius:6px;border:0}
 </div>
 
 <div class="card">
-<b>🚏 Legközelebbi megállók</b>
+<b>🚏 Megállók</b>
 <div id="nearest">-</div>
 </div>
 
@@ -38,12 +38,16 @@ button,input{padding:6px;margin:5px;border-radius:6px;border:0}
 <div id="results"></div>
 </div>
 
+<div class="card">
+<b>📌 Környékbeli POI-k</b>
+<div id="poi">Nincs adat</div>
+</div>
+
 <script>
 let GTFS={stops:[]};
 let userLat=null,userLon=null;
 let history=[];
 
-// ===== GTFS =====
 async function loadGTFS(){
   const file=document.getElementById("zipInput").files[0];
   if(!file) return alert("ZIP kell");
@@ -51,13 +55,10 @@ async function loadGTFS(){
   const zip=await JSZip.loadAsync(file);
   const txt=await zip.file("stops.txt").async("string");
 
-  GTFS.stops=Papa.parse(txt,{header:true}).data
-    .filter(s=>s.stop_lat && s.stop_lon);
-
-  alert("✔ Megállók: "+GTFS.stops.length);
+  GTFS.stops=Papa.parse(txt,{header:true}).data.filter(s=>s.stop_lat);
+  alert("✔ Stops: "+GTFS.stops.length);
 }
 
-// ===== HAVERSINE =====
 function haversine(lat1, lon1, lat2, lon2){
   const R=6371000;
   const toRad=x=>x*Math.PI/180;
@@ -67,9 +68,8 @@ function haversine(lat1, lon1, lat2, lon2){
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// ===== GPS + SPEED =====
 function startGPS(){
-  navigator.geolocation.watchPosition(pos=>{
+  navigator.geolocation.watchPosition(async pos=>{
     const lat=pos.coords.latitude;
     const lon=pos.coords.longitude;
     const t=Date.now();
@@ -83,7 +83,6 @@ function startGPS(){
     if(history.length>5) history.shift();
 
     let speedMs=0;
-
     if(history.length>=2){
       let d=0,dt=0;
       for(let i=1;i<history.length;i++){
@@ -92,22 +91,21 @@ function startGPS(){
         d+=haversine(a.lat,a.lon,b.lat,b.lon);
         dt+=(b.t-a.t)/1000;
       }
-      speedMs = dt>0 ? d/dt : 0;
+      speedMs=dt>0?d/dt:0;
     }
 
     if(speedMs<0.5) speedMs=0;
-
-    const kmh = speedMs*3.6;
+    const kmh=speedMs*3.6;
 
     document.getElementById("speed").innerHTML=
-      `🚀 ${kmh.toFixed(1)} km/h (${speedMs.toFixed(2)} m/s)`;
+      `${kmh.toFixed(1)} km/h (${speedMs.toFixed(2)} m/s)`;
 
     findNearest();
+    loadPOI();
 
   },null,{enableHighAccuracy:true});
 }
 
-// ===== NEAREST =====
 function findNearest(){
   if(!userLat) return;
 
@@ -121,62 +119,78 @@ function findNearest(){
     .slice(0,5);
 
   let html="";
-
   list.forEach(s=>{
-    html+=`🚏 <b>${s.stop_name}</b><br>
-    🆔 ${s.stop_id}<br>
-    📏 ${Math.round(s.dist)} m<br><hr>`;
+    html+=`🚏 ${s.stop_name}<br>📏 ${Math.round(s.dist)} m<br><hr>`;
   });
 
   document.getElementById("nearest").innerHTML=html;
 }
 
-// ===== FUZZY =====
-function similarity(a,b){
-  let longer=a.length>b.length?a:b;
-  let shorter=a.length>b.length?b:a;
+// ===== POI (OpenStreetMap Overpass) =====
+async function loadPOI(){
+  if(!userLat) return;
 
-  let same=0;
-  for(let i=0;i<shorter.length;i++){
-    if(longer.includes(shorter[i])) same++;
+  const query = `
+  [out:json];
+  node(around:500,${userLat},${userLon})["amenity"];
+  out;`;
+
+  try{
+    const res = await fetch("https://overpass-api.de/api/interpreter",{
+      method:"POST",
+      body:query
+    });
+
+    const data = await res.json();
+
+    let html="";
+
+    data.elements.slice(0,10).forEach(p=>{
+      const name=p.tags.name || "POI";
+      const d=haversine(userLat,userLon,p.lat,p.lon);
+
+      html+=`📍 <b>${name}</b><br>
+      📏 ${Math.round(d)} m (légvonal)<br>
+      📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<br><hr>`;
+    });
+
+    document.getElementById("poi").innerHTML=html;
+
+  }catch{
+    document.getElementById("poi").innerText="POI hiba";
   }
-
-  return same/longer.length;
 }
 
-// ===== SEARCH =====
+function similarity(a,b){
+  let same=0;
+  for(let i=0;i<b.length;i++){
+    if(a.includes(b[i])) same++;
+  }
+  return same/a.length;
+}
+
 function searchStops(){
   const q=document.getElementById("search").value.toLowerCase();
   if(q.length<2) return;
 
   const res=GTFS.stops
     .map(s=>{
-      const name=s.stop_name.toLowerCase();
-
       let dist=null;
       if(userLat){
         dist=haversine(userLat,userLon,+s.stop_lat,+s.stop_lon);
       }
-
-      const sim=similarity(name,q);
-
+      const sim=similarity(s.stop_name.toLowerCase(),q);
       return {...s,dist,sim};
     })
     .filter(s=>s.sim>0.3)
-    .sort((a,b)=>{
-      if(userLat) return (a.dist||999999)-(b.dist||999999);
-      return b.sim-a.sim;
-    })
+    .sort((a,b)=> (a.dist||999999)-(b.dist||999999))
     .slice(0,20);
 
   let html="";
-
   res.forEach(s=>{
-    html+=`🚏 <b>${s.stop_name}</b><br>
+    html+=`🚏 ${s.stop_name}<br>
     🆔 ${s.stop_id}<br>
-    📍 ${(+s.stop_lat).toFixed(5)}, ${(+s.stop_lon).toFixed(5)}<br>
-    ${s.dist?`📏 ${Math.round(s.dist)} m`:""}
-    <hr>`;
+    ${s.dist?`📏 ${Math.round(s.dist)} m`:""}<br><hr>`;
   });
 
   document.getElementById("results").innerHTML=html;
