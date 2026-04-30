@@ -2,281 +2,111 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V23.2 DISPATCH + MAP</title>
-
-<!-- LIBEK -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Attila Közlekedés - GTFS Pro</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <style>
-body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:10px}
-input,button{padding:8px;margin:4px}
-
-#map{height:300px;margin-top:10px;border-radius:10px}
-
-table{width:100%;border-collapse:collapse;margin-top:10px}
-th,td{
- border:1px solid #334155;
- padding:6px;
- font-size:12px;
- white-space:nowrap;
- overflow:hidden;
- text-overflow:ellipsis;
-}
-tr:hover{background:#1f2937}
-
-.early{color:#ef4444;font-weight:bold}
-.onTime{color:#e2e8f0}
-.late{color:#3b82f6;font-weight:bold}
+body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
+header{padding:10px;background:#111827;position:sticky;top:0}
+button{padding:8px 10px;margin:5px;border:0;border-radius:6px;background:#2563eb;color:white}
+#map{height:40vh;background:#1f2937;display:flex;align-items:center;justify-content:center}
+.panel{padding:10px}
+.card{background:#111827;padding:10px;margin:8px 0;border-radius:8px}
+small{opacity:.8}
 </style>
 </head>
-
 <body>
+<header>
+<b>🚍 Attila GTFS Pro</b>
+<button onclick="loadGTFS()">GTFS betöltés</button>
+<button onclick="getLocation()">📍 GPS</button>
+<button onclick="startCompass()">🧭 Iránytű</button>
+</header>
 
-<h2>🚀 V23.2 DISPATCH + MAP</h2>
+<div id="map">TÉRKÉP HELY (később Leaflet / BKK map)</div>
 
-<input type="file" id="file" multiple />
-<button onclick="loadGTFS()">📦 Betöltés</button>
-<button onclick="clearDB()">🧹 Törlés</button>
+<div class="panel">
+<div class="card">
+<b>📏 Távolság & Legközelebbi megálló</b>
+<div id="nearest">Nincs adat</div>
+</div>
 
-<input id="search" placeholder="🚏 megálló keresés..." oninput="searchStops()" />
+<div class="card">
+<b>📡 GPS státusz</b>
+<div id="gps">Nincs GPS</div>
+</div>
 
-<div id="map"></div>
-
-<h3>🚏 Megállók</h3>
-<table id="stops"></table>
-
-<h3>🧭 DISPATCH</h3>
-<table id="live"></table>
+<div class="card">
+<b>🧭 Irány</b>
+<div id="compass">--</div>
+</div>
+</div>
 
 <script>
+let stops = [];
+let userLat = null;
+let userLon = null;
 
-// ================= DB =================
-let db = JSON.parse(localStorage.getItem("gtfs_db")||"{}");
-let index = {stopTimes:{},trips:{},routes:{}};
-
-function save(){localStorage.setItem("gtfs_db",JSON.stringify(db));}
-function clearDB(){localStorage.removeItem("gtfs_db");location.reload();}
-
-// ================= MAP =================
-let map = L.map('map').setView([47.4979,19.0402], 11);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
- attribution:'© OSM'
-}).addTo(map);
-
-let markers = [];
-
-function showOnMap(stop){
- markers.forEach(m=>map.removeLayer(m));
- markers=[];
-
- if(!stop.lat) return;
-
- let m = L.marker([stop.lat, stop.lon]).addTo(map)
-  .bindPopup(stop.name).openPopup();
-
- markers.push(m);
- map.setView([stop.lat, stop.lon],15);
+function haversine(lat1, lon1, lat2, lon2){
+  const R = 6371000;
+  const toRad = x => x * Math.PI/180;
+  const dLat = toRad(lat2-lat1);
+  const dLon = toRad(lon2-lon1);
+  const a = Math.sin(dLat/2)*Math.sin(dLat/2) +
+    Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*
+    Math.sin(dLon/2)*Math.sin(dLon/2);
+  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R*c;
 }
 
-// ================= HELPERS =================
-function norm(s){return (s||"").toLowerCase().trim();}
-
-function getPrefix(name){
- name=name.toLowerCase();
- if(name.includes("budapest")) return "BKK";
- if(name.includes("volan")) return "VOLÁN";
- if(name.includes("mav")) return "MÁV";
- return "GTFS";
+function loadGTFS(){
+  fetch("stops.txt") // ide jön a ZIP-ből kinyert file
+    .then(r=>r.text())
+    .then(text=>{
+      const parsed = Papa.parse(text,{header:true});
+      stops = parsed.data.filter(s=>s.stop_lat && s.stop_lon);
+      alert("GTFS betöltve: " + stops.length + " megálló");
+    });
 }
 
-function nowSec(){
- let d=new Date();
- return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
-}
-
-function normalizeTime(t){
- if(!t) return {sec:999999,day:0};
- let [h,m,s]=t.split(':').map(Number);
- let day=Math.floor(h/24);
- h=h%24;
- return {sec:h*3600+m*60+(s||0),day};
-}
-
-// ================= LOAD =================
-async function loadGTFS(){
- const files=document.getElementById('file').files;
-
- for(let f of files){
-
-  const prefix=getPrefix(f.name);
-  const zip=await JSZip.loadAsync(await f.arrayBuffer());
-  const keys=Object.keys(zip.files);
-
-  const stopsTXT = await zip.file(keys.find(k=>k.includes("stops"))).async("string");
-  const tripsTXT = await zip.file(keys.find(k=>k.includes("trips"))).async("string");
-  const routesTXT = await zip.file(keys.find(k=>k.includes("routes"))).async("string");
-  const stopTimesTXT = await zip.file(keys.find(k=>k.includes("stop_times"))).async("string");
-
-  parseStops(stopsTXT,prefix);
-  parseTrips(tripsTXT,prefix);
-  parseRoutes(routesTXT,prefix);
-  parseStopTimes(stopTimesTXT,prefix);
- }
-
- save();
- renderStops();
-}
-
-// ================= PARSERS =================
-function parseStops(text,prefix){
- const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
-
- data.forEach(r=>{
-  if(!r.stop_id) return;
-
-  let id = prefix+"_"+r.stop_id;
-
-  db[id]={
-    id,
-    name:r.stop_name,
-    lat:parseFloat(r.stop_lat),
-    lon:parseFloat(r.stop_lon),
-    prefix
-  };
- });
-}
-
-function parseTrips(text,prefix){
- const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
-
- data.forEach(r=>{
-  if(!r.trip_id) return;
-
-  index.trips[prefix+"_"+r.trip_id]={
-    route:prefix+"_"+r.route_id,
-    head:(r.trip_headsign||"").trim(),
-    prefix
-  };
- });
-}
-
-function parseRoutes(text,prefix){
- const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
-
- data.forEach(r=>{
-  if(!r.route_id) return;
-
-  index.routes[prefix+"_"+r.route_id]={
-    name:r.route_short_name,
-    prefix
-  };
- });
-}
-
-function parseStopTimes(text,prefix){
- const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
-
- data.forEach(r=>{
-  if(!r.stop_id) return;
-
-  let stop=prefix+"_"+r.stop_id;
-
-  if(!index.stopTimes[stop]) index.stopTimes[stop]=[];
-
-  index.stopTimes[stop].push({
-    trip:prefix+"_"+r.trip_id,
-    time:r.departure_time,
-    prefix
+function getLocation(){
+  navigator.geolocation.getCurrentPosition(pos=>{
+    userLat = pos.coords.latitude;
+    userLon = pos.coords.longitude;
+    document.getElementById("gps").innerHTML =
+      `Lat: ${userLat.toFixed(5)}<br>Lon: ${userLon.toFixed(5)}`;
+    findNearest();
   });
- });
 }
 
-// ================= UI =================
-function renderStops(list){
- let all=Object.values(db);
- let data=list||all;
+function findNearest(){
+  if(!userLat || !stops.length) return;
 
- let h="<tr><th>Szolg.</th><th>Név</th></tr>";
+  let min = Infinity;
+  let best = null;
 
- data.slice(0,100).forEach(s=>{
-  h+=`<tr onclick="live('${s.id}');showOnMap(${JSON.stringify(s)})">
-   <td>${s.prefix}</td>
-   <td>${s.name}</td>
-  </tr>`;
- });
+  stops.forEach(s=>{
+    const d = haversine(userLat,userLon,parseFloat(s.stop_lat),parseFloat(s.stop_lon));
+    if(d < min){ min = d; best = s; }
+  });
 
- document.getElementById('stops').innerHTML=h;
+  if(best){
+    document.getElementById("nearest").innerHTML =
+      `🚏 <b>${best.stop_name}</b><br>🆔 ${best.stop_id || "-"}<br>📏 ${Math.round(min)} m`;
+  }
 }
 
-function searchStops(){
- let q=norm(document.getElementById('search').value);
- let res=Object.values(db).filter(s=>norm(s.name).includes(q));
- renderStops(res);
+function startCompass(){
+  if(window.DeviceOrientationEvent){
+    window.addEventListener("deviceorientation", e=>{
+      let dir = e.alpha;
+      document.getElementById("compass").innerText =
+        "Észak: " + Math.round(dir) + "°";
+    });
+  } else {
+    alert("Nincs iránytű támogatás");
+  }
 }
-
-// ================= DISPATCH =================
-function live(stopId){
-
- let now=nowSec();
- let rows=index.stopTimes[stopId]||[];
-
- let seen=new Set();
-
- let enriched=rows.map(r=>{
-  let t=normalizeTime(r.time);
-  let delta=t.sec-now;
-  if(t.day>0) delta+=86400;
-
-  return {...r,delta,sec:t.sec};
- })
- .filter(r=>r.delta>-300 && r.delta<7200)
- .filter(r=>{
-   let trip=index.trips[r.trip]||{};
-   let route=index.routes[trip.route]||{};
-   let key=(route.name||"")+"|"+(trip.head||"")+"|"+r.time;
-
-   if(seen.has(key)) return false;
-   seen.add(key);
-   return true;
- });
-
- enriched.sort((a,b)=>a.sec-b.sec);
-
- let h="<tr><th>Szolg.</th><th>Járat</th><th>Irány</th><th>Indul</th><th>Eltérés</th></tr>";
-
- enriched.slice(0,10).forEach(r=>{
-  let trip=index.trips[r.trip]||{};
-  let route=index.routes[trip.route]||{};
-
-  let cls="onTime";
-  if(r.delta<0) cls="early";
-  else if(r.delta>60) cls="late";
-
-  let m=Math.floor(r.delta/60);
-  let s=Math.abs(r.delta%60);
-
-  h+=`<tr>
-   <td>${r.prefix}</td>
-   <td>${route.name||"—"}</td>
-   <td>${trip.head||"—"}</td>
-   <td>${r.time}</td>
-   <td class="${cls}">${m}m ${s}s</td>
-  </tr>`;
- });
-
- document.getElementById('live').innerHTML=h;
-}
-
-// ================= INIT =================
-window.onload=()=>{
- renderStops();
-};
-
 </script>
 </body>
 </html>
