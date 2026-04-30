@@ -3,13 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Attila Közlekedés - GTFS PRO V10</title>
+<title>Attila Közlekedés - GTFS PRO V11</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
 header{padding:10px;background:#111827;position:sticky;top:0}
 button{padding:8px 10px;margin:5px;border:0;border-radius:6px;background:#2563eb;color:white}
+input{padding:6px;border-radius:6px;border:0;margin:5px}
 .panel{padding:10px}
 .card{background:#111827;padding:10px;margin:8px 0;border-radius:8px}
 table{width:100%;border-collapse:collapse;margin-top:10px}
@@ -19,15 +20,21 @@ tr:hover{background:#1e293b;cursor:pointer}
 </head>
 <body>
 <header>
-<b>🚍 GTFS PRO V10</b>
+<b>🚍 GTFS PRO V11</b>
 <input type="file" id="zipInput" accept=".zip" />
 <button onclick="loadGTFS()">GTFS betöltés</button>
 <button onclick="getLocation()">📍 GPS</button>
+<input id="search" placeholder="Megálló kereső..." oninput="searchStops()" />
 </header>
 
 <div class="panel">
 <div class="card">
-<b>🚏 Legközelebbi megálló</b>
+<b>📡 Részletes helyadat</b>
+<div id="address">Nincs adat</div>
+</div>
+
+<div class="card">
+<b>🚏 Legközelebbi megállók (TOP 5)</b>
 <div id="nearest">Nincs adat</div>
 </div>
 
@@ -40,8 +47,8 @@ tr:hover{background:#1e293b;cursor:pointer}
 </div>
 
 <div class="card">
-<b>🚌 STOP → JÁRAT LISTA</b>
-<div id="routes">Kattints egy megállóra</div>
+<b>🔎 Keresési találatok</b>
+<div id="results"></div>
 </div>
 </div>
 
@@ -74,30 +81,52 @@ async function loadGTFS(){
   trips=await parse("trips.txt");
   routes=await parse("routes.txt");
 
-  alert("GTFS betöltve ✔");
+  alert("GTFS betöltve: "+stops.length);
 }
 
 function getLocation(){
-  navigator.geolocation.getCurrentPosition(pos=>{
+  navigator.geolocation.getCurrentPosition(async pos=>{
     userLat=pos.coords.latitude;
     userLon=pos.coords.longitude;
+
+    reverseGeocode();
     findNearest();
   });
 }
 
+// 🌍 cím lekérdezés
+async function reverseGeocode(){
+  try{
+    const res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLat}&lon=${userLon}`);
+    const data=await res.json();
+    document.getElementById("address").innerHTML=
+      `${data.address.country || ""}, ${data.address.city || data.address.town || ""}<br>${data.display_name}`;
+  }catch(e){
+    document.getElementById("address").innerText="Cím nem elérhető";
+  }
+}
+
 function findNearest(){
-  let min=Infinity,best=null;
-  stops.forEach(s=>{
-    const d=haversine(userLat,userLon,+s.stop_lat,+s.stop_lon);
-    if(d<min){min=d;best=s}
+  if(!stops.length) return;
+
+  const list=stops
+    .map(s=>{
+      const d=haversine(userLat,userLon,parseFloat(s.stop_lat),parseFloat(s.stop_lon));
+      return {...s,dist:d};
+    })
+    .sort((a,b)=>a.dist-b.dist)
+    .slice(0,5);
+
+  let html="";
+
+  list.forEach(s=>{
+    html+=`<div onclick="loadDepartures('${s.stop_id}')">
+      🚏 <b>${s.stop_name}</b><br>
+      ${Math.round(s.dist)} m
+    </div><hr>`;
   });
 
-  if(best){
-    document.getElementById("nearest").innerHTML=
-      `🚏 <b>${best.stop_name}</b><br>ID: ${best.stop_id}<br>${Math.round(min)} m`;
-
-    loadDepartures(best.stop_id);
-  }
+  document.getElementById("nearest").innerHTML=html;
 }
 
 function loadDepartures(stopId){
@@ -115,28 +144,31 @@ function loadDepartures(stopId){
     const tr=document.createElement("tr");
     tr.innerHTML=`
       <td>${st.departure_time}</td>
-      <td>${route.route_short_name||"?"}</td>
-      <td>${trip.trip_headsign||"-"}</td>`;
-
-    tr.onclick=()=>showRoutes(stopId);
+      <td>${route?.route_short_name||"?"}</td>
+      <td>${trip?.trip_headsign||"-"}</td>`;
 
     tbody.appendChild(tr);
   });
 }
 
-function showRoutes(stopId){
-  const related=stopTimes.filter(s=>s.stop_id===stopId);
+// 🔎 kereső
+function searchStops(){
+  const q=document.getElementById("search").value.toLowerCase();
+  if(q.length<2) return;
+
+  const res=stops
+    .filter(s=>s.stop_name.toLowerCase().includes(q))
+    .slice(0,20);
 
   let html="";
 
-  related.slice(0,30).forEach(st=>{
-    const trip=trips.find(t=>t.trip_id===st.trip_id);
-    const route=routes.find(r=>r.route_id===trip.route_id);
-
-    html+=`🚍 ${route.route_short_name} → ${trip.trip_headsign}<br>`;
+  res.forEach(s=>{
+    html+=`<div onclick="loadDepartures('${s.stop_id}')">
+      🚏 ${s.stop_name}
+    </div>`;
   });
 
-  document.getElementById("routes").innerHTML=html;
+  document.getElementById("results").innerHTML=html;
 }
 </script>
 </body>
