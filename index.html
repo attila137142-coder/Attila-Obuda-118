@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Attila Közlekedés - GTFS PRO V12</title>
+<title>Attila Közlekedés - GTFS PRO V13</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -14,14 +14,11 @@ input{padding:6px;border-radius:6px;border:0;margin:5px}
 .panel{padding:10px}
 .card{background:#111827;padding:10px;margin:8px 0;border-radius:8px}
 small{opacity:.7}
-table{width:100%;border-collapse:collapse;margin-top:10px}
-td,th{border-bottom:1px solid #334155;padding:6px;text-align:left}
-tr:hover{background:#1e293b;cursor:pointer}
 </style>
 </head>
 <body>
 <header>
-<b>🚍 GTFS PRO V12</b>
+<b>🚍 GTFS PRO V13</b>
 <input type="file" id="zipInput" accept=".zip" />
 <button onclick="loadGTFS()">GTFS betöltés</button>
 <button onclick="getLocation()">📍 GPS</button>
@@ -35,16 +32,13 @@ tr:hover{background:#1e293b;cursor:pointer}
 </div>
 
 <div class="card">
-<b>🚏 Legközelebbi megállók (MAX 2km)</b>
+<b>🚏 Legközelebbi megállók</b>
 <div id="nearest">Nincs adat</div>
 </div>
 
 <div class="card">
 <b>📊 Indulási tábla</b>
-<table id="departures">
-<thead><tr><th>Idő</th><th>Járat</th><th>Irány</th></tr></thead>
-<tbody></tbody>
-</table>
+<div id="departures">Kattints egy megállóra</div>
 </div>
 
 <div class="card">
@@ -82,7 +76,7 @@ async function loadGTFS(){
   trips=await parse("trips.txt");
   routes=await parse("routes.txt");
 
-  alert("GTFS betöltve: "+stops.length+" megálló");
+  alert("GTFS betöltve: "+stops.length);
 }
 
 function getLocation(){
@@ -98,29 +92,29 @@ async function reverseGeocode(){
   try{
     const res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLat}&lon=${userLon}`);
     const data=await res.json();
-    document.getElementById("address").innerHTML=
-      `${data.display_name}`;
-  }catch(e){
+    document.getElementById("address").innerHTML=data.display_name;
+  }catch{
     document.getElementById("address").innerText="Cím nem elérhető";
   }
 }
 
+// 🚏 DUPLIKÁCIÓ SZŰRÉS + TOP LISTA
 function findNearest(){
-  if(!stops.length) return;
+  const unique = {};
 
-  const list=stops
+  stops.forEach(s=>{
+    const key = s.stop_name + "_" + s.stop_lat + "_" + s.stop_lon;
+    if(!unique[key]) unique[key]=s;
+  });
+
+  const list=Object.values(unique)
     .map(s=>{
-      const d=haversine(userLat,userLon,parseFloat(s.stop_lat),parseFloat(s.stop_lon));
+      const d=haversine(userLat,userLon,+s.stop_lat,+s.stop_lon);
       return {...s,dist:d};
     })
-    .filter(s=>s.dist < 2000) // MAX 2km!!!
+    .filter(s=>s.dist<2000)
     .sort((a,b)=>a.dist-b.dist)
     .slice(0,10);
-
-  if(list.length===0){
-    document.getElementById("nearest").innerHTML="❗ Nincs 2km-en belüli megálló";
-    return;
-  }
 
   let html="";
 
@@ -136,33 +130,49 @@ function findNearest(){
   document.getElementById("nearest").innerHTML=html;
 }
 
+// 📊 JAVÍTOTT INDULÁSI TÁBLA
 function loadDepartures(stopId){
-  const tbody=document.querySelector("#departures tbody");
-  tbody.innerHTML="";
+  const container=document.getElementById("departures");
 
   const list=stopTimes
     .filter(s=>s.stop_id===stopId)
-    .slice(0,20);
+    .slice(0,30);
+
+  if(list.length===0){
+    container.innerHTML="❗ Nincs indulás adat";
+    return;
+  }
+
+  let html="<table><tr><th>Idő</th><th>Járat</th><th>Irány</th></tr>";
 
   list.forEach(st=>{
     const trip=trips.find(t=>t.trip_id===st.trip_id);
     const route=routes.find(r=>r.route_id===trip?.route_id);
 
-    const tr=document.createElement("tr");
-    tr.innerHTML=`
-      <td>${st.departure_time}</td>
+    html+=`<tr>
+      <td>${st.departure_time||"-"}</td>
       <td>${route?.route_short_name||"?"}</td>
-      <td>${trip?.trip_headsign||"-"}</td>`;
-
-    tbody.appendChild(tr);
+      <td>${trip?.trip_headsign||"-"}</td>
+    </tr>`;
   });
+
+  html+="</table>";
+  container.innerHTML=html;
 }
 
+// 🔎 KERESŐ JAVÍTVA (távolsággal!)
 function searchStops(){
   const q=document.getElementById("search").value.toLowerCase();
   if(q.length<2) return;
 
   const res=stops
+    .map(s=>{
+      let dist=null;
+      if(userLat){
+        dist=haversine(userLat,userLon,+s.stop_lat,+s.stop_lon);
+      }
+      return {...s,dist};
+    })
     .filter(s=>s.stop_name.toLowerCase().includes(q))
     .slice(0,20);
 
@@ -172,7 +182,8 @@ function searchStops(){
     html+=`<div onclick="loadDepartures('${s.stop_id}')">
       🚏 <b>${s.stop_name}</b><br>
       🆔 ${s.stop_id}<br>
-      📍 ${(+s.stop_lat).toFixed(5)}, ${(+s.stop_lon).toFixed(5)}
+      📍 ${(+s.stop_lat).toFixed(5)}, ${(+s.stop_lon).toFixed(5)}<br>
+      ${s.dist?`📏 ${Math.round(s.dist)} m`:""}
     </div><hr>`;
   });
 
