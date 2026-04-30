@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V20 SMART DISPATCH TABLE ENGINE</title>
+<title>V21 REAL DISPATCH FINALIZATION ENGINE</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
@@ -15,12 +15,13 @@ tr:hover{background:#1f2937;cursor:pointer}
 .small{font-size:11px;color:#94a3b8}
 .bad{color:#f87171}
 .ok{color:#4ade80}
+.warn{color:#fbbf24}
 </style>
 </head>
 <body>
 
-<div class="title">🚍🚆 V20 SMART DISPATCH TABLE ENGINE</div>
-<div class="small">👉 dynamic GTFS mapping + smart columns + REAL STOP_TIMES</div>
+<div class="title">🚍🚆 V21 REAL DISPATCH FINALIZATION ENGINE</div>
+<div class="small">👉 NEXT 10 DEPARTURES + REAL TIME DELTA + FULL GTFS CHAIN</div>
 
 <input type="file" id="file" multiple />
 <button onclick="loadGTFS()">📦 GTFS betöltés</button>
@@ -39,7 +40,7 @@ tr:hover{background:#1f2937;cursor:pointer}
 <h3>🚏 Megállók</h3>
 <table id="stopsTable"></table>
 
-<h3>🧭 SMART DISPATCH TABLE</h3>
+<h3>🧭 NEXT DEPARTURES (REAL DISPATCH)</h3>
 <table id="timetable"></table>
 
 <script>
@@ -47,11 +48,7 @@ tr:hover{background:#1f2937;cursor:pointer}
 let db = JSON.parse(localStorage.getItem("gtfs_db")||"{}");
 let active=null;
 
-let index={
- stopTimes:{},
- trips:{},
- routes:{}
-};
+let index={stopTimes:{},trips:{},routes:{}};
 
 function save(){localStorage.setItem("gtfs_db",JSON.stringify(db));}
 function clearDB(){localStorage.removeItem("gtfs_db");db={};refresh();}
@@ -61,21 +58,31 @@ function split(l,d){let r=[],c="",q=false;for(let x of l){if(x==='"')q=!q;else i
 function detectDelimiter(l){return l.includes("\t")?"\t":",";}
 
 // =====================
-// PARSE TRIPS (FIXED)
+// TIME ENGINE
+// =====================
+function timeToSec(t){
+ if(!t) return 999999;
+ let p=t.split(":");
+ return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
+}
+
+function nowSec(){
+ let d=new Date();
+ return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
+}
+
+// =====================
+// PARSER
 // =====================
 function parseTrips(text){
  const lines=text.split(/\r?\n/).filter(l=>l.trim());
  const d=detectDelimiter(lines[0]);
  const h=split(lines[0],d);
  const i={trip_id:h.indexOf("trip_id"),route_id:h.indexOf("route_id"),headsign:h.indexOf("trip_headsign")};
-
  for(let k=1;k<lines.length;k++){
   const p=split(lines[k],d);
   if(!p[i.trip_id]) continue;
-  index.trips[p[i.trip_id]]={
-   route_id:p[i.route_id],
-   headsign:p[i.headsign]
-  };
+  index.trips[p[i.trip_id]]={route_id:p[i.route_id],headsign:p[i.headsign]};
  }
 }
 
@@ -84,7 +91,6 @@ function parseRoutes(text){
  const d=detectDelimiter(lines[0]);
  const h=split(lines[0],d);
  const i={route_id:h.indexOf("route_id"),name:h.indexOf("route_short_name")};
-
  for(let k=1;k<lines.length;k++){
   const p=split(lines[k],d);
   if(!p[i.route_id]) continue;
@@ -110,7 +116,7 @@ function parseStopTimes(text){
  }
 }
 
-function parseCSVStops(text){
+function parseStops(text){
  const lines=text.split(/\r?\n/).filter(l=>l.trim());
  const d=detectDelimiter(lines[0]);
  const h=split(lines[0],d);
@@ -125,14 +131,13 @@ function parseCSVStops(text){
 }
 
 // =====================
-// LOAD GTFS
+// LOAD
 // =====================
 async function loadGTFS(){
  const files=document.getElementById('file').files;
  index={stopTimes:{},trips:{},routes:{}};
 
  for(let f of files){
-
   const buf=await f.arrayBuffer();
   const zip=await JSZip.loadAsync(buf);
   const keys=Object.keys(zip.files);
@@ -142,7 +147,7 @@ async function loadGTFS(){
   const routesFile=keys.find(x=>x.includes("routes.txt"));
   const stopTimesFile=keys.find(x=>x.includes("stop_times.txt"));
 
-  const stops=parseCSVStops(await zip.file(stopsFile).async("string"));
+  const stops=parseStops(await zip.file(stopsFile).async("string"));
 
   if(tripsFile) parseTrips(await zip.file(tripsFile).async("string"));
   if(routesFile) parseRoutes(await zip.file(routesFile).async("string"));
@@ -151,14 +156,12 @@ async function loadGTFS(){
   const key=f.name+"_"+f.size;
   db[key]={name:f.name,stops};
  }
-
  save();refresh();
 }
 
 // =====================
 // UI
 // =====================
-
 function refresh(){
  const sel=document.getElementById('datasetSelect');
  sel.innerHTML="";
@@ -176,9 +179,7 @@ function switchDataset(){active=document.getElementById('datasetSelect').value;r
 function render(list){
  if(!active)return;
  const data=list||db[active].stops;
-
  let h="<tr><th>ID</th><th>Név</th><th>Lat</th><th>Lon</th></tr>";
-
  for(let i=0;i<Math.min(80,data.length);i++){
   const s=data[i];
   h+=`<tr onclick="showTimetable('${norm(s.id)}')">
@@ -188,9 +189,8 @@ function render(list){
    <td>${s.lon}</td>
   </tr>`;
  }
-
  document.getElementById('stopsTable').innerHTML=h;
- setStatus("🚀 V20 READY (SMART DISPATCH)");
+ setStatus("🚀 V21 READY (REAL DISPATCH FINAL)");
 }
 
 function searchStops(){
@@ -202,39 +202,46 @@ function searchStops(){
 }
 
 // =====================
-// 🧭 SMART DISPATCH ENGINE
+// 🚏 REAL DISPATCH CORE
 // =====================
-
 function showTimetable(stopId){
  const rows=index.stopTimes[norm(stopId)]||[];
+ let now=nowSec();
+
+ let enriched=rows.map(r=>{
+  let t=timeToSec(r.time);
+  return {...r,sec:t,delta:t-now};
+ }).filter(r=>r.delta>=-300);
+
+ enriched.sort((a,b)=>a.sec-b.sec);
 
  let h=`<tr>
- <th>Viszonylat száma</th>
- <th>Iránya</th>
- <th>Indul</th>
- <th>Eltérés</th>
- <th>Belső azonosító</th>
- <th>Jármű száma</th>
- <th>Jármű típus</th>
+ <th>Viszonylat</th>
+ <th>Irány</th>
+ <th>Indulás</th>
+ <th>Késés/eltérés</th>
+ <th>Trip</th>
+ <th>Jármű</th>
+ <th>Típus</th>
 </tr>`;
 
- let sorted=[...rows].sort((a,b)=>a.time>b.time?1:-1);
-
- if(sorted.length===0){
-  document.getElementById('timetable').innerHTML="<tr><td>Nincs stop_times adat</td></tr>";
+ if(enriched.length===0){
+  document.getElementById('timetable').innerHTML="<tr><td>Nincs indulás</td></tr>";
   return;
  }
 
- sorted.slice(0,50).forEach(r=>{
+ enriched.slice(0,10).forEach(r=>{
   const trip=index.trips[r.trip_id]||{};
   const route=index.routes[trip.route_id]||{};
+
+  let delta=Math.round(r.delta/60);
 
   h+=`<tr>
    <td>${route.name||"—"}</td>
    <td>${trip.headsign||"—"}</td>
-   <td>${r.time||"—"}</td>
-   <td>—</td>
-   <td>${r.trip_id||"—"}</td>
+   <td>${r.time}</td>
+   <td class="${delta<0?'bad':'ok'}">${delta} min</td>
+   <td>${r.trip_id}</td>
    <td>—</td>
    <td>GTFS</td>
   </tr>`;
