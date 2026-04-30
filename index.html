@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V17 UNIFIED DISPATCH + TIMETABLE ENGINE</title>
+<title>V18 STOP_TIMES ENGINE (REAL TIMETABLE)</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
@@ -10,6 +10,7 @@ button,input,select{padding:10px;margin:5px}
 .box{background:#111827;padding:10px;margin-top:10px;border-radius:10px;overflow:auto}
 table{width:100%;border-collapse:collapse;margin-top:10px}
 th,td{border:1px solid #334155;padding:6px;font-size:12px}
+tr:hover{background:#1f2937;cursor:pointer}
 .ok{color:#4ade80}
 .bad{color:#f87171}
 .title{font-size:20px;font-weight:bold}
@@ -18,27 +19,27 @@ th,td{border:1px solid #334155;padding:6px;font-size:12px}
 </head>
 <body>
 
-<div class="title">🚍🚆🚌 V17 UNIFIED DISPATCH + TIMETABLE ENGINE</div>
-<div class="small">👉 BKK + MÁV + VOLÁN | STOP + VISZONYLAT + MENETREND</div>
+<div class="title">🚍🚆 V18 STOP_TIMES ENGINE</div>
+<div class="small">👉 REAL TIMETABLE (stops → stop_times → trips → routes)</div>
 
 <input type="file" id="file" multiple />
 <button onclick="loadGTFS()">📦 GTFS betöltés</button>
 <button onclick="clearDB()">🧹 adatbázis törlés</button>
 
-<input id="search" placeholder="🚏 megálló / viszonylat keresés..." oninput="globalSearch()" />
+<input id="search" placeholder="🚏 megálló keresés..." oninput="searchStops()" />
 
 <select id="datasetSelect" onchange="switchDataset()"></select>
 
 <div class="box" id="status">Várakozás...</div>
 <div class="box" id="log"></div>
 
-<h3>🌍 GTFS források</h3>
+<h3>🌍 Források</h3>
 <div class="box" id="sources"></div>
 
-<h3>🚏 Megálló adatok</h3>
-<div class="box" id="stopInfo">Nincs kiválasztva</div>
+<h3>🚏 Megállók</h3>
+<table id="stopsTable"></table>
 
-<h3>📊 Menetrend (Viszonylat + Jármű)</h3>
+<h3>🚌 Menetrend (kiválasztott megálló)</h3>
 <table id="timetable"></table>
 
 <script>
@@ -46,13 +47,60 @@ th,td{border:1px solid #334155;padding:6px;font-size:12px}
 let db = JSON.parse(localStorage.getItem("gtfs_db")||"{}");
 let active=null;
 
+let index = {
+  stopTimes: {},
+  trips: {},
+  routes: {}
+};
+
 function save(){localStorage.setItem("gtfs_db",JSON.stringify(db));}
 function clearDB(){localStorage.removeItem("gtfs_db");db={};refresh();}
+
 function log(m){document.getElementById('log').innerHTML+=m+"<br>";}
 function setStatus(m){document.getElementById('status').innerHTML=m;}
 
-function detectDelimiter(l){return l.includes("\t")?"\t":",";}
 function split(l,d){let r=[],c="",q=false;for(let x of l){if(x==='"')q=!q;else if(x===d&&!q){r.push(c);c="";}else c+=x;}r.push(c);return r;}
+function detectDelimiter(l){return l.includes("\t")?"\t":",";}
+
+// =====================
+// GTFS PARSER CORE
+// =====================
+
+function parseCSV(text){
+ const lines=text.split(/\r?\n/).filter(l=>l.trim());
+ const d=detectDelimiter(lines[0]);
+ const h=split(lines[0],d);
+ return {h,lines,d};
+}
+
+function parseTrips(text){
+ const {h,lines,d}=parseCSV(text);
+ const i={trip_id:h.indexOf("trip_id"),route_id:h.indexOf("route_id")};
+ for(let k=1;k<lines.length;k++){
+  const p=split(lines[k],d);
+  index.trips[p[i.trip_id]]={route_id:p[i.route_id]};
+ }
+}
+
+function parseRoutes(text){
+ const {h,lines,d}=parseCSV(text);
+ const i={route_id:h.indexOf("route_id"),route_short_name:h.indexOf("route_short_name")};
+ for(let k=1;k<lines.length;k++){
+  const p=split(lines[k],d);
+  index.routes[p[i.route_id]]={name:p[i.route_short_name]};
+ }
+}
+
+function parseStopTimes(text){
+ const {h,lines,d}=parseCSV(text);
+ const i={stop_id:h.indexOf("stop_id"),trip_id:h.indexOf("trip_id"),arrival:h.indexOf("arrival_time")};
+ for(let k=1;k<lines.length;k++){
+  const p=split(lines[k],d);
+  const stop=p[i.stop_id];
+  if(!index.stopTimes[stop]) index.stopTimes[stop]=[];
+  index.stopTimes[stop].push({trip_id:p[i.trip_id],time:p[i.arrival]});
+ }
+}
 
 function parseStops(text){
  const lines=text.split(/\r?\n/).filter(l=>l.trim());
@@ -67,84 +115,121 @@ function parseStops(text){
  return out;
 }
 
-function detectSource(name){name=name.toLowerCase();if(name.includes("bkk"))return"BKK";if(name.includes("mav"))return"MÁV";if(name.includes("volan"))return"VOLÁN";return"UNKNOWN";}
+// =====================
+// LOAD GTFS
+// =====================
 
 async function loadGTFS(){
  const files=document.getElementById('file').files;
- for(let f of files){
 
-  const key=f.name+"_"+f.size;
-  if(db[key])continue;
+ for(let f of files){
 
   const buf=await f.arrayBuffer();
   const zip=await JSZip.loadAsync(buf);
 
-  const stopsFile=Object.keys(zip.files).find(x=>x.includes("stops.txt"));
-  const text=await zip.file(stopsFile).async("string");
+  const filesList=Object.keys(zip.files);
 
-  const stops=parseStops(text);
-  const source=detectSource(f.name);
+  const stopsFile=filesList.find(x=>x.includes("stops.txt"));
+  const tripsFile=filesList.find(x=>x.includes("trips.txt"));
+  const routesFile=filesList.find(x=>x.includes("routes.txt"));
+  const stopTimesFile=filesList.find(x=>x.includes("stop_times.txt"));
 
-  db[key]={name:f.name,source,stops};
+  const stops=parseStops(await zip.file(stopsFile).async("string"));
+
+  if(tripsFile) parseTrips(await zip.file(tripsFile).async("string"));
+  if(routesFile) parseRoutes(await zip.file(routesFile).async("string"));
+  if(stopTimesFile) parseStopTimes(await zip.file(stopTimesFile).async("string"));
+
+  const key=f.name+"_"+f.size;
+  db[key]={name:f.name,stops};
  }
- save();refresh();
+
+ save();
+ refresh();
 }
+
+// =====================
+// UI
+// =====================
 
 function refresh(){
  const sel=document.getElementById('datasetSelect');
  sel.innerHTML="";
- for(let k in db){let o=document.createElement("option");o.value=k;o.text=db[k].source+" - "+db[k].name;sel.appendChild(o);}
- active=Object.keys(db)[0];sel.value=active;
+ for(let k in db){
+  let o=document.createElement("option");
+  o.value=k;o.text=db[k].name;
+  sel.appendChild(o);
+ }
+ active=Object.keys(db)[0];
+ sel.value=active;
  render();
 }
 
 function switchDataset(){active=document.getElementById('datasetSelect').value;render();}
 
-function globalSearch(){
- const q=norm(document.getElementById('search').value);
- if(!q){render();return;}
-
- let all=Object.values(db).flatMap(d=>d.stops.map(s=>({...s,source:d.source})));
- let res=all.filter(s=>norm(s.name).includes(q)||norm(s.id).includes(q));
- render(res);
-}
-
-function norm(s){return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");}
-
 function render(list){
  if(!active)return;
  const data=list||db[active].stops;
 
- let html=`<tr>
- <th>Viszonylat száma</th>
- <th>Iránya / cél</th>
- <th>Indul</th>
- <th>Eltérés</th>
- <th>Belső azonosító</th>
- <th>Jármű száma</th>
- <th>Jármű típus</th>
-</tr>`;
+ let h="<tr><th>ID</th><th>Név</th><th>Lat</th><th>Lon</th></tr>";
 
- for(let i=0;i<Math.min(30,data.length);i++){
+ for(let i=0;i<Math.min(80,data.length);i++){
   const s=data[i];
-  html+=`<tr>
-   <td>—</td>
-   <td>${s.name||"—"}</td>
-   <td>—</td>
-   <td>—</td>
-   <td>${s.id||"—"}</td>
-   <td>—</td>
-   <td>${db[active].source||"—"}</td>
+  h+=`<tr onclick=showTimetable('${s.id}')>
+   <td>${s.id}</td>
+   <td>${s.name}</td>
+   <td>${s.lat}</td>
+   <td>${s.lon}</td>
   </tr>`;
  }
 
- document.getElementById('timetable').innerHTML=html;
-
- document.getElementById('sources').innerHTML=
- Object.values(db).map(d=>"• "+d.source+" ("+d.stops.length+")").join("<br>");
-
- setStatus("🚀 V17 DISPATCH READY");
+ document.getElementById('stopsTable').innerHTML=h;
+ setStatus("🚀 V18 STOP_TIMES READY");
 }
+
+// =====================
+// SEARCH
+// =====================
+
+function norm(s){return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");}
+
+function searchStops(){
+ const q=norm(document.getElementById('search').value);
+ if(!q){render();return;}
+
+ let all=Object.values(db).flatMap(d=>d.stops);
+ let res=all.filter(s=>norm(s.name).includes(q)||norm(s.id).includes(q));
+ render(res);
+}
+
+// =====================
+// 🚏 TIMETABLE ENGINE
+// =====================
+
+function showTimetable(stopId){
+ const rows=index.stopTimes[stopId]||[];
+
+ let out="<tr><th>Indulás</th><th>Trip</th><th>Route</th></tr>";
+
+ rows.slice(0,30).forEach(r=>{
+  const trip=index.trips[r.trip_id]||{};
+  const route=index.routes[trip.route_id]||{};
+
+  out+=`<tr>
+   <td>${r.time||""}</td>
+   <td>${r.trip_id||""}</td>
+   <td>${route.name||trip.route_id||""}</td>
+  </tr>`;
+ });
+
+ document.getElementById('timetable').innerHTML=out;
+}
+
+// =====================
+// INIT
+// =====================
+
+function setStatus(m){document.getElementById('status').innerHTML=m;}
 
 </script>
 
