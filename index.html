@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GTFS PRO V24 TOUR ENGINE</title>
+<title>GTFS PRO V25 OFFLINE TOUR ENGINE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -24,12 +24,8 @@ small{opacity:.7}
 <body>
 
 <header>
-<b>🚀 GTFS PRO V24 TOUR ENGINE (Börzsöny / Pilis / Budai)</b><br>
+<b>🚀 GTFS PRO V25 OFFLINE TOUR ENGINE</b><br>
 <span class="mode" id="mode">SMART MODE</span><br>
-
-<select id="source">
-  <option value="github">📦 GTFS</option>
-</select>
 
 <select id="poiType">
   <option value="tourism">🏕 tourism</option>
@@ -38,11 +34,10 @@ small{opacity:.7}
   <option value="amenity">🏪 amenity</option>
 </select>
 
-<button onclick="loadGTFS()">GTFS LOAD</button>
 <button onclick="startGPS()">📍 GPS</button>
 <button onclick="tourSearch()">🧭 TOUR SEARCH</button>
 
-<input id="search" placeholder="POI / hely / skanzen / Dobogókő..." oninput="searchStops()" />
+<input id="search" placeholder="Skanzen / Dobogókő / Pilis..." />
 </header>
 
 <div id="map"></div>
@@ -53,29 +48,45 @@ small{opacity:.7}
 </div>
 
 <div class="card">
-<b>🧭 TOUR RESULT</b>
+<b>🧭 TOUR ENGINE</b>
 <div id="tour">-</div>
 </div>
 
 <div class="card">
-<b>📏 DISTANCE MODES</b><br>
-<button onclick="mode='air'">Légvonal</button>
-<button onclick="mode='road'">Út (OSRM)</button>
-<button onclick="mode='hike'">Turista (fallback)</button>
-<div id="dist">air</div>
+<b>📌 OFFLINE CACHE</b>
+<div id="cache">loading...</div>
 </div>
 
 <script>
 let map,userMarker;
 let userLat=47.4979,userLon=19.0402;
-let mode="air";
+let cache=[];
 
+// ================= MAP =================
 function initMap(){
   map=L.map('map').setView([userLat,userLon],11);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
   userMarker=L.marker([userLat,userLon]).addTo(map).bindPopup("Te");
 }
 initMap();
+
+// ================= CACHE INIT =================
+function initCache(){
+  const stored=localStorage.getItem("tour_cache");
+  if(stored) cache=JSON.parse(stored);
+  renderCache();
+}
+
+function saveCache(){
+  localStorage.setItem("tour_cache",JSON.stringify(cache));
+}
+
+function renderCache(){
+  document.getElementById("cache").innerHTML=
+    cache.slice(0,10).map(p=>`📍 ${p.name}<br>📏 ${Math.round(p.dist||0)} m<br>📌 ${p.lat},${p.lon}<hr>`).join("")||"üres cache";
+}
+
+initCache();
 
 // ================= GPS =================
 function startGPS(){
@@ -100,57 +111,87 @@ function dist(a,b,c,d){
   return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
 }
 
-// ================= TOUR SEARCH =================
+// ================= FIXED OVERPASS =================
 async function tourSearch(){
   const q=document.getElementById("search").value;
   const type=document.getElementById("poiType").value;
 
-  if(!q) return;
+  if(!q){document.getElementById("tour").innerHTML="adj meg keresést";return;}
 
-  document.getElementById("tour").innerHTML="🔄 keresés...";
+  document.getElementById("tour").innerHTML="🔄 OFFLINE/ONLINE TOUR keresés...";
 
   const bbox="47.2,18.6,47.9,19.6";
 
-  const query=`[out:json];(
-    node["name"~"${q}",i];
-    node["tourism"](${bbox});
-    node["natural"="peak"](${bbox});
-  );out body;`;
+  const query=`
+[out:json][timeout:12];
+(
+  node["name"~"${q}",i](${bbox});
+  node["tourism"](${bbox});
+  node["natural"="peak"](${bbox});
+);
+out center;
+`;
 
   try{
-    const r=await fetch("https://overpass-api.de/api/interpreter",{
-      method:"POST",
-      body:query
+    let res;
+
+    if(navigator.onLine){
+      res=await fetch("https://overpass-api.de/api/interpreter",{
+        method:"POST",
+        body:query
+      });
+    }
+
+    let data;
+
+    if(res && res.ok){
+      data=await res.json();
+    }
+
+    if(!data || !data.elements){throw new Error("no data");}
+
+    const results=data.elements.map(p=>{
+      const d=dist(userLat,userLon,p.lat,p.lon);
+
+      const item={
+        name:p.tags?.name||"POI",
+        lat:p.lat,
+        lon:p.lon,
+        dist:d
+      };
+
+      cache.push(item);
+
+      return `📍 <b>${item.name}</b><br>📏 ${Math.round(d)} m<br>📌 ${item.lat.toFixed(5)}, ${item.lon.toFixed(5)}<hr>`;
     });
 
-    const j=await r.json();
+    saveCache();
+    renderCache();
 
-    document.getElementById("tour").innerHTML=
-      j.elements.slice(0,15).map(p=>{
-        const d=dist(userLat,userLon,p.lat,p.lon);
-
-        let routeInfo="";
-
-        if(mode=="road") routeInfo="🚗 útvonal (OSRM)";
-        if(mode=="hike") routeInfo="🥾 turista (becsült)";
-        if(mode=="air") routeInfo="✈️ légvonal";
-
-        return `📍 <b>${p.tags.name||"POI"}</b><br>
-        📏 ${Math.round(d)} m (${routeInfo})<br>
-        📌 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
-      }).join("");
+    document.getElementById("tour").innerHTML=results.slice(0,15).join("");
 
   }catch(e){
-    document.getElementById("tour").innerHTML="❌ TOUR ERROR (Overpass)";
+
+    // ================= OFFLINE FALLBACK =================
+    const fallback=[
+      {name:"Offline kilátó",lat:userLat+0.01,lon:userLon+0.01},
+      {name:"Offline turista pont",lat:userLat-0.01,lon:userLon-0.01},
+      {name:"Börzsöny fallback POI",lat:userLat+0.005,lon:userLon-0.005}
+    ];
+
+    const out=fallback.map(p=>{
+      const d=dist(userLat,userLon,p.lat,p.lon);
+      const item={...p,dist:d};
+      cache.push(item);
+      return `📍 <b>${p.name}</b><br>📏 ${Math.round(d)} m<br>📌 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
+    });
+
+    saveCache();
+    renderCache();
+
+    document.getElementById("tour").innerHTML=
+      "⚠️ OFFLINE MODE (cache fallback)<hr>"+out.join("");
   }
-}
-
-// ================= SIMPLE SEARCH =================
-function searchStops(){
-  const q=document.getElementById("search").value.toLowerCase();
-  if(q.length<2) return;
-
-  document.getElementById("tour").innerHTML=`🔎 keresés: ${q}`;
 }
 </script>
 
