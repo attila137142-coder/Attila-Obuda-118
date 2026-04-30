@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Attila GTFS ENGINE V2</title>
+<title>Attila GTFS PRO V14</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
@@ -15,103 +15,49 @@ button,input{padding:6px;margin:5px;border-radius:6px;border:0}
 </head>
 <body>
 <header>
-<b>🚀 GTFS ENGINE V2</b>
+<b>🚀 GTFS PRO V14</b>
 <input type="file" id="zipInput" accept=".zip" />
 <button onclick="loadGTFS()">GTFS</button>
 <button onclick="startGPS()">GPS + SPEED</button>
+<input id="search" placeholder="Megálló kereső..." oninput="searchStops()" />
 </header>
 
 <div class="card">
-<b>📍 GPS</b>
+<b>📍 GPS + Sebesség</b>
 <div id="gps">-</div>
 <div id="speed">0 km/h (0 m/s)</div>
 </div>
 
+<div class="card">
+<b>🚏 Legközelebbi megállók</b>
+<div id="nearest">-</div>
+</div>
+
+<div class="card">
+<b>🔎 Keresés</b>
+<div id="results"></div>
+</div>
+
 <script>
-let GTFS = {stops:[], stopTimes:[], trips:[], routes:[]};
-let gtfsLoaded=false;
+let GTFS={stops:[]};
+let userLat=null,userLon=null;
+let history=[];
 
-// 🔒 LOAD + CACHE
+// ===== GTFS =====
 async function loadGTFS(){
-  if(gtfsLoaded){ alert("Már betöltve"); return; }
-
   const file=document.getElementById("zipInput").files[0];
   if(!file) return alert("ZIP kell");
 
   const zip=await JSZip.loadAsync(file);
+  const txt=await zip.file("stops.txt").async("string");
 
-  const parse=async(name)=>{
-    const txt=await zip.file(name).async("string");
-    return Papa.parse(txt,{header:true}).data;
-  }
+  GTFS.stops=Papa.parse(txt,{header:true}).data
+    .filter(s=>s.stop_lat && s.stop_lon);
 
-  GTFS.stops=(await parse("stops.txt")).filter(s=>s.stop_lat);
-  GTFS.stopTimes=await parse("stop_times.txt");
-  GTFS.trips=await parse("trips.txt");
-  GTFS.routes=await parse("routes.txt");
-
-  localStorage.setItem("GTFS", JSON.stringify(GTFS));
-
-  gtfsLoaded=true;
-  alert("✔ Stabil GTFS betöltve: "+GTFS.stops.length);
+  alert("✔ Megállók: "+GTFS.stops.length);
 }
 
-// ⚡ SPEED ENGINE V2 (SIMÍTOTT + PONTOSABB)
-let history=[];
-
-function startGPS(){
-  navigator.geolocation.watchPosition(pos=>{
-    const lat=pos.coords.latitude;
-    const lon=pos.coords.longitude;
-    const t=Date.now();
-
-    document.getElementById("gps").innerHTML=
-      `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-
-    history.push({lat,lon,t});
-
-    // max 5 pont tárolás
-    if(history.length>5) history.shift();
-
-    let speedMs=0;
-
-    if(history.length>=2){
-      let totalDist=0;
-      let totalTime=0;
-
-      for(let i=1;i<history.length;i++){
-        const a=history[i-1];
-        const b=history[i];
-
-        const d=haversine(a.lat,a.lon,b.lat,b.lon);
-        const dt=(b.t-a.t)/1000;
-
-        if(dt>0){
-          totalDist+=d;
-          totalTime+=dt;
-        }
-      }
-
-      speedMs = totalTime>0 ? totalDist/totalTime : 0;
-    }
-
-    // GPS zaj szűrés
-    if(speedMs < 0.5) speedMs = 0;
-
-    const speedKmh = speedMs * 3.6;
-
-    document.getElementById("speed").innerHTML=
-      `🚀 ${speedKmh.toFixed(1)} km/h (${speedMs.toFixed(2)} m/s)`;
-
-  }, err=>{
-    console.error(err);
-  },{
-    enableHighAccuracy:true,
-    maximumAge:1000,
-    timeout:5000
-  });
-}
-
+// ===== HAVERSINE =====
 function haversine(lat1, lon1, lat2, lon2){
   const R=6371000;
   const toRad=x=>x*Math.PI/180;
@@ -121,15 +67,120 @@ function haversine(lat1, lon1, lat2, lon2){
   return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// 🛡️ AUTO RESTORE
-(function(){
-  const saved=localStorage.getItem("GTFS");
-  if(saved){
-    GTFS=JSON.parse(saved);
-    gtfsLoaded=true;
-    console.log("GTFS visszatöltve cache-ből");
+// ===== GPS + SPEED =====
+function startGPS(){
+  navigator.geolocation.watchPosition(pos=>{
+    const lat=pos.coords.latitude;
+    const lon=pos.coords.longitude;
+    const t=Date.now();
+
+    userLat=lat; userLon=lon;
+
+    document.getElementById("gps").innerHTML=
+      `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+
+    history.push({lat,lon,t});
+    if(history.length>5) history.shift();
+
+    let speedMs=0;
+
+    if(history.length>=2){
+      let d=0,dt=0;
+      for(let i=1;i<history.length;i++){
+        const a=history[i-1];
+        const b=history[i];
+        d+=haversine(a.lat,a.lon,b.lat,b.lon);
+        dt+=(b.t-a.t)/1000;
+      }
+      speedMs = dt>0 ? d/dt : 0;
+    }
+
+    if(speedMs<0.5) speedMs=0;
+
+    const kmh = speedMs*3.6;
+
+    document.getElementById("speed").innerHTML=
+      `🚀 ${kmh.toFixed(1)} km/h (${speedMs.toFixed(2)} m/s)`;
+
+    findNearest();
+
+  },null,{enableHighAccuracy:true});
+}
+
+// ===== NEAREST =====
+function findNearest(){
+  if(!userLat) return;
+
+  const list=GTFS.stops
+    .map(s=>{
+      const d=haversine(userLat,userLon,+s.stop_lat,+s.stop_lon);
+      return {...s,dist:d};
+    })
+    .filter(s=>s.dist<2000)
+    .sort((a,b)=>a.dist-b.dist)
+    .slice(0,5);
+
+  let html="";
+
+  list.forEach(s=>{
+    html+=`🚏 <b>${s.stop_name}</b><br>
+    🆔 ${s.stop_id}<br>
+    📏 ${Math.round(s.dist)} m<br><hr>`;
+  });
+
+  document.getElementById("nearest").innerHTML=html;
+}
+
+// ===== FUZZY =====
+function similarity(a,b){
+  let longer=a.length>b.length?a:b;
+  let shorter=a.length>b.length?b:a;
+
+  let same=0;
+  for(let i=0;i<shorter.length;i++){
+    if(longer.includes(shorter[i])) same++;
   }
-})();
+
+  return same/longer.length;
+}
+
+// ===== SEARCH =====
+function searchStops(){
+  const q=document.getElementById("search").value.toLowerCase();
+  if(q.length<2) return;
+
+  const res=GTFS.stops
+    .map(s=>{
+      const name=s.stop_name.toLowerCase();
+
+      let dist=null;
+      if(userLat){
+        dist=haversine(userLat,userLon,+s.stop_lat,+s.stop_lon);
+      }
+
+      const sim=similarity(name,q);
+
+      return {...s,dist,sim};
+    })
+    .filter(s=>s.sim>0.3)
+    .sort((a,b)=>{
+      if(userLat) return (a.dist||999999)-(b.dist||999999);
+      return b.sim-a.sim;
+    })
+    .slice(0,20);
+
+  let html="";
+
+  res.forEach(s=>{
+    html+=`🚏 <b>${s.stop_name}</b><br>
+    🆔 ${s.stop_id}<br>
+    📍 ${(+s.stop_lat).toFixed(5)}, ${(+s.stop_lon).toFixed(5)}<br>
+    ${s.dist?`📏 ${Math.round(s.dist)} m`:""}
+    <hr>`;
+  });
+
+  document.getElementById("results").innerHTML=html;
+}
 </script>
 </body>
 </html>
