@@ -2,255 +2,161 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V21 REAL DISPATCH FINALIZATION ENGINE</title>
+<title>V22 LIVE DISPATCH MODE</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
 button,input,select{padding:10px;margin:5px}
-.box{background:#111827;padding:10px;margin-top:10px;border-radius:10px;overflow:auto}
+.box{background:#111827;padding:10px;margin-top:10px;border-radius:10px}
 table{width:100%;border-collapse:collapse;margin-top:10px}
 th,td{border:1px solid #334155;padding:6px;font-size:12px}
 tr:hover{background:#1f2937;cursor:pointer}
-.title{font-size:20px;font-weight:bold}
-.small{font-size:11px;color:#94a3b8}
-.bad{color:#f87171}
 .ok{color:#4ade80}
+.bad{color:#f87171}
 .warn{color:#fbbf24}
 </style>
 </head>
 <body>
 
-<div class="title">🚍🚆 V21 REAL DISPATCH FINALIZATION ENGINE</div>
-<div class="small">👉 NEXT 10 DEPARTURES + REAL TIME DELTA + FULL GTFS CHAIN</div>
+<h2>🚍 V22 LIVE DISPATCH MODE</h2>
 
 <input type="file" id="file" multiple />
 <button onclick="loadGTFS()">📦 GTFS betöltés</button>
-<button onclick="clearDB()">🧹 DB törlés</button>
 
-<input id="search" placeholder="🚏 megálló keresés..." oninput="searchStops()" />
+<input id="search" placeholder="🚏 megálló keresés" oninput="searchStops()" />
 
-<select id="datasetSelect" onchange="switchDataset()"></select>
-
-<div class="box" id="status">Várakozás...</div>
-<div class="box" id="debug"></div>
-
-<h3>🌍 Források</h3>
-<div class="box" id="sources"></div>
+<div class="box" id="status"></div>
 
 <h3>🚏 Megállók</h3>
-<table id="stopsTable"></table>
+<table id="stops"></table>
 
-<h3>🧭 NEXT DEPARTURES (REAL DISPATCH)</h3>
-<table id="timetable"></table>
+<h3>🛰 LIVE DISPATCH</h3>
+<table id="live"></table>
 
 <script>
-
-let db = JSON.parse(localStorage.getItem("gtfs_db")||"{}");
-let active=null;
-
+let db={};
 let index={stopTimes:{},trips:{},routes:{}};
 
-function save(){localStorage.setItem("gtfs_db",JSON.stringify(db));}
-function clearDB(){localStorage.removeItem("gtfs_db");db={};refresh();}
-function setStatus(m){document.getElementById('status').innerHTML=m;}
-function norm(s){return (s||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").trim();}
-function split(l,d){let r=[],c="",q=false;for(let x of l){if(x==='"')q=!q;else if(x===d&&!q){r.push(c);c="";}else c+=x;}r.push(c);return r;}
-function detectDelimiter(l){return l.includes("\t")?"\t":",";}
+function norm(s){return (s||"").toLowerCase().trim();}
+function split(l){return l.split(",");}
 
-// =====================
-// TIME ENGINE
-// =====================
-function timeToSec(t){
- if(!t) return 999999;
- let p=t.split(":");
- return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
-}
+function timeToSec(t){if(!t)return 999999;let p=t.split(":");return (+p[0])*3600+(+p[1])*60+(+p[2]||0)}
+function nowSec(){let d=new Date();return d.getHours()*3600+d.getMinutes()*60}
 
-function nowSec(){
- let d=new Date();
- return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
-}
-
-// =====================
-// PARSER
-// =====================
-function parseTrips(text){
- const lines=text.split(/\r?\n/).filter(l=>l.trim());
- const d=detectDelimiter(lines[0]);
- const h=split(lines[0],d);
- const i={trip_id:h.indexOf("trip_id"),route_id:h.indexOf("route_id"),headsign:h.indexOf("trip_headsign")};
- for(let k=1;k<lines.length;k++){
-  const p=split(lines[k],d);
-  if(!p[i.trip_id]) continue;
-  index.trips[p[i.trip_id]]={route_id:p[i.route_id],headsign:p[i.headsign]};
- }
-}
-
-function parseRoutes(text){
- const lines=text.split(/\r?\n/).filter(l=>l.trim());
- const d=detectDelimiter(lines[0]);
- const h=split(lines[0],d);
- const i={route_id:h.indexOf("route_id"),name:h.indexOf("route_short_name")};
- for(let k=1;k<lines.length;k++){
-  const p=split(lines[k],d);
-  if(!p[i.route_id]) continue;
-  index.routes[p[i.route_id]]={name:p[i.name]};
- }
-}
-
-function parseStopTimes(text){
- const lines=text.split(/\r?\n/).filter(l=>l.trim());
- const d=detectDelimiter(lines[0]);
- const h=split(lines[0],d);
- const i={stop_id:h.indexOf("stop_id"),trip_id:h.indexOf("trip_id"),time:h.indexOf("departure_time")};
-
- for(let k=1;k<lines.length;k++){
-  const p=split(lines[k],d);
-  const stop=norm(p[i.stop_id]);
-  if(!stop) continue;
-  if(!index.stopTimes[stop]) index.stopTimes[stop]=[];
-  index.stopTimes[stop].push({
-   trip_id:p[i.trip_id],
-   time:p[i.time]
-  });
- }
-}
-
-function parseStops(text){
- const lines=text.split(/\r?\n/).filter(l=>l.trim());
- const d=detectDelimiter(lines[0]);
- const h=split(lines[0],d);
- const i={id:h.indexOf("stop_id"),name:h.indexOf("stop_name"),lat:h.indexOf("stop_lat"),lon:h.indexOf("stop_lon")};
- let out=[];
- for(let k=1;k<lines.length;k++){
-  const p=split(lines[k],d);
-  if(!p[i.id]) continue;
-  out.push({id:p[i.id],name:p[i.name],lat:p[i.lat],lon:p[i.lon]});
- }
- return out;
-}
-
-// =====================
-// LOAD
-// =====================
 async function loadGTFS(){
  const files=document.getElementById('file').files;
  index={stopTimes:{},trips:{},routes:{}};
 
  for(let f of files){
-  const buf=await f.arrayBuffer();
-  const zip=await JSZip.loadAsync(buf);
+  const zip=await JSZip.loadAsync(await f.arrayBuffer());
   const keys=Object.keys(zip.files);
 
-  const stopsFile=keys.find(x=>x.includes("stops.txt"));
-  const tripsFile=keys.find(x=>x.includes("trips.txt"));
-  const routesFile=keys.find(x=>x.includes("routes.txt"));
-  const stopTimesFile=keys.find(x=>x.includes("stop_times.txt"));
+  const stops=parse(await zip.file(keys.find(k=>k.includes("stops"))).async("string"));
+  parseTrips(await zip.file(keys.find(k=>k.includes("trips"))).async("string"));
+  parseRoutes(await zip.file(keys.find(k=>k.includes("routes"))).async("string"));
+  parseStopTimes(await zip.file(keys.find(k=>k.includes("stop_times"))).async("string"));
 
-  const stops=parseStops(await zip.file(stopsFile).async("string"));
-
-  if(tripsFile) parseTrips(await zip.file(tripsFile).async("string"));
-  if(routesFile) parseRoutes(await zip.file(routesFile).async("string"));
-  if(stopTimesFile) parseStopTimes(await zip.file(stopTimesFile).async("string"));
-
-  const key=f.name+"_"+f.size;
-  db[key]={name:f.name,stops};
+  db[f.name]={stops};
  }
- save();refresh();
+ renderStops();
 }
 
-// =====================
-// UI
-// =====================
-function refresh(){
- const sel=document.getElementById('datasetSelect');
- sel.innerHTML="";
- for(let k in db){
-  let o=document.createElement("option");
-  o.value=k;o.text=db[k].name;
-  sel.appendChild(o);
+function parse(text){
+ let l=text.split("\n");
+ let h=split(l[0]);
+ let i={id:h.indexOf("stop_id"),name:h.indexOf("stop_name")};
+ let out=[];
+ for(let k=1;k<l.length;k++){
+  let p=split(l[k]);
+  if(!p[i.id])continue;
+  out.push({id:p[i.id],name:p[i.name]});
  }
- active=Object.keys(db)[0];sel.value=active;
- render();
+ return out;
 }
 
-function switchDataset(){active=document.getElementById('datasetSelect').value;render();}
-
-function render(list){
- if(!active)return;
- const data=list||db[active].stops;
- let h="<tr><th>ID</th><th>Név</th><th>Lat</th><th>Lon</th></tr>";
- for(let i=0;i<Math.min(80,data.length);i++){
-  const s=data[i];
-  h+=`<tr onclick="showTimetable('${norm(s.id)}')">
-   <td>${s.id}</td>
-   <td>${s.name}</td>
-   <td>${s.lat}</td>
-   <td>${s.lon}</td>
-  </tr>`;
+function parseTrips(t){
+ let l=t.split("\n");
+ let h=split(l[0]);
+ let i={trip:h.indexOf("trip_id"),route:h.indexOf("route_id"),head:h.indexOf("trip_headsign")};
+ for(let k=1;k<l.length;k++){
+  let p=split(l[k]);
+  if(!p[i.trip])continue;
+  index.trips[p[i.trip]]={route:p[i.route],head:p[i.head]};
  }
- document.getElementById('stopsTable').innerHTML=h;
- setStatus("🚀 V21 READY (REAL DISPATCH FINAL)");
+}
+
+function parseRoutes(t){
+ let l=t.split("\n");
+ let h=split(l[0]);
+ let i={id:h.indexOf("route_id"),name:h.indexOf("route_short_name")};
+ for(let k=1;k<l.length;k++){
+  let p=split(l[k]);
+  if(!p[i.id])continue;
+  index.routes[p[i.id]]={name:p[i.name]};
+ }
+}
+
+function parseStopTimes(t){
+ let l=t.split("\n");
+ let h=split(l[0]);
+ let i={stop:h.indexOf("stop_id"),trip:h.indexOf("trip_id"),time:h.indexOf("departure_time")};
+ for(let k=1;k<l.length;k++){
+  let p=split(l[k]);
+  let s=norm(p[i.stop]);
+  if(!s)continue;
+  if(!index.stopTimes[s])index.stopTimes[s]=[];
+  index.stopTimes[s].push({trip:p[i.trip],time:p[i.time]});
+ }
+}
+
+function renderStops(list){
+ let all=Object.values(db).flatMap(d=>d.stops);
+ let data=list||all;
+ let h="<tr><th>ID</th><th>Név</th></tr>";
+ data.slice(0,80).forEach(s=>{
+  h+=`<tr onclick="live('${norm(s.id)}')"><td>${s.id}</td><td>${s.name}</td></tr>`;
+ });
+ document.getElementById('stops').innerHTML=h;
 }
 
 function searchStops(){
- const q=norm(document.getElementById('search').value);
- if(!q){render();return;}
+ let q=norm(document.getElementById('search').value);
  let all=Object.values(db).flatMap(d=>d.stops);
- let res=all.filter(s=>norm(s.name).includes(q)||norm(s.id).includes(q));
- render(res);
+ let res=all.filter(s=>norm(s.name).includes(q));
+ renderStops(res);
 }
 
-// =====================
-// 🚏 REAL DISPATCH CORE
-// =====================
-function showTimetable(stopId){
- const rows=index.stopTimes[norm(stopId)]||[];
+function live(stopId){
  let now=nowSec();
+ let rows=index.stopTimes[stopId]||[];
 
  let enriched=rows.map(r=>{
-  let t=timeToSec(r.time);
-  return {...r,sec:t,delta:t-now};
- }).filter(r=>r.delta>=-300);
+  let sec=timeToSec(r.time);
+  let delta=Math.round((sec-now)/60);
+  return {...r,sec,delta};
+ }).filter(r=>r.delta>-5);
 
  enriched.sort((a,b)=>a.sec-b.sec);
 
- let h=`<tr>
- <th>Viszonylat</th>
- <th>Irány</th>
- <th>Indulás</th>
- <th>Késés/eltérés</th>
- <th>Trip</th>
- <th>Jármű</th>
- <th>Típus</th>
-</tr>`;
-
- if(enriched.length===0){
-  document.getElementById('timetable').innerHTML="<tr><td>Nincs indulás</td></tr>";
-  return;
- }
+ let h="<tr><th>Járat</th><th>Irány</th><th>Indul</th><th>⏱</th><th>Live státusz</th></tr>";
 
  enriched.slice(0,10).forEach(r=>{
-  const trip=index.trips[r.trip_id]||{};
-  const route=index.routes[trip.route_id]||{};
+  let trip=index.trips[r.trip]||{};
+  let route=index.routes[trip.route]||{};
 
-  let delta=Math.round(r.delta/60);
+  let status = r.delta<0 ? "ÉPPEN INDUL" : r.delta<3 ? "AZONNAL" : r.delta<10 ? "HAMAROSAN" : "TERVEZETT";
 
   h+=`<tr>
-   <td>${route.name||"—"}</td>
-   <td>${trip.headsign||"—"}</td>
+   <td>${route.name||"?"}</td>
+   <td>${trip.head||"?"}</td>
    <td>${r.time}</td>
-   <td class="${delta<0?'bad':'ok'}">${delta} min</td>
-   <td>${r.trip_id}</td>
-   <td>—</td>
-   <td>GTFS</td>
+   <td class="${r.delta<0?'bad':'ok'}">${r.delta} min</td>
+   <td class="warn">${status}</td>
   </tr>`;
  });
 
- document.getElementById('timetable').innerHTML=h;
+ document.getElementById('live').innerHTML=h;
 }
-
-function setStatus(m){document.getElementById('status').innerHTML=m;}
 
 </script>
 
