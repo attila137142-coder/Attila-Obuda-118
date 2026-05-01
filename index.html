@@ -1,168 +1,284 @@
-V10 Gtfs Stabil Import Engine· html
+V23.2 – FULL DISPATCH + PAPAPARSE + TÉRKÉP (EGYBEN)
 
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V22 LIVE DISPATCH MODE</title>
+<title>V23.2 DISPATCH + MAP</title>
+
+<!-- LIBEK -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
 <style>
-body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
-button,input,select{padding:10px;margin:5px}
-.box{background:#111827;padding:10px;margin-top:10px;border-radius:10px}
+body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:10px}
+input,button{padding:8px;margin:4px}
+
+#map{height:300px;margin-top:10px;border-radius:10px}
+
 table{width:100%;border-collapse:collapse;margin-top:10px}
-th,td{border:1px solid #334155;padding:6px;font-size:12px}
-tr:hover{background:#1f2937;cursor:pointer}
-.ok{color:#4ade80}
-.bad{color:#f87171}
-.warn{color:#fbbf24}
+th,td{
+ border:1px solid #334155;
+ padding:6px;
+ font-size:12px;
+ white-space:nowrap;
+ overflow:hidden;
+ text-overflow:ellipsis;
+}
+tr:hover{background:#1f2937}
+
+.early{color:#ef4444;font-weight:bold}
+.onTime{color:#e2e8f0}
+.late{color:#3b82f6;font-weight:bold}
 </style>
 </head>
+
 <body>
 
-<h2>🚍 V22 LIVE DISPATCH MODE</h2>
+<h2>🚀 V23.2 DISPATCH + MAP</h2>
 
 <input type="file" id="file" multiple />
-<button onclick="loadGTFS()">📦 GTFS betöltés</button>
+<button onclick="loadGTFS()">📦 Betöltés</button>
+<button onclick="clearDB()">🧹 Törlés</button>
 
-<input id="search" placeholder="🚏 megálló keresés" oninput="searchStops()" />
+<input id="search" placeholder="🚏 megálló keresés..." oninput="searchStops()" />
 
-<div class="box" id="status"></div>
+<div id="map"></div>
 
 <h3>🚏 Megállók</h3>
 <table id="stops"></table>
 
-<h3>🛰 LIVE DISPATCH</h3>
+<h3>🧭 DISPATCH</h3>
 <table id="live"></table>
 
 <script>
-let db={};
-let index={stopTimes:{},trips:{},routes:{}};
 
+// ================= DB =================
+let db = JSON.parse(localStorage.getItem("gtfs_db")||"{}");
+let index = {stopTimes:{},trips:{},routes:{}};
+
+function save(){localStorage.setItem("gtfs_db",JSON.stringify(db));}
+function clearDB(){localStorage.removeItem("gtfs_db");location.reload();}
+
+// ================= MAP =================
+let map = L.map('map').setView([47.4979,19.0402], 11);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+ attribution:'© OSM'
+}).addTo(map);
+
+let markers = [];
+
+function showOnMap(stop){
+ markers.forEach(m=>map.removeLayer(m));
+ markers=[];
+
+ if(!stop.lat) return;
+
+ let m = L.marker([stop.lat, stop.lon]).addTo(map)
+  .bindPopup(stop.name).openPopup();
+
+ markers.push(m);
+ map.setView([stop.lat, stop.lon],15);
+}
+
+// ================= HELPERS =================
 function norm(s){return (s||"").toLowerCase().trim();}
-function split(l){return l.split(",");}
 
-function timeToSec(t){if(!t)return 999999;let p=t.split(":");return (+p[0])*3600+(+p[1])*60+(+p[2]||0)}
-function nowSec(){let d=new Date();return d.getHours()*3600+d.getMinutes()*60}
+function getPrefix(name){
+ name=name.toLowerCase();
+ if(name.includes("budapest")) return "BKK";
+ if(name.includes("volan")) return "VOLÁN";
+ if(name.includes("mav")) return "MÁV";
+ return "GTFS";
+}
 
+function nowSec(){
+ let d=new Date();
+ return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
+}
+
+function normalizeTime(t){
+ if(!t) return {sec:999999,day:0};
+ let [h,m,s]=t.split(':').map(Number);
+ let day=Math.floor(h/24);
+ h=h%24;
+ return {sec:h*3600+m*60+(s||0),day};
+}
+
+// ================= LOAD =================
 async function loadGTFS(){
  const files=document.getElementById('file').files;
- index={stopTimes:{},trips:{},routes:{}};
 
  for(let f of files){
+
+  const prefix=getPrefix(f.name);
   const zip=await JSZip.loadAsync(await f.arrayBuffer());
   const keys=Object.keys(zip.files);
 
-  const stops=parse(await zip.file(keys.find(k=>k.includes("stops"))).async("string"));
-  parseTrips(await zip.file(keys.find(k=>k.includes("trips"))).async("string"));
-  parseRoutes(await zip.file(keys.find(k=>k.includes("routes"))).async("string"));
-  parseStopTimes(await zip.file(keys.find(k=>k.includes("stop_times"))).async("string"));
+  const stopsTXT = await zip.file(keys.find(k=>k.includes("stops"))).async("string");
+  const tripsTXT = await zip.file(keys.find(k=>k.includes("trips"))).async("string");
+  const routesTXT = await zip.file(keys.find(k=>k.includes("routes"))).async("string");
+  const stopTimesTXT = await zip.file(keys.find(k=>k.includes("stop_times"))).async("string");
 
-  db[f.name]={stops};
+  parseStops(stopsTXT,prefix);
+  parseTrips(tripsTXT,prefix);
+  parseRoutes(routesTXT,prefix);
+  parseStopTimes(stopTimesTXT,prefix);
  }
+
+ save();
  renderStops();
 }
 
-function parse(text){
- let l=text.split("\n");
- let h=split(l[0]);
- let i={id:h.indexOf("stop_id"),name:h.indexOf("stop_name")};
- let out=[];
- for(let k=1;k<l.length;k++){
-  let p=split(l[k]);
-  if(!p[i.id])continue;
-  out.push({id:p[i.id],name:p[i.name]});
- }
- return out;
-}
+// ================= PARSERS =================
+function parseStops(text,prefix){
+ const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
 
-function parseTrips(t){
- let l=t.split("\n");
- let h=split(l[0]);
- let i={trip:h.indexOf("trip_id"),route:h.indexOf("route_id"),head:h.indexOf("trip_headsign")};
- for(let k=1;k<l.length;k++){
-  let p=split(l[k]);
-  if(!p[i.trip])continue;
-  index.trips[p[i.trip]]={route:p[i.route],head:p[i.head]};
- }
-}
+ data.forEach(r=>{
+  if(!r.stop_id) return;
 
-function parseRoutes(t){
- let l=t.split("\n");
- let h=split(l[0]);
- let i={id:h.indexOf("route_id"),name:h.indexOf("route_short_name")};
- for(let k=1;k<l.length;k++){
-  let p=split(l[k]);
-  if(!p[i.id])continue;
-  index.routes[p[i.id]]={name:p[i.name]};
- }
-}
+  let id = prefix+"_"+r.stop_id;
 
-function parseStopTimes(t){
- let l=t.split("\n");
- let h=split(l[0]);
- let i={stop:h.indexOf("stop_id"),trip:h.indexOf("trip_id"),time:h.indexOf("departure_time")};
- for(let k=1;k<l.length;k++){
-  let p=split(l[k]);
-  let s=norm(p[i.stop]);
-  if(!s)continue;
-  if(!index.stopTimes[s])index.stopTimes[s]=[];
-  index.stopTimes[s].push({trip:p[i.trip],time:p[i.time]});
- }
-}
-
-function renderStops(list){
- let all=Object.values(db).flatMap(d=>d.stops);
- let data=list||all;
- let h="<tr><th>ID</th><th>Név</th></tr>";
- data.slice(0,80).forEach(s=>{
-  h+=`<tr onclick="live('${norm(s.id)}')"><td>${s.id}</td><td>${s.name}</td></tr>`;
+  db[id]={
+    id,
+    name:r.stop_name,
+    lat:parseFloat(r.stop_lat),
+    lon:parseFloat(r.stop_lon),
+    prefix
+  };
  });
+}
+
+function parseTrips(text,prefix){
+ const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
+
+ data.forEach(r=>{
+  if(!r.trip_id) return;
+
+  index.trips[prefix+"_"+r.trip_id]={
+    route:prefix+"_"+r.route_id,
+    head:(r.trip_headsign||"").trim(),
+    prefix
+  };
+ });
+}
+
+function parseRoutes(text,prefix){
+ const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
+
+ data.forEach(r=>{
+  if(!r.route_id) return;
+
+  index.routes[prefix+"_"+r.route_id]={
+    name:r.route_short_name,
+    prefix
+  };
+ });
+}
+
+function parseStopTimes(text,prefix){
+ const data = Papa.parse(text,{header:true,skipEmptyLines:true}).data;
+
+ data.forEach(r=>{
+  if(!r.stop_id) return;
+
+  let stop=prefix+"_"+r.stop_id;
+
+  if(!index.stopTimes[stop]) index.stopTimes[stop]=[];
+
+  index.stopTimes[stop].push({
+    trip:prefix+"_"+r.trip_id,
+    time:r.departure_time,
+    prefix
+  });
+ });
+}
+
+// ================= UI =================
+function renderStops(list){
+ let all=Object.values(db);
+ let data=list||all;
+
+ let h="<tr><th>Szolg.</th><th>Név</th></tr>";
+
+ data.slice(0,100).forEach(s=>{
+  h+=`<tr onclick="live('${s.id}');showOnMap(${JSON.stringify(s)})">
+   <td>${s.prefix}</td>
+   <td>${s.name}</td>
+  </tr>`;
+ });
+
  document.getElementById('stops').innerHTML=h;
 }
 
 function searchStops(){
  let q=norm(document.getElementById('search').value);
- let all=Object.values(db).flatMap(d=>d.stops);
- let res=all.filter(s=>norm(s.name).includes(q));
+ let res=Object.values(db).filter(s=>norm(s.name).includes(q));
  renderStops(res);
 }
 
+// ================= DISPATCH =================
 function live(stopId){
+
  let now=nowSec();
  let rows=index.stopTimes[stopId]||[];
 
+ let seen=new Set();
+
  let enriched=rows.map(r=>{
-  let sec=timeToSec(r.time);
-  let delta=Math.round((sec-now)/60);
-  return {...r,sec,delta};
- }).filter(r=>r.delta>-5);
+  let t=normalizeTime(r.time);
+  let delta=t.sec-now;
+  if(t.day>0) delta+=86400;
+
+  return {...r,delta,sec:t.sec};
+ })
+ .filter(r=>r.delta>-300 && r.delta<7200)
+ .filter(r=>{
+   let trip=index.trips[r.trip]||{};
+   let route=index.routes[trip.route]||{};
+   let key=(route.name||"")+"|"+(trip.head||"")+"|"+r.time;
+
+   if(seen.has(key)) return false;
+   seen.add(key);
+   return true;
+ });
 
  enriched.sort((a,b)=>a.sec-b.sec);
 
- let h="<tr><th>Járat</th><th>Irány</th><th>Indul</th><th>⏱</th><th>Live státusz</th></tr>";
+ let h="<tr><th>Szolg.</th><th>Járat</th><th>Irány</th><th>Indul</th><th>Eltérés</th></tr>";
 
  enriched.slice(0,10).forEach(r=>{
   let trip=index.trips[r.trip]||{};
   let route=index.routes[trip.route]||{};
 
-  let status = r.delta<0 ? "ÉPPEN INDUL" : r.delta<3 ? "AZONNAL" : r.delta<10 ? "HAMAROSAN" : "TERVEZETT";
+  let cls="onTime";
+  if(r.delta<0) cls="early";
+  else if(r.delta>60) cls="late";
+
+  let m=Math.floor(r.delta/60);
+  let s=Math.abs(r.delta%60);
 
   h+=`<tr>
-   <td>${route.name||"?"}</td>
-   <td>${trip.head||"?"}</td>
+   <td>${r.prefix}</td>
+   <td>${route.name||"—"}</td>
+   <td>${trip.head||"—"}</td>
    <td>${r.time}</td>
-   <td class="${r.delta<0?'bad':'ok'}">${r.delta} min</td>
-   <td class="warn">${status}</td>
+   <td class="${cls}">${m}m ${s}s</td>
   </tr>`;
  });
 
  document.getElementById('live').innerHTML=h;
 }
 
-</script>
+// ================= INIT =================
+window.onload=()=>{
+ renderStops();
+};
 
+</script>
 </body>
 </html>
-
-
