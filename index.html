@@ -1,160 +1,160 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>HUNGARY TRANSPORT DIGITAL TWIN</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TRANSPORT DIGITAL TWIN PRO</title>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-  <style>
-    body{margin:0;font-family:Arial;background:#0f172a;color:#e2e8f0}
-    header{padding:12px;background:#111827;display:flex;justify-content:space-between;align-items:center}
-    h1{font-size:14px;margin:0}
-    .btn{background:#2563eb;border:none;padding:8px 10px;color:#fff;border-radius:8px;cursor:pointer;margin-left:5px}
-    .grid{display:grid;gap:10px;padding:10px}
-    .card{background:#1f2937;padding:10px;border-radius:12px}
-    input{width:100%;padding:10px;border-radius:8px;border:none;margin-top:5px}
-    #map{height:320px;border-radius:12px}
-    .resultBox{margin-top:8px;padding:8px;background:#111827;border-radius:8px;cursor:pointer}
-
-    .panel{font-size:12px;white-space:pre-line}
-  </style>
+<style>
+body{margin:0;font-family:Arial;background:#0f172a;color:#e2e8f0}
+header{padding:10px;background:#111827;display:flex;justify-content:space-between}
+.btn{background:#2563eb;border:none;padding:6px 10px;color:#fff;border-radius:8px;margin-left:5px;cursor:pointer}
+.grid{display:grid;gap:10px;padding:10px}
+.card{background:#1f2937;padding:10px;border-radius:12px}
+#map{height:340px;border-radius:12px}
+.resultBox{padding:6px;background:#111827;margin-top:6px;border-radius:8px;cursor:pointer}
+</style>
 </head>
 <body>
 
 <header>
-  <h1>🌍 HUNGARY TRANSPORT DIGITAL TWIN</h1>
-  <div>
-    <button class="btn" onclick="mode='gtfs'">GTFS</button>
-    <button class="btn" onclick="mode='poi'">POI / CÍM</button>
-  </div>
+<div>
+<button class="btn" onclick="setLayer('street')">Utcai</button>
+<button class="btn" onclick="setLayer('topo')">Topo</button>
+<button class="btn" onclick="setLayer('rail')">Vasúti</button>
+<button class="btn" onclick="setLayer('sat')">Műhold</button>
+</div>
+<div>
+<button class="btn" onclick="mode='gtfs'">GTFS</button>
+<button class="btn" onclick="mode='poi'">POI</button>
+</div>
 </header>
 
 <div class="grid">
 
-  <div class="card">
-    <h3>🔎 KERESŐ</h3>
-    <input id="search" placeholder="megálló / cím / POI / földrajzi név" oninput="handleSearch()" />
-    <div id="results"></div>
-  </div>
+<div class="card">
+<input id="search" placeholder="keresés..." oninput="search()" />
+<div id="results"></div>
+</div>
 
-  <div class="card">
-    <h3>📍 EREDMÉNY PANEL</h3>
-    <div id="panel" class="panel">Válassz keresést...</div>
-  </div>
+<div class="card">
+<div id="info">Adatok...</div>
+</div>
 
-  <div class="card">
-    <h3>🗺️ TÉRKÉP</h3>
-    <div id="map"></div>
-  </div>
+<div class="card">
+<div id="map"></div>
+</div>
 
 </div>
 
 <script>
 
-let mode="gtfs";
 let map;
+let routeLine;
+let mode="gtfs";
 let userPos=null;
 
-let GTFS={stops:[]};
+let layers={};
 
-function loadGTFS(){
-  GTFS.stops=[
-    {id:"S1",name:"Deák",lat:47.4975,lon:19.0550},
-    {id:"S2",name:"Örs",lat:47.5017,lon:19.1356},
-    {id:"S3",name:"Szob",lat:47.8213,lon:18.8626},
-    {id:"BKK-F00457",name:"Nád utca",lat:47.594072,lon:19.048469}
-  ];
+function initMap(){
+  map=L.map('map').setView([47.5,19.05],10);
+
+  layers.street=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+  layers.topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+  layers.rail=L.tileLayer('https://{s}.tile.openrailwaymap.org/standard/{z}/{x}/{y}.png');
+  layers.sat=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+
+  layers.street.addTo(map);
 }
 
-function haversine(lat1,lon1,lat2,lon2){
-  const R=6371;
-  const dLat=(lat2-lat1)*Math.PI/180;
-  const dLon=(lon2-lon1)*Math.PI/180;
-  const a=Math.sin(dLat/2)**2+
-    Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
-    Math.sin(dLon/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+function setLayer(type){
+  Object.values(layers).forEach(l=>map.removeLayer(l));
+  layers[type].addTo(map);
 }
 
+// GPS
 navigator.geolocation.getCurrentPosition(p=>{
   userPos={lat:p.coords.latitude,lon:p.coords.longitude};
+  L.marker([userPos.lat,userPos.lon]).addTo(map).bindPopup("TE ITT");
 });
 
-async function handleSearch(){
+// Haversine
+function dist(a,b,c,d){
+  const R=6371;
+  const dLat=(c-a)*Math.PI/180;
+  const dLon=(d-b)*Math.PI/180;
+  const x=Math.sin(dLat/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// ROUTING (OSRM)
+async function routeTo(lat,lon){
+  if(!userPos) return;
+
+  const url=`https://router.project-osrm.org/route/v1/driving/${userPos.lon},${userPos.lat};${lon},${lat}?overview=full&geometries=geojson`;
+
+  const data=await fetch(url).then(r=>r.json());
+  const route=data.routes[0];
+
+  if(routeLine) map.removeLayer(routeLine);
+
+  routeLine=L.geoJSON(route.geometry).addTo(map);
+
+  const km=route.distance/1000;
+  const ms=route.duration/route.distance;
+  const kmh=(route.distance/route.duration)*3.6;
+
+  document.getElementById('info').innerText=
+    `ÚT: ${km.toFixed(2)} km\n`+
+    `Sebesség: ${kmh.toFixed(1)} km/h (${ms.toFixed(2)} m/s)`;
+}
+
+// DATA
+let stops=[
+{name:"Deák",lat:47.4975,lon:19.0550},
+{name:"Nád utca",lat:47.594072,lon:19.048469},
+{name:"Szob",lat:47.8213,lon:18.8626}
+];
+
+async function search(){
   const q=document.getElementById('search').value.toLowerCase();
   const res=document.getElementById('results');
   res.innerHTML="";
 
   if(mode==="gtfs"){
-    GTFS.stops
-      .filter(s=>(s.name||"").toLowerCase().includes(q)||(s.id||"").toLowerCase().includes(q))
-      .forEach(s=>{
-        const div=document.createElement("div");
-        div.className="resultBox";
+    stops.filter(s=>s.name.toLowerCase().includes(q)).forEach(s=>{
+      const d=document.createElement('div');
+      d.className='resultBox';
 
-        let dist="";
-        if(userPos){
-          const d=haversine(userPos.lat,userPos.lon,s.lat,s.lon);
-          dist=` | 📏 ${d.toFixed(2)} km`;
-        }
+      let txt=s.name;
+      if(userPos){
+        txt+=` | ${dist(userPos.lat,userPos.lon,s.lat,s.lon).toFixed(2)} km`;
+      }
 
-        div.innerHTML=`🚏 ${s.name}${dist}`;
-        div.onclick=()=>showStop(s);
-        res.appendChild(div);
-      });
+      d.innerText=txt;
+      d.onclick=()=>routeTo(s.lat,s.lon);
+      res.appendChild(d);
+    });
   }
 
   if(mode==="poi"){
-    const url=`https://nominatim.openstreetmap.org/search?format=json&q=${q}`;
-    const data=await fetch(url).then(r=>r.json());
+    const data=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`).then(r=>r.json());
 
     data.forEach(p=>{
-      const div=document.createElement("div");
-      div.className="resultBox";
+      const d=document.createElement('div');
+      d.className='resultBox';
 
-      let dist="";
-      if(userPos){
-        const d=haversine(userPos.lat,userPos.lon,parseFloat(p.lat),parseFloat(p.lon));
-        dist=` | 📏 ${d.toFixed(2)} km`;
-      }
-
-      div.innerHTML=`📍 ${p.display_name}${dist}`;
-      div.onclick=()=>showPOI(p);
-      res.appendChild(div);
+      d.innerText=p.display_name;
+      d.onclick=()=>routeTo(parseFloat(p.lat),parseFloat(p.lon));
+      res.appendChild(d);
     });
   }
 }
 
-function showStop(s){
-  document.getElementById('panel').innerText=
-  `🚏 ${s.name}\nID: ${s.id}\nLAT: ${s.lat}\nLON: ${s.lon}`;
-}
-
-function showPOI(p){
-  let dist="";
-  if(userPos){
-    const d=haversine(userPos.lat,userPos.lon,parseFloat(p.lat),parseFloat(p.lon));
-    dist=`\n📏 ${d.toFixed(2)} km légvonal`;
-  }
-
-  document.getElementById('panel').innerText=
-  `📍 ${p.display_name}\nLAT: ${p.lat}\nLON: ${p.lon}${dist}`;
-}
-
-window.onload=()=>{
-  map=L.map('map').setView([47.5,19.05],10);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-  loadGTFS();
-
-  GTFS.stops.forEach(s=>{
-    L.marker([s.lat,s.lon]).addTo(map)
-      .bindPopup(s.name);
-  });
-};
+window.onload=initMap;
 
 </script>
 
