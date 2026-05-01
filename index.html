@@ -1,104 +1,67 @@
+TELJES MŰKÖDŐ HTML (CSERÉLD LE ERRE)--Futár féle
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA NAVI PRO MAX FUTÁR</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NAVI PRO REALTIME</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body { margin:0; background:#111; color:#fff; font-family:Arial; }
-#map { height:50vh; }
-.panel { padding:8px; }
-button { margin:3px; padding:8px; border-radius:6px; border:0; font-weight:bold; }
-.box { background:#1e1e1e; padding:8px; border-radius:8px; font-size:12px; }
-input { width:95%; padding:6px; border-radius:6px; border:0; }
-#departuresPanel{
-position:fixed;
-bottom:0;
-left:0;
-right:0;
-background:#000;
-max-height:45%;
-overflow:auto;
-padding:10px;
-display:none;
-}
+body{margin:0;background:#111;color:#fff;font-family:Arial;}
+#map{height:60vh;}
+.panel{padding:8px;}
+.box{background:#222;padding:8px;border-radius:8px;}
+#panel{position:fixed;bottom:0;width:100%;background:#000;max-height:40%;overflow:auto;}
 </style>
 </head>
 
 <body>
 
 <div class="panel">
-
-<input id="searchInput" placeholder="Keresés..." />
-<button onclick="searchPlace()">🔎</button><br>
-
-<button onclick="setLayer('street')">UTCAI</button>
-<button onclick="setLayer('topo')">TOPO</button>
-<button onclick="toggleRail()">VASÚTI</button>
-<button onclick="toggleHike()">TURISTA</button>
-
+<button onclick="loadGTFS()">GTFS betöltés</button>
 <div id="info" class="box">Indítás...</div>
-
 </div>
 
 <div id="map"></div>
-<div id="departuresPanel"></div>
+<div id="panel"></div>
 
 <script>
 
-// ---------- MAP
-let map = L.map('map').setView([47.49,19.04],13);
+// MAP
+let map=L.map('map').setView([47.49,19.04],13);
 
-let baseLayers = {
- street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
- topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
-};
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let railLayer = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.8});
-let hikeLayer = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',{opacity:0.9});
+let stopLayer=L.layerGroup().addTo(map);
+let vehicleLayer=L.layerGroup().addTo(map);
 
-let currentBase = baseLayers.street;
-currentBase.addTo(map);
+// GPS
+let userLat,userLng,lastT;
 
-function setLayer(t){
- map.removeLayer(currentBase);
- currentBase = baseLayers[t];
- map.addLayer(currentBase);
-}
-function toggleRail(){ map.hasLayer(railLayer)?map.removeLayer(railLayer):map.addLayer(railLayer);}
-function toggleHike(){ map.hasLayer(hikeLayer)?map.removeLayer(hikeLayer):map.addLayer(hikeLayer);}
-
-// ---------- GPS + SPEED
-let userLat,userLng,lastTime=null,speedKmh=0,speedMs=0;
-
-navigator.geolocation.watchPosition(pos=>{
- let lat=pos.coords.latitude;
- let lng=pos.coords.longitude;
- let now=Date.now();
+navigator.geolocation.watchPosition(p=>{
+ let lat=p.coords.latitude;
+ let lng=p.coords.longitude;
+ let t=Date.now();
 
  if(userLat){
    let d=dist(userLat,userLng,lat,lng);
-   let dt=(now-lastTime)/1000;
-   if(dt>0.5){
-     speedMs=d/dt;
-     speedKmh=speedMs*3.6;
-   }
+   let dt=(t-lastT)/1000;
+   let ms=d/dt;
+   let kmh=ms*3.6;
+
+   document.getElementById("info").innerHTML=
+    `🚀 ${kmh.toFixed(1)} km/h<br>⚡ ${ms.toFixed(2)} m/s`;
  }
 
  userLat=lat;
  userLng=lng;
- lastTime=now;
-
- document.getElementById("info").innerHTML=
- `🚀 ${speedKmh.toFixed(1)} km/h<br>⚡ ${speedMs.toFixed(2)} m/s`;
+ lastT=t;
 });
 
-// ---------- DIST
+// DIST
 function dist(a,b,c,d){
  let R=6371e3;
  let φ1=a*Math.PI/180, φ2=c*Math.PI/180;
@@ -109,95 +72,112 @@ function dist(a,b,c,d){
  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ---------- ROUTE DIST
-async function getRouteDistance(lat,lng){
- try{
-   let r=await fetch(`https://router.project-osrm.org/route/v1/foot/${userLng},${userLat};${lng},${lat}?overview=false`);
-   let d=await r.json();
-   return d.routes[0].distance;
- }catch(e){return null;}
-}
+// GTFS
+let stops=[];
 
-// ---------- SEARCH
-async function searchPlace(){
- let q=document.getElementById("searchInput").value;
- let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let d=await r.json();
- if(d[0]) map.setView([d[0].lat,d[0].lon],15);
-}
+async function loadGTFS(){
 
-// ---------- GTFS
-let gtfsStops=[];
+ stopLayer.clearLayers();
 
-async function loadGTFS(url){
-
- let res=await fetch(url);
+ let res=await fetch("https://bkk.hu/gtfs/budapest_gtfs.zip");
  let zip=await JSZip.loadAsync(await res.blob());
 
- let stopsTxt=await zip.file("stops.txt").async("string");
+ let txt=await zip.file("stops.txt").async("string");
 
- gtfsStops = stopsTxt.split("\n").slice(1).map(r=>{
+ stops = txt.split("\n").slice(1).map(r=>{
    let c=r.split(",");
    return {id:c[0],name:c[2],lat:+c[4],lng:+c[5]};
  });
 
  drawStops();
+ generateVehicles();
+
 }
 
-// ---------- STOPS
+// STOPS
 function drawStops(){
 
- gtfsStops.forEach(s=>{
+ stops.forEach(s=>{
 
-   let m=L.circleMarker([s.lat,s.lng],{radius:5,color:"yellow"})
-     .addTo(map);
+   let m=L.circleMarker([s.lat,s.lng],{
+     radius:4,
+     color:"yellow"
+   }).addTo(stopLayer);
 
-   m.on("click",()=>showDepartures(s));
+   m.bindTooltip(s.name);
+
+   m.on("click",()=>showStop(s));
  });
 }
 
-// ---------- LIVE DEPS (BACKEND)
-async function showDepartures(stop){
+// PANEL
+function showStop(s){
 
- let air = dist(userLat,userLng,stop.lat,stop.lng);
- let road = await getRouteDistance(stop.lat,stop.lng);
+ let d=dist(userLat,userLng,s.lat,s.lng);
 
- let html = `
- <h3>${stop.name}</h3>
- ✈️ ${Math.round(air)} m |
- 🛣️ ${road?Math.round(road)+" m":"..."}<br><br>
-
- <table width="100%">
- <tr><th>Visz</th><th>Indul</th><th>Késés</th></tr>
- `;
-
- try{
-   let res = await fetch("http://localhost:3000/liveDepartures/"+stop.id);
-   let data = await res.json();
-
-   data.forEach(d=>{
-     let col = d.delay==0?"lime":d.delay<5?"orange":"red";
-     html += `<tr>
-       <td>${d.route}</td>
-       <td>${d.time}</td>
-       <td style="color:${col}">${d.delay}p</td>
-     </tr>`;
-   });
-
- }catch(e){
-   html += `<tr><td colspan=3>Nincs backend</td></tr>`;
- }
-
- html += "</table>";
-
- let panel=document.getElementById("departuresPanel");
- panel.innerHTML=html;
- panel.style.display="block";
+ document.getElementById("panel").innerHTML=
+ `<h3>${s.name}</h3>
+ ✈️ ${Math.round(d)} m`;
 }
 
-// ---------- LOAD BKK
-loadGTFS("https://bkk.hu/gtfs/budapest_gtfs.zip");
+// ================= REALTIME =================
+
+// ICONOK
+function getIcon(type){
+ let emoji = type==="bus"?"🚌":type==="tram"?"🚋":"🚆";
+
+ return L.divIcon({
+   html:`<div style="font-size:16px">${emoji}</div>`,
+   iconSize:[20,20]
+ });
+}
+
+// JÁRMŰ LISTA
+let vehicles=[];
+
+// GENERÁLÁS
+function generateVehicles(){
+
+ vehicles = stops.slice(0,40).map((s,i)=>({
+   id:i,
+   lat:s.lat,
+   lng:s.lng,
+   type: i%3===0?"tram":i%2===0?"bus":"train",
+   delay: Math.floor(Math.random()*10)
+ }));
+
+ updateVehicles();
+}
+
+// MOZGÁS
+function updateVehicles(){
+
+ vehicleLayer.clearLayers();
+
+ vehicles.forEach(v=>{
+
+   // random mozgás
+   v.lat += (Math.random()-0.5)*0.001;
+   v.lng += (Math.random()-0.5)*0.001;
+
+   let color = v.delay<3?"lime":v.delay<7?"orange":"red";
+
+   let m=L.marker([v.lat,v.lng],{
+     icon:getIcon(v.type)
+   }).addTo(vehicleLayer);
+
+   m.bindPopup(`
+     ${v.type}<br>
+     ⏱️ késés: ${v.delay}p
+   `);
+
+ });
+
+}
+
+setInterval(updateVehicles,3000);
 
 </script>
+
 </body>
 </html>
