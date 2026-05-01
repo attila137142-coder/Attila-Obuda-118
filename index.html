@@ -18,37 +18,34 @@
     input{width:100%;padding:10px;border-radius:8px;border:none;margin-top:5px}
     #map{height:320px;border-radius:12px}
     .resultBox{margin-top:8px;padding:8px;background:#111827;border-radius:8px;cursor:pointer}
-    .tag{font-size:11px;padding:2px 6px;border-radius:6px;background:#374151;margin-left:5px}
 
     .late{color:#3b82f6}
     .early{color:#ef4444}
     .onTime{color:#e2e8f0}
 
-    /* STATUS PANEL */
-    #status{
-      font-size:12px;
-      line-height:1.6;
-      white-space:pre-line;
-      background:#0b1220;
-      padding:10px;
-      border-radius:8px;
-      border:1px solid #374151;
-    }
+    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
+    th,td{border-bottom:1px solid #374151;padding:6px;text-align:left}
+    th{color:#93c5fd}
   </style>
 </head>
 <body>
 
 <header>
-  <h1>🚆 REAL GTFS TRANSPORT OS</h1>
+  <h1>🚆 FUTÁR-SZINTŰ MENETREND MOTOR</h1>
   <button class="btn" onclick="toggleMenu()">Rendszer státusz</button>
 </header>
 
 <div class="grid">
 
   <div class="card">
-    <h3>📦 GTFS KERESŐ</h3>
+    <h3>🔍 Kereső</h3>
     <input id="search" placeholder="megálló / járat / id" oninput="querySystem()" />
     <div id="results"></div>
+  </div>
+
+  <div class="card">
+    <h3>📊 MENETREND TÁBLÁZAT (FUTÁR MODE)</h3>
+    <div id="panel">Válassz megállót...</div>
   </div>
 
   <div class="card">
@@ -56,20 +53,13 @@
     <div id="map"></div>
   </div>
 
-  <div class="card">
-    <h3>📡 LIVE RENDSZER ÁLLAPOT</h3>
-    <div id="status">Rendszer inicializálása...</div>
-  </div>
-
 </div>
 
 <script>
 
-// ===================== CORE MODEL =====================
 let GTFS={stops:[],routes:[],trips:[],stopTimes:[]};
 let map;
 
-// ===================== LOAD =====================
 function loadGTFS(){
   GTFS.stops=[
     {id:"S1",name:"Deák",lat:47.4975,lon:19.0550},
@@ -88,66 +78,71 @@ function loadGTFS(){
   ];
 
   GTFS.stopTimes=[
-    {trip:"T1",stop:"S1",time:480},
-    {trip:"T1",stop:"S2",time:500},
-    {trip:"T2",stop:"S2",time:600},
-    {trip:"T2",stop:"S3",time:720}
+    {trip:"T1",stop:"S1",time:480,vehicle:{id:"B-120",type:"Volvo 2220"}},
+    {trip:"T1",stop:"S2",time:500,vehicle:{id:"B-121",type:"Ikarus"}},
+    {trip:"T2",stop:"S3",time:720,vehicle:{id:"M-300",type:"MÁV FLIRT"}}
   ];
-
-  setStatus("🟢 RENDSZER AKTÍV\nGTFS CORE BETÖLTVE\nSTOP: " + GTFS.stops.length + "\nROUTE: " + GTFS.routes.length);
 }
 
-// ===================== STATUS ENGINE =====================
-function setStatus(txt){
-  document.getElementById('status').innerText=txt;
-}
-
-// ===================== SEARCH =====================
 function querySystem(){
   const q=document.getElementById('search').value.toLowerCase();
   const res=document.getElementById('results');
   res.innerHTML="";
 
-  GTFS.stops
-    .filter(s=>s.name.toLowerCase().includes(q)||s.id.toLowerCase().includes(q))
-    .forEach(s=>{
-      const div=document.createElement("div");
-      div.className="resultBox";
-
-      const trips=GTFS.stopTimes.filter(t=>t.stop===s.id);
-
-      div.innerHTML=`🚏 ${s.name}<br>🆔 ${s.id}<br>🚆 ${trips.length} indulás`;
-
-      div.onclick=()=>showStop(s);
-      res.appendChild(div);
-    });
+  GTFS.stops.filter(s=>s.name.toLowerCase().includes(q)||s.id.toLowerCase().includes(q))
+  .forEach(s=>{
+    const div=document.createElement("div");
+    div.className="resultBox";
+    div.innerHTML=`🚏 ${s.name} (${s.id})`;
+    div.onclick=()=>renderTable(s);
+    res.appendChild(div);
+  });
 }
 
-// ===================== STOP VIEW =====================
-function showStop(stop){
-  const status=document.getElementById('status');
+// ===================== FUTÁR TABLE =====================
+function renderTable(stop){
 
-  const trips=GTFS.stopTimes.filter(t=>t.stop===stop.id);
+  const panel=document.getElementById('panel');
+  const rows=GTFS.stopTimes.filter(t=>t.stop===stop.id);
 
-  let out=`🚏 ${stop.name}\n🆔 ${stop.id}\n\nINDULÁSOK:\n`;
+  let html=`<b>${stop.name}</b><br><br>
+  <table>
+    <tr>
+      <th>Viszonylat száma</th>
+      <th>Iránya / cél végállomás</th>
+      <th>Indul</th>
+      <th>Időbeli eltérés</th>
+      <th>Belső azonosító</th>
+      <th>Jármű száma</th>
+      <th>Jármű típusa</th>
+    </tr>`;
 
-  trips.forEach(t=>{
-    const trip=GTFS.trips.find(x=>x.id===t.trip);
-    const route=GTFS.routes.find(r=>r.id===trip.route);
+  rows.forEach(r=>{
+    const trip=GTFS.trips.find(t=>t.id===r.trip);
+    const route=GTFS.routes.find(x=>x.id===trip.route);
 
-    const diff=t.time-480;
-    let st="IDŐBEN";
+    const diff=r.time-480;
 
-    if(diff<0) st="🔵 KÉSIK " + Math.abs(diff) + "p";
-    if(diff>10) st="🔴 SIET " + diff + "p";
+    let status="IDŐBEN";
+    if(diff<0) status=`🔵 KÉSIK ${Math.abs(diff)}p`;
+    if(diff>10) status=`🔴 SIET ${diff}p`;
 
-    out+=`${route.name} | ${trip.headsign} | ${st}\n`;
+    html+=`
+    <tr>
+      <td>${route.name}</td>
+      <td>${trip.headsign}</td>
+      <td>${r.time}</td>
+      <td>${status}</td>
+      <td>${r.vehicle.id}</td>
+      <td>${r.vehicle.id}</td>
+      <td>${r.vehicle.type}</td>
+    </tr>`;
   });
 
-  setStatus(out);
+  html+="</table>";
+  panel.innerHTML=html;
 }
 
-// ===================== MAP =====================
 window.onload=()=>{
   map=L.map('map').setView([47.5,19.05],10);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -157,17 +152,15 @@ window.onload=()=>{
   GTFS.stops.forEach(s=>{
     L.marker([s.lat,s.lon]).addTo(map)
       .bindPopup(s.name)
-      .on('click',()=>showStop(s));
+      .on('click',()=>renderTable(s));
   });
 };
 
-// ===================== MENU =====================
 function toggleMenu(){
-  setStatus("🟢 RENDSZER FUT\nLIVE GTFS CORE AKTÍV\nKERESÉS + TÉRKÉP + DISZPÉCSER OK");
+  alert("FUTÁR MODE ACTIVE\nGTFS TABLE ENGINE RUNNING");
 }
 
 </script>
 
 </body>
 </html>
-
