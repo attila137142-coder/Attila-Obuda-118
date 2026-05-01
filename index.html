@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>REAL GTFS BACKEND CORE - TRANSPORT OS</title>
+  <title>HUNGARY TRANSPORT DIGITAL TWIN</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -12,40 +12,37 @@
     body{margin:0;font-family:Arial;background:#0f172a;color:#e2e8f0}
     header{padding:12px;background:#111827;display:flex;justify-content:space-between;align-items:center}
     h1{font-size:14px;margin:0}
-    .btn{background:#2563eb;border:none;padding:8px 10px;color:#fff;border-radius:8px;cursor:pointer}
+    .btn{background:#2563eb;border:none;padding:8px 10px;color:#fff;border-radius:8px;cursor:pointer;margin-left:5px}
     .grid{display:grid;gap:10px;padding:10px}
     .card{background:#1f2937;padding:10px;border-radius:12px}
     input{width:100%;padding:10px;border-radius:8px;border:none;margin-top:5px}
     #map{height:320px;border-radius:12px}
     .resultBox{margin-top:8px;padding:8px;background:#111827;border-radius:8px;cursor:pointer}
 
-    .late{color:#3b82f6}
-    .early{color:#ef4444}
-    .onTime{color:#e2e8f0}
-
-    table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px}
-    th,td{border-bottom:1px solid #374151;padding:6px;text-align:left}
-    th{color:#93c5fd}
+    .panel{font-size:12px;white-space:pre-line}
   </style>
 </head>
 <body>
 
 <header>
-  <h1>🚆 FUTÁR-SZINTŰ MENETREND MOTOR</h1>
-  <button class="btn" onclick="toggleMenu()">Rendszer státusz</button>
+  <h1>🌍 HUNGARY TRANSPORT DIGITAL TWIN</h1>
+  <div>
+    <button class="btn" onclick="mode='gtfs'">GTFS</button>
+    <button class="btn" onclick="mode='poi'">POI / CÍM</button>
+  </div>
 </header>
 
 <div class="grid">
 
   <div class="card">
-    <h3>🔍 Kereső</h3>
-    <input id="search" placeholder="megálló / járat / id" oninput="querySystem()" />
+    <h3>🔎 KERESŐ</h3>
+    <input id="search" placeholder="megálló / cím / POI / földrajzi név" oninput="handleSearch()" />
     <div id="results"></div>
   </div>
 
   <div class="card">
-    <h3>📊 MENETREND TÁBLÁZAT (FUTÁR MODE)</h3>
-    <div id="panel">Válassz megállót...</div>
+    <h3>📍 EREDMÉNY PANEL</h3>
+    <div id="panel" class="panel">Válassz keresést...</div>
   </div>
 
   <div class="card">
@@ -57,90 +54,94 @@
 
 <script>
 
-let GTFS={stops:[],routes:[],trips:[],stopTimes:[]};
+let mode="gtfs";
 let map;
+let userPos=null;
+
+let GTFS={stops:[]};
 
 function loadGTFS(){
   GTFS.stops=[
     {id:"S1",name:"Deák",lat:47.4975,lon:19.0550},
     {id:"S2",name:"Örs",lat:47.5017,lon:19.1356},
-    {id:"S3",name:"Szob",lat:47.8213,lon:18.8626}
-  ];
-
-  GTFS.routes=[
-    {id:"R1",name:"BKK 7E"},
-    {id:"R2",name:"MÁV IR"}
-  ];
-
-  GTFS.trips=[
-    {id:"T1",route:"R1",headsign:"Örs felé"},
-    {id:"T2",route:"R2",headsign:"Szob felé"}
-  ];
-
-  GTFS.stopTimes=[
-    {trip:"T1",stop:"S1",time:480,vehicle:{id:"B-120",type:"Volvo 2220"}},
-    {trip:"T1",stop:"S2",time:500,vehicle:{id:"B-121",type:"Ikarus"}},
-    {trip:"T2",stop:"S3",time:720,vehicle:{id:"M-300",type:"MÁV FLIRT"}}
+    {id:"S3",name:"Szob",lat:47.8213,lon:18.8626},
+    {id:"BKK-F00457",name:"Nád utca",lat:47.594072,lon:19.048469}
   ];
 }
 
-function querySystem(){
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+
+    Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+    Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+navigator.geolocation.getCurrentPosition(p=>{
+  userPos={lat:p.coords.latitude,lon:p.coords.longitude};
+});
+
+async function handleSearch(){
   const q=document.getElementById('search').value.toLowerCase();
   const res=document.getElementById('results');
   res.innerHTML="";
 
-  GTFS.stops.filter(s=>s.name.toLowerCase().includes(q)||s.id.toLowerCase().includes(q))
-  .forEach(s=>{
-    const div=document.createElement("div");
-    div.className="resultBox";
-    div.innerHTML=`🚏 ${s.name} (${s.id})`;
-    div.onclick=()=>renderTable(s);
-    res.appendChild(div);
-  });
+  if(mode==="gtfs"){
+    GTFS.stops
+      .filter(s=>(s.name||"").toLowerCase().includes(q)||(s.id||"").toLowerCase().includes(q))
+      .forEach(s=>{
+        const div=document.createElement("div");
+        div.className="resultBox";
+
+        let dist="";
+        if(userPos){
+          const d=haversine(userPos.lat,userPos.lon,s.lat,s.lon);
+          dist=` | 📏 ${d.toFixed(2)} km`;
+        }
+
+        div.innerHTML=`🚏 ${s.name}${dist}`;
+        div.onclick=()=>showStop(s);
+        res.appendChild(div);
+      });
+  }
+
+  if(mode==="poi"){
+    const url=`https://nominatim.openstreetmap.org/search?format=json&q=${q}`;
+    const data=await fetch(url).then(r=>r.json());
+
+    data.forEach(p=>{
+      const div=document.createElement("div");
+      div.className="resultBox";
+
+      let dist="";
+      if(userPos){
+        const d=haversine(userPos.lat,userPos.lon,parseFloat(p.lat),parseFloat(p.lon));
+        dist=` | 📏 ${d.toFixed(2)} km`;
+      }
+
+      div.innerHTML=`📍 ${p.display_name}${dist}`;
+      div.onclick=()=>showPOI(p);
+      res.appendChild(div);
+    });
+  }
 }
 
-// ===================== FUTÁR TABLE =====================
-function renderTable(stop){
+function showStop(s){
+  document.getElementById('panel').innerText=
+  `🚏 ${s.name}\nID: ${s.id}\nLAT: ${s.lat}\nLON: ${s.lon}`;
+}
 
-  const panel=document.getElementById('panel');
-  const rows=GTFS.stopTimes.filter(t=>t.stop===stop.id);
+function showPOI(p){
+  let dist="";
+  if(userPos){
+    const d=haversine(userPos.lat,userPos.lon,parseFloat(p.lat),parseFloat(p.lon));
+    dist=`\n📏 ${d.toFixed(2)} km légvonal`;
+  }
 
-  let html=`<b>${stop.name}</b><br><br>
-  <table>
-    <tr>
-      <th>Viszonylat száma</th>
-      <th>Iránya / cél végállomás</th>
-      <th>Indul</th>
-      <th>Időbeli eltérés</th>
-      <th>Belső azonosító</th>
-      <th>Jármű száma</th>
-      <th>Jármű típusa</th>
-    </tr>`;
-
-  rows.forEach(r=>{
-    const trip=GTFS.trips.find(t=>t.id===r.trip);
-    const route=GTFS.routes.find(x=>x.id===trip.route);
-
-    const diff=r.time-480;
-
-    let status="IDŐBEN";
-    if(diff<0) status=`🔵 KÉSIK ${Math.abs(diff)}p`;
-    if(diff>10) status=`🔴 SIET ${diff}p`;
-
-    html+=`
-    <tr>
-      <td>${route.name}</td>
-      <td>${trip.headsign}</td>
-      <td>${r.time}</td>
-      <td>${status}</td>
-      <td>${r.vehicle.id}</td>
-      <td>${r.vehicle.id}</td>
-      <td>${r.vehicle.type}</td>
-    </tr>`;
-  });
-
-  html+="</table>";
-  panel.innerHTML=html;
+  document.getElementById('panel').innerText=
+  `📍 ${p.display_name}\nLAT: ${p.lat}\nLON: ${p.lon}${dist}`;
 }
 
 window.onload=()=>{
@@ -151,14 +152,9 @@ window.onload=()=>{
 
   GTFS.stops.forEach(s=>{
     L.marker([s.lat,s.lon]).addTo(map)
-      .bindPopup(s.name)
-      .on('click',()=>renderTable(s));
+      .bindPopup(s.name);
   });
 };
-
-function toggleMenu(){
-  alert("FUTÁR MODE ACTIVE\nGTFS TABLE ENGINE RUNNING");
-}
 
 </script>
 
