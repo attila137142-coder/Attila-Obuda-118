@@ -1,166 +1,168 @@
+V10 Gtfs Stabil Import Engine· html
+
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GTFS PRO V29 SMART ROUTE AI ENGINE</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
+<title>V22 LIVE DISPATCH MODE</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
-header{padding:10px;background:#111827;position:sticky;top:0;z-index:999}
-button,input{padding:6px;margin:5px;border-radius:6px;border:0}
-.card{background:#111827;margin:10px;padding:10px;border-radius:8px}
-#map{height:420px;margin:10px;border-radius:10px}
+body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
+button,input,select{padding:10px;margin:5px}
+.box{background:#111827;padding:10px;margin-top:10px;border-radius:10px}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{border:1px solid #334155;padding:6px;font-size:12px}
+tr:hover{background:#1f2937;cursor:pointer}
+.ok{color:#4ade80}
+.bad{color:#f87171}
+.warn{color:#fbbf24}
 </style>
 </head>
 <body>
 
-<header>
-<b>🧠 GTFS PRO V29 SMART ROUTE AI ENGINE</b><br>
-<span>AI ROUTE + EVAC + VISUAL SYSTEM</span><br>
+<h2>🚍 V22 LIVE DISPATCH MODE</h2>
 
-<input id="search" placeholder="Pilis / Börzsöny / Skanzen..." />
-<button onclick="startGPS()">📍 GPS</button>
-<button onclick="tourSearch()">🧭 TOUR</button>
-<button onclick="smartRoute()">🧠 SMART ROUTE</button>
-</header>
+<input type="file" id="file" multiple />
+<button onclick="loadGTFS()">📦 GTFS betöltés</button>
 
-<div id="map"></div>
+<input id="search" placeholder="🚏 megálló keresés" oninput="searchStops()" />
 
-<div class="card">
-<b>📍 GPS</b>
-<div id="gps">-</div>
-</div>
+<div class="box" id="status"></div>
 
-<div class="card">
-<b>🧠 AI ROUTE RESULT</b>
-<div id="out">-</div>
-</div>
+<h3>🚏 Megállók</h3>
+<table id="stops"></table>
+
+<h3>🛰 LIVE DISPATCH</h3>
+<table id="live"></table>
 
 <script>
-let map,userMarker;
-let userLat=47.4979,userLon=19.0402;
-let layers=[];
+let db={};
+let index={stopTimes:{},trips:{},routes:{}};
 
-function initMap(){
-  map=L.map('map').setView([userLat,userLon],11);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-  userMarker=L.marker([userLat,userLon]).addTo(map);
-}
-initMap();
+function norm(s){return (s||"").toLowerCase().trim();}
+function split(l){return l.split(",");}
 
-function startGPS(){
-  navigator.geolocation.watchPosition(p=>{
-    userLat=p.coords.latitude;
-    userLon=p.coords.longitude;
-    document.getElementById("gps").innerText=`📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`;
-    userMarker.setLatLng([userLat,userLon]);
-  });
-}
+function timeToSec(t){if(!t)return 999999;let p=t.split(":");return (+p[0])*3600+(+p[1])*60+(+p[2]||0)}
+function nowSec(){let d=new Date();return d.getHours()*3600+d.getMinutes()*60}
 
-function dist(a,b,c,d){
-  const R=6371000;
-  const x=x=>x*Math.PI/180;
-  const dLat=x(c-a);
-  const dLon=x(d-b);
-  const s=Math.sin(dLat/2)**2+
-    Math.cos(x(a))*Math.cos(x(c))*Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
+async function loadGTFS(){
+ const files=document.getElementById('file').files;
+ index={stopTimes:{},trips:{},routes:{}};
+
+ for(let f of files){
+  const zip=await JSZip.loadAsync(await f.arrayBuffer());
+  const keys=Object.keys(zip.files);
+
+  const stops=parse(await zip.file(keys.find(k=>k.includes("stops"))).async("string"));
+  parseTrips(await zip.file(keys.find(k=>k.includes("trips"))).async("string"));
+  parseRoutes(await zip.file(keys.find(k=>k.includes("routes"))).async("string"));
+  parseStopTimes(await zip.file(keys.find(k=>k.includes("stop_times"))).async("string"));
+
+  db[f.name]={stops};
+ }
+ renderStops();
 }
 
-function clear(){layers.forEach(l=>map.removeLayer(l));layers=[];}
-
-// ================= SMART AI ROUTE =================
-async function smartRoute(){
-
-  clear();
-  document.getElementById("out").innerHTML="🧠 AI ROUTE CALCULATING...";
-
-  const bbox="47.2,18.6,47.9,19.6";
-
-  const query=`
-[out:json][timeout:12];
-(
-  node["amenity"="shelter"](${bbox});
-  node["place"="village"](${bbox});
-  node["highway"="bus_stop"](${bbox});
-);
-out center;
-`;
-
-  let data=null;
-
-  try{
-    const res=await fetch("https://overpass-api.de/api/interpreter",{
-      method:"POST",
-      body:query
-    });
-    if(res.ok) data=await res.json();
-  }catch(e){data=null;}
-
-  if(!data || !data.elements) data={elements:generateFallback()};
-
-  const weighted=data.elements.map(p=>{
-
-    let w=1;
-
-    if(p.tags?.amenity=="shelter") w=0.5;
-    if(p.tags?.place=="village") w=0.7;
-    if(p.tags?.highway=="bus_stop") w=1.2;
-
-    const d=dist(userLat,userLon,p.lat,p.lon)*w;
-
-    return {...p,score:d};
-  });
-
-  weighted.sort((a,b)=>a.score-b.score);
-
-  const best=weighted.slice(0,3);
-
-  best.forEach((p,i)=>{
-
-    const color=i==0?"red":i==1?"orange":"yellow";
-
-    const line=L.polyline([
-      [userLat,userLon],
-      [p.lat,p.lon]
-    ],{color,weight:4-i}).addTo(map);
-
-    layers.push(line);
-
-    L.marker([p.lat,p.lon]).addTo(map)
-      .bindPopup("🧠 " + (p.tags?.name||"TARGET"));
-
-  });
-
-  map.fitBounds(L.featureGroup(layers).getBounds());
-
-  document.getElementById("out").innerHTML=
-    best.map(p=>`
-🧠 <b>${p.tags?.name||"TARGET"}</b><br>
-📏 score: ${Math.round(p.score)}<br>
-📌 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>
-`).join("");
+function parse(text){
+ let l=text.split("\n");
+ let h=split(l[0]);
+ let i={id:h.indexOf("stop_id"),name:h.indexOf("stop_name")};
+ let out=[];
+ for(let k=1;k<l.length;k++){
+  let p=split(l[k]);
+  if(!p[i.id])continue;
+  out.push({id:p[i.id],name:p[i.name]});
+ }
+ return out;
 }
 
-// ================= TOUR =================
-async function tourSearch(){
-  document.getElementById("out").innerHTML="🧭 TOUR...";
-  smartRoute();
+function parseTrips(t){
+ let l=t.split("\n");
+ let h=split(l[0]);
+ let i={trip:h.indexOf("trip_id"),route:h.indexOf("route_id"),head:h.indexOf("trip_headsign")};
+ for(let k=1;k<l.length;k++){
+  let p=split(l[k]);
+  if(!p[i.trip])continue;
+  index.trips[p[i.trip]]={route:p[i.route],head:p[i.head]};
+ }
 }
 
-// ================= FALLBACK =================
-function generateFallback(){
-  return [
-    {lat:userLat+0.01,lon:userLon+0.01,tags:{place:"village",name:"Fallback falu"}},
-    {lat:userLat-0.01,lon:userLon-0.01,tags:{amenity:"shelter",name:"Fallback shelter"}},
-    {lat:userLat+0.005,lon:userLon-0.006,tags:{highway:"bus_stop",name:"Fallback stop"}}
-  ];
+function parseRoutes(t){
+ let l=t.split("\n");
+ let h=split(l[0]);
+ let i={id:h.indexOf("route_id"),name:h.indexOf("route_short_name")};
+ for(let k=1;k<l.length;k++){
+  let p=split(l[k]);
+  if(!p[i.id])continue;
+  index.routes[p[i.id]]={name:p[i.name]};
+ }
 }
+
+function parseStopTimes(t){
+ let l=t.split("\n");
+ let h=split(l[0]);
+ let i={stop:h.indexOf("stop_id"),trip:h.indexOf("trip_id"),time:h.indexOf("departure_time")};
+ for(let k=1;k<l.length;k++){
+  let p=split(l[k]);
+  let s=norm(p[i.stop]);
+  if(!s)continue;
+  if(!index.stopTimes[s])index.stopTimes[s]=[];
+  index.stopTimes[s].push({trip:p[i.trip],time:p[i.time]});
+ }
+}
+
+function renderStops(list){
+ let all=Object.values(db).flatMap(d=>d.stops);
+ let data=list||all;
+ let h="<tr><th>ID</th><th>Név</th></tr>";
+ data.slice(0,80).forEach(s=>{
+  h+=`<tr onclick="live('${norm(s.id)}')"><td>${s.id}</td><td>${s.name}</td></tr>`;
+ });
+ document.getElementById('stops').innerHTML=h;
+}
+
+function searchStops(){
+ let q=norm(document.getElementById('search').value);
+ let all=Object.values(db).flatMap(d=>d.stops);
+ let res=all.filter(s=>norm(s.name).includes(q));
+ renderStops(res);
+}
+
+function live(stopId){
+ let now=nowSec();
+ let rows=index.stopTimes[stopId]||[];
+
+ let enriched=rows.map(r=>{
+  let sec=timeToSec(r.time);
+  let delta=Math.round((sec-now)/60);
+  return {...r,sec,delta};
+ }).filter(r=>r.delta>-5);
+
+ enriched.sort((a,b)=>a.sec-b.sec);
+
+ let h="<tr><th>Járat</th><th>Irány</th><th>Indul</th><th>⏱</th><th>Live státusz</th></tr>";
+
+ enriched.slice(0,10).forEach(r=>{
+  let trip=index.trips[r.trip]||{};
+  let route=index.routes[trip.route]||{};
+
+  let status = r.delta<0 ? "ÉPPEN INDUL" : r.delta<3 ? "AZONNAL" : r.delta<10 ? "HAMAROSAN" : "TERVEZETT";
+
+  h+=`<tr>
+   <td>${route.name||"?"}</td>
+   <td>${trip.head||"?"}</td>
+   <td>${r.time}</td>
+   <td class="${r.delta<0?'bad':'ok'}">${r.delta} min</td>
+   <td class="warn">${status}</td>
+  </tr>`;
+ });
+
+ document.getElementById('live').innerHTML=h;
+}
+
 </script>
 
 </body>
 </html>
+
+
