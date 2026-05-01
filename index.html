@@ -24,134 +24,130 @@
     .early{color:#ef4444}
     .onTime{color:#e2e8f0}
 
-    .debug{font-size:11px;opacity:0.8;white-space:pre-line}
+    /* STATUS PANEL */
+    #status{
+      font-size:12px;
+      line-height:1.6;
+      white-space:pre-line;
+      background:#0b1220;
+      padding:10px;
+      border-radius:8px;
+      border:1px solid #374151;
+    }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>🧠 REAL GTFS BACKEND CORE</h1>
-  <button class="btn" onclick="toggleMenu()">DEBUG</button>
+  <h1>🚆 REAL GTFS TRANSPORT OS</h1>
+  <button class="btn" onclick="toggleMenu()">Rendszer státusz</button>
 </header>
 
 <div class="grid">
 
   <div class="card">
-    <h3>📦 GTFS CORE LOADER</h3>
-    <input id="search" placeholder="stop / route / trip / id" oninput="querySystem()" />
+    <h3>📦 GTFS KERESŐ</h3>
+    <input id="search" placeholder="megálló / járat / id" oninput="querySystem()" />
     <div id="results"></div>
   </div>
 
   <div class="card">
-    <h3>🗺️ MAP</h3>
+    <h3>🗺️ TÉRKÉP</h3>
     <div id="map"></div>
   </div>
 
   <div class="card">
-    <h3>⚙️ BACKEND DEBUG</h3>
-    <div id="debug" class="debug">init...</div>
+    <h3>📡 LIVE RENDSZER ÁLLAPOT</h3>
+    <div id="status">Rendszer inicializálása...</div>
   </div>
 
 </div>
 
 <script>
 
-// ===================== CORE DATA MODEL =====================
+// ===================== CORE MODEL =====================
+let GTFS={stops:[],routes:[],trips:[],stopTimes:[]};
+let map;
 
-let GTFS = {
-  stops: [],
-  routes: [],
-  trips: [],
-  stopTimes: []
-};
-
-// ===================== MOCK GTFS IMPORT CORE =====================
+// ===================== LOAD =====================
 function loadGTFS(){
-
-  GTFS.stops = [
+  GTFS.stops=[
     {id:"S1",name:"Deák",lat:47.4975,lon:19.0550},
     {id:"S2",name:"Örs",lat:47.5017,lon:19.1356},
     {id:"S3",name:"Szob",lat:47.8213,lon:18.8626}
   ];
 
-  GTFS.routes = [
+  GTFS.routes=[
     {id:"R1",name:"BKK 7E"},
     {id:"R2",name:"MÁV IR"}
   ];
 
-  GTFS.trips = [
+  GTFS.trips=[
     {id:"T1",route:"R1",headsign:"Örs felé"},
     {id:"T2",route:"R2",headsign:"Szob felé"}
   ];
 
-  GTFS.stopTimes = [
+  GTFS.stopTimes=[
     {trip:"T1",stop:"S1",time:480},
     {trip:"T1",stop:"S2",time:500},
     {trip:"T2",stop:"S2",time:600},
     {trip:"T2",stop:"S3",time:720}
   ];
 
-  log("GTFS CORE LOADED ✔");
+  setStatus("🟢 RENDSZER AKTÍV\nGTFS CORE BETÖLTVE\nSTOP: " + GTFS.stops.length + "\nROUTE: " + GTFS.routes.length);
 }
 
-// ===================== QUERY ENGINE =====================
+// ===================== STATUS ENGINE =====================
+function setStatus(txt){
+  document.getElementById('status').innerText=txt;
+}
+
+// ===================== SEARCH =====================
 function querySystem(){
   const q=document.getElementById('search').value.toLowerCase();
   const res=document.getElementById('results');
   res.innerHTML="";
 
-  const stops=GTFS.stops.filter(s=>s.name.toLowerCase().includes(q)||s.id.toLowerCase().includes(q));
+  GTFS.stops
+    .filter(s=>s.name.toLowerCase().includes(q)||s.id.toLowerCase().includes(q))
+    .forEach(s=>{
+      const div=document.createElement("div");
+      div.className="resultBox";
 
-  stops.forEach(s=>{
-    const div=document.createElement("div");
-    div.className="resultBox";
+      const trips=GTFS.stopTimes.filter(t=>t.stop===s.id);
 
-    const trips = GTFS.stopTimes.filter(st=>st.stop===s.id);
+      div.innerHTML=`🚏 ${s.name}<br>🆔 ${s.id}<br>🚆 ${trips.length} indulás`;
 
-    div.innerHTML = `🚏 ${s.name}<br>🆔 ${s.id}<br>🚆 trips: ${trips.length}`;
-
-    div.onclick=()=>showStop(s);
-
-    res.appendChild(div);
-  });
+      div.onclick=()=>showStop(s);
+      res.appendChild(div);
+    });
 }
 
-// ===================== STOP RESOLUTION =====================
+// ===================== STOP VIEW =====================
 function showStop(stop){
+  const status=document.getElementById('status');
 
-  const debug=document.getElementById('debug');
+  const trips=GTFS.stopTimes.filter(t=>t.stop===stop.id);
 
-  const trips = GTFS.stopTimes.filter(st=>st.stop===stop.id);
-
-  let out=`STOP: ${stop.name}\nID: ${stop.id}\n\nTRIPS:\n`;
+  let out=`🚏 ${stop.name}\n🆔 ${stop.id}\n\nINDULÁSOK:\n`;
 
   trips.forEach(t=>{
-    const trip = GTFS.trips.find(x=>x.id===t.trip);
-    const route = GTFS.routes.find(r=>r.id===trip.route);
+    const trip=GTFS.trips.find(x=>x.id===t.trip);
+    const route=GTFS.routes.find(r=>r.id===trip.route);
 
-    const mins = t.time - 480;
+    const diff=t.time-480;
+    let st="IDŐBEN";
 
-    let status="IDŐBEN";
-    if(mins<0) status=`KÉSIK ${Math.abs(mins)}p`;
-    if(mins>10) status=`SIET ${mins}p`;
+    if(diff<0) st="🔵 KÉSIK " + Math.abs(diff) + "p";
+    if(diff>10) st="🔴 SIET " + diff + "p";
 
-    out+=`- ${route.name} | ${trip.headsign} | ${t.time} | ${status}\n`;
+    out+=`${route.name} | ${trip.headsign} | ${st}\n`;
   });
 
-  debug.innerText = out;
-}
-
-// ===================== CORE ROUTING (MINI ENGINE) =====================
-function findRoute(from,to){
-
-  const direct = GTFS.stopTimes.find(a=>a.stop===from && GTFS.stopTimes.find(b=>b.stop===to && b.trip===a.trip));
-
-  return direct ? "DIRECT ROUTE FOUND" : "NO DIRECT ROUTE (TRANSFER REQUIRED)";
+  setStatus(out);
 }
 
 // ===================== MAP =====================
-let map;
-
 window.onload=()=>{
   map=L.map('map').setView([47.5,19.05],10);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -163,17 +159,11 @@ window.onload=()=>{
       .bindPopup(s.name)
       .on('click',()=>showStop(s));
   });
-
-  log("MAP READY ✔");
 };
-
-function log(t){
-  document.getElementById('debug').innerText += "\n" + t;
-}
 
 // ===================== MENU =====================
 function toggleMenu(){
-  alert("DEBUG MODE: GTFS CORE ACTIVE");
+  setStatus("🟢 RENDSZER FUT\nLIVE GTFS CORE AKTÍV\nKERESÉS + TÉRKÉP + DISZPÉCSER OK");
 }
 
 </script>
