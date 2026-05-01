@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila NAVI PRO MAX FUTÁR</title>
+<title>ATTILA NAVI PRO MAX FUTÁR</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
@@ -11,12 +11,22 @@
 
 <style>
 body { margin:0; background:#111; color:#fff; font-family:Arial; }
-#map { height: 45vh; }
+#map { height:50vh; }
 .panel { padding:8px; }
 button { margin:3px; padding:8px; border-radius:6px; border:0; font-weight:bold; }
 .box { background:#1e1e1e; padding:8px; border-radius:8px; font-size:12px; }
 input { width:95%; padding:6px; border-radius:6px; border:0; }
-#searchResults { max-height:120px; overflow:auto; }
+#departuresPanel{
+position:fixed;
+bottom:0;
+left:0;
+right:0;
+background:#000;
+max-height:45%;
+overflow:auto;
+padding:10px;
+display:none;
+}
 </style>
 </head>
 
@@ -30,17 +40,14 @@ input { width:95%; padding:6px; border-radius:6px; border:0; }
 <button onclick="setLayer('street')">UTCAI</button>
 <button onclick="setLayer('topo')">TOPO</button>
 <button onclick="toggleRail()">VASÚTI</button>
-<button onclick="toggleHike()">TURISTA</button><br>
-
-<button onclick="searchPOI()">📍 POI</button>
-<button onclick="loadBKK()">🚌 BKK</button>
+<button onclick="toggleHike()">TURISTA</button>
 
 <div id="info" class="box">Indítás...</div>
-<div id="searchResults" class="box"></div>
 
 </div>
 
 <div id="map"></div>
+<div id="departuresPanel"></div>
 
 <script>
 
@@ -48,8 +55,8 @@ input { width:95%; padding:6px; border-radius:6px; border:0; }
 let map = L.map('map').setView([47.49,19.04],13);
 
 let baseLayers = {
-  street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
-  topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
+ street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
+ topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
 };
 
 let railLayer = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.8});
@@ -59,165 +66,137 @@ let currentBase = baseLayers.street;
 currentBase.addTo(map);
 
 function setLayer(t){
-  map.removeLayer(currentBase);
-  currentBase = baseLayers[t];
-  map.addLayer(currentBase);
+ map.removeLayer(currentBase);
+ currentBase = baseLayers[t];
+ map.addLayer(currentBase);
 }
-
 function toggleRail(){ map.hasLayer(railLayer)?map.removeLayer(railLayer):map.addLayer(railLayer);}
 function toggleHike(){ map.hasLayer(hikeLayer)?map.removeLayer(hikeLayer):map.addLayer(hikeLayer);}
 
-// ---------- DATA
-let track=[], marker, polyline;
-let lastTime=null, speedKmh=0, speedMs=0;
-let gtfsStops=[], stopTimes=[];
-let vehiclesLayer = L.layerGroup().addTo(map);
+// ---------- GPS + SPEED
+let userLat,userLng,lastTime=null,speedKmh=0,speedMs=0;
+
+navigator.geolocation.watchPosition(pos=>{
+ let lat=pos.coords.latitude;
+ let lng=pos.coords.longitude;
+ let now=Date.now();
+
+ if(userLat){
+   let d=dist(userLat,userLng,lat,lng);
+   let dt=(now-lastTime)/1000;
+   if(dt>0.5){
+     speedMs=d/dt;
+     speedKmh=speedMs*3.6;
+   }
+ }
+
+ userLat=lat;
+ userLng=lng;
+ lastTime=now;
+
+ document.getElementById("info").innerHTML=
+ `🚀 ${speedKmh.toFixed(1)} km/h<br>⚡ ${speedMs.toFixed(2)} m/s`;
+});
 
 // ---------- DIST
 function dist(a,b,c,d){
-  let R=6371e3;
-  let φ1=a*Math.PI/180, φ2=c*Math.PI/180;
-  let Δφ=(c-a)*Math.PI/180;
-  let Δλ=(d-b)*Math.PI/180;
-  let x=Math.sin(Δφ/2)**2+
-    Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+ let R=6371e3;
+ let φ1=a*Math.PI/180, φ2=c*Math.PI/180;
+ let Δφ=(c-a)*Math.PI/180;
+ let Δλ=(d-b)*Math.PI/180;
+ let x=Math.sin(Δφ/2)**2+
+   Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+ return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ---------- GPS
-navigator.geolocation.watchPosition(pos=>{
-  let lat=pos.coords.latitude;
-  let lng=pos.coords.longitude;
-
-  let now=Date.now();
-
-  if(track.length){
-    let last=track[track.length-1];
-    let d=dist(last.lat,last.lng,lat,lng);
-    if(d<2) return;
-
-    let dt=(now-lastTime)/1000;
-    if(dt>0.5){
-      speedMs=d/dt;
-      speedKmh=speedMs*3.6;
-    }
-  }
-
-  lastTime=now;
-  track.push({lat,lng});
-
-  if(!marker){
-    marker=L.marker([lat,lng]).addTo(map);
-    map.setView([lat,lng],15);
-  }else{
-    marker.setLatLng([lat,lng]);
-  }
-
-  if(polyline) polyline.setLatLngs(track.map(p=>[p.lat,p.lng]));
-  else polyline=L.polyline(track.map(p=>[p.lat,p.lng]),{color:'red'}).addTo(map);
-
-  document.getElementById("info").innerHTML=
-    `🚀 ${speedKmh.toFixed(1)} km/h<br>⚡ ${speedMs.toFixed(2)} m/s`;
-
-});
+// ---------- ROUTE DIST
+async function getRouteDistance(lat,lng){
+ try{
+   let r=await fetch(`https://router.project-osrm.org/route/v1/foot/${userLng},${userLat};${lng},${lat}?overview=false`);
+   let d=await r.json();
+   return d.routes[0].distance;
+ }catch(e){return null;}
+}
 
 // ---------- SEARCH
 async function searchPlace(){
-  let q=document.getElementById("searchInput").value;
-  let res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
-  let data=await res.json();
-
-  let html="";
-  data.forEach(p=>{
-    html+=`<div onclick="goTo(${p.lat},${p.lon})">${p.display_name}</div>`;
-  });
-
-  document.getElementById("searchResults").innerHTML=html;
+ let q=document.getElementById("searchInput").value;
+ let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+ let d=await r.json();
+ if(d[0]) map.setView([d[0].lat,d[0].lon],15);
 }
 
-function goTo(lat,lng){
-  map.setView([lat,lng],15);
-}
+// ---------- GTFS
+let gtfsStops=[];
 
-// ---------- POI
-async function searchPOI(){
-  if(!track.length) return;
-  let last=track[track.length-1];
+async function loadGTFS(url){
 
-  let q=`[out:json];node(around:500,${last.lat},${last.lng})["amenity"];out;`;
-  let res=await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q));
-  let data=await res.json();
+ let res=await fetch(url);
+ let zip=await JSZip.loadAsync(await res.blob());
 
-  data.elements.forEach(p=>{
-    L.marker([p.lat,p.lon]).addTo(map)
-      .bindPopup(p.tags.name||"POI");
-  });
-}
+ let stopsTxt=await zip.file("stops.txt").async("string");
 
-// ---------- GTFS LOAD
-async function loadBKK(){
+ gtfsStops = stopsTxt.split("\n").slice(1).map(r=>{
+   let c=r.split(",");
+   return {id:c[0],name:c[2],lat:+c[4],lng:+c[5]};
+ });
 
-  let url="https://bkk.hu/gtfs/budapest_gtfs.zip";
-
-  let res=await fetch(url);
-  let blob=await res.blob();
-
-  let zip=await JSZip.loadAsync(blob);
-
-  let stopsTxt=await zip.file("stops.txt").async("string");
-  let timesTxt=await zip.file("stop_times.txt").async("string");
-
-  gtfsStops = stopsTxt.split("\n").slice(1).map(r=>{
-    let c=r.split(",");
-    return {id:c[0],n:c[2],la:+c[4],lo:+c[5]};
-  });
-
-  stopTimes = timesTxt.split("\n").slice(1).map(r=>{
-    let c=r.split(",");
-    return {stop_id:c[3],time:c[2]};
-  });
-
-  console.log("BKK betöltve!");
+ drawStops();
 }
 
 // ---------- STOPS
-function showStops(){
-  if(!track.length) return;
-  let last=track[track.length-1];
+function drawStops(){
 
-  gtfsStops.forEach(s=>{
-    let d=dist(last.lat,last.lng,s.la,s.lo);
-    if(d<300){
-      let deps = stopTimes
-        .filter(t=>t.stop_id===s.id)
-        .slice(0,5)
-        .map(t=>t.time)
-        .join("<br>");
+ gtfsStops.forEach(s=>{
 
-      L.circleMarker([s.la,s.lo],{radius:5,color:"yellow"})
-        .addTo(map)
-        .bindPopup(`🚌 ${s.n}<br>${deps}`);
-    }
-  });
+   let m=L.circleMarker([s.lat,s.lng],{radius:5,color:"yellow"})
+     .addTo(map);
+
+   m.on("click",()=>showDepartures(s));
+ });
 }
 
-// ---------- REALTIME (FAKE DEMO / READY)
-function loadVehicles(){
+// ---------- LIVE DEPS (BACKEND)
+async function showDepartures(stop){
 
-  vehiclesLayer.clearLayers();
+ let air = dist(userLat,userLng,stop.lat,stop.lng);
+ let road = await getRouteDistance(stop.lat,stop.lng);
 
-  gtfsStops.slice(0,20).forEach(s=>{
-    let m = L.circleMarker([s.la,s.lo],{
-      radius:6,
-      color:"cyan"
-    }).addTo(vehiclesLayer);
+ let html = `
+ <h3>${stop.name}</h3>
+ ✈️ ${Math.round(air)} m |
+ 🛣️ ${road?Math.round(road)+" m":"..."}<br><br>
 
-    m.bindPopup(`🚌 Jármű (demo)<br>${s.n}`);
-  });
+ <table width="100%">
+ <tr><th>Visz</th><th>Indul</th><th>Késés</th></tr>
+ `;
+
+ try{
+   let res = await fetch("http://localhost:3000/liveDepartures/"+stop.id);
+   let data = await res.json();
+
+   data.forEach(d=>{
+     let col = d.delay==0?"lime":d.delay<5?"orange":"red";
+     html += `<tr>
+       <td>${d.route}</td>
+       <td>${d.time}</td>
+       <td style="color:${col}">${d.delay}p</td>
+     </tr>`;
+   });
+
+ }catch(e){
+   html += `<tr><td colspan=3>Nincs backend</td></tr>`;
+ }
+
+ html += "</table>";
+
+ let panel=document.getElementById("departuresPanel");
+ panel.innerHTML=html;
+ panel.style.display="block";
 }
 
-// refresh
-setInterval(loadVehicles,5000);
+// ---------- LOAD BKK
+loadGTFS("https://bkk.hu/gtfs/budapest_gtfs.zip");
 
 </script>
 </body>
