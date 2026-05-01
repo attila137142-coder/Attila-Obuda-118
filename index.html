@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Transport Digital Twin OFFLINE PRO</title>
+<title>Transport Digital Twin PRO++</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -14,28 +14,30 @@ header{padding:10px;background:#111827;display:flex;flex-wrap:wrap;gap:6px}
 .btn{background:#2563eb;border:none;padding:6px 10px;color:#fff;border-radius:8px;cursor:pointer}
 .grid{display:grid;gap:10px;padding:10px}
 .card{background:#1f2937;padding:10px;border-radius:12px}
-#map{height:380px;border-radius:12px}
+#map{height:360px;border-radius:12px}
 
-.offlineBadge{
- position:fixed;
- bottom:10px;
- left:10px;
+.compass{
+ position:absolute;
+ top:80px;
+ right:20px;
+ width:80px;
+ height:80px;
  background:rgba(0,0,0,0.7);
- padding:6px 10px;
- border-radius:10px;
- font-size:12px;
+ border-radius:50%;
+ display:flex;
+ align-items:center;
+ justify-content:center;
+ font-size:24px;
 }
 </style>
 </head>
 <body>
 
 <header>
-<button class="btn" onclick="setMode('online')">ONLINE MAP</button>
-<button class="btn" onclick="setMode('offline')">OFFLINE CACHE</button>
-<button class="btn" onclick="saveTiles()">TÉRKÉP CACHE</button>
-<button class="btn" onclick="saveTrack()">TRACK SAVE</button>
-<button class="btn" onclick="exportGPX()">GPX</button>
-<button class="btn" onclick="startNav()">NAV</button>
+<button class="btn" onclick="saveTrack()">SAVE</button>
+<button class="btn" onclick="exportGPX()">EXPORT GPX</button>
+<input type="file" id="gpxFile" onchange="importGPX(event)">
+<button class="btn" onclick="startNav()">HEGYI NAVI</button>
 </header>
 
 <div class="grid">
@@ -49,41 +51,18 @@ header{padding:10px;background:#111827;display:flex;flex-wrap:wrap;gap:6px}
 </div>
 </div>
 
-<div class="offlineBadge" id="status">ONLINE MODE</div>
+<div id="compass" class="compass">⬆️</div>
 
 <script>
-let map;
+let map,trackLine,navLine;
 let track=[];
 let savedTrack=[];
-let trackLine;
-let navTarget=null;
 let userPos=null;
-let offlineMode=false;
+let navTarget=null;
 
 function initMap(){
  map=L.map('map').setView([47.5,19.05],12);
- loadOnline();
-}
-
-function loadOnline(){
- L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);
- document.getElementById('status').innerText='ONLINE MODE';
-}
-
-function loadOffline(){
- // LOCAL CACHE fallback (localStorage tile demo)
- L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:18}).addTo(map);
- document.getElementById('status').innerText='OFFLINE CACHE MODE';
-}
-
-function setMode(m){
- offlineMode=(m==='offline');
- map.eachLayer(l=>map.removeLayer(l));
- if(offlineMode) loadOffline(); else loadOnline();
-}
-
-function saveTiles(){
- alert("Tile cache demo: böngésző cache aktív (valódi offlinehoz service worker kell)");
+ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 }
 
 function haversine(a,b,c,d){
@@ -95,26 +74,36 @@ function haversine(a,b,c,d){
 }
 
 navigator.geolocation.watchPosition(p=>{
- userPos={lat:p.coords.latitude,lon:p.coords.longitude};
- track.push([userPos.lat,userPos.lon]);
+ const pos={lat:p.coords.latitude,lon:p.coords.longitude};
+ userPos=pos;
+
+ track.push([pos.lat,pos.lon]);
 
  if(trackLine) map.removeLayer(trackLine);
  trackLine=L.polyline(track,{color:'lime'}).addTo(map);
 
+ if(navTarget){
+   updateNavigation();
+ }
+
+ // compass
  if(p.coords.heading!=null){
-  document.getElementById('speed').innerText='Heading: '+p.coords.heading.toFixed(0)+'°';
+   document.getElementById('compass').style.transform=`rotate(${p.coords.heading}deg)`;
  }
 });
 
 function saveTrack(){
  savedTrack=[...track];
- alert("Track mentve offline");
+ alert("Mentve");
 }
 
 function exportGPX(){
  let gpx='<?xml version="1.0"?><gpx><trk><trkseg>';
- savedTrack.forEach(p=>gpx+=`<trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`);
+ savedTrack.forEach(p=>{
+  gpx+=`<trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`;
+ });
  gpx+='</trkseg></trk></gpx>';
+
  const blob=new Blob([gpx]);
  const a=document.createElement('a');
  a.href=URL.createObjectURL(blob);
@@ -122,10 +111,43 @@ function exportGPX(){
  a.click();
 }
 
+function importGPX(e){
+ const file=e.target.files[0];
+ const reader=new FileReader();
+
+ reader.onload=function(){
+  const parser=new DOMParser();
+  const xml=parser.parseFromString(reader.result,"text/xml");
+  const pts=xml.getElementsByTagName("trkpt");
+
+  savedTrack=[];
+
+  for(let i=0;i<pts.length;i++){
+    let lat=parseFloat(pts[i].getAttribute("lat"));
+    let lon=parseFloat(pts[i].getAttribute("lon"));
+    savedTrack.push([lat,lon]);
+  }
+
+  L.polyline(savedTrack,{color:'yellow'}).addTo(map);
+ };
+
+ reader.readAsText(file);
+}
+
 function startNav(){
- if(savedTrack.length){
+ if(savedTrack.length>0){
   navTarget=savedTrack[savedTrack.length-1];
  }
+}
+
+function updateNavigation(){
+ if(!userPos || !navTarget) return;
+
+ const d=haversine(userPos.lat,userPos.lon,navTarget[0],navTarget[1]);
+ document.getElementById('info').innerText=`Cél távolság: ${d.toFixed(2)} km`;
+
+ if(navLine) map.removeLayer(navLine);
+ navLine=L.polyline([[userPos.lat,userPos.lon],navTarget],{color:'red'}).addTo(map);
 }
 
 window.onload=initMap;
@@ -133,3 +155,4 @@ window.onload=initMap;
 
 </body>
 </html>
+
