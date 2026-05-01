@@ -3,163 +3,182 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GTFS PRO V29 SMART ROUTE AI ENGINE</title>
+<title>Transport Digital Twin PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <style>
-body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
-header{padding:10px;background:#111827;position:sticky;top:0;z-index:999}
-button,input{padding:6px;margin:5px;border-radius:6px;border:0}
-.card{background:#111827;margin:10px;padding:10px;border-radius:8px}
-#map{height:420px;margin:10px;border-radius:10px}
+body{margin:0;font-family:Arial;background:#0f172a;color:#e2e8f0}
+header{padding:10px;background:#111827;display:flex;flex-wrap:wrap;gap:6px}
+.btn{background:#2563eb;border:none;padding:6px 10px;color:#fff;border-radius:8px;cursor:pointer}
+.grid{display:grid;gap:10px;padding:10px}
+.card{background:#1f2937;padding:10px;border-radius:12px}
+#map{height:340px;border-radius:12px}
+.resultBox{padding:6px;background:#111827;margin-top:6px;border-radius:8px;cursor:pointer}
 </style>
 </head>
 <body>
 
 <header>
-<b>🧠 GTFS PRO V29 SMART ROUTE AI ENGINE</b><br>
-<span>AI ROUTE + EVAC + VISUAL SYSTEM</span><br>
+<button class="btn" onclick="setLayer('street')">Utcai</button>
+<button class="btn" onclick="setLayer('topo')">Topo</button>
+<button class="btn" onclick="setLayer('rail')">Vasút</button>
+<button class="btn" onclick="setLayer('hike')">Turista</button>
 
-<input id="search" placeholder="Pilis / Börzsöny / Skanzen..." />
-<button onclick="startGPS()">📍 GPS</button>
-<button onclick="tourSearch()">🧭 TOUR</button>
-<button onclick="smartRoute()">🧠 SMART ROUTE</button>
+<button class="btn" onclick="mode='gtfs'">GTFS</button>
+<button class="btn" onclick="mode='poi'">POI</button>
+<button class="btn" onclick="loadNearby()">Közeli helyek</button>
 </header>
 
-<div id="map"></div>
-
+<div class="grid">
 <div class="card">
-<b>📍 GPS</b>
-<div id="gps">-</div>
+<input id="search" placeholder="keresés..." oninput="search()" />
+<div id="results"></div>
 </div>
 
 <div class="card">
-<b>🧠 AI ROUTE RESULT</b>
-<div id="out">-</div>
+<div id="info">Adatok...</div>
+</div>
+
+<div class="card">
+<div id="map"></div>
+</div>
 </div>
 
 <script>
-let map,userMarker;
-let userLat=47.4979,userLon=19.0402;
-let layers=[];
+let map,routeLine,trackLine;
+let mode="gtfs";
+let userPos=null;
+let track=[];
+let lastPos=null,lastTime=null;
+
+let layers={};
 
 function initMap(){
-  map=L.map('map').setView([userLat,userLon],11);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-  userMarker=L.marker([userLat,userLon]).addTo(map);
-}
-initMap();
+ map=L.map('map').setView([47.5,19.05],11);
 
-function startGPS(){
-  navigator.geolocation.watchPosition(p=>{
-    userLat=p.coords.latitude;
-    userLon=p.coords.longitude;
-    document.getElementById("gps").innerText=`📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`;
-    userMarker.setLatLng([userLat,userLon]);
+ layers.street=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+ layers.topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+ layers.rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.7});
+ layers.hike=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
+
+ layers.street.addTo(map);
+}
+
+function setLayer(type){
+ Object.values(layers).forEach(l=>map.removeLayer(l));
+ layers.street.addTo(map);
+ if(type!=='street') layers[type].addTo(map);
+}
+
+function haversine(a,b,c,d){
+ const R=6371;
+ const dLat=(c-a)*Math.PI/180;
+ const dLon=(d-b)*Math.PI/180;
+ const x=Math.sin(dLat/2)**2+Math.cos(a*Math.PI/180)*Math.cos(c*Math.PI/180)*Math.sin(dLon/2)**2;
+ return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+navigator.geolocation.watchPosition(p=>{
+ const now=Date.now();
+ const pos={lat:p.coords.latitude,lon:p.coords.longitude};
+ userPos=pos;
+
+ if(lastPos){
+  const d=haversine(lastPos.lat,lastPos.lon,pos.lat,pos.lon);
+  const dt=(now-lastTime)/1000;
+  const kmh=(d/dt)*3600;
+  const ms=(d*1000)/dt;
+
+  document.getElementById('info').innerText=
+  `Sebesség: ${kmh.toFixed(2)} km/h (${ms.toFixed(2)} m/s)`;
+ }
+
+ track.push([pos.lat,pos.lon]);
+ if(trackLine) map.removeLayer(trackLine);
+ trackLine=L.polyline(track,{color:'lime'}).addTo(map);
+
+ lastPos=pos;
+ lastTime=now;
+});
+
+async function routeTo(lat,lon){
+ if(!userPos) return;
+
+ const roadURL=`https://router.project-osrm.org/route/v1/driving/${userPos.lon},${userPos.lat};${lon},${lat}?overview=full&geometries=geojson`;
+ const footURL=`https://router.project-osrm.org/route/v1/foot/${userPos.lon},${userPos.lat};${lon},${lat}?overview=false`;
+
+ const road=await fetch(roadURL).then(r=>r.json());
+ const foot=await fetch(footURL).then(r=>r.json());
+
+ const r=road.routes[0];
+ const f=foot.routes[0];
+
+ if(routeLine) map.removeLayer(routeLine);
+ routeLine=L.geoJSON(r.geometry).addTo(map);
+
+ const air=haversine(userPos.lat,userPos.lon,lat,lon);
+ const roadKm=r.distance/1000;
+ const footKm=f.distance/1000;
+
+ document.getElementById('info').innerText=
+ `Légvonal: ${air.toFixed(2)} km\nKözút: ${roadKm.toFixed(2)} km\nGyalog: ${footKm.toFixed(2)} km`;
+}
+
+let stops=[
+{name:"Deák",lat:47.4975,lon:19.0550},
+{name:"Nád utca",lat:47.594072,lon:19.048469},
+{name:"Szob",lat:47.8213,lon:18.8626}
+];
+
+async function search(){
+ const q=document.getElementById('search').value.toLowerCase();
+ const res=document.getElementById('results');
+ res.innerHTML="";
+
+ if(mode==='gtfs'){
+  stops.filter(s=>s.name.toLowerCase().includes(q)).forEach(s=>{
+   const d=document.createElement('div');
+   d.className='resultBox';
+
+   let txt=s.name;
+   if(userPos){
+    txt+=` | ${haversine(userPos.lat,userPos.lon,s.lat,s.lon).toFixed(2)} km`;
+   }
+
+   d.innerText=txt;
+   d.onclick=()=>routeTo(s.lat,s.lon);
+   res.appendChild(d);
   });
-}
+ }
 
-function dist(a,b,c,d){
-  const R=6371000;
-  const x=x=>x*Math.PI/180;
-  const dLat=x(c-a);
-  const dLon=x(d-b);
-  const s=Math.sin(dLat/2)**2+
-    Math.cos(x(a))*Math.cos(x(c))*Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
-}
+ if(mode==='poi'){
+  const data=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`).then(r=>r.json());
 
-function clear(){layers.forEach(l=>map.removeLayer(l));layers=[];}
+  data.forEach(p=>{
+   const d=document.createElement('div');
+   d.className='resultBox';
 
-// ================= SMART AI ROUTE =================
-async function smartRoute(){
-
-  clear();
-  document.getElementById("out").innerHTML="🧠 AI ROUTE CALCULATING...";
-
-  const bbox="47.2,18.6,47.9,19.6";
-
-  const query=`
-[out:json][timeout:12];
-(
-  node["amenity"="shelter"](${bbox});
-  node["place"="village"](${bbox});
-  node["highway"="bus_stop"](${bbox});
-);
-out center;
-`;
-
-  let data=null;
-
-  try{
-    const res=await fetch("https://overpass-api.de/api/interpreter",{
-      method:"POST",
-      body:query
-    });
-    if(res.ok) data=await res.json();
-  }catch(e){data=null;}
-
-  if(!data || !data.elements) data={elements:generateFallback()};
-
-  const weighted=data.elements.map(p=>{
-
-    let w=1;
-
-    if(p.tags?.amenity=="shelter") w=0.5;
-    if(p.tags?.place=="village") w=0.7;
-    if(p.tags?.highway=="bus_stop") w=1.2;
-
-    const d=dist(userLat,userLon,p.lat,p.lon)*w;
-
-    return {...p,score:d};
+   d.innerText=p.display_name;
+   d.onclick=()=>routeTo(parseFloat(p.lat),parseFloat(p.lon));
+   res.appendChild(d);
   });
-
-  weighted.sort((a,b)=>a.score-b.score);
-
-  const best=weighted.slice(0,3);
-
-  best.forEach((p,i)=>{
-
-    const color=i==0?"red":i==1?"orange":"yellow";
-
-    const line=L.polyline([
-      [userLat,userLon],
-      [p.lat,p.lon]
-    ],{color,weight:4-i}).addTo(map);
-
-    layers.push(line);
-
-    L.marker([p.lat,p.lon]).addTo(map)
-      .bindPopup("🧠 " + (p.tags?.name||"TARGET"));
-
-  });
-
-  map.fitBounds(L.featureGroup(layers).getBounds());
-
-  document.getElementById("out").innerHTML=
-    best.map(p=>`
-🧠 <b>${p.tags?.name||"TARGET"}</b><br>
-📏 score: ${Math.round(p.score)}<br>
-📌 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>
-`).join("");
+ }
 }
 
-// ================= TOUR =================
-async function tourSearch(){
-  document.getElementById("out").innerHTML="🧭 TOUR...";
-  smartRoute();
+async function loadNearby(){
+ if(!userPos) return;
+
+ const url=`https://overpass-api.de/api/interpreter?data=[out:json];node(around:1000,${userPos.lat},${userPos.lon});out;`;
+ const data=await fetch(url).then(r=>r.json());
+
+ data.elements.slice(0,20).forEach(p=>{
+  L.marker([p.lat,p.lon]).addTo(map).bindPopup("Közeli pont");
+ });
 }
 
-// ================= FALLBACK =================
-function generateFallback(){
-  return [
-    {lat:userLat+0.01,lon:userLon+0.01,tags:{place:"village",name:"Fallback falu"}},
-    {lat:userLat-0.01,lon:userLon-0.01,tags:{amenity:"shelter",name:"Fallback shelter"}},
-    {lat:userLat+0.005,lon:userLon-0.006,tags:{highway:"bus_stop",name:"Fallback stop"}}
-  ];
-}
+window.onload=initMap;
 </script>
 
 </body>
