@@ -1,166 +1,183 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GTFS PRO V29 SMART ROUTE AI ENGINE</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>REAL GTFS BACKEND CORE - TRANSPORT OS</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
-<style>
-body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
-header{padding:10px;background:#111827;position:sticky;top:0;z-index:999}
-button,input{padding:6px;margin:5px;border-radius:6px;border:0}
-.card{background:#111827;margin:10px;padding:10px;border-radius:8px}
-#map{height:420px;margin:10px;border-radius:10px}
-</style>
+  <style>
+    body{margin:0;font-family:Arial;background:#0f172a;color:#e2e8f0}
+    header{padding:12px;background:#111827;display:flex;justify-content:space-between;align-items:center}
+    h1{font-size:14px;margin:0}
+    .btn{background:#2563eb;border:none;padding:8px 10px;color:#fff;border-radius:8px;cursor:pointer}
+    .grid{display:grid;gap:10px;padding:10px}
+    .card{background:#1f2937;padding:10px;border-radius:12px}
+    input{width:100%;padding:10px;border-radius:8px;border:none;margin-top:5px}
+    #map{height:320px;border-radius:12px}
+    .resultBox{margin-top:8px;padding:8px;background:#111827;border-radius:8px;cursor:pointer}
+    .tag{font-size:11px;padding:2px 6px;border-radius:6px;background:#374151;margin-left:5px}
+
+    .late{color:#3b82f6}
+    .early{color:#ef4444}
+    .onTime{color:#e2e8f0}
+
+    .debug{font-size:11px;opacity:0.8;white-space:pre-line}
+  </style>
 </head>
 <body>
 
 <header>
-<b>🧠 GTFS PRO V29 SMART ROUTE AI ENGINE</b><br>
-<span>AI ROUTE + EVAC + VISUAL SYSTEM</span><br>
-
-<input id="search" placeholder="Pilis / Börzsöny / Skanzen..." />
-<button onclick="startGPS()">📍 GPS</button>
-<button onclick="tourSearch()">🧭 TOUR</button>
-<button onclick="smartRoute()">🧠 SMART ROUTE</button>
+  <h1>🧠 REAL GTFS BACKEND CORE</h1>
+  <button class="btn" onclick="toggleMenu()">DEBUG</button>
 </header>
 
-<div id="map"></div>
+<div class="grid">
 
-<div class="card">
-<b>📍 GPS</b>
-<div id="gps">-</div>
-</div>
+  <div class="card">
+    <h3>📦 GTFS CORE LOADER</h3>
+    <input id="search" placeholder="stop / route / trip / id" oninput="querySystem()" />
+    <div id="results"></div>
+  </div>
 
-<div class="card">
-<b>🧠 AI ROUTE RESULT</b>
-<div id="out">-</div>
+  <div class="card">
+    <h3>🗺️ MAP</h3>
+    <div id="map"></div>
+  </div>
+
+  <div class="card">
+    <h3>⚙️ BACKEND DEBUG</h3>
+    <div id="debug" class="debug">init...</div>
+  </div>
+
 </div>
 
 <script>
-let map,userMarker;
-let userLat=47.4979,userLon=19.0402;
-let layers=[];
 
-function initMap(){
-  map=L.map('map').setView([userLat,userLon],11);
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-  userMarker=L.marker([userLat,userLon]).addTo(map);
-}
-initMap();
+// ===================== CORE DATA MODEL =====================
 
-function startGPS(){
-  navigator.geolocation.watchPosition(p=>{
-    userLat=p.coords.latitude;
-    userLon=p.coords.longitude;
-    document.getElementById("gps").innerText=`📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`;
-    userMarker.setLatLng([userLat,userLon]);
-  });
-}
+let GTFS = {
+  stops: [],
+  routes: [],
+  trips: [],
+  stopTimes: []
+};
 
-function dist(a,b,c,d){
-  const R=6371000;
-  const x=x=>x*Math.PI/180;
-  const dLat=x(c-a);
-  const dLon=x(d-b);
-  const s=Math.sin(dLat/2)**2+
-    Math.cos(x(a))*Math.cos(x(c))*Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
-}
+// ===================== MOCK GTFS IMPORT CORE =====================
+function loadGTFS(){
 
-function clear(){layers.forEach(l=>map.removeLayer(l));layers=[];}
-
-// ================= SMART AI ROUTE =================
-async function smartRoute(){
-
-  clear();
-  document.getElementById("out").innerHTML="🧠 AI ROUTE CALCULATING...";
-
-  const bbox="47.2,18.6,47.9,19.6";
-
-  const query=`
-[out:json][timeout:12];
-(
-  node["amenity"="shelter"](${bbox});
-  node["place"="village"](${bbox});
-  node["highway"="bus_stop"](${bbox});
-);
-out center;
-`;
-
-  let data=null;
-
-  try{
-    const res=await fetch("https://overpass-api.de/api/interpreter",{
-      method:"POST",
-      body:query
-    });
-    if(res.ok) data=await res.json();
-  }catch(e){data=null;}
-
-  if(!data || !data.elements) data={elements:generateFallback()};
-
-  const weighted=data.elements.map(p=>{
-
-    let w=1;
-
-    if(p.tags?.amenity=="shelter") w=0.5;
-    if(p.tags?.place=="village") w=0.7;
-    if(p.tags?.highway=="bus_stop") w=1.2;
-
-    const d=dist(userLat,userLon,p.lat,p.lon)*w;
-
-    return {...p,score:d};
-  });
-
-  weighted.sort((a,b)=>a.score-b.score);
-
-  const best=weighted.slice(0,3);
-
-  best.forEach((p,i)=>{
-
-    const color=i==0?"red":i==1?"orange":"yellow";
-
-    const line=L.polyline([
-      [userLat,userLon],
-      [p.lat,p.lon]
-    ],{color,weight:4-i}).addTo(map);
-
-    layers.push(line);
-
-    L.marker([p.lat,p.lon]).addTo(map)
-      .bindPopup("🧠 " + (p.tags?.name||"TARGET"));
-
-  });
-
-  map.fitBounds(L.featureGroup(layers).getBounds());
-
-  document.getElementById("out").innerHTML=
-    best.map(p=>`
-🧠 <b>${p.tags?.name||"TARGET"}</b><br>
-📏 score: ${Math.round(p.score)}<br>
-📌 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>
-`).join("");
-}
-
-// ================= TOUR =================
-async function tourSearch(){
-  document.getElementById("out").innerHTML="🧭 TOUR...";
-  smartRoute();
-}
-
-// ================= FALLBACK =================
-function generateFallback(){
-  return [
-    {lat:userLat+0.01,lon:userLon+0.01,tags:{place:"village",name:"Fallback falu"}},
-    {lat:userLat-0.01,lon:userLon-0.01,tags:{amenity:"shelter",name:"Fallback shelter"}},
-    {lat:userLat+0.005,lon:userLon-0.006,tags:{highway:"bus_stop",name:"Fallback stop"}}
+  GTFS.stops = [
+    {id:"S1",name:"Deák",lat:47.4975,lon:19.0550},
+    {id:"S2",name:"Örs",lat:47.5017,lon:19.1356},
+    {id:"S3",name:"Szob",lat:47.8213,lon:18.8626}
   ];
+
+  GTFS.routes = [
+    {id:"R1",name:"BKK 7E"},
+    {id:"R2",name:"MÁV IR"}
+  ];
+
+  GTFS.trips = [
+    {id:"T1",route:"R1",headsign:"Örs felé"},
+    {id:"T2",route:"R2",headsign:"Szob felé"}
+  ];
+
+  GTFS.stopTimes = [
+    {trip:"T1",stop:"S1",time:480},
+    {trip:"T1",stop:"S2",time:500},
+    {trip:"T2",stop:"S2",time:600},
+    {trip:"T2",stop:"S3",time:720}
+  ];
+
+  log("GTFS CORE LOADED ✔");
 }
+
+// ===================== QUERY ENGINE =====================
+function querySystem(){
+  const q=document.getElementById('search').value.toLowerCase();
+  const res=document.getElementById('results');
+  res.innerHTML="";
+
+  const stops=GTFS.stops.filter(s=>s.name.toLowerCase().includes(q)||s.id.toLowerCase().includes(q));
+
+  stops.forEach(s=>{
+    const div=document.createElement("div");
+    div.className="resultBox";
+
+    const trips = GTFS.stopTimes.filter(st=>st.stop===s.id);
+
+    div.innerHTML = `🚏 ${s.name}<br>🆔 ${s.id}<br>🚆 trips: ${trips.length}`;
+
+    div.onclick=()=>showStop(s);
+
+    res.appendChild(div);
+  });
+}
+
+// ===================== STOP RESOLUTION =====================
+function showStop(stop){
+
+  const debug=document.getElementById('debug');
+
+  const trips = GTFS.stopTimes.filter(st=>st.stop===stop.id);
+
+  let out=`STOP: ${stop.name}\nID: ${stop.id}\n\nTRIPS:\n`;
+
+  trips.forEach(t=>{
+    const trip = GTFS.trips.find(x=>x.id===t.trip);
+    const route = GTFS.routes.find(r=>r.id===trip.route);
+
+    const mins = t.time - 480;
+
+    let status="IDŐBEN";
+    if(mins<0) status=`KÉSIK ${Math.abs(mins)}p`;
+    if(mins>10) status=`SIET ${mins}p`;
+
+    out+=`- ${route.name} | ${trip.headsign} | ${t.time} | ${status}\n`;
+  });
+
+  debug.innerText = out;
+}
+
+// ===================== CORE ROUTING (MINI ENGINE) =====================
+function findRoute(from,to){
+
+  const direct = GTFS.stopTimes.find(a=>a.stop===from && GTFS.stopTimes.find(b=>b.stop===to && b.trip===a.trip));
+
+  return direct ? "DIRECT ROUTE FOUND" : "NO DIRECT ROUTE (TRANSFER REQUIRED)";
+}
+
+// ===================== MAP =====================
+let map;
+
+window.onload=()=>{
+  map=L.map('map').setView([47.5,19.05],10);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+  loadGTFS();
+
+  GTFS.stops.forEach(s=>{
+    L.marker([s.lat,s.lon]).addTo(map)
+      .bindPopup(s.name)
+      .on('click',()=>showStop(s));
+  });
+
+  log("MAP READY ✔");
+};
+
+function log(t){
+  document.getElementById('debug').innerText += "\n" + t;
+}
+
+// ===================== MENU =====================
+function toggleMenu(){
+  alert("DEBUG MODE: GTFS CORE ACTIVE");
+}
+
 </script>
 
 </body>
 </html>
+
