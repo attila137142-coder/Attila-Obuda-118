@@ -16,6 +16,16 @@ header{padding:10px;background:#111827;display:flex;flex-wrap:wrap;gap:6px}
 .card{background:#1f2937;padding:10px;border-radius:12px}
 #map{height:340px;border-radius:12px}
 .resultBox{padding:6px;background:#111827;margin-top:6px;border-radius:8px;cursor:pointer}
+.slopeLabel{
+  color:#fff;
+  font-size:14px;
+  font-weight:bold;
+  text-align:center;
+  background:rgba(0,0,0,0.8);
+  padding:4px 6px;
+  border-radius:8px;
+  border:1px solid #fff;
+}
 </style>
 </head>
 <body>
@@ -223,9 +233,45 @@ async function loadNearby(){
  });
 }
 
-window.onload=initMap;
+// TURISTA PRO ENGINE
+async function addSlopeOverlay(){
+ if(track.length<2) return;
+
+ let points=[];
+
+ for(let i=1;i<track.length;i++){
+   let p1=track[i-1];
+   let p2=track[i];
+
+   let dist=haversine(p1[0],p1[1],p2[0],p2[1]);
+   if(dist<0.1) continue; // ~100m
+
+   try{
+     const res=await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${p1[0]},${p1[1]}|${p2[0]},${p2[1]}`);
+     const data=await res.json();
+
+     let e1=data.results[0].elevation;
+     let e2=data.results[1].elevation;
+
+     let slope=((e2-e1)/(dist*1000))*100;
+
+     let txt=`${slope.toFixed(1)}%\n${(dist*1000).toFixed(0)}m`;
+
+     L.marker(p2,{
+       icon:L.divIcon({className:'slopeLabel',html:txt})
+     }).addTo(map);
+
+   }catch(e){console.log('elev hiba');}
+ }
+}
+
+window.onload=()=>{
+ initMap();
+ setTimeout(()=>{
+   setInterval(addSlopeOverlay,10000);
+ },5000);
+};
 </script>
 
 </body>
 </html>
-
