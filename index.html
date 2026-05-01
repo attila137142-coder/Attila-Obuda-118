@@ -1,146 +1,136 @@
-Gtfs Pro (távolság + Iránytű + Legközelebbi Megálló)· html
-
+2026.04.30_Csütörtök_DU
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Attila Közlekedés - GTFS Pro</title>
+<title>Attila GTFS ENGINE V2</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
 body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
 header{padding:10px;background:#111827;position:sticky;top:0}
-button{padding:8px 10px;margin:5px;border:0;border-radius:6px;background:#2563eb;color:white}
-#map{height:35vh;background:#1f2937;display:flex;align-items:center;justify-content:center}
-.panel{padding:10px}
-.card{background:#111827;padding:10px;margin:8px 0;border-radius:8px}
-small{opacity:.8}
+button,input{padding:6px;margin:5px;border-radius:6px;border:0}
+.card{background:#111827;padding:10px;margin:10px;border-radius:8px}
 </style>
 </head>
 <body>
 <header>
-<b>🚍 Attila GTFS Pro</b>
+<b>🚀 GTFS ENGINE V2</b>
 <input type="file" id="zipInput" accept=".zip" />
-<button onclick="loadGTFS()">GTFS betöltés</button>
-<button onclick="getLocation()">📍 GPS + sebesség</button>
-<button onclick="startCompass()">🧭 Iránytű</button>
+<button onclick="loadGTFS()">GTFS</button>
+<button onclick="startGPS()">GPS + SPEED</button>
 </header>
 
-<div id="map">TÉRKÉP (később Leaflet)</div>
-
-<div class="panel">
 <div class="card">
-<b>📏 Legközelebbi megálló</b>
-<div id="nearest">Nincs adat</div>
-</div>
-
-<div class="card">
-<b>📡 GPS + Sebesség</b>
-<div id="gps">Nincs adat</div>
-<div id="speed">Sebesség: 0 km/h (0 m/s)</div>
-</div>
-
-<div class="card">
-<b>🧭 Iránytű</b>
-<div id="compass">--</div>
-</div>
+<b>📍 GPS</b>
+<div id="gps">-</div>
+<div id="speed">0 km/h (0 m/s)</div>
 </div>
 
 <script>
-let stops = [];
-let userLat = null;
-let userLon = null;
-let lastPos = null;
-let lastTime = null;
+let GTFS = {stops:[], stopTimes:[], trips:[], routes:[]};
+let gtfsLoaded=false;
 
-function haversine(lat1, lon1, lat2, lon2){
-  const R = 6371000;
-  const toRad = x => x * Math.PI/180;
-  const dLat = toRad(lat2-lat1);
-  const dLon = toRad(lon2-lon1);
-  const a = Math.sin(dLat/2)**2 +
-    Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
-  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-  return R*c;
+// 🔒 LOAD + CACHE
+async function loadGTFS(){
+  if(gtfsLoaded){ alert("Már betöltve"); return; }
+
+  const file=document.getElementById("zipInput").files[0];
+  if(!file) return alert("ZIP kell");
+
+  const zip=await JSZip.loadAsync(file);
+
+  const parse=async(name)=>{
+    const txt=await zip.file(name).async("string");
+    return Papa.parse(txt,{header:true}).data;
+  }
+
+  GTFS.stops=(await parse("stops.txt")).filter(s=>s.stop_lat);
+  GTFS.stopTimes=await parse("stop_times.txt");
+  GTFS.trips=await parse("trips.txt");
+  GTFS.routes=await parse("routes.txt");
+
+  localStorage.setItem("GTFS", JSON.stringify(GTFS));
+
+  gtfsLoaded=true;
+  alert("✔ Stabil GTFS betöltve: "+GTFS.stops.length);
 }
 
-// ZIP GTFS BETÖLTÉS (JAVÍTOTT!)
-function loadGTFS(){
-  const file = document.getElementById("zipInput").files[0];
-  if(!file){ alert("Válassz GTFS ZIP-et!"); return; }
+// ⚡ SPEED ENGINE V2 (SIMÍTOTT + PONTOSABB)
+let history=[];
 
-  JSZip.loadAsync(file).then(zip=>{
-    return zip.file("stops.txt").async("string");
-  }).then(text=>{
-    const parsed = Papa.parse(text,{header:true});
-    stops = parsed.data.filter(s=>s.stop_lat && s.stop_lon);
-    alert("GTFS betöltve: " + stops.length + " megálló");
-  }).catch(err=>{
-    console.error(err);
-    alert("Hiba: stops.txt nem található a ZIP-ben");
-  });
-}
-
-// GPS + SEBESSÉG
-function getLocation(){
+function startGPS(){
   navigator.geolocation.watchPosition(pos=>{
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
-    const t = Date.now();
+    const lat=pos.coords.latitude;
+    const lon=pos.coords.longitude;
+    const t=Date.now();
 
-    userLat = lat;
-    userLon = lon;
+    document.getElementById("gps").innerHTML=
+      `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 
-    document.getElementById("gps").innerHTML =
-      `Lat: ${lat.toFixed(5)}<br>Lon: ${lon.toFixed(5)}`;
+    history.push({lat,lon,t});
 
-    // SPEED CALC
-    let speedKmh = 0;
-    let speedMs = 0;
+    // max 5 pont tárolás
+    if(history.length>5) history.shift();
 
-    if(lastPos){
-      const dist = haversine(lastPos.lat,lastPos.lon,lat,lon);
-      const dt = (t - lastTime)/1000;
-      speedMs = dt > 0 ? dist/dt : 0;
-      speedKmh = speedMs * 3.6;
+    let speedMs=0;
+
+    if(history.length>=2){
+      let totalDist=0;
+      let totalTime=0;
+
+      for(let i=1;i<history.length;i++){
+        const a=history[i-1];
+        const b=history[i];
+
+        const d=haversine(a.lat,a.lon,b.lat,b.lon);
+        const dt=(b.t-a.t)/1000;
+
+        if(dt>0){
+          totalDist+=d;
+          totalTime+=dt;
+        }
+      }
+
+      speedMs = totalTime>0 ? totalDist/totalTime : 0;
     }
 
-    lastPos = {lat,lon};
-    lastTime = t;
+    // GPS zaj szűrés
+    if(speedMs < 0.5) speedMs = 0;
 
-    document.getElementById("speed").innerHTML =
-      `Sebesség: ${speedKmh.toFixed(1)} km/h (${speedMs.toFixed(2)} m/s)`;
+    const speedKmh = speedMs * 3.6;
 
-    findNearest();
+    document.getElementById("speed").innerHTML=
+      `🚀 ${speedKmh.toFixed(1)} km/h (${speedMs.toFixed(2)} m/s)`;
+
+  }, err=>{
+    console.error(err);
+  },{
+    enableHighAccuracy:true,
+    maximumAge:1000,
+    timeout:5000
   });
 }
 
-function findNearest(){
-  if(!userLat || !stops.length) return;
-
-  let min = Infinity;
-  let best = null;
-
-  stops.forEach(s=>{
-    const d = haversine(userLat,userLon,parseFloat(s.stop_lat),parseFloat(s.stop_lon));
-    if(d < min){ min = d; best = s; }
-  });
-
-  if(best){
-    document.getElementById("nearest").innerHTML =
-      `🚏 <b>${best.stop_name}</b><br>🆔 ${best.stop_id || "-"}<br>📏 ${Math.round(min)} m`;
-  }
+function haversine(lat1, lon1, lat2, lon2){
+  const R=6371000;
+  const toRad=x=>x*Math.PI/180;
+  const dLat=toRad(lat2-lat1);
+  const dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2+Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-function startCompass(){
-  if(window.DeviceOrientationEvent){
-    window.addEventListener("deviceorientation", e=>{
-      document.getElementById("compass").innerText =
-        "Észak: " + Math.round(e.alpha) + "°";
-    });
+// 🛡️ AUTO RESTORE
+(function(){
+  const saved=localStorage.getItem("GTFS");
+  if(saved){
+    GTFS=JSON.parse(saved);
+    gtfsLoaded=true;
+    console.log("GTFS visszatöltve cache-ből");
   }
-}
+})();
 </script>
 </body>
 </html>
