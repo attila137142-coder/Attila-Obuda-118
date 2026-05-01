@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Transport Digital Twin PRO</title>
+<title>Transport Digital Twin PRO+</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -28,7 +28,11 @@ header{padding:10px;background:#111827;display:flex;flex-wrap:wrap;gap:6px}
 
 <button class="btn" onclick="mode='gtfs'">GTFS</button>
 <button class="btn" onclick="mode='poi'">POI</button>
-<button class="btn" onclick="loadNearby()">Közeli helyek</button>
+<button class="btn" onclick="loadNearby()">Közeli</button>
+
+<button class="btn" onclick="saveTrack()">TRACK SAVE</button>
+<button class="btn" onclick="exportGPX()">GPX EXPORT</button>
+<button class="btn" onclick="replayTrack()">VISSZAJÁTSZÁS</button>
 </header>
 
 <div class="grid">
@@ -38,7 +42,8 @@ header{padding:10px;background:#111827;display:flex;flex-wrap:wrap;gap:6px}
 </div>
 
 <div class="card">
-<div id="info">Adatok...</div>
+<div id="speed"></div>
+<div id="info"></div>
 </div>
 
 <div class="card">
@@ -47,10 +52,11 @@ header{padding:10px;background:#111827;display:flex;flex-wrap:wrap;gap:6px}
 </div>
 
 <script>
-let map,routeLine,trackLine;
+let map,routeLine,trackLine,replayLine;
 let mode="gtfs";
 let userPos=null;
 let track=[];
+let savedTrack=[];
 let lastPos=null,lastTime=null;
 
 let layers={};
@@ -91,13 +97,19 @@ navigator.geolocation.watchPosition(p=>{
   const kmh=(d/dt)*3600;
   const ms=(d*1000)/dt;
 
-  document.getElementById('info').innerText=
+  document.getElementById('speed').innerText=
   `Sebesség: ${kmh.toFixed(2)} km/h (${ms.toFixed(2)} m/s)`;
  }
 
  track.push([pos.lat,pos.lon]);
- if(trackLine) map.removeLayer(trackLine);
- trackLine=L.polyline(track,{color:'lime'}).addTo(map);
+
+ if(track.length>1){
+  if(!trackLine){
+    trackLine=L.polyline(track,{color:'lime'}).addTo(map);
+  } else {
+    trackLine.setLatLngs(track);
+  }
+ }
 
  lastPos=pos;
  lastTime=now;
@@ -124,6 +136,39 @@ async function routeTo(lat,lon){
 
  document.getElementById('info').innerText=
  `Légvonal: ${air.toFixed(2)} km\nKözút: ${roadKm.toFixed(2)} km\nGyalog: ${footKm.toFixed(2)} km`;
+}
+
+function saveTrack(){
+ savedTrack=[...track];
+ alert("Track mentve!");
+}
+
+function exportGPX(){
+ let gpx='<?xml version="1.0"?><gpx><trk><trkseg>';
+ savedTrack.forEach(p=>{
+  gpx+=`<trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`;
+ });
+ gpx+='</trkseg></trk></gpx>';
+
+ const blob=new Blob([gpx],{type:'application/gpx+xml'});
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);
+ a.download='track.gpx';
+ a.click();
+}
+
+function replayTrack(){
+ if(!savedTrack.length) return;
+
+ let i=0;
+ if(replayLine) map.removeLayer(replayLine);
+ replayLine=L.polyline([], {color:'yellow'}).addTo(map);
+
+ const interval=setInterval(()=>{
+  if(i>=savedTrack.length){clearInterval(interval);return;}
+  replayLine.addLatLng(savedTrack[i]);
+  i++;
+ },200);
 }
 
 let stops=[
