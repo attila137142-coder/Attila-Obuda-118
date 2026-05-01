@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>GTFS PRO V25 OFFLINE TOUR ENGINE</title>
+<title>GTFS PRO V27 EVAC ROUTE ENGINE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -16,28 +16,20 @@ body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
 header{padding:10px;background:#111827;position:sticky;top:0;z-index:999}
 button,input,select{padding:6px;margin:5px;border-radius:6px;border:0}
 .card{background:#111827;margin:10px;padding:10px;border-radius:8px}
-#map{height:360px;margin:10px;border-radius:10px}
+#map{height:400px;margin:10px;border-radius:10px}
 .mode{font-weight:bold}
-small{opacity:.7}
 </style>
 </head>
 <body>
 
 <header>
-<b>🚀 GTFS PRO V25 OFFLINE TOUR ENGINE</b><br>
-<span class="mode" id="mode">SMART MODE</span><br>
+<b>🆘 GTFS PRO V27 EVAC ROUTE ENGINE</b><br>
+<span class="mode">EVAC MODE ACTIVE</span><br>
 
-<select id="poiType">
-  <option value="tourism">🏕 tourism</option>
-  <option value="peak">⛰ peak</option>
-  <option value="natural">🌲 natural</option>
-  <option value="amenity">🏪 amenity</option>
-</select>
-
+<input id="search" placeholder="Skanzen / Pilis / Börzsöny..." />
 <button onclick="startGPS()">📍 GPS</button>
-<button onclick="tourSearch()">🧭 TOUR SEARCH</button>
-
-<input id="search" placeholder="Skanzen / Dobogókő / Pilis..." />
+<button onclick="tourSearch()">🧭 TOUR</button>
+<button onclick="evacRoute()">🚨 EVAC ROUTE</button>
 </header>
 
 <div id="map"></div>
@@ -48,21 +40,19 @@ small{opacity:.7}
 </div>
 
 <div class="card">
-<b>🧭 TOUR ENGINE</b>
-<div id="tour">-</div>
+<b>🚨 EVAC RESULT</b>
+<div id="evac">-</div>
 </div>
 
 <div class="card">
-<b>📌 OFFLINE CACHE</b>
-<div id="cache">loading...</div>
+<b>🧭 TOUR</b>
+<div id="tour">-</div>
 </div>
 
 <script>
-let map,userMarker;
+let map,userMarker,routeLine;
 let userLat=47.4979,userLon=19.0402;
-let cache=[];
 
-// ================= MAP =================
 function initMap(){
   map=L.map('map').setView([userLat,userLon],11);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
@@ -70,30 +60,11 @@ function initMap(){
 }
 initMap();
 
-// ================= CACHE INIT =================
-function initCache(){
-  const stored=localStorage.getItem("tour_cache");
-  if(stored) cache=JSON.parse(stored);
-  renderCache();
-}
-
-function saveCache(){
-  localStorage.setItem("tour_cache",JSON.stringify(cache));
-}
-
-function renderCache(){
-  document.getElementById("cache").innerHTML=
-    cache.slice(0,10).map(p=>`📍 ${p.name}<br>📏 ${Math.round(p.dist||0)} m<br>📌 ${p.lat},${p.lon}<hr>`).join("")||"üres cache";
-}
-
-initCache();
-
 // ================= GPS =================
 function startGPS(){
   navigator.geolocation.watchPosition(pos=>{
     userLat=pos.coords.latitude;
     userLon=pos.coords.longitude;
-
     document.getElementById("gps").innerText=`📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`;
     userMarker.setLatLng([userLat,userLon]);
     map.setView([userLat,userLon]);
@@ -111,15 +82,68 @@ function dist(a,b,c,d){
   return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
 }
 
-// ================= FIXED OVERPASS =================
+// ================= OVERPASS =================
+async function overpass(query){
+  try{
+    const res=await fetch("https://overpass-api.de/api/interpreter",{
+      method:"POST",
+      body:query
+    });
+    if(!res.ok) return null;
+    return await res.json();
+  }catch(e){return null;}
+}
+
+// ================= EVAC ENGINE =================
+async function evacRoute(){
+
+  document.getElementById("evac").innerHTML="🚨 EVAC keresés...";
+
+  const query=`
+[out:json][timeout:15];
+(
+  node["place"="village"](47.2,18.6,47.9,19.6);
+  node["amenity"="shelter"](47.2,18.6,47.9,19.6);
+  node["highway"="bus_stop"](47.2,18.6,47.9,19.6);
+);
+out center;
+`;
+
+  const data=await overpass(query);
+
+  if(!data){
+    document.getElementById("evac").innerHTML="⚠️ OFFLINE EVAC MODE";
+    return;
+  }
+
+  const sorted=data.elements
+    .map(p=>({...p,d:dist(userLat,userLon,p.lat,p.lon)}))
+    .sort((a,b)=>a.d-b.d)
+    .slice(0,5);
+
+  if(routeLine){map.removeLayer(routeLine);}
+
+  const target=sorted[0];
+
+  routeLine=L.polyline([
+    [userLat,userLon],
+    [target.lat,target.lon]
+  ],{color:"red",weight:4}).addTo(map);
+
+  map.fitBounds(routeLine.getBounds());
+
+  document.getElementById("evac").innerHTML=
+    sorted.map(p=>{
+      return `🚨 <b>${p.tags?.name||"SAFE POINT"}</b><br>📏 ${Math.round(p.d)} m<br>📌 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
+    }).join("");
+}
+
+// ================= TOUR =================
 async function tourSearch(){
+
+  document.getElementById("tour").innerHTML="🔄 TOUR...";
+
   const q=document.getElementById("search").value;
-  const type=document.getElementById("poiType").value;
-
-  if(!q){document.getElementById("tour").innerHTML="adj meg keresést";return;}
-
-  document.getElementById("tour").innerHTML="🔄 OFFLINE/ONLINE TOUR keresés...";
-
   const bbox="47.2,18.6,47.9,19.6";
 
   const query=`
@@ -132,68 +156,21 @@ async function tourSearch(){
 out center;
 `;
 
-  try{
-    let res;
+  const data=await overpass(query);
 
-    if(navigator.onLine){
-      res=await fetch("https://overpass-api.de/api/interpreter",{
-        method:"POST",
-        body:query
-      });
-    }
-
-    let data;
-
-    if(res && res.ok){
-      data=await res.json();
-    }
-
-    if(!data || !data.elements){throw new Error("no data");}
-
-    const results=data.elements.map(p=>{
-      const d=dist(userLat,userLon,p.lat,p.lon);
-
-      const item={
-        name:p.tags?.name||"POI",
-        lat:p.lat,
-        lon:p.lon,
-        dist:d
-      };
-
-      cache.push(item);
-
-      return `📍 <b>${item.name}</b><br>📏 ${Math.round(d)} m<br>📌 ${item.lat.toFixed(5)}, ${item.lon.toFixed(5)}<hr>`;
-    });
-
-    saveCache();
-    renderCache();
-
-    document.getElementById("tour").innerHTML=results.slice(0,15).join("");
-
-  }catch(e){
-
-    // ================= OFFLINE FALLBACK =================
-    const fallback=[
-      {name:"Offline kilátó",lat:userLat+0.01,lon:userLon+0.01},
-      {name:"Offline turista pont",lat:userLat-0.01,lon:userLon-0.01},
-      {name:"Börzsöny fallback POI",lat:userLat+0.005,lon:userLon-0.005}
-    ];
-
-    const out=fallback.map(p=>{
-      const d=dist(userLat,userLon,p.lat,p.lon);
-      const item={...p,dist:d};
-      cache.push(item);
-      return `📍 <b>${p.name}</b><br>📏 ${Math.round(d)} m<br>📌 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
-    });
-
-    saveCache();
-    renderCache();
-
-    document.getElementById("tour").innerHTML=
-      "⚠️ OFFLINE MODE (cache fallback)<hr>"+out.join("");
+  if(!data){
+    document.getElementById("tour").innerHTML="⚠️ OFFLINE TOUR";
+    return;
   }
+
+  document.getElementById("tour").innerHTML=
+    data.elements.slice(0,10).map(p=>{
+      const d=dist(userLat,userLon,p.lat,p.lon);
+      return `📍 ${p.tags?.name||"POI"}<br>📏 ${Math.round(d)} m<hr>`;
+    }).join("");
 }
 </script>
 
 </body>
 </html>
+
