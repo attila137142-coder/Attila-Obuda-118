@@ -1,25 +1,33 @@
+V23.0 – MULTI FEED FIX
+
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V22.1 PATCH – REAL DISPATCH FIX</title>
+<title>V23 MULTI GTFS DISPATCH ENGINE</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
 body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
+input,button{padding:10px;margin:5px}
 table{width:100%;border-collapse:collapse;margin-top:10px}
 th,td{border:1px solid #334155;padding:6px;font-size:12px}
 tr:hover{background:#1f2937}
-.early{color:#ef4444;font-weight:bold} /* siet */
-.onTime{color:#e2e8f0} /* pontos */
-.late{color:#3b82f6;font-weight:bold} /* késik */
+.early{color:#ef4444;font-weight:bold}
+.onTime{color:#e2e8f0}
+.late{color:#3b82f6;font-weight:bold}
 </style>
 </head>
+
 <body>
 
-<h2>🚀 V22.1 PATCH – FIXED REAL DISPATCH</h2>
+<h2>🚀 V23 MULTI GTFS DISPATCH</h2>
+
 <input type="file" id="file" multiple />
 <button onclick="loadGTFS()">📦 Betöltés</button>
-<input id="search" placeholder="megálló keresés" oninput="searchStops()" />
+<button onclick="clearDB()">🧹 Törlés</button>
+
+<input id="search" placeholder="🚏 keresés..." oninput="searchStops()" />
 
 <h3>🚏 Megállók</h3>
 <table id="stops"></table>
@@ -28,101 +36,156 @@ tr:hover{background:#1f2937}
 <table id="live"></table>
 
 <script>
-let db={},index={stopTimes:{},trips:{},routes:{}};
+
+let db = JSON.parse(localStorage.getItem("gtfs_db")||"{}");
+let index = {stopTimes:{},trips:{},routes:{}};
+
+function save(){localStorage.setItem("gtfs_db",JSON.stringify(db));}
+function clearDB(){localStorage.removeItem("gtfs_db");location.reload();}
 
 function norm(s){return (s||"").toLowerCase().trim();}
-function split(l){return l.split(",");}
 
-function nowSec(){let d=new Date();return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();}
+function nowSec(){
+ let d=new Date();
+ return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
+}
 
 function normalizeTime(t){
  if(!t) return {sec:999999,day:0};
- let [h,m,s]=t.split(":").map(Number);
+ let [h,m,s]=t.split(':').map(Number);
  let day=Math.floor(h/24);
  h=h%24;
  return {sec:h*3600+m*60+(s||0),day};
 }
 
+// ================= LOAD =================
 async function loadGTFS(){
  const files=document.getElementById('file').files;
- index={stopTimes:{},trips:{},routes:{}};
 
  for(let f of files){
+  const prefix=f.name;
+
   const zip=await JSZip.loadAsync(await f.arrayBuffer());
   const keys=Object.keys(zip.files);
 
-  parseStops(await zip.file(keys.find(k=>k.includes("stops"))).async("string"));
-  parseTrips(await zip.file(keys.find(k=>k.includes("trips"))).async("string"));
-  parseRoutes(await zip.file(keys.find(k=>k.includes("routes"))).async("string"));
-  parseStopTimes(await zip.file(keys.find(k=>k.includes("stop_times"))).async("string"));
+  const stopsTXT = await zip.file(keys.find(k=>k.includes("stops"))).async("string");
+  const tripsTXT = await zip.file(keys.find(k=>k.includes("trips"))).async("string");
+  const routesTXT = await zip.file(keys.find(k=>k.includes("routes"))).async("string");
+  const stopTimesTXT = await zip.file(keys.find(k=>k.includes("stop_times"))).async("string");
+
+  parseStops(stopsTXT,prefix);
+  parseTrips(tripsTXT,prefix);
+  parseRoutes(routesTXT,prefix);
+  parseStopTimes(stopTimesTXT,prefix);
  }
+
+ save();
  renderStops();
 }
 
-function parseStops(t){
+// ================= PARSERS =================
+function split(l){return l.split(",");}
+
+function parseStops(t,prefix){
  let l=t.split("\n");
  let h=split(l[0]);
  let i={id:h.indexOf("stop_id"),name:h.indexOf("stop_name")};
- db.stops=[];
+
  for(let k=1;k<l.length;k++){
   let p=split(l[k]);
-  if(!p[i.id])continue;
-  db.stops.push({id:p[i.id],name:p[i.name]});
+  if(!p[i.id]) continue;
+
+  let id=prefix+"_"+p[i.id];
+
+  db[id]={
+   id,
+   name:p[i.name],
+   prefix
+  };
  }
 }
 
-function parseTrips(t){
+function parseTrips(t,prefix){
  let l=t.split("\n");
  let h=split(l[0]);
  let i={trip:h.indexOf("trip_id"),route:h.indexOf("route_id"),head:h.indexOf("trip_headsign")};
+
  for(let k=1;k<l.length;k++){
   let p=split(l[k]);
-  if(!p[i.trip])continue;
-  index.trips[p[i.trip]]={route:p[i.route],head:p[i.head]};
+  if(!p[i.trip]) continue;
+
+  index.trips[prefix+"_"+p[i.trip]]={
+   route:prefix+"_"+p[i.route],
+   head:p[i.head],
+   prefix
+  };
  }
 }
 
-function parseRoutes(t){
+function parseRoutes(t,prefix){
  let l=t.split("\n");
  let h=split(l[0]);
  let i={id:h.indexOf("route_id"),name:h.indexOf("route_short_name")};
+
  for(let k=1;k<l.length;k++){
   let p=split(l[k]);
-  if(!p[i.id])continue;
-  index.routes[p[i.id]]={name:p[i.name]};
+  if(!p[i.id]) continue;
+
+  index.routes[prefix+"_"+p[i.id]]={
+   name:p[i.name],
+   prefix
+  };
  }
 }
 
-function parseStopTimes(t){
+function parseStopTimes(t,prefix){
  let l=t.split("\n");
  let h=split(l[0]);
  let i={stop:h.indexOf("stop_id"),trip:h.indexOf("trip_id"),time:h.indexOf("departure_time")};
 
  for(let k=1;k<l.length;k++){
   let p=split(l[k]);
-  let s=norm(p[i.stop]);
-  if(!s)continue;
-  if(!index.stopTimes[s])index.stopTimes[s]=[];
-  index.stopTimes[s].push({trip:p[i.trip],time:p[i.time]});
+  if(!p[i.stop]) continue;
+
+  let stop=prefix+"_"+p[i.stop];
+
+  if(!index.stopTimes[stop]) index.stopTimes[stop]=[];
+
+  index.stopTimes[stop].push({
+   trip:prefix+"_"+p[i.trip],
+   time:p[i.time],
+   prefix
+  });
  }
 }
 
+// ================= UI =================
 function renderStops(list){
- let data=list||db.stops;
- let h="<tr><th>ID</th><th>Név</th></tr>";
- data.slice(0,80).forEach(s=>{
-  h+=`<tr onclick="live('${norm(s.id)}')"><td>${s.id}</td><td>${s.name}</td></tr>`;
+ let all=Object.values(db);
+ let data=list||all;
+
+ let h="<tr><th>Szolg.</th><th>ID</th><th>Név</th></tr>";
+
+ data.slice(0,100).forEach(s=>{
+  h+=`<tr onclick="live('${s.id}')">
+   <td>${s.prefix}</td>
+   <td>${s.id}</td>
+   <td>${s.name}</td>
+  </tr>`;
  });
+
  document.getElementById('stops').innerHTML=h;
 }
 
 function searchStops(){
  let q=norm(document.getElementById('search').value);
- let res=db.stops.filter(s=>norm(s.name).includes(q));
+ let res=Object.values(db).filter(s=>norm(s.name).includes(q));
  renderStops(res);
 }
 
+// ================= DISPATCH =================
 function live(stopId){
+
  let now=nowSec();
  let rows=index.stopTimes[stopId]||[];
 
@@ -132,6 +195,7 @@ function live(stopId){
   let t=normalizeTime(r.time);
   let delta=t.sec-now;
   if(t.day>0) delta+=86400;
+
   return {...r,delta,sec:t.sec};
  })
  .filter(r=>r.delta>-300 && r.delta<7200)
@@ -144,7 +208,7 @@ function live(stopId){
 
  enriched.sort((a,b)=>a.sec-b.sec);
 
- let h="<tr><th>Viszonylat</th><th>Irány</th><th>Indul</th><th>Eltérés</th><th>Trip</th><th>Jármű</th><th>Típus</th></tr>";
+ let h="<tr><th>Szolg.</th><th>Viszonylat</th><th>Irány</th><th>Indul</th><th>Eltérés</th><th>Trip</th></tr>";
 
  enriched.slice(0,10).forEach(r=>{
   let trip=index.trips[r.trip]||{};
@@ -154,22 +218,26 @@ function live(stopId){
   if(r.delta<0) cls="early";
   else if(r.delta>60) cls="late";
 
-  let min=Math.floor(r.delta/60);
-  let sec=Math.abs(r.delta%60);
+  let m=Math.floor(r.delta/60);
+  let s=Math.abs(r.delta%60);
 
   h+=`<tr>
+   <td>${r.prefix}</td>
    <td>${route.name||"—"}</td>
    <td>${trip.head||"—"}</td>
    <td>${r.time}</td>
-   <td class="${cls}">${min}m ${sec}s</td>
+   <td class="${cls}">${m}m ${s}s</td>
    <td>${r.trip}</td>
-   <td>—</td>
-   <td>GTFS</td>
   </tr>`;
  });
 
  document.getElementById('live').innerHTML=h;
 }
+
+// ================= AUTO RESTORE =================
+window.onload=()=>{
+ renderStops();
+};
 
 </script>
 </body>
