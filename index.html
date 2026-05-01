@@ -3,161 +3,82 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Attila GTFS PRO V18 GITHUB</title>
+<title>GTFS PRO V26 LIFESAVER TOUR NAVIGATION</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
 body{font-family:Arial;margin:0;background:#0f172a;color:#e2e8f0}
-header{padding:10px;background:#111827;position:sticky;top:0}
+header{padding:10px;background:#111827;position:sticky;top:0;z-index:999}
 button,input,select{padding:6px;margin:5px;border-radius:6px;border:0}
-.card{background:#111827;padding:10px;margin:10px;border-radius:8px}
-small{opacity:.75}
+.card{background:#111827;margin:10px;padding:10px;border-radius:8px}
+#map{height:380px;margin:10px;border-radius:10px}
+.mode{font-weight:bold}
 </style>
 </head>
 <body>
+
 <header>
-<b>🚀 GTFS PRO V18 GITHUB ARCH</b><br>
-<select id="source">
-  <option value="github">📦 GitHub GTFS</option>
-  <option value="manual">📁 Manual ZIP</option>
-  <option value="auto">⚡ Auto BKK</option>
+<b>🆘 GTFS PRO V26 LIFESAVER TOUR NAVIGATION</b><br>
+<span class="mode" id="mode">LIFESAVER MODE</span><br>
+
+<select id="poiType">
+  <option value="tourism">🏕 tourism</option>
+  <option value="peak">⛰ peak</option>
+  <option value="safety">🆘 safety</option>
+  <option value="village">🏘 exit (settlement)</option>
 </select>
-<button onclick="loadGTFS()">LOAD</button>
+
 <button onclick="startGPS()">📍 GPS</button>
-<input id="search" placeholder="Megálló kereső..." oninput="searchStops()" />
+<button onclick="tourSearch()">🧭 TOUR</button>
+<button onclick="lifeSaver()">🆘 LIFESAVER ROUTE</button>
+
+<input id="search" placeholder="Pilis / Börzsöny / Skanzen..." />
 </header>
 
+<div id="map"></div>
+
 <div class="card">
-<b>📍 GPS + SPEED</b>
+<b>📍 GPS</b>
 <div id="gps">-</div>
-<div id="speed">0 km/h (0 m/s)</div>
 </div>
 
 <div class="card">
-<b>🚏 NEAREST</b>
-<div id="nearest">-</div>
+<b>🆘 LIFESAVER RESULT</b>
+<div id="life">-</div>
 </div>
 
 <div class="card">
-<b>🔎 SEARCH</b>
-<div id="results"></div>
-</div>
-
-<div class="card">
-<b>📌 POI</b>
-<div id="poi">-</div>
+<b>🧭 TOUR RESULT</b>
+<div id="tour">-</div>
 </div>
 
 <script>
-let GTFS={stops:[]};
-let userLat=null,userLon=null;
-let history=[];
+let map,userMarker;
+let userLat=47.4979,userLon=19.0402;
+let cache=[];
 
-// ================= GTFS LOADER =================
-async function loadGTFS(){
-  const mode=document.getElementById("source").value;
-
-  if(mode==="github") return loadGitHubGTFS();
-  if(mode=="auto") return autoGTFS();
-  return loadManual();
+function initMap(){
+  map=L.map('map').setView([userLat,userLon],11);
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  userMarker=L.marker([userLat,userLon]).addTo(map).bindPopup("Te");
 }
-
-// ================= GITHUB GTFS =================
-async function loadGitHubGTFS(){
-  try{
-    alert("📦 GitHub GTFS betöltés...");
-
-    // 🔥 ide kell saját repo
-    const url="https://raw.githubusercontent.com/USER/REPO/main/gtfs/budapest_gtfs.zip";
-
-    const res=await fetch(url);
-    if(!res.ok) throw new Error("GitHub nem elérhető");
-
-    const blob=await res.blob();
-    const zip=await JSZip.loadAsync(blob);
-
-    const txt=await zip.file("stops.txt").async("string");
-
-    GTFS.stops=Papa.parse(txt,{header:true}).data
-      .filter(s=>s.stop_lat && s.stop_lon);
-
-    alert("✔ GitHub GTFS kész: "+GTFS.stops.length);
-
-  }catch(e){
-    console.error(e);
-    alert("❌ GitHub GTFS hiba");
-  }
-}
-
-// ================= AUTO BKK =================
-async function autoGTFS(){
-  try{
-    alert("⚡ Auto BKK...");
-
-    const res=await fetch("https://bkk.hu/gtfs/budapest_gtfs.zip");
-    const blob=await res.blob();
-
-    const zip=await JSZip.loadAsync(blob);
-    const txt=await zip.file("stops.txt").async("string");
-
-    GTFS.stops=Papa.parse(txt,{header:true}).data
-      .filter(s=>s.stop_lat && s.stop_lon);
-
-    alert("✔ Auto GTFS: "+GTFS.stops.length);
-
-  }catch{
-    alert("❌ Auto nem elérhető");
-  }
-}
-
-// ================= MANUAL =================
-async function loadManual(){
-  const file=document.getElementById("zipInput")?.files?.[0];
-  if(!file) return alert("ZIP kell");
-
-  const zip=await JSZip.loadAsync(file);
-  const txt=await zip.file("stops.txt").async("string");
-
-  GTFS.stops=Papa.parse(txt,{header:true}).data
-    .filter(s=>s.stop_lat && s.stop_lon);
-
-  alert("✔ Manual OK");
-}
+initMap();
 
 // ================= GPS =================
 function startGPS(){
   navigator.geolocation.watchPosition(pos=>{
-    const lat=pos.coords.latitude;
-    const lon=pos.coords.longitude;
-    const t=Date.now();
+    userLat=pos.coords.latitude;
+    userLon=pos.coords.longitude;
 
-    userLat=lat; userLon=lon;
-
-    document.getElementById("gps").innerHTML=
-      `📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
-
-    history.push({lat,lon,t});
-    if(history.length>5) history.shift();
-
-    let speed=0;
-    if(history.length>=2){
-      let d=0,dt=0;
-      for(let i=1;i<history.length;i++){
-        const a=history[i-1];
-        const b=history[i];
-        d+=dist(a.lat,a.lon,b.lat,b.lon);
-        dt+=(b.t-a.t)/1000;
-      }
-      speed=dt>0?d/dt:0;
-    }
-
-    document.getElementById("speed").innerHTML=
-      `🚀 ${(speed*3.6).toFixed(1)} km/h (${speed.toFixed(2)} m/s)`;
-
-    nearest();
-    poi();
-
-  },null,{enableHighAccuracy:true});
+    document.getElementById("gps").innerText=`📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}`;
+    userMarker.setLatLng([userLat,userLon]);
+    map.setView([userLat,userLon]);
+  });
 }
 
 // ================= DIST =================
@@ -171,61 +92,84 @@ function dist(a,b,c,d){
   return R*2*Math.atan2(Math.sqrt(s),Math.sqrt(1-s));
 }
 
-// ================= NEAREST =================
-function nearest(){
-  if(!userLat) return;
-
-  const list=GTFS.stops
-    .map(s=>({
-      ...s,
-      d:dist(userLat,userLon,+s.stop_lat,+s.stop_lon)
-    }))
-    .filter(s=>s.d<3000)
-    .sort((a,b)=>a.d-b.d)
-    .slice(0,5);
-
-  document.getElementById("nearest").innerHTML=
-    list.map(s=>`🚏 ${s.stop_name}<br>📏 ${Math.round(s.d)} m<br>🆔 ${s.stop_id}<hr>`).join("");
-}
-
-// ================= POI =================
-async function poi(){
-  if(!userLat) return;
-
-  const q=`[out:json];node(around:600,${userLat},${userLon})["amenity"];out;`;
-
+// ================= OVERPASS SAFE =================
+async function overpass(query){
   try{
-    const r=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:q});
-    const j=await r.json();
-
-    document.getElementById("poi").innerHTML=
-      j.elements.slice(0,8).map(p=>{
-        const d=dist(userLat,userLon,p.lat,p.lon);
-        return `📍 ${p.tags.name||"POI"}<br>📏 ${Math.round(d)} m<br>📍 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
-      }).join("");
-
-  }catch{
-    document.getElementById("poi").innerText="POI hiba";
+    const res=await fetch("https://overpass-api.de/api/interpreter",{
+      method:"POST",
+      body:query
+    });
+    if(!res.ok) throw new Error("fail");
+    return await res.json();
+  }catch(e){
+    return null;
   }
 }
 
-// ================= SEARCH =================
-function searchStops(){
-  const q=document.getElementById("search").value.toLowerCase();
-  if(q.length<2) return;
+// ================= TOUR =================
+async function tourSearch(){
+  const q=document.getElementById("search").value;
+  const bbox="47.2,18.6,47.9,19.6";
 
-  const res=GTFS.stops
-    .map(s=>({
-      ...s,
-      d:userLat?dist(userLat,userLon,+s.stop_lat,+s.stop_lon):999999
-    }))
-    .filter(s=>s.stop_name.toLowerCase().includes(q))
+  const query=`
+[out:json][timeout:12];
+(
+  node["name"~"${q}",i](${bbox});
+  node["tourism"](${bbox});
+  node["natural"="peak"](${bbox});
+);
+out center;
+`;
+
+  document.getElementById("tour").innerHTML="🔄 TOUR keresés...";
+
+  const data=await overpass(query);
+
+  if(!data){
+    document.getElementById("tour").innerHTML="⚠️ OFFLINE TOUR MODE";
+    return;
+  }
+
+  document.getElementById("tour").innerHTML=
+    data.elements.slice(0,10).map(p=>{
+      const d=dist(userLat,userLon,p.lat,p.lon);
+      return `📍 <b>${p.tags?.name||"POI"}</b><br>📏 ${Math.round(d)} m<hr>`;
+    }).join("");
+}
+
+// ================= LIFESAVER ENGINE =================
+async function lifeSaver(){
+
+  document.getElementById("life").innerHTML="🆘 keresés...";
+
+  const query=`
+[out:json][timeout:15];
+(
+  node["amenity"="shelter"](47.2,18.6,47.9,19.6);
+  node["emergency"](47.2,18.6,47.9,19.6);
+  node["place"="village"](47.2,18.6,47.9,19.6);
+);
+out center;
+`;
+
+  const data=await overpass(query);
+
+  if(!data){
+    document.getElementById("life").innerHTML="⚠️ OFFLINE LIFESAVER MODE";
+    return;
+  }
+
+  const sorted=data.elements
+    .map(p=>({...p,d:dist(userLat,userLon,p.lat,p.lon)}))
     .sort((a,b)=>a.d-b.d)
-    .slice(0,20);
+    .slice(0,8);
 
-  document.getElementById("results").innerHTML=
-    res.map(s=>`🚏 ${s.stop_name}<br>🆔 ${s.stop_id}<br>${Math.round(s.d)} m<hr>`).join("");
+  document.getElementById("life").innerHTML=
+    sorted.map(p=>{
+      return `🆘 <b>${p.tags?.name||"SAFE POINT"}</b><br>📏 ${Math.round(p.d)} m<br>📌 ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<hr>`;
+    }).join("");
 }
 </script>
+
 </body>
 </html>
