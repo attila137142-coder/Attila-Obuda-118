@@ -1,18 +1,27 @@
-V23.0 – MULTI FEED FIX
+V23.1 UI + LOGIC FIX
 
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>V23 MULTI GTFS DISPATCH ENGINE</title>
+<title>V23.1 CLEAN DISPATCH</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body{font-family:Arial;background:#0b1220;color:#e2e8f0;padding:20px}
 input,button{padding:10px;margin:5px}
+
 table{width:100%;border-collapse:collapse;margin-top:10px}
-th,td{border:1px solid #334155;padding:6px;font-size:12px}
+th,td{
+  border:1px solid #334155;
+  padding:6px;
+  font-size:12px;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
 tr:hover{background:#1f2937}
+
 .early{color:#ef4444;font-weight:bold}
 .onTime{color:#e2e8f0}
 .late{color:#3b82f6;font-weight:bold}
@@ -21,13 +30,13 @@ tr:hover{background:#1f2937}
 
 <body>
 
-<h2>🚀 V23 MULTI GTFS DISPATCH</h2>
+<h2>🚀 V23.1 CLEAN DISPATCH</h2>
 
 <input type="file" id="file" multiple />
 <button onclick="loadGTFS()">📦 Betöltés</button>
 <button onclick="clearDB()">🧹 Törlés</button>
 
-<input id="search" placeholder="🚏 keresés..." oninput="searchStops()" />
+<input id="search" placeholder="🚏 megálló keresés..." oninput="searchStops()" />
 
 <h3>🚏 Megállók</h3>
 <table id="stops"></table>
@@ -37,12 +46,14 @@ tr:hover{background:#1f2937}
 
 <script>
 
+// ================= DB =================
 let db = JSON.parse(localStorage.getItem("gtfs_db")||"{}");
 let index = {stopTimes:{},trips:{},routes:{}};
 
 function save(){localStorage.setItem("gtfs_db",JSON.stringify(db));}
 function clearDB(){localStorage.removeItem("gtfs_db");location.reload();}
 
+// ================= HELPERS =================
 function norm(s){return (s||"").toLowerCase().trim();}
 
 function nowSec(){
@@ -58,12 +69,21 @@ function normalizeTime(t){
  return {sec:h*3600+m*60+(s||0),day};
 }
 
+function getPrefix(name){
+ name=name.toLowerCase();
+ if(name.includes("budapest")) return "BKK";
+ if(name.includes("volan")) return "VOLÁN";
+ if(name.includes("mav")) return "MÁV";
+ return "GTFS";
+}
+
 // ================= LOAD =================
 async function loadGTFS(){
  const files=document.getElementById('file').files;
 
  for(let f of files){
-  const prefix=f.name;
+
+  const prefix=getPrefix(f.name);
 
   const zip=await JSZip.loadAsync(await f.arrayBuffer());
   const keys=Object.keys(zip.files);
@@ -116,7 +136,7 @@ function parseTrips(t,prefix){
 
   index.trips[prefix+"_"+p[i.trip]]={
    route:prefix+"_"+p[i.route],
-   head:p[i.head],
+   head:(p[i.head]||"").replace(/\n/g," ").trim(),
    prefix
   };
  }
@@ -164,12 +184,11 @@ function renderStops(list){
  let all=Object.values(db);
  let data=list||all;
 
- let h="<tr><th>Szolg.</th><th>ID</th><th>Név</th></tr>";
+ let h="<tr><th>Szolg.</th><th>Név</th></tr>";
 
  data.slice(0,100).forEach(s=>{
   h+=`<tr onclick="live('${s.id}')">
    <td>${s.prefix}</td>
-   <td>${s.id}</td>
    <td>${s.name}</td>
   </tr>`;
  });
@@ -200,7 +219,10 @@ function live(stopId){
  })
  .filter(r=>r.delta>-300 && r.delta<7200)
  .filter(r=>{
-   let key=r.trip+r.time;
+   let trip=index.trips[r.trip]||{};
+   let route=index.routes[trip.route]||{};
+   let key = (route.name||"") + "|" + (trip.head||"") + "|" + r.time;
+
    if(seen.has(key)) return false;
    seen.add(key);
    return true;
@@ -208,7 +230,7 @@ function live(stopId){
 
  enriched.sort((a,b)=>a.sec-b.sec);
 
- let h="<tr><th>Szolg.</th><th>Viszonylat</th><th>Irány</th><th>Indul</th><th>Eltérés</th><th>Trip</th></tr>";
+ let h="<tr><th>Szolg.</th><th>Járat</th><th>Irány</th><th>Indul</th><th>Eltérés</th><th>Trip</th></tr>";
 
  enriched.slice(0,10).forEach(r=>{
   let trip=index.trips[r.trip]||{};
@@ -221,13 +243,15 @@ function live(stopId){
   let m=Math.floor(r.delta/60);
   let s=Math.abs(r.delta%60);
 
+  let shortTrip = r.trip.split("_").pop();
+
   h+=`<tr>
    <td>${r.prefix}</td>
    <td>${route.name||"—"}</td>
    <td>${trip.head||"—"}</td>
    <td>${r.time}</td>
    <td class="${cls}">${m}m ${s}s</td>
-   <td>${r.trip}</td>
+   <td>${shortTrip}</td>
   </tr>`;
  });
 
