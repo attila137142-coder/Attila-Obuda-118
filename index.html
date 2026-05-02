@@ -1,83 +1,148 @@
 <!DOCTYPE html>
-  async function read(n){
-    let f=zip.file(n);
-    return f?await f.async("string"):null;
-  }
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attila LIVE TRANSPORT MAP</title>
 
-  let stopsTxt=await read("stops.txt");
-  let timesTxt=await read("stop_times.txt");
-  let tripsTxt=await read("trips.txt");
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
-  STOPS=Papa.parse(stopsTxt,{header:true,skipEmptyLines:true}).data.map(s=>({
-    id:s.stop_id,
-    name:s.stop_name,
-    stop_lat:parseFloat(s.stop_lat),
-    stop_lon:parseFloat(s.stop_lon)
-  }));
+<style>
+body { margin:0; font-family:Arial; background:#0b1220; color:#fff; }
+header { padding:10px; background:#111c33; position:sticky; top:0; z-index:1000 }
+#map { height:60vh; width:100% }
+.panel { padding:10px }
+button, input { padding:10px; margin:5px; border-radius:8px; border:none }
+button { background:#22c55e; color:#fff; font-weight:bold; cursor:pointer }
+.card { background:#1e293b; padding:10px; margin-top:8px; border-radius:10px; cursor:pointer }
+.board { background:#0f172a; padding:10px; border-radius:10px; margin-top:10px }
+.row { display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #1f2a44 }
+</style>
+</head>
+<body>
 
-  STOP_TIMES=timesTxt?Papa.parse(timesTxt,{header:true,skipEmptyLines:true}).data:[];
-  TRIPS=tripsTxt?Papa.parse(tripsTxt,{header:true,skipEmptyLines:true}).data:[];
+<header>
+<h2>🗺️ Budapest + Dunakanyar LIVE TRANSPORT MAP</h2>
+</header>
 
-  alert("GTFS betöltve: "+STOPS.length);
-}
+<div id="map"></div>
 
-// ===== SEARCH =====
-function search(){
+<div class="panel">
+<input id="q" placeholder="Megálló keresés">
+<button onclick="search()">KERESÉS</button>
+<button onclick="loadGTFS()">GTFS BETÖLTÉS</button>
+</div>
 
-  let q=document.getElementById('q').value.toLowerCase();
+<div class="panel">
+<div id="results"></div>
 
-  let res=STOPS
-    .filter(inZone)
-    .filter(s=>s.name && s.name.toLowerCase().includes(q));
+<div class="board">
+<h3>🕒 Indulások</h3>
+<div id="deps">Válassz megállót a térképen</div>
+</div>
+</div>
 
-  let html="";
+<script>
 
-  res.slice(0,30).forEach(s=>{
-    html+=`<div class='card' onclick='selectStop("${s.id}","${s.name}")'>
-      <b>${s.name}</b><br><span class='small'>${s.id}</span>
-    </div>`;
-  });
+let map=L.map('map').setView([47.4979,19.0402],10);
 
-  document.getElementById('results').innerHTML=html||"nincs találat zónában";
-}
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'© OSM'
+}).addTo(map);
 
-function selectStop(id,name){
-  SELECTED=id;
-  document.getElementById('info').innerHTML="📍 "+name;
-  render();
-}
-
-function timeSec(t){
-  let p=t.split(":");
-  return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
-}
+let STOPS=[];
+let STOP_TIMES=[];
+let markers=[];
+let selected=null;
 
 function now(){
   let d=new Date();
   return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
 }
 
-function render(){
+function parseTime(t){
+  if(!t) return 999999;
+  let p=t.split(':');
+  return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
+}
 
-  if(!SELECTED) return;
+function loadGTFS(){
 
-  let n=now();
+  let url="https://gtfs.menetbrand.com/download/volanbusz";
+
+  fetch(url)
+  .then(r=>r.blob())
+  .then(JSZip.loadAsync)
+  .then(zip=>zip.file("stops.txt").async("string"))
+  .then(text=>{
+
+    let data=Papa.parse(text,{header:true,skipEmptyLines:true}).data;
+
+    STOPS=data.filter(s=>s.stop_lat && s.stop_lon);
+
+    renderMarkers();
+
+    alert("GTFS betöltve: "+STOPS.length);
+
+  })
+  .catch(e=>alert("GTFS hiba"));
+}
+
+function renderMarkers(){
+
+  markers.forEach(m=>map.removeLayer(m));
+  markers=[];
+
+  STOPS.forEach(s=>{
+
+    let m=L.circleMarker([s.stop_lat,s.stop_lon],{
+      radius:4,
+      color:'#22c55e'
+    }).addTo(map);
+
+    m.on('click',()=>selectStop(s));
+
+    markers.push(m);
+  });
+}
+
+function selectStop(s){
+
+  selected=s;
+
+  document.getElementById('deps').innerHTML="Betöltés...";
 
   let deps=STOP_TIMES
-    .filter(x=>x.stop_id==SELECTED)
+    .filter(x=>x.stop_id==s.stop_id)
     .map(x=>x.departure_time||x.arrival_time)
     .filter(Boolean)
-    .map(t=>({t,sec:timeSec(t)}))
-    .filter(x=>x.sec>=n)
+    .map(t=>({t,sec:parseTime(t)}))
+    .filter(x=>x.sec>=now())
     .sort((a,b)=>a.sec-b.sec)
     .slice(0,10);
 
   document.getElementById('deps').innerHTML=
-    deps.map(d=>`<div class='row'><div>${d.t}</div><div>${Math.round((d.sec-now())/60)}p</div></div>`).join('')
-    || "nincs indulás";
+    deps.map(d=>
+      `<div class='row'><div>${d.t}</div><div>${Math.round((d.sec-now())/60)}p</div></div>`
+    ).join('') || "nincs indulás";
 }
 
-setInterval(render,10000);
+function search(){
+
+  let q=document.getElementById('q').value.toLowerCase();
+
+  let res=STOPS.filter(s=>
+    (s.stop_name||"").toLowerCase().includes(q)
+  );
+
+  document.getElementById('results').innerHTML=
+    res.slice(0,20).map(s=>
+      `<div class='card' onclick='selectStop(${JSON.stringify(s)})'>${s.stop_name}</div>`
+    ).join('');
+}
 
 </script>
 
