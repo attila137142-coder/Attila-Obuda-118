@@ -1,264 +1,77 @@
-
 <!DOCTYPE html>
-<html lang="en">
+<html lang="hu">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>V13.3 PERSISTENT MOBILE DISPATCH CORE</title>
-
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-  <style>
-    body { margin:0; font-family:Arial; display:flex; height:100vh; }
-    #map { flex:2; }
-    #panel { flex:1; background:#111; color:#fff; display:flex; flex-direction:column; }
-    #header { padding:10px; background:#1c1c1c; font-weight:bold; }
-    #stops, #departures { flex:1; overflow:auto; padding:10px; border-top:1px solid #333; }
-
-    .stop, .dep { padding:6px; margin:4px 0; background:#222; cursor:pointer; border-radius:4px; }
-    .stop:hover, .dep:hover { background:#333; }
-
-    input, button { margin:6px; padding:6px; }
-    .small { font-size:12px; opacity:.7; }
-
-    .infoBox { padding:8px; background:#1b1b1b; margin:6px; border-radius:6px; font-size:12px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Attila Discount Engine</title>
+<style>
+body { font-family: Arial; background:#111; color:#fff; padding:20px }
+input, button, select { padding:10px; margin:5px; border-radius:8px; border:none }
+button { cursor:pointer; background:#00c853; color:white; font-weight:bold }
+.card { background:#1e1e1e; padding:15px; border-radius:12px; margin-top:15px }
+.best { border:2px solid #00e676 }
+</style>
 </head>
 <body>
 
-<div id="map"></div>
+<h1>🔥 Attila Discount Engine</h1>
 
-<div id="panel">
-  <div id="header">🚦 V13.3 PERSISTENT MOBILE CORE</div>
+<p>Add meg az árakat (Ft, vesszővel):</p>
+<input id="prices" placeholder="pl: 1000, 2000, 1500">
 
-  <input type="file" id="zipInput" />
-  <input id="urlInput" placeholder="GTFS ZIP URL (optional)" />
+<br>
+<button onclick="calculate()">SZÁMOLÁS</button>
 
-  <button onclick="loadFromURL()">Load from URL</button>
-  <button onclick="clearCache()">Clear Cache</button>
-
-  <input id="search" placeholder="Search stop or ID..." />
-
-  <div id="stops"></div>
-  <div id="departures"></div>
-</div>
+<div id="results"></div>
 
 <script>
-const DB_NAME = "GTFS_DB_V13";
-let db;
-
-let stops=[], stopTimes=[], trips=[], routes=[];
-let markersLayer=L.layerGroup().addTo(map);
-
-const map = L.map('map').setView([47.4979,19.0402],12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-// ---------------- INDEXEDDB ----------------
-function openDB(){
-  return new Promise((res,rej)=>{
-    const req=indexedDB.open(DB_NAME,1);
-    req.onupgradeneeded=e=>{
-      const db=e.target.result;
-      db.createObjectStore("data");
-    };
-    req.onsuccess=e=>{db=e.target.result;res(db)};
-    req.onerror=rej;
-  });
+function parsePrices() {
+  return document.getElementById('prices').value
+    .split(',')
+    .map(x => parseFloat(x.trim()))
+    .filter(x => !isNaN(x))
+    .sort((a,b)=>a-b);
 }
 
-function saveDB(key,val){
-  const tx=db.transaction("data","readwrite");
-  tx.objectStore("data").put(val,key);
+function sum(arr) {
+  return arr.reduce((a,b)=>a+b,0);
 }
 
-function getDB(key){
-  return new Promise(res=>{
-    const tx=db.transaction("data","readonly");
-    const req=tx.objectStore("data").get(key);
-    req.onsuccess=()=>res(req.result||null);
-  });
+function dealA(prices) {
+  let freeCount = Math.floor(prices.length / 3);
+  let freeItems = prices.slice(0, freeCount);
+  return sum(prices) - sum(freeItems);
 }
 
-// ---------------- INIT ----------------
-(async()=>{
-  await openDB();
-
-  const cached=await getDB("gtfs");
-  if(cached){
-    ({stops,stopTimes,trips,routes}=cached);
-    renderStops(stops);
-  }
-})();
-
-// ---------------- LOAD ZIP ----------------
-document.getElementById('zipInput').addEventListener('change', async e=>{
-  const zip=await JSZip.loadAsync(e.target.files[0]);
-
-  const read=async n=>{
-    const f=zip.file(n);
-    if(!f) return [];
-    const txt=await f.async('string');
-    return Papa.parse(txt,{header:true}).data;
-  };
-
-  stops=await read('stops.txt');
-  stopTimes=await read('stop_times.txt');
-  trips=await read('trips.txt');
-  routes=await read('routes.txt');
-
-  saveDB("gtfs",{stops,stopTimes,trips,routes});
-
-  renderStops(stops);
-});
-
-// ---------------- URL LOAD (MOBILE SAFE) ----------------
-async function loadFromURL(){
-  const url=document.getElementById('urlInput').value;
-  if(!url) return alert("No URL");
-
-  const res=await fetch(url);
-  const blob=await res.blob();
-  const zip=await JSZip.loadAsync(blob);
-
-  const read=async n=>{
-    const f=zip.file(n);
-    if(!f) return [];
-    const txt=await f.async('string');
-    return Papa.parse(txt,{header:true}).data;
-  };
-
-  stops=await read('stops.txt');
-  stopTimes=await read('stop_times.txt');
-  trips=await read('trips.txt');
-  routes=await read('routes.txt');
-
-  saveDB("gtfs",{stops,stopTimes,trips,routes});
-
-  renderStops(stops);
+function dealB(prices) {
+  return sum(prices) * 0.8;
 }
 
-// ---------------- CLEAR CACHE ----------------
-async function clearCache(){
-  indexedDB.deleteDatabase(DB_NAME);
-  alert("Cache cleared. Reload page.");
+function dealC(prices) {
+  let discountedCount = Math.floor(prices.length / 2);
+  let discountedItems = prices.slice(0, discountedCount);
+  return sum(prices) - sum(discountedItems) * 0.33;
 }
 
-// ---------------- SEARCH ----------------
-document.getElementById('search').addEventListener('input',e=>{
-  const v=e.target.value.toLowerCase();
-  renderStops(stops.filter(s=>
-    (s.stop_name||'').toLowerCase().includes(v) ||
-    (s.stop_id||'').toLowerCase().includes(v)
-  ));
-});
+function calculate() {
+  let prices = parsePrices();
+  if(prices.length === 0) return;
 
-// ---------------- DISTANCE ----------------
-function distance(a,b){
-  const R=6371000;
-  const dLat=(b.lat-a.lat)*Math.PI/180;
-  const dLon=(b.lon-a.lon)*Math.PI/180;
+  let A = dealA(prices);
+  let B = dealB(prices);
+  let C = dealC(prices);
 
-  const x=Math.sin(dLat/2)**2+
-    Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)**2;
+  let min = Math.min(A,B,C);
 
-  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-// ---------------- TIME ----------------
-function toSec(t){
-  if(!t) return 0;
-  const p=t.split(':');
-  return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
-}
-
-function now(){
-  const d=new Date();
-  return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
-}
-
-// ---------------- RENDER STOPS ----------------
-function renderStops(list){
-  const c=document.getElementById('stops');
-  c.innerHTML='';
-  markersLayer.clearLayers();
-
-  list.forEach(s=>{
-    if(!s.stop_lat) return;
-
-    const div=document.createElement('div');
-    div.className='stop';
-
-    div.innerHTML=`<b>${s.stop_name}</b><br><span class='small'>ID: ${s.stop_id}</span>`;
-
-    div.onclick=()=>selectStop(s);
-    c.appendChild(div);
-
-    L.marker([s.stop_lat,s.stop_lon]).addTo(markersLayer);
-  });
-}
-
-// ---------------- STOP TABLE ----------------
-function selectStop(stop){
-  map.setView([stop.stop_lat,stop.stop_lon],15);
-
-  const nowSec=now();
-
-  const deps=stopTimes
-    .filter(t=>t.stop_id===stop.stop_id)
-    .map(t=>{
-      const sec=toSec(t.departure_time);
-      const diff=sec-nowSec;
-
-      const trip=trips.find(x=>x.trip_id===t.trip_id)||{};
-      const route=routes.find(r=>r.route_id===trip.route_id)||{};
-
-      return {
-        route:route.route_short_name||'?',
-        headsign:trip.trip_headsign||'?',
-        time:t.departure_time,
-        diff,
-        trip_id:t.trip_id
-      };
-    })
-    .filter(d=>d.diff>0)
-    .sort((a,b)=>a.diff-b.diff)
-    .slice(0,20);
-
-  const c=document.getElementById('departures');
-
-  c.innerHTML=`
-    <div class='infoBox'>
-      <b>${stop.stop_name}</b><br>
-      Stop ID: ${stop.stop_id}<br>
-      Lat: ${stop.stop_lat} | Lon: ${stop.stop_lon}
-    </div>
-    <table width='100%'>
-      <tr><th>Line</th><th>Dest</th><th>Time</th><th>Remaining</th></tr>
-    </table>
+  document.getElementById('results').innerHTML = `
+    <div class="card ${A===min?'best':''}">🅰️ 3. ingyen: ${A.toFixed(0)} Ft</div>
+    <div class="card ${B===min?'best':''}">🅱️ -20%: ${B.toFixed(0)} Ft</div>
+    <div class="card ${C===min?'best':''}">🅲 2. -33%: ${C.toFixed(0)} Ft</div>
+    <h2>🏆 Legjobb: ${
+      A===min?'A (3. ingyen)':
+      B===min?'B (-20%)':'C (2. -33%)'
+    }</h2>
   `;
-
-  const table=c.querySelector('table');
-
-  deps.forEach(d=>{
-    const min=Math.floor(d.diff/60);
-    const sec=d.diff%60;
-    const fast=d.diff<300;
-
-    const tr=document.createElement('tr');
-
-    tr.innerHTML=`
-      <td>${d.route}</td>
-      <td>${d.headsign}</td>
-      <td>${d.time}</td>
-      <td style='color:${fast?'red':'#4da6ff'}'>${min}m ${sec}s</td>
-    `;
-
-    table.appendChild(tr);
-  });
 }
 </script>
 
