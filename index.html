@@ -1,88 +1,85 @@
 <!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Attila ZONE ENGINE</title>
+  async function read(n){
+    let f=zip.file(n);
+    return f?await f.async("string"):null;
+  }
 
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  let stopsTxt=await read("stops.txt");
+  let timesTxt=await read("stop_times.txt");
+  let tripsTxt=await read("trips.txt");
 
-<style>
-body { font-family: Arial; background:#0b1220; color:#fff; margin:0; }
-header { padding:12px; background:#111c33; position:sticky; top:0; }
-button, input { padding:10px; margin:5px; border-radius:8px; border:none }
-button { background:#22c55e; color:#fff; font-weight:bold; cursor:pointer }
+  STOPS=Papa.parse(stopsTxt,{header:true,skipEmptyLines:true}).data.map(s=>({
+    id:s.stop_id,
+    name:s.stop_name,
+    stop_lat:parseFloat(s.stop_lat),
+    stop_lon:parseFloat(s.stop_lon)
+  }));
 
-.container { display:flex; gap:10px; padding:10px }
-.left { width:40% }
-.right { width:60% }
+  STOP_TIMES=timesTxt?Papa.parse(timesTxt,{header:true,skipEmptyLines:true}).data:[];
+  TRIPS=tripsTxt?Papa.parse(tripsTxt,{header:true,skipEmptyLines:true}).data:[];
 
-.card { background:#1e293b; padding:10px; margin-top:8px; border-radius:10px; cursor:pointer }
-.zoneBtn { background:#334155 }
-.board { background:#0f172a; border:1px solid #334155; padding:12px; border-radius:12px }
-.big { font-size:22px; font-weight:bold }
-.small { font-size:12px; opacity:0.7 }
-.row { display:flex; justify-content:space-between; border-bottom:1px solid #1f2a44; padding:6px 0 }
-</style>
-</head>
-<body>
-
-<header>
-<h2>🗺️ ZONE ENGINE (BUDAPEST + DUNAKANYAR + BÖRZSÖNY)</h2>
-<div class="small">BKK + VOLÁN + MÁV + kisvasút zónás rendszer</div>
-</header>
-
-<div>
-<button class="zoneBtn" onclick="setZone('bp23')">Budapest II–III</button>
-<button class="zoneBtn" onclick="setZone('bp11')">11-es út</button>
-<button class="zoneBtn" onclick="setZone('dunakanyar')">Dunakanyar</button>
-<button class="zoneBtn" onclick="setZone('borzsony')">Börzsöny</button>
-<button onclick="loadGTFS()">GTFS BETÖLTÉS</button>
-</div>
-
-<div class="container">
-
-<div class="left">
-<input id="q" placeholder="Megálló / állomás">
-<button onclick="search()">KERESÉS</button>
-<div id="results"></div>
-</div>
-
-<div class="right">
-<div class="board">
-<div class="big">🕒 INDULÁSOK</div>
-<div id="info" class="small">Válassz zónát és megállót</div>
-<div id="deps"></div>
-</div>
-</div>
-
-</div>
-
-<script>
-
-let STOPS=[];
-let STOP_TIMES=[];
-let TRIPS=[];
-let ZONE="bp23";
-let SELECTED=null;
-
-// ===== ZONE BOUNDARIES =====
-const ZONES={
-  bp23:{lat1:47.50,lat2:47.60,lon1:19.00,lon2:19.10},
-  bp11:{lat1:47.45,lat2:47.50,lon1:18.95,lon2:19.10},
-  dunakanyar:{lat1:47.75,lat2:48.10,lon1:18.90,lon2:19.30},
-  borzsony:{lat1:47.90,lat2:48.20,lon1:18.80,lon2:19.20}
-};
-
-function inZone(s){
-  let z=ZONES[ZONE];
-  return s.stop_lat>=z.lat1 && s.stop_lat<=z.lat2 && s.stop_lon>=z.lon1 && s.stop_lon<=z.lon2;
+  alert("GTFS betöltve: "+STOPS.length);
 }
 
-function setZone(z){
-  ZONE=z;
-  document.getElementById('results').innerHTML="Zóna: "+z;
+// ===== SEARCH =====
+function search(){
+
+  let q=document.getElementById('q').value.toLowerCase();
+
+  let res=STOPS
+    .filter(inZone)
+    .filter(s=>s.name && s.name.toLowerCase().includes(q));
+
+  let html="";
+
+  res.slice(0,30).forEach(s=>{
+    html+=`<div class='card' onclick='selectStop("${s.id}","${s.name}")'>
+      <b>${s.name}</b><br><span class='small'>${s.id}</span>
+    </div>`;
+  });
+
+  document.getElementById('results').innerHTML=html||"nincs találat zónában";
 }
 
+function selectStop(id,name){
+  SELECTED=id;
+  document.getElementById('info').innerHTML="📍 "+name;
+  render();
+}
+
+function timeSec(t){
+  let p=t.split(":");
+  return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
+}
+
+function now(){
+  let d=new Date();
+  return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
+}
+
+function render(){
+
+  if(!SELECTED) return;
+
+  let n=now();
+
+  let deps=STOP_TIMES
+    .filter(x=>x.stop_id==SELECTED)
+    .map(x=>x.departure_time||x.arrival_time)
+    .filter(Boolean)
+    .map(t=>({t,sec:timeSec(t)}))
+    .filter(x=>x.sec>=n)
+    .sort((a,b)=>a.sec-b.sec)
+    .slice(0,10);
+
+  document.getElementById('deps').innerHTML=
+    deps.map(d=>`<div class='row'><div>${d.t}</div><div>${Math.round((d.sec-now())/60)}p</div></div>`).join('')
+    || "nincs indulás";
+}
+
+setInterval(render,10000);
+
+</script>
+
+</body>
 </html>
