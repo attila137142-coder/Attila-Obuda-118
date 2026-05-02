@@ -5,73 +5,21 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>V11 DISPATCHER CORE</title>
 
-  <!-- PapaParse for GTFS CSV -->
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-
-  <!-- Leaflet Map -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
   <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      display: flex;
-      height: 100vh;
-      overflow: hidden;
-    }
-
-    #map {
-      flex: 2;
-      height: 100%;
-    }
-
-    #panel {
-      flex: 1;
-      background: #111;
-      color: #fff;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-    }
-
-    #header {
-      padding: 10px;
-      background: #1c1c1c;
-      font-weight: bold;
-    }
-
-    #stops, #departures {
-      flex: 1;
-      overflow-y: auto;
-      padding: 10px;
-      border-top: 1px solid #333;
-    }
-
-    .stop, .dep {
-      padding: 6px;
-      margin: 4px 0;
-      background: #222;
-      cursor: pointer;
-      border-radius: 4px;
-    }
-
-    .stop:hover, .dep:hover {
-      background: #333;
-    }
-
-    input {
-      width: 95%;
-      padding: 8px;
-      margin: 8px;
-      border-radius: 4px;
-      border: none;
-    }
-
-    .small {
-      font-size: 12px;
-      opacity: 0.7;
-    }
+    body { margin:0; font-family:Arial; display:flex; height:100vh; }
+    #map { flex:2; }
+    #panel { flex:1; background:#111; color:#fff; display:flex; flex-direction:column; }
+    #header { padding:10px; background:#1c1c1c; font-weight:bold; }
+    #stops, #departures { flex:1; overflow:auto; padding:10px; border-top:1px solid #333; }
+    .stop, .dep { padding:6px; margin:4px 0; background:#222; cursor:pointer; border-radius:4px; }
+    .stop:hover, .dep:hover { background:#333; }
+    input { margin:8px; padding:8px; border-radius:4px; border:none; width:90%; }
+    .small { font-size:12px; opacity:.7; }
+    button { margin:8px; padding:6px; }
   </style>
 </head>
 <body>
@@ -79,120 +27,109 @@
 <div id="map"></div>
 
 <div id="panel">
-  <div id="header">🚦 V11 DISPATCHER CORE</div>
+  <div id="header">🚦 V11 DISPATCHER CORE (FIXED)</div>
+
   <input id="search" placeholder="Search stop..." />
+  <button onclick="resetDemo()">Reset Demo Data</button>
+
   <div id="stops"></div>
-  <div id="departures">
-    <div class="small">Select a stop</div>
-  </div>
+  <div id="departures"><div class="small">Select a stop</div></div>
 </div>
 
 <script>
-// ---------------- MAP INIT ----------------
-const map = L.map('map').setView([47.4979, 19.0402], 12);
+const map = L.map('map').setView([47.4979,19.0402],12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: 'OSM'
-}).addTo(map);
-
-// ---------------- STATE ----------------
 let stops = [];
 let stopTimes = [];
 let trips = [];
+let markersLayer = L.layerGroup().addTo(map);
 
-// ---------------- GTFS LOAD (DROP ZIP CONTENT MANUALLY or URL CSV) ----------------
-async function loadGTFS() {
-  // DEMO fallback if no GTFS provided
+function resetDemo(){
   stops = [
-    { stop_id: "S1", name: "Deák Ferenc tér", lat: 47.4975, lon: 19.0540 },
-    { stop_id: "S2", name: "Astoria", lat: 47.4947, lon: 19.0602 },
-    { stop_id: "S3", name: "Blaha Lujza tér", lat: 47.4970, lon: 19.0702 }
+    {stop_id:"S1",name:"Deák Ferenc tér",lat:47.4975,lon:19.0540},
+    {stop_id:"S2",name:"Astoria",lat:47.4947,lon:19.0602},
+    {stop_id:"S3",name:"Blaha Lujza tér",lat:47.4970,lon:19.0702},
+    {stop_id:"S4",name:"Nyugati pályaudvar",lat:47.5100,lon:19.0560},
+    {stop_id:"S5",name:"Keleti pályaudvar",lat:47.5000,lon:19.0820}
   ];
 
-  stopTimes = [
-    { stop_id: "S1", trip_id: "T1", departure: "12:00" },
-    { stop_id: "S1", trip_id: "T2", departure: "12:10" },
-    { stop_id: "S2", trip_id: "T1", departure: "12:03" },
-    { stop_id: "S3", trip_id: "T1", departure: "12:07" }
-  ];
+  stopTimes = [];
+  trips = [];
+
+  // generate more departures so it feels real
+  stops.forEach(s=>{
+    for(let i=0;i<5;i++){
+      stopTimes.push({
+        stop_id:s.stop_id,
+        trip_id:"T"+i,
+        departure:`12:${String(i*7).padStart(2,'0')}`
+      });
+    }
+  });
 
   trips = [
-    { trip_id: "T1", route: "5", headsign: "Pasarét" },
-    { trip_id: "T2", route: "7", headsign: "Keleti" }
+    {trip_id:"T0",route:"5",headsign:"Pasarét"},
+    {trip_id:"T1",route:"7",headsign:"Keleti"},
+    {trip_id:"T2",route:"9",headsign:"Újpest"},
+    {trip_id:"T3",route:"47",headsign:"Dél-Buda"},
+    {trip_id:"T4",route:"1",headsign:"Villamos kör"}
   ];
 
-  renderStops();
+  renderStops(stops);
 }
 
-// ---------------- STOP RENDER ----------------
-function renderStops(filter = "") {
-  const container = document.getElementById("stops");
-  container.innerHTML = "";
+function renderStops(list){
+  const c=document.getElementById("stops");
+  c.innerHTML="";
 
-  stops
-    .filter(s => s.name.toLowerCase().includes(filter.toLowerCase()))
-    .forEach(s => {
-      const div = document.createElement("div");
-      div.className = "stop";
-      div.innerHTML = s.name;
+  markersLayer.clearLayers();
 
-      div.onclick = () => selectStop(s);
+  list.forEach(s=>{
+    const div=document.createElement("div");
+    div.className="stop";
+    div.innerText=s.name;
+    div.onclick=()=>selectStop(s);
+    c.appendChild(div);
 
-      container.appendChild(div);
-
-      L.marker([s.lat, s.lon])
-        .addTo(map)
-        .bindPopup(s.name);
-    });
+    L.marker([s.lat,s.lon]).addTo(markersLayer).bindPopup(s.name);
+  });
 }
 
-// ---------------- STOP SELECT ----------------
-function selectStop(stop) {
-  map.setView([stop.lat, stop.lon], 15);
+function selectStop(stop){
+  map.setView([stop.lat,stop.lon],15);
 
   const deps = stopTimes
-    .filter(t => t.stop_id === stop.stop_id)
-    .map(t => {
-      const trip = trips.find(tr => tr.trip_id === t.trip_id);
-      const delay = Math.floor(Math.random() * 5); // fake realtime
-
+    .filter(t=>t.stop_id===stop.stop_id)
+    .map(t=>{
+      const trip=trips.find(x=>x.trip_id===t.trip_id)||{};
+      const delay=Math.floor(Math.random()*6);
       return {
-        route: trip?.route,
-        headsign: trip?.headsign,
-        departure: t.departure,
+        route:trip.route||"?",
+        headsign:trip.headsign||"?",
+        departure:t.departure,
         delay
       };
     });
 
-  renderDepartures(stop.name, deps);
-}
+  const c=document.getElementById("departures");
+  c.innerHTML=`<h3>${stop.name}</h3>`;
 
-// ---------------- DEPARTURES UI ----------------
-function renderDepartures(stopName, deps) {
-  const container = document.getElementById("departures");
-
-  container.innerHTML = `<h3>${stopName}</h3>`;
-
-  deps.forEach(d => {
-    const div = document.createElement("div");
-    div.className = "dep";
-
-    div.innerHTML = `
-      <b>${d.route}</b> → ${d.headsign}<br>
-      ⏱ ${d.departure} <span class="small">(+${d.delay}m)</span>
-    `;
-
-    container.appendChild(div);
+  deps.forEach(d=>{
+    const div=document.createElement("div");
+    div.className="dep";
+    div.innerHTML=`<b>${d.route}</b> → ${d.headsign}<br>⏱ ${d.departure} <span class='small'>(+${d.delay}m)</span>`;
+    c.appendChild(div);
   });
 }
 
-// ---------------- SEARCH ----------------
-document.getElementById("search").addEventListener("input", (e) => {
-  renderStops(e.target.value);
+document.getElementById("search").addEventListener("input",e=>{
+  const v=e.target.value.toLowerCase();
+  const filtered=stops.filter(s=>s.name.toLowerCase().includes(v));
+  renderStops(filtered);
 });
 
-// ---------------- INIT ----------------
-loadGTFS();
+resetDemo();
 </script>
 
 </body>
