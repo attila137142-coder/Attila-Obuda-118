@@ -2,146 +2,108 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Attila LIVE TRANSPORT MAP</title>
+<title>STABLE STOP ENGINE</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body { margin:0; font-family:Arial; background:#0b1220; color:#fff; }
-header { padding:10px; background:#111c33; position:sticky; top:0; z-index:1000 }
-#map { height:60vh; width:100% }
-.panel { padding:10px }
-button, input { padding:10px; margin:5px; border-radius:8px; border:none }
-button { background:#22c55e; color:#fff; font-weight:bold; cursor:pointer }
-.card { background:#1e293b; padding:10px; margin-top:8px; border-radius:10px; cursor:pointer }
-.board { background:#0f172a; padding:10px; border-radius:10px; margin-top:10px }
-.row { display:flex; justify-content:space-between; padding:4px 0; border-bottom:1px solid #1f2a44 }
+body { font-family: Arial; background:#0f172a; color:white; padding:15px }
+.card { background:#1e293b; padding:10px; margin:8px; border-radius:10px }
+button { padding:10px; margin:5px; border-radius:8px; border:none; background:#22c55e; color:white }
 </style>
 </head>
 <body>
 
-<header>
-<h2>🗺️ Budapest + Dunakanyar LIVE TRANSPORT MAP</h2>
-</header>
+<h2>📍 STABLE STOP DATA ENGINE</h2>
 
-<div id="map"></div>
+<button onclick="getLocation()">📌 Saját helyzetem</button>
+<button onclick="loadStops()">GTFS MEGÁLLÓK BETÖLTÉSE</button>
 
-<div class="panel">
-<input id="q" placeholder="Megálló keresés">
-<button onclick="search()">KERESÉS</button>
-<button onclick="loadGTFS()">GTFS BETÖLTÉS</button>
-</div>
-
-<div class="panel">
-<div id="results"></div>
-
-<div class="board">
-<h3>🕒 Indulások</h3>
-<div id="deps">Válassz megállót a térképen</div>
-</div>
-</div>
+<div id="me"></div>
+<div id="list"></div>
 
 <script>
 
-let map=L.map('map').setView([47.4979,19.0402],10);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'© OSM'
-}).addTo(map);
-
+let MY={lat:null,lon:null};
 let STOPS=[];
-let STOP_TIMES=[];
-let markers=[];
-let selected=null;
 
-function now(){
-  let d=new Date();
-  return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
-}
+// 🌍 saját helyzet
+function getLocation(){
+  navigator.geolocation.getCurrentPosition(pos=>{
+    MY.lat=pos.coords.latitude;
+    MY.lon=pos.coords.longitude;
 
-function parseTime(t){
-  if(!t) return 999999;
-  let p=t.split(':');
-  return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
-}
-
-function loadGTFS(){
-
-  let url="https://gtfs.menetbrand.com/download/volanbusz";
-
-  fetch(url)
-  .then(r=>r.blob())
-  .then(JSZip.loadAsync)
-  .then(zip=>zip.file("stops.txt").async("string"))
-  .then(text=>{
-
-    let data=Papa.parse(text,{header:true,skipEmptyLines:true}).data;
-
-    STOPS=data.filter(s=>s.stop_lat && s.stop_lon);
-
-    renderMarkers();
-
-    alert("GTFS betöltve: "+STOPS.length);
-
-  })
-  .catch(e=>alert("GTFS hiba"));
-}
-
-function renderMarkers(){
-
-  markers.forEach(m=>map.removeLayer(m));
-  markers=[];
-
-  STOPS.forEach(s=>{
-
-    let m=L.circleMarker([s.stop_lat,s.stop_lon],{
-      radius:4,
-      color:'#22c55e'
-    }).addTo(map);
-
-    m.on('click',()=>selectStop(s));
-
-    markers.push(m);
+    document.getElementById("me").innerHTML=`
+      <div class="card">
+        📍 Saját pozíció:<br>
+        ${MY.lat.toFixed(6)}, ${MY.lon.toFixed(6)}
+      </div>
+    `;
   });
 }
 
-function selectStop(s){
-
-  selected=s;
-
-  document.getElementById('deps').innerHTML="Betöltés...";
-
-  let deps=STOP_TIMES
-    .filter(x=>x.stop_id==s.stop_id)
-    .map(x=>x.departure_time||x.arrival_time)
-    .filter(Boolean)
-    .map(t=>({t,sec:parseTime(t)}))
-    .filter(x=>x.sec>=now())
-    .sort((a,b)=>a.sec-b.sec)
-    .slice(0,10);
-
-  document.getElementById('deps').innerHTML=
-    deps.map(d=>
-      `<div class='row'><div>${d.t}</div><div>${Math.round((d.sec-now())/60)}p</div></div>`
-    ).join('') || "nincs indulás";
+// 📏 távolság
+function dist(a,b,c,d){
+  const R=6371000;
+  const toRad=x=>x*Math.PI/180;
+  let dLat=toRad(c-a);
+  let dLon=toRad(d-b);
+  let A=Math.sin(dLat/2)**2+
+    Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
 }
 
-function search(){
+// 📦 GTFS betöltés (stops.txt csak!)
+async function loadStops(){
 
-  let q=document.getElementById('q').value.toLowerCase();
+  let url="https://gtfs.menetbrand.com/download/volanbusz";
 
-  let res=STOPS.filter(s=>
-    (s.stop_name||"").toLowerCase().includes(q)
-  );
+  let res=await fetch(url);
+  let blob=await res.blob();
 
-  document.getElementById('results').innerHTML=
-    res.slice(0,20).map(s=>
-      `<div class='card' onclick='selectStop(${JSON.stringify(s)})'>${s.stop_name}</div>`
-    ).join('');
+  let zip=await JSZip.loadAsync(blob);
+
+  let text=await zip.file("stops.txt").async("string");
+
+  let data=Papa.parse(text,{header:true}).data;
+
+  STOPS=data.filter(s=>s.stop_lat && s.stop_lon);
+
+  render();
+}
+
+// 📌 lista
+function render(){
+
+  if(!MY.lat){
+    alert("Először add meg a helyzeted!");
+    return;
+  }
+
+  let sorted=STOPS.map(s=>{
+
+    let d=dist(MY.lat,MY.lon,s.stop_lat,s.stop_lon);
+
+    return {
+      name:s.stop_name,
+      id:s.stop_id,
+      lat:parseFloat(s.stop_lat),
+      lon:parseFloat(s.stop_lon),
+      dist:d
+    };
+
+  }).sort((a,b)=>a.dist-b.dist).slice(0,20);
+
+  document.getElementById("list").innerHTML=
+    sorted.map(s=>`
+      <div class="card">
+        <b>${s.name}</b><br>
+        🆔 ${s.id}<br>
+        📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}<br>
+        📏 ${(s.dist).toFixed(0)} m
+      </div>
+    `).join("");
+
 }
 
 </script>
