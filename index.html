@@ -2,108 +2,136 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>STABLE STOP ENGINE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FULL BKK STYLE ENGINE</title>
 
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body { font-family: Arial; background:#0f172a; color:white; padding:15px }
-.card { background:#1e293b; padding:10px; margin:8px; border-radius:10px }
-button { padding:10px; margin:5px; border-radius:8px; border:none; background:#22c55e; color:white }
+body { font-family: Arial; background:#0b1220; color:#fff; margin:0; padding:10px }
+button { padding:10px; margin:5px; border-radius:8px; border:none; background:#22c55e; color:#fff; font-weight:bold }
+.card { background:#1e293b; padding:10px; margin:8px 0; border-radius:10px }
+.small { font-size:12px; opacity:0.7 }
+.row { display:flex; justify-content:space-between; border-bottom:1px solid #243041; padding:4px 0 }
 </style>
 </head>
 <body>
 
-<h2>📍 STABLE STOP DATA ENGINE</h2>
+<h2>🚌 FULL BKK-STYLE NEAREST STOP + LIVE ARRIVAL PANEL</h2>
 
-<button onclick="getLocation()">📌 Saját helyzetem</button>
-<button onclick="loadStops()">GTFS MEGÁLLÓK BETÖLTÉSE</button>
+<button onclick="getLocation()">📍 Saját helyzet</button>
+<button onclick="loadGTFS()">GTFS betöltés</button>
+<button onclick="findNearest()">🔍 Közeli megállók</button>
 
 <div id="me"></div>
 <div id="list"></div>
 
 <script>
 
-let MY={lat:null,lon:null};
+let MY={lat:null,lon:null,acc:null};
 let STOPS=[];
+let STOP_TIMES=[];
+let SELECTED=null;
 
-// 🌍 saját helyzet
+// 🌍 GPS
 function getLocation(){
   navigator.geolocation.getCurrentPosition(pos=>{
+
     MY.lat=pos.coords.latitude;
     MY.lon=pos.coords.longitude;
+    MY.acc=pos.coords.accuracy;
 
     document.getElementById("me").innerHTML=`
-      <div class="card">
-        📍 Saját pozíció:<br>
-        ${MY.lat.toFixed(6)}, ${MY.lon.toFixed(6)}
+      <div class='card'>
+        📍 GPS:<br>
+        ${MY.lat.toFixed(6)}, ${MY.lon.toFixed(6)}<br>
+        🎯 Pontosság: ±${Math.round(MY.acc)} m
       </div>
     `;
+
   });
 }
 
 // 📏 távolság
 function dist(a,b,c,d){
   const R=6371000;
-  const toRad=x=>x*Math.PI/180;
-  let dLat=toRad(c-a);
-  let dLon=toRad(d-b);
+  const t=x=>x*Math.PI/180;
+  let dLat=t(c-a), dLon=t(d-b);
   let A=Math.sin(dLat/2)**2+
-    Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
+    Math.cos(t(a))*Math.cos(t(c))*Math.sin(dLon/2)**2;
   return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
 }
 
-// 📦 GTFS betöltés (stops.txt csak!)
-async function loadStops(){
+// 📦 GTFS BETÖLTÉS
+async function loadGTFS(){
 
   let url="https://gtfs.menetbrand.com/download/volanbusz";
 
-  let res=await fetch(url);
-  let blob=await res.blob();
+  let zip=await JSZip.loadAsync(await fetch(url).then(r=>r.blob()));
 
-  let zip=await JSZip.loadAsync(blob);
+  let stopsTxt=await zip.file("stops.txt").async("string");
+  let timesTxt=await zip.file("stop_times.txt").async("string");
 
-  let text=await zip.file("stops.txt").async("string");
+  STOPS=Papa.parse(stopsTxt,{header:true}).data.filter(s=>s.stop_lat && s.stop_lon);
+  STOP_TIMES=Papa.parse(timesTxt,{header:true}).data;
 
-  let data=Papa.parse(text,{header:true}).data;
-
-  STOPS=data.filter(s=>s.stop_lat && s.stop_lon);
-
-  render();
+  alert("GTFS betöltve: "+STOPS.length);
 }
 
-// 📌 lista
-function render(){
+// 🔍 legközelebbi megállók
+function findNearest(){
 
-  if(!MY.lat){
-    alert("Először add meg a helyzeted!");
-    return;
-  }
+  if(!MY.lat) return alert("Előbb GPS!");
 
-  let sorted=STOPS.map(s=>{
+  let res=STOPS.map(s=>({
+    ...s,
+    dist:dist(MY.lat,MY.lon,s.stop_lat,s.stop_lon)
+  })).sort((a,b)=>a.dist-b.dist).slice(0,15);
 
-    let d=dist(MY.lat,MY.lon,s.stop_lat,s.stop_lon);
+  document.getElementById("list").innerHTML=res.map(s=>`
+    <div class='card' onclick='showStop("${s.stop_id}")'>
+      <b>${s.stop_name}</b><br>
+      🆔 ${s.stop_id}<br>
+      📍 ${parseFloat(s.stop_lat).toFixed(6)}, ${parseFloat(s.stop_lon).toFixed(6)}<br>
+      📏 ${Math.round(s.dist)} m
+    </div>
+  `).join("");
+}
 
-    return {
-      name:s.stop_name,
-      id:s.stop_id,
-      lat:parseFloat(s.stop_lat),
-      lon:parseFloat(s.stop_lon),
-      dist:d
-    };
+// 🕒 indulások
+function showStop(id){
 
-  }).sort((a,b)=>a.dist-b.dist).slice(0,20);
+  SELECTED=id;
 
-  document.getElementById("list").innerHTML=
-    sorted.map(s=>`
-      <div class="card">
-        <b>${s.name}</b><br>
-        🆔 ${s.id}<br>
-        📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}<br>
-        📏 ${(s.dist).toFixed(0)} m
-      </div>
-    `).join("");
+  let now=new Date();
+  let sec=now.getHours()*3600+now.getMinutes()*60+now.getSeconds();
 
+  let deps=STOP_TIMES
+    .filter(x=>x.stop_id==id)
+    .map(x=>x.departure_time||x.arrival_time)
+    .filter(Boolean)
+    .map(t=>({t,sec:timeToSec(t)}))
+    .filter(x=>x.sec>=sec)
+    .sort((a,b)=>a.sec-b.sec)
+    .slice(0,10);
+
+  document.getElementById("list").innerHTML+=`
+    <div class='card'>
+      <h3>🕒 Indulások</h3>
+      ${deps.map(d=>`
+        <div class='row'>
+          <div>${d.t}</div>
+          <div>${Math.round((d.sec-sec)/60)}p</div>
+        </div>
+      `).join('') || "nincs indulás"}
+    </div>
+  `;
+}
+
+function timeToSec(t){
+  let p=t.split(":");
+  return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
 }
 
 </script>
