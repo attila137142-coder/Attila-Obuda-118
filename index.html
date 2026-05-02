@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>V13.1 DISPATCH CORE FIX</title>
+  <title>V13.2 DISPATCH CORE - TABLE + LIVE CONTEXT</title>
 
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -17,11 +17,18 @@
     #panel { flex:1; background:#111; color:#fff; display:flex; flex-direction:column; }
     #header { padding:10px; background:#1c1c1c; font-weight:bold; }
     #stops, #departures { flex:1; overflow:auto; padding:10px; border-top:1px solid #333; }
+
     .stop, .dep { padding:6px; margin:4px 0; background:#222; cursor:pointer; border-radius:4px; }
     .stop:hover, .dep:hover { background:#333; }
+
     input, button { margin:6px; padding:6px; }
     .small { font-size:12px; opacity:.7; }
-    .infoBox { padding:8px; background:#1b1b1b; margin:6px; border-radius:6px; font-size:12px; }
+
+    table { width:100%; border-collapse:collapse; margin-top:10px; }
+    th, td { border-bottom:1px solid #333; padding:6px; font-size:12px; }
+
+    .fast { color:#ff4d4d; font-weight:bold; }
+    .delay { color:#4da6ff; }
   </style>
 </head>
 <body>
@@ -29,11 +36,11 @@
 <div id="map"></div>
 
 <div id="panel">
-  <div id="header">🚦 V13.1 DISPATCH CORE FIX</div>
+  <div id="header">🚦 V13.2 DISPATCH CORE TABLE MODE</div>
 
   <input type="file" id="zipInput" />
-  <input id="search" placeholder="Search stop (name or ID)..." />
-  <button onclick="centerAllStops()">Show All Stops</button>
+  <input id="search" placeholder="Search stop or ID..." />
+  <button onclick="centerAllStops()">Show All</button>
 
   <div id="stops"></div>
   <div id="departures"></div>
@@ -44,44 +51,41 @@ const map = L.map('map').setView([47.4979,19.0402],12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let stops=[], stopTimes=[], trips=[], routes=[];
-let stopIndex = new Map();
+let userPos=null;
 let markersLayer=L.layerGroup().addTo(map);
 
-// ---------------- DISTANCE (HAVERSINE) ----------------
+// ---------------- USER LOCATION ----------------
+navigator.geolocation?.watchPosition(pos=>{
+  userPos={lat:pos.coords.latitude, lon:pos.coords.longitude};
+});
+
+// ---------------- DISTANCE ----------------
 function distance(a,b){
   const R=6371000;
   const dLat=(b.lat-a.lat)*Math.PI/180;
   const dLon=(b.lon-a.lon)*Math.PI/180;
 
-  const x=
-    Math.sin(dLat/2)**2+
+  const x=Math.sin(dLat/2)**2+
     Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)**2;
 
   return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
 // ---------------- TIME ----------------
-function toSeconds(t){
+function toSec(t){
   if(!t) return 0;
   const p=t.split(':');
   return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
 }
 
-function nowSec(){
+function now(){
   const d=new Date();
   return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
 }
 
-// ---------------- INDEX ----------------
-function buildIndex(){
-  stopIndex.clear();
-  stops.forEach(s=>stopIndex.set(s.stop_id,s));
-}
-
 // ---------------- LOAD GTFS ----------------
-document.getElementById('zipInput').addEventListener('change', async (e)=>{
-  const file=e.target.files[0];
-  const zip=await JSZip.loadAsync(file);
+document.getElementById('zipInput').addEventListener('change', async e=>{
+  const zip=await JSZip.loadAsync(e.target.files[0]);
 
   const read=async n=>{
     const f=zip.file(n);
@@ -95,23 +99,19 @@ document.getElementById('zipInput').addEventListener('change', async (e)=>{
   trips=await read('trips.txt');
   routes=await read('routes.txt');
 
-  buildIndex();
   renderStops(stops);
 });
 
-// ---------------- SEARCH (FIXED) ----------------
+// ---------------- SEARCH ----------------
 document.getElementById('search').addEventListener('input',e=>{
   const v=e.target.value.toLowerCase();
-
-  const res=stops.filter(s=>
+  renderStops(stops.filter(s=>
     (s.stop_name||'').toLowerCase().includes(v) ||
     (s.stop_id||'').toLowerCase().includes(v)
-  );
-
-  renderStops(res);
+  ));
 });
 
-// ---------------- STOP LIST ----------------
+// ---------------- STOPS ----------------
 function renderStops(list){
   const c=document.getElementById('stops');
   c.innerHTML='';
@@ -123,72 +123,95 @@ function renderStops(list){
     const div=document.createElement('div');
     div.className='stop';
 
-    const dist=distance({lat:47.4979,lon:19.0402},{lat:+s.stop_lat,lon:+s.stop_lon});
+    const dUser=userPos?distance(userPos,{lat:+s.stop_lat,lon:+s.stop_lon})/1000:0;
 
-    div.innerHTML=`<b>${s.stop_name}</b><br><span class='small'>ID: ${s.stop_id} | ${(dist/1000).toFixed(2)} km</span>`;
+    div.innerHTML=`<b>${s.stop_name}</b><br>
+      <span class='small'>ID: ${s.stop_id} | ${dUser.toFixed(2)} km</span>`;
 
     div.onclick=()=>selectStop(s);
     c.appendChild(div);
 
-    L.marker([s.stop_lat,s.stop_lon])
-      .addTo(markersLayer)
-      .bindPopup(s.stop_name+"<br>ID: "+s.stop_id);
+    L.marker([s.stop_lat,s.stop_lon]).addTo(markersLayer);
   });
 }
 
-// ---------------- STOP DETAILS + TIMETABLE ----------------
+// ---------------- STOP TABLE ----------------
 function selectStop(stop){
   map.setView([stop.stop_lat,stop.stop_lon],15);
 
-  const now=nowSec();
+  const nowSec=now();
 
   const deps=stopTimes
     .filter(t=>t.stop_id===stop.stop_id)
     .map(t=>{
-      const sec=toSeconds(t.departure_time);
-      return {...t,sec};
-    })
-    .filter(t=>t.sec>=now)
-    .sort((a,b)=>a.sec-b.sec)
-    .slice(0,15)
-    .map(t=>{
+      const sec=toSec(t.departure_time);
+      const diff=sec-nowSec;
+
       const trip=trips.find(x=>x.trip_id===t.trip_id)||{};
       const route=routes.find(r=>r.route_id===trip.route_id)||{};
+
+      const vehicleType=route.route_type||'unknown';
 
       return {
         route:route.route_short_name||'?',
         headsign:trip.trip_headsign||'?',
-        time:t.departure_time
+        time:t.departure_time,
+        diff,
+        trip_id:t.trip_id,
+        type:vehicleType
       };
-    });
+    })
+    .filter(d=>d.diff>0)
+    .sort((a,b)=>a.diff-b.diff)
+    .slice(0,20);
 
   const c=document.getElementById('departures');
+
   c.innerHTML=`
-    <div class='infoBox'>
-      <b>${stop.stop_name}</b><br>
-      Stop ID: ${stop.stop_id}<br>
-      Lat: ${stop.stop_lat} | Lon: ${stop.stop_lon}
-    </div>
-    <h3>Next departures</h3>
+    <h3>${stop.stop_name}</h3>
+    <table>
+      <tr>
+        <th>Line</th>
+        <th>Destination</th>
+        <th>Departure</th>
+        <th>Remaining</th>
+        <th>Trip ID</th>
+        <th>Status</th>
+      </tr>
+    </table>
   `;
 
+  const table=c.querySelector('table');
+
   deps.forEach(d=>{
-    const div=document.createElement('div');
-    div.className='dep';
-    div.innerHTML=`<b>${d.route}</b> → ${d.headsign}<br>⏱ ${d.time}`;
-    c.appendChild(div);
+    const min=Math.floor(d.diff/60);
+    const sec=d.diff%60;
+
+    const fast=d.diff<300;
+
+    const tr=document.createElement('tr');
+
+    tr.innerHTML=`
+      <td>${d.route}</td>
+      <td>${d.headsign}</td>
+      <td>${d.time}</td>
+      <td class='${fast?'fast':''}'>${min}m ${sec}s</td>
+      <td class='small'>${d.trip_id}</td>
+      <td class='${fast?'fast':'delay'}'>${fast?'Siet':'Normál'}</td>
+    `;
+
+    table.appendChild(tr);
   });
 }
 
-// ---------------- CENTER ALL ----------------
+// ---------------- CENTER ----------------
 function centerAllStops(){
-  if(stops.length===0) return;
-  const group=stops.filter(s=>s.stop_lat);
-  const lat=group.reduce((a,b)=>a+parseFloat(b.stop_lat),0)/group.length;
-  const lon=group.reduce((a,b)=>a+parseFloat(b.stop_lon),0)/group.length;
+  const valid=stops.filter(s=>s.stop_lat);
+  const lat=valid.reduce((a,b)=>a+ +b.stop_lat,0)/valid.length;
+  const lon=valid.reduce((a,b)=>a+ +b.stop_lon,0)/valid.length;
   map.setView([lat,lon],12);
 }
-
 </script>
+
 </body>
 </html>
