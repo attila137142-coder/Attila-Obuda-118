@@ -3,9 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VOLÁN CLEAN GTFS ENGINE</title>
+<title>Attila UNIFIED TRANSPORT ENGINE</title>
 
 <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body { font-family: Arial; background:#0f172a; color:#fff; padding:20px }
@@ -17,97 +18,173 @@ button { background:#22c55e; color:#fff; font-weight:bold; cursor:pointer }
 </head>
 <body>
 
-<h1>🚍 VOLÁN CLEAN GTFS ENGINE</h1>
+<h1>🚍 UNIFIED TRANSPORT ENGINE</h1>
+<h3>VOLÁN + MÁV + (BKK READY)</h3>
 
-<input id="q" placeholder="Megálló név vagy ID">
-<button onclick="searchStops()">KERESÉS</button>
-<button onclick="loadVolanGTFS()">VOLÁN GTFS BETÖLTÉS</button>
+<input id="q" placeholder="Megálló / állomás / ID">
+<button onclick="searchAll()">KERESÉS</button>
+<button onclick="loadAll()">GTFS BETÖLTÉS (UNIFIED)</button>
 
 <div id="results"></div>
 
 <script>
 
-let STOPS = [];
+let STOPS=[];
+let ROUTES=[];
+let TRIPS=[];
+let STOP_TIMES=[];
 
-// ===== GTFS BETÖLTÉS (VOLÁN) =====
-async function loadVolanGTFS(){
-
-  // IDE TEDD A SAJÁT VOLÁN RAW LINKED
-  let url = "https://raw.githubusercontent.com/attila137142-coder/Attila-Obuda-118/main/stops.txt";
-
-  let res = await fetch(url);
-  let text = await res.text();
-
-  let parsed = Papa.parse(text, {
-    header: true,
-    skipEmptyLines: true
-  });
-
-  STOPS = parsed.data.map(s => ({
-    id: s.stop_id,
-    name: s.stop_name,
-    lat: parseFloat(s.stop_lat),
-    lon: parseFloat(s.stop_lon)
-  }));
-
-  alert("VOLÁN GTFS betöltve: " + STOPS.length + " megálló");
-}
-
-// ===== TÁVOLSÁG =====
+// ===== DIST =====
 function dist(a,b,c,d){
   const R=6371000;
   const toRad=x=>x*Math.PI/180;
   let dLat=toRad(c-a);
   let dLon=toRad(d-b);
-
-  let A=Math.sin(dLat/2)**2 +
-    Math.cos(toRad(a))*Math.cos(toRad(c))*
-    Math.sin(dLon/2)**2;
-
-  let C=2*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
-  return R*C;
+  let A=Math.sin(dLat/2)**2+
+    Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
 }
 
 // ===== GPS =====
 function getLoc(cb){
-  navigator.geolocation.getCurrentPosition(p=>{
-    cb(p.coords.latitude,p.coords.longitude);
-  });
+  navigator.geolocation.getCurrentPosition(p=>cb(p.coords.latitude,p.coords.longitude));
 }
 
-// ===== KERESÉS =====
-function searchStops(){
+// ===== LOAD FILE =====
+async function fetchText(url){
+  let r=await fetch(url);
+  return await r.text();
+}
+
+function parseGTFS(text,source){
+  let p=Papa.parse(text,{header:true,skipEmptyLines:true});
+  return p.data.map(x=>({...x,_source:source}));
+}
+
+// ===== LOAD UNIFIED GTFS =====
+async function loadAll(){
+
+  // ===== VOLÁN =====
+  let volanUrl="https://gtfs.menetbrand.com/download/volanbusz";
+
+  let volanRes=await fetch(volanUrl);
+  let volanZip=await volanRes.blob();
+  let zip=await JSZip.loadAsync(volanZip);
+
+  async function readZip(name){
+    let f=zip.file(name);
+    return f?await f.async("string"):null;
+  }
+
+  let vStops=await readZip("stops.txt");
+  let vRoutes=await readZip("routes.txt");
+  let vTrips=await readZip("trips.txt");
+  let vTimes=await readZip("stop_times.txt");
+
+  // ===== MÁV (placeholder GTFS ZIP expected) =====
+  let mavUrl="https://example.com/mav_gtfs.zip";
+
+  let mavStops="";
+  let mavRoutes="";
+  let mavTrips="";
+  let mavTimes="";
+
+  try{
+    let mRes=await fetch(mavUrl);
+    let mZip=await JSZip.loadAsync(await mRes.blob());
+
+    async function r(name){
+      let f=mZip.file(name);
+      return f?await f.async("string"):null;
+    }
+
+    mavStops=await r("stops.txt");
+    mavRoutes=await r("routes.txt");
+    mavTrips=await r("trips.txt");
+    mavTimes=await r("stop_times.txt");
+  }catch(e){
+    console.warn("MÁV GTFS nem elérhető még");
+  }
+
+  // ===== PARSE + MERGE =====
+  let allStops=[];
+  let allRoutes=[];
+  let allTrips=[];
+  let allTimes=[];
+
+  if(vStops) allStops=allStops.concat(parseGTFS(vStops,"VOLAN"));
+  if(mavStops) allStops=allStops.concat(parseGTFS(mavStops,"MAV"));
+
+  if(vRoutes) allRoutes=allRoutes.concat(parseGTFS(vRoutes,"VOLAN"));
+  if(mavRoutes) allRoutes=allRoutes.concat(parseGTFS(mavRoutes,"MAV"));
+
+  if(vTrips) allTrips=allTrips.concat(parseGTFS(vTrips,"VOLAN"));
+  if(mavTrips) allTrips=allTrips.concat(parseGTFS(mavTrips,"MAV"));
+
+  if(vTimes) allTimes=allTimes.concat(parseGTFS(vTimes,"VOLAN"));
+  if(mavTimes) allTimes=allTimes.concat(parseGTFS(mavTimes,"MAV"));
+
+  STOPS=allStops.map(s=>({
+    id:s.stop_id,
+    name:s.stop_name,
+    lat:parseFloat(s.stop_lat),
+    lon:parseFloat(s.stop_lon),
+    source:s._source
+  }));
+
+  ROUTES=allRoutes;
+  TRIPS=allTrips;
+  STOP_TIMES=allTimes;
+
+  alert("UNIFIED GTFS BETÖLTVE:\nStops: "+STOPS.length);
+}
+
+// ===== ROUTES =====
+function getRoutes(stopId){
+  let trips=STOP_TIMES.filter(x=>x.stop_id==stopId).map(x=>x.trip_id);
+  let routes=[];
+
+  trips.forEach(t=>{
+    let tr=TRIPS.find(x=>x.trip_id==t);
+    if(tr) routes.push(tr.route_id);
+  });
+
+  return [...new Set(routes)];
+}
+
+// ===== SEARCH =====
+function searchAll(){
 
   let q=document.getElementById('q').value.toLowerCase();
 
-  let results = STOPS.filter(s=>
-    (s.name && s.name.toLowerCase().includes(q)) ||
-    (s.id && s.id.toLowerCase().includes(q))
+  let res=STOPS.filter(s=>
+    (s.name&&s.name.toLowerCase().includes(q))||
+    (s.id&&s.id.toLowerCase().includes(q))
   );
 
-  if(results.length===0){
-    document.getElementById('results').innerHTML="❌ Nincs találat (GTFS betöltve?)";
+  if(res.length==0){
+    document.getElementById('results').innerHTML="❌ nincs találat";
     return;
   }
 
   getLoc((lat,lon)=>{
 
-    results.sort((a,b)=>dist(lat,lon,a.lat,a.lon)-dist(lat,lon,b.lat,b.lon));
+    res.sort((a,b)=>dist(lat,lon,a.lat,a.lon)-dist(lat,lon,b.lat,b.lon));
 
     let html="";
 
-    results.forEach(s=>{
+    res.forEach(s=>{
 
       let d=dist(lat,lon,s.lat,s.lon);
+      let r=getRoutes(s.id);
 
-      html += `
-        <div class="card">
-          <b>${s.name}</b><br>
-          🆔 ${s.id}<br>
-          📍 ${s.lat?.toFixed(6)}, ${s.lon?.toFixed(6)}<br>
-          📏 ${ (d/1000).toFixed(2)} km
-        </div>
-      `;
+      html+=`<div class='card'>
+        <b>${s.name}</b> <span class='small'>[${s.source}]</span><br>
+        🆔 ${s.id}<br>
+        📍 ${s.lat?.toFixed(6)}, ${s.lon?.toFixed(6)}<br>
+        📏 ${(d/1000).toFixed(2)} km<br>
+        🚌 Vonalak: ${r.join(", ")||"nincs"}
+      </div>`;
 
     });
 
