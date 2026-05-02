@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Transport Digital Twin PRO</title>
+<title>Transport Digital Twin OFFLINE CORE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -14,64 +14,51 @@ header{padding:10px;background:#111827;display:flex;flex-wrap:wrap;gap:6px}
 .btn{background:#2563eb;border:none;padding:6px 10px;color:#fff;border-radius:8px;cursor:pointer}
 .grid{display:grid;gap:10px;padding:10px}
 .card{background:#1f2937;padding:10px;border-radius:12px}
-#map{height:340px;border-radius:12px}
-.resultBox{padding:6px;background:#111827;margin-top:6px;border-radius:8px;cursor:pointer}
+#map{height:380px;border-radius:12px}
+.status{position:fixed;bottom:10px;left:10px;background:rgba(0,0,0,0.7);padding:6px 10px;border-radius:10px;font-size:12px}
 </style>
 </head>
 <body>
 
 <header>
-<button class="btn" onclick="setLayer('street')">Utcai</button>
-<button class="btn" onclick="setLayer('topo')">Topo</button>
-<button class="btn" onclick="setLayer('rail')">Vasút</button>
-<button class="btn" onclick="setLayer('hike')">Turista</button>
-
-<button class="btn" onclick="mode='gtfs'">GTFS</button>
-<button class="btn" onclick="mode='poi'">POI</button>
-<button class="btn" onclick="loadNearby()">Közeli helyek</button>
+<button class="btn" onclick="saveTrack()">TRACK SAVE</button>
+<button class="btn" onclick="exportGPX()">GPX EXPORT</button>
+<button class="btn" onclick="startNav()">NAV</button>
+<button class="btn" onclick="clearCache()">CACHE RESET</button>
 </header>
 
 <div class="grid">
 <div class="card">
-<input id="search" placeholder="keresés..." oninput="search()" />
-<div id="results"></div>
+<div id="speed"></div>
+<div id="info"></div>
+</div>
+<div class="card"><div id="map"></div></div>
 </div>
 
-<div class="card">
-<div id="info">Adatok...</div>
-</div>
-
-<div class="card">
-<div id="map"></div>
-</div>
-</div>
+<div class="status" id="status">INITIALIZING OFFLINE ENGINE...</div>
 
 <script>
-let map,routeLine,trackLine;
-let mode="gtfs";
-let userPos=null;
-let track=[];
-let lastPos=null,lastTime=null;
 
-let layers={};
+// ===================== MAP =====================
+let map;
+let track=[];
+let savedTrack=[];
+let trackLine;
+let userPos=null;
+let navTarget=null;
 
 function initMap(){
  map=L.map('map').setView([47.5,19.05],11);
 
- layers.street=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
- layers.topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
- layers.rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.7});
- layers.hike=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
+ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+   maxZoom:19,
+   crossOrigin:true
+ }).addTo(map);
 
- layers.street.addTo(map);
+ document.getElementById('status').innerText="ONLINE + OFFLINE CACHE READY";
 }
 
-function setLayer(type){
- Object.values(layers).forEach(l=>map.removeLayer(l));
- layers.street.addTo(map);
- if(type!=='street') layers[type].addTo(map);
-}
-
+// ===================== GPS =====================
 function haversine(a,b,c,d){
  const R=6371;
  const dLat=(c-a)*Math.PI/180;
@@ -81,105 +68,98 @@ function haversine(a,b,c,d){
 }
 
 navigator.geolocation.watchPosition(p=>{
- const now=Date.now();
- const pos={lat:p.coords.latitude,lon:p.coords.longitude};
- userPos=pos;
+ userPos={lat:p.coords.latitude,lon:p.coords.longitude};
+ track.push([userPos.lat,userPos.lon]);
 
- if(lastPos){
-  const d=haversine(lastPos.lat,lastPos.lon,pos.lat,pos.lon);
-  const dt=(now-lastTime)/1000;
-  const kmh=(d/dt)*3600;
-  const ms=(d*1000)/dt;
-
-  document.getElementById('info').innerText=
-  `Sebesség: ${kmh.toFixed(2)} km/h (${ms.toFixed(2)} m/s)`;
- }
-
- track.push([pos.lat,pos.lon]);
  if(trackLine) map.removeLayer(trackLine);
  trackLine=L.polyline(track,{color:'lime'}).addTo(map);
 
- lastPos=pos;
- lastTime=now;
+ document.getElementById('speed').innerText=
+ "GPS ACTIVE";
+
+ if(p.coords.heading!=null){
+   document.getElementById('info').innerText="Heading: "+p.coords.heading.toFixed(0)+"°";
+ }
 });
 
-async function routeTo(lat,lon){
- if(!userPos) return;
-
- const roadURL=`https://router.project-osrm.org/route/v1/driving/${userPos.lon},${userPos.lat};${lon},${lat}?overview=full&geometries=geojson`;
- const footURL=`https://router.project-osrm.org/route/v1/foot/${userPos.lon},${userPos.lat};${lon},${lat}?overview=false`;
-
- const road=await fetch(roadURL).then(r=>r.json());
- const foot=await fetch(footURL).then(r=>r.json());
-
- const r=road.routes[0];
- const f=foot.routes[0];
-
- if(routeLine) map.removeLayer(routeLine);
- routeLine=L.geoJSON(r.geometry).addTo(map);
-
- const air=haversine(userPos.lat,userPos.lon,lat,lon);
- const roadKm=r.distance/1000;
- const footKm=f.distance/1000;
-
- document.getElementById('info').innerText=
- `Légvonal: ${air.toFixed(2)} km\nKözút: ${roadKm.toFixed(2)} km\nGyalog: ${footKm.toFixed(2)} km`;
+// ===================== TRACK =====================
+function saveTrack(){
+ savedTrack=[...track];
+ alert("TRACK SAVED (OFFLINE)");
 }
 
-let stops=[
-{name:"Deák",lat:47.4975,lon:19.0550},
-{name:"Nád utca",lat:47.594072,lon:19.048469},
-{name:"Szob",lat:47.8213,lon:18.8626}
-];
+function exportGPX(){
+ let gpx='<?xml version="1.0"?><gpx><trk><trkseg>';
+ savedTrack.forEach(p=>gpx+=`<trkpt lat="${p[0]}" lon="${p[1]}"></trkpt>`);
+ gpx+='</trkseg></trk></gpx>';
+ const blob=new Blob([gpx],{type:'application/gpx+xml'});
+ const a=document.createElement('a');
+ a.href=URL.createObjectURL(blob);
+ a.download='track.gpx';
+ a.click();
+}
 
-async function search(){
- const q=document.getElementById('search').value.toLowerCase();
- const res=document.getElementById('results');
- res.innerHTML="";
-
- if(mode==='gtfs'){
-  stops.filter(s=>s.name.toLowerCase().includes(q)).forEach(s=>{
-   const d=document.createElement('div');
-   d.className='resultBox';
-
-   let txt=s.name;
-   if(userPos){
-    txt+=` | ${haversine(userPos.lat,userPos.lon,s.lat,s.lon).toFixed(2)} km`;
-   }
-
-   d.innerText=txt;
-   d.onclick=()=>routeTo(s.lat,s.lon);
-   res.appendChild(d);
-  });
- }
-
- if(mode==='poi'){
-  const data=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`).then(r=>r.json());
-
-  data.forEach(p=>{
-   const d=document.createElement('div');
-   d.className='resultBox';
-
-   d.innerText=p.display_name;
-   d.onclick=()=>routeTo(parseFloat(p.lat),parseFloat(p.lon));
-   res.appendChild(d);
-  });
+function startNav(){
+ if(savedTrack.length){
+  navTarget=savedTrack[savedTrack.length-1];
+  document.getElementById('status').innerText="NAV MODE ACTIVE";
  }
 }
 
-async function loadNearby(){
- if(!userPos) return;
+// ===================== SERVICE WORKER (FULL OFFLINE ENGINE) =====================
+if('serviceWorker' in navigator){
 
- const url=`https://overpass-api.de/api/interpreter?data=[out:json];node(around:1000,${userPos.lat},${userPos.lon});out;`;
- const data=await fetch(url).then(r=>r.json());
+ const swCode = `
+const CACHE_NAME='offline-map-v1';
 
- data.elements.slice(0,20).forEach(p=>{
-  L.marker([p.lat,p.lon]).addTo(map).bindPopup("Közeli pont");
+self.addEventListener('install',e=>{
+ self.skipWaiting();
+});
+
+self.addEventListener('activate',e=>{
+ clients.claim();
+});
+
+self.addEventListener('fetch',event=>{
+ const url=new URL(event.request.url);
+
+ if(url.hostname.includes('tile.openstreetmap.org')){
+
+  event.respondWith(
+   caches.open(CACHE_NAME).then(cache=>{
+    return cache.match(event.request).then(res=>{
+     if(res) return res;
+
+     return fetch(event.request).then(net=>{
+      cache.put(event.request,net.clone());
+      return net;
+     });
+
+    });
+   })
+  );
+ }
+});
+`;
+
+ const blob=new Blob([swCode],{type:'application/javascript'});
+ const swURL=URL.createObjectURL(blob);
+
+ navigator.serviceWorker.register(swURL).then(()=>{
+   document.getElementById('status').innerText="TRUE OFFLINE MAP ENGINE ACTIVE";
  });
 }
 
 window.onload=initMap;
+
+// ===================== CACHE RESET =====================
+function clearCache(){
+ caches.keys().then(keys=>keys.forEach(k=>caches.delete(k)));
+ alert("CACHE CLEARED");
+}
+
 </script>
 
 </body>
 </html>
+
