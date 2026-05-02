@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>V13 DISPATCHER CORE - SHAPE ENGINE</title>
+  <title>V13.1 DISPATCH CORE FIX</title>
 
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -21,6 +21,7 @@
     .stop:hover, .dep:hover { background:#333; }
     input, button { margin:6px; padding:6px; }
     .small { font-size:12px; opacity:.7; }
+    .infoBox { padding:8px; background:#1b1b1b; margin:6px; border-radius:6px; font-size:12px; }
   </style>
 </head>
 <body>
@@ -28,11 +29,11 @@
 <div id="map"></div>
 
 <div id="panel">
-  <div id="header">🚦 V13 TRUE SHAPE-BASED ENGINE</div>
+  <div id="header">🚦 V13.1 DISPATCH CORE FIX</div>
 
   <input type="file" id="zipInput" />
-  <input id="search" placeholder="Search stop..." />
-  <button onclick="startSimulation()">Start LIVE VEHICLES</button>
+  <input id="search" placeholder="Search stop (name or ID)..." />
+  <button onclick="centerAllStops()">Show All Stops</button>
 
   <div id="stops"></div>
   <div id="departures"></div>
@@ -42,57 +43,75 @@
 const map = L.map('map').setView([47.4979,19.0402],12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let stops=[], stopTimes=[], trips=[], routes=[], shapes=[];
-
-let shapeMap = {}; // shape_id -> [{lat,lon,seq}]
+let stops=[], stopTimes=[], trips=[], routes=[];
+let stopIndex = new Map();
 let markersLayer=L.layerGroup().addTo(map);
-let vehiclesLayer=L.layerGroup().addTo(map);
 
-// ---------------- GTFS ZIP LOAD ----------------
+// ---------------- DISTANCE (HAVERSINE) ----------------
+function distance(a,b){
+  const R=6371000;
+  const dLat=(b.lat-a.lat)*Math.PI/180;
+  const dLon=(b.lon-a.lon)*Math.PI/180;
+
+  const x=
+    Math.sin(dLat/2)**2+
+    Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)**2;
+
+  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// ---------------- TIME ----------------
+function toSeconds(t){
+  if(!t) return 0;
+  const p=t.split(':');
+  return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
+}
+
+function nowSec(){
+  const d=new Date();
+  return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
+}
+
+// ---------------- INDEX ----------------
+function buildIndex(){
+  stopIndex.clear();
+  stops.forEach(s=>stopIndex.set(s.stop_id,s));
+}
+
+// ---------------- LOAD GTFS ----------------
 document.getElementById('zipInput').addEventListener('change', async (e)=>{
   const file=e.target.files[0];
   const zip=await JSZip.loadAsync(file);
 
-  const readCSV=async (name)=>{
-    const f=zip.file(name);
+  const read=async n=>{
+    const f=zip.file(n);
     if(!f) return [];
     const txt=await f.async('string');
     return Papa.parse(txt,{header:true}).data;
   };
 
-  stops=await readCSV('stops.txt');
-  stopTimes=await readCSV('stop_times.txt');
-  trips=await readCSV('trips.txt');
-  routes=await readCSV('routes.txt');
-  shapes=await readCSV('shapes.txt');
+  stops=await read('stops.txt');
+  stopTimes=await read('stop_times.txt');
+  trips=await read('trips.txt');
+  routes=await read('routes.txt');
 
-  buildShapeMap();
+  buildIndex();
   renderStops(stops);
 });
 
-// ---------------- SHAPE ENGINE ----------------
-function buildShapeMap(){
-  shapeMap = {};
+// ---------------- SEARCH (FIXED) ----------------
+document.getElementById('search').addEventListener('input',e=>{
+  const v=e.target.value.toLowerCase();
 
-  shapes.forEach(s=>{
-    if(!s.shape_id) return;
+  const res=stops.filter(s=>
+    (s.stop_name||'').toLowerCase().includes(v) ||
+    (s.stop_id||'').toLowerCase().includes(v)
+  );
 
-    if(!shapeMap[s.shape_id]) shapeMap[s.shape_id]=[];
+  renderStops(res);
+});
 
-    shapeMap[s.shape_id].push({
-      lat: parseFloat(s.shape_pt_lat),
-      lon: parseFloat(s.shape_pt_lon),
-      seq: parseInt(s.shape_pt_sequence)
-    });
-  });
-
-  // sort points
-  Object.keys(shapeMap).forEach(id=>{
-    shapeMap[id].sort((a,b)=>a.seq-b.seq);
-  });
-}
-
-// ---------------- STOP RENDER ----------------
+// ---------------- STOP LIST ----------------
 function renderStops(list){
   const c=document.getElementById('stops');
   c.innerHTML='';
@@ -103,21 +122,35 @@ function renderStops(list){
 
     const div=document.createElement('div');
     div.className='stop';
-    div.innerText=s.stop_name;
+
+    const dist=distance({lat:47.4979,lon:19.0402},{lat:+s.stop_lat,lon:+s.stop_lon});
+
+    div.innerHTML=`<b>${s.stop_name}</b><br><span class='small'>ID: ${s.stop_id} | ${(dist/1000).toFixed(2)} km</span>`;
+
     div.onclick=()=>selectStop(s);
     c.appendChild(div);
 
-    L.marker([s.stop_lat,s.stop_lon]).addTo(markersLayer).bindPopup(s.stop_name);
+    L.marker([s.stop_lat,s.stop_lon])
+      .addTo(markersLayer)
+      .bindPopup(s.stop_name+"<br>ID: "+s.stop_id);
   });
 }
 
-// ---------------- STOP SELECT ----------------
+// ---------------- STOP DETAILS + TIMETABLE ----------------
 function selectStop(stop){
   map.setView([stop.stop_lat,stop.stop_lon],15);
 
+  const now=nowSec();
+
   const deps=stopTimes
     .filter(t=>t.stop_id===stop.stop_id)
-    .slice(0,20)
+    .map(t=>{
+      const sec=toSeconds(t.departure_time);
+      return {...t,sec};
+    })
+    .filter(t=>t.sec>=now)
+    .sort((a,b)=>a.sec-b.sec)
+    .slice(0,15)
     .map(t=>{
       const trip=trips.find(x=>x.trip_id===t.trip_id)||{};
       const route=routes.find(r=>r.route_id===trip.route_id)||{};
@@ -130,7 +163,14 @@ function selectStop(stop){
     });
 
   const c=document.getElementById('departures');
-  c.innerHTML=`<h3>${stop.stop_name}</h3>`;
+  c.innerHTML=`
+    <div class='infoBox'>
+      <b>${stop.stop_name}</b><br>
+      Stop ID: ${stop.stop_id}<br>
+      Lat: ${stop.stop_lat} | Lon: ${stop.stop_lon}
+    </div>
+    <h3>Next departures</h3>
+  `;
 
   deps.forEach(d=>{
     const div=document.createElement('div');
@@ -140,55 +180,15 @@ function selectStop(stop){
   });
 }
 
-// ---------------- SEARCH ----------------
-document.getElementById('search').addEventListener('input',e=>{
-  const v=e.target.value.toLowerCase();
-  renderStops(stops.filter(s=>(s.stop_name||'').toLowerCase().includes(v)));
-});
-
-// ---------------- SHAPE MOVEMENT ENGINE ----------------
-function interpolate(path, t){
-  const idx = Math.floor(t);
-  const next = idx+1;
-  if(!path[idx] || !path[next]) return path[path.length-1];
-
-  const a = path[idx];
-  const b = path[next];
-
-  const f = t - idx;
-
-  return [
-    a.lat + (b.lat-a.lat)*f,
-    a.lon + (b.lon-a.lon)*f
-  ];
+// ---------------- CENTER ALL ----------------
+function centerAllStops(){
+  if(stops.length===0) return;
+  const group=stops.filter(s=>s.stop_lat);
+  const lat=group.reduce((a,b)=>a+parseFloat(b.stop_lat),0)/group.length;
+  const lon=group.reduce((a,b)=>a+parseFloat(b.stop_lon),0)/group.length;
+  map.setView([lat,lon],12);
 }
 
-// ---------------- LIVE VEHICLES ----------------
-function startSimulation(){
-  vehiclesLayer.clearLayers();
-
-  const sampleTrips = trips.slice(0,10);
-
-  sampleTrips.forEach((t,i)=>{
-    const shapeId = t.shape_id;
-    const path = shapeMap[shapeId];
-    if(!path || path.length<2) return;
-
-    const marker = L.circleMarker([path[0].lat,path[0].lon],{radius:6})
-      .addTo(vehiclesLayer);
-
-    let pos = 0;
-
-    setInterval(()=>{
-      pos += 0.3;
-      if(pos >= path.length-1) pos = 0;
-
-      const p = interpolate(path,pos);
-      marker.setLatLng(p);
-    }, 800 + i*120);
-  });
-}
 </script>
-
 </body>
 </html>
