@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Attila V3.3 SMART PARSER DISPATCH</title>
+<title>Attila V3.3 SMART PARSER DISPATCH (KÖV=SZAKASZ TÁV)</title>
 <style>
 body { font-family: Arial; background:#0f172a; color:#fff; padding:20px }
 input, button, textarea { padding:10px; margin:5px; border-radius:8px; border:none; width:100% }
@@ -17,8 +17,7 @@ th,td { border:1px solid #334155; padding:6px; text-align:center }
 <body>
 
 <h1>🚌 V3.3 SMART PARSER DISPATCH</h1>
-
-<p>Beillesztheted bárhogy: vessző / TAB / pontosvessző / Excel</p>
+<p>"KÖV" = következő megállóig tartó szakasz távolság (m)</p>
 
 <textarea id="input" style="height:160px">
 Cinkota H	0
@@ -45,45 +44,24 @@ Szentmihályi út	5393
 <script>
 function smartParseLine(line, idx){
   if(!line.trim()) return null;
-
-  // Split by comma, tab or semicolon
   let parts = line.split(/[,;\t]+/).map(p=>p.trim()).filter(p=>p!=="");
-
   if(parts.length < 2) return { error:true, raw:line };
-
-  // LAST element must be distance
   let distStr = parts[parts.length-1].replace(',', '.');
   let dist = parseFloat(distStr);
-
   if(isNaN(dist)) return { error:true, raw:line };
-
-  // Everything else is name (join back)
   let name = parts.slice(0, parts.length-1).join(' ');
-
-  return {
-    id: 'MH' + (1000 + idx),
-    name,
-    dist
-  };
+  return { id: 'MH' + (1000 + idx), name, dist };
 }
 
 function calc(){
   let lines = document.getElementById('input').value.split('\n');
-
-  let stops=[];
-  let logHTML="";
+  let stops=[]; let logHTML="";
 
   lines.forEach((line,i)=>{
     let res = smartParseLine(line,i);
-
     if(!res) return;
-
-    if(res.error){
-      logHTML += `<div class='err'>❌ Hibás sor: ${line}</div>`;
-    } else {
-      stops.push(res);
-      logHTML += `<div class='ok'>✔ ${res.name} (${res.dist})</div>`;
-    }
+    if(res.error){ logHTML += `<div class='err'>❌ Hibás sor: ${line}</div>`; }
+    else { stops.push(res); logHTML += `<div class='ok'>✔ ${res.name} (${res.dist})</div>`; }
   });
 
   document.getElementById('log').innerHTML = logHTML;
@@ -93,38 +71,15 @@ function calc(){
     return;
   }
 
-  // Sort by distance
+  // Rendezés távolság szerint
   stops.sort((a,b)=>a.dist-b.dist);
 
   let total = stops[stops.length-1].dist;
   let avgDist = total / (stops.length - 1);
 
   let html = '<table>';
-  html += '<tr><th>MH kód</th><th>Megálló neve</th><th>Össz táv (m)</th><th>Köv</th><th>Hátravan</th><th>% megtett</th><th>% hátravan</th><th>MH átlag</th></tr>';
+  html += '<tr><th>MH kód</th><th>Megálló neve</th><th>Össz táv (m)</th><th>KÖV (m)</th><th>Hátravan (m)</th><th>% megtett</th><th>% hátravan</th><th>MH átlag (m)</th></tr>';
 
   stops.forEach((s,i)=>{
-    let next = stops[i+1] ? stops[i+1].name : '-';
-    let remain = total - s.dist;
-    let donePerc = total>0 ? (s.dist/total)*100 : 0;
-    let remainPerc = 100 - donePerc;
-
-    html += `<tr>
-      <td>${s.id}</td>
-      <td>${s.name}</td>
-      <td>${s.dist.toFixed(0)}</td>
-      <td>${next}</td>
-      <td>${remain.toFixed(0)}</td>
-      <td>${donePerc.toFixed(1)}%</td>
-      <td>${remainPerc.toFixed(1)}%</td>
-      <td>${avgDist.toFixed(0)}</td>
-    </tr>`;
-  });
-
-  html += '</table>';
-
-  document.getElementById('out').innerHTML = html;
-}
-</script>
-
-</body>
-</html>
+    let next = stops[i+1];
+    let segment = next ? (next.dist - s.dist) : 0; // SZAKASZ TÁV
