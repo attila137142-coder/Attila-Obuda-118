@@ -31,15 +31,66 @@ Csobánka tér,6000
 
 <script>
 function calc(){
-  let raw=document.getElementById('input').value.trim().split('\n');
+  let rawLines=document.getElementById('input').value.split('
+');
 
-  let stops=raw.map((l,i)=>{
-    let [name,dist]=l.split(',');
-    return {
-      id:'MH'+(1000+i),
-      name:name.trim(),
-      dist:parseFloat(dist)
+  let stops=[];
+
+  rawLines.forEach((line,i)=>{
+    if(!line.trim()) return;
+
+    let parts=line.split(',');
+    if(parts.length<2) return;
+
+    let name=parts[0].trim();
+    let distStr=parts[1].trim().replace(',', '.'); // biztos ami biztos
+    let dist=parseFloat(distStr);
+
+    if(!isNaN(dist)){
+      stops.push({
+        id:'MH'+(1000+i),
+        name:name,
+        dist:dist
+      });
     }
+  });
+
+  if(stops.length<2){
+    document.getElementById('out').innerHTML='❌ Legalább 2 érvényes sor kell (név, szám)!';
+    return;
+  }
+
+  // rendezés távolság szerint (biztos legyen jó sorrend)
+  stops.sort((a,b)=>a.dist-b.dist);
+
+  let total=stops[stops.length-1].dist;
+  let avgDist=total/(stops.length-1);
+
+  let html='<table>';
+  html+='<tr><th>MH kód</th><th>Megálló neve</th><th>Össz táv (m)</th><th>Köv. MH</th><th>Hátravan (m)</th><th>% megtett</th><th>% hátravan</th><th>MH átlag (m)</th></tr>';
+
+  stops.forEach((s,i)=>{
+    let next=stops[i+1]?stops[i+1].name:'-';
+    let remain=total - s.dist;
+    let donePerc = total>0 ? (s.dist/total)*100 : 0;
+    let remainPerc = 100 - donePerc;
+
+    html+=`<tr>
+      <td>${s.id}</td>
+      <td>${s.name}</td>
+      <td>${s.dist.toFixed(0)}</td>
+      <td>${next}</td>
+      <td>${remain.toFixed(0)}</td>
+      <td>${donePerc.toFixed(1)}%</td>
+      <td>${remainPerc.toFixed(1)}%</td>
+      <td>${avgDist.toFixed(0)}</td>
+    </tr>`;
+  });
+
+  html+='</table>';
+
+  document.getElementById('out').innerHTML=html;
+}
   }).filter(x=>!isNaN(x.dist));
 
   if(stops.length<2) return;
