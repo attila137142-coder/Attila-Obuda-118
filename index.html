@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Attila MULTI STOP FINDER</title>
+<title>Attila MULTI STOP FINDER PRO</title>
 <style>
 body { font-family: Arial; background:#0f172a; color:#fff; padding:20px }
 input, button { padding:10px; margin:5px; border-radius:8px; border:none }
@@ -13,7 +13,7 @@ button { background:#22c55e; color:#fff; font-weight:bold; cursor:pointer }
 </head>
 <body>
 
-<h1>🚍 Attila MULTI STOP FINDER</h1>
+<h1>🚍 Attila MULTI STOP FINDER PRO</h1>
 
 <input id="q" placeholder="Megálló név vagy ID">
 <button onclick="searchAll()">KERESÉS</button>
@@ -21,33 +21,43 @@ button { background:#22c55e; color:#fff; font-weight:bold; cursor:pointer }
 <div id="results"></div>
 
 <script>
-// ====== GYV ======
-const gyvStops = [
-  {id:"005546847", name:"Hűvösvölgy", lat:47.5256, lon:18.9647, type:"GYV"},
-  {id:"005546862", name:"Szépjuhászné", lat:47.5202, lon:18.9776, type:"GYV"},
-  {id:"005546896", name:"Csillebérc", lat:47.4868, lon:18.9643, type:"GYV"}
-];
+let REAL_STOPS = [];
 
-// ====== DEMO BKK ======
-const bkkStops = [
-  {id:"F0457", name:"Nád utca", lat:47.55, lon:19.10, type:"BKK"},
-  {id:"F0682", name:"Csobánka tér", lat:47.56, lon:19.11, type:"BKK"}
-];
+// ===== GTFS BETÖLTÉS =====
+function loadGTFS(file){
+  let reader = new FileReader();
 
-// ====== DEMO MÁV ======
-const mavStops = [
-  {id:"M001", name:"Vác", lat:47.78, lon:19.13, type:"MÁV"}
-];
+  reader.onload = function(e){
+    let lines = e.target.result.split("\n");
+    let headers = lines[0].split(",");
 
-// ====== DEMO VOLÁN ======
-const volanStops = [
-  {id:"V001", name:"Vác autóbusz állomás", lat:47.78, lon:19.14, type:"VOLÁN"}
-];
+    let nameIdx = headers.indexOf("stop_name");
+    let idIdx = headers.indexOf("stop_id");
+    let latIdx = headers.indexOf("stop_lat");
+    let lonIdx = headers.indexOf("stop_lon");
 
-// ====== ÖSSZEFŰZÉS ======
-const ALL = [...gyvStops, ...bkkStops, ...mavStops, ...volanStops];
+    REAL_STOPS = [];
 
-// ====== TÁVOLSÁG ======
+    for(let i=1;i<lines.length;i++){
+      let cols = lines[i].split(",");
+      if(cols.length < 5) continue;
+
+      REAL_STOPS.push({
+        id: cols[idIdx],
+        name: cols[nameIdx],
+        lat: parseFloat(cols[latIdx]),
+        lon: parseFloat(cols[lonIdx]),
+        type: "GTFS"
+      });
+    }
+
+    alert("GTFS betöltve: " + REAL_STOPS.length + " megálló");
+  };
+
+  reader.readAsText(file);
+}
+
+// ===== TÁVOLSÁG =====
 function dist(a,b,c,d){
   const R=6371000;
   const toRad=x=>x*Math.PI/180;
@@ -60,24 +70,33 @@ function dist(a,b,c,d){
   return R*C;
 }
 
-// ====== GPS ======
+// ===== GPS =====
 function getLoc(cb){
   navigator.geolocation.getCurrentPosition(p=>{
     cb(p.coords.latitude,p.coords.longitude);
   });
 }
 
-// ====== KERESÉS ======
+// ===== FORMÁZÁS =====
+function kmFormat(m){
+  return (m/1000).toFixed(2); // század km
+}
+
+function coordFormat(x){
+  return x.toFixed(6); // 6 tizedes
+}
+
+// ===== KERESÉS =====
 function searchAll(){
   let q=document.getElementById('q').value.toLowerCase();
 
-  let results=ALL.filter(s=>
+  let results=REAL_STOPS.filter(s=>
     s.name.toLowerCase().includes(q) ||
     s.id.toLowerCase().includes(q)
   );
 
   if(results.length===0){
-    document.getElementById('results').innerHTML="❌ Nincs találat";
+    document.getElementById('results').innerHTML="❌ Nincs találat (nincs betöltve GTFS?)";
     return;
   }
 
@@ -94,11 +113,11 @@ function searchAll(){
       let road=d*1.3;
 
       html+=`<div class="card">
-        <b>${s.name}</b> (${s.type})<br>
+        <b>${s.name}</b><br>
         🆔 ${s.id}<br>
-        📍 ${s.lat}, ${s.lon}<br>
-        📏 ${d.toFixed(0)} m<br>
-        🛣️ ~${road.toFixed(0)} m
+        📍 ${coordFormat(s.lat)}, ${coordFormat(s.lon)}<br>
+        📏 Légvonal: ${kmFormat(d)} km<br>
+        🛣️ Úton: ${kmFormat(road)} km
       </div>`;
     });
 
@@ -110,3 +129,4 @@ function searchAll(){
 
 </body>
 </html>
+
