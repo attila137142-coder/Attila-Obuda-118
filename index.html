@@ -3,7 +3,10 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Attila MULTI GTFS ENGINE V4</title>
+<title>VOLÁN CLEAN GTFS ENGINE</title>
+
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
 <style>
 body { font-family: Arial; background:#0f172a; color:#fff; padding:20px }
 input, button { padding:10px; margin:5px; border-radius:8px; border:none }
@@ -14,53 +17,40 @@ button { background:#22c55e; color:#fff; font-weight:bold; cursor:pointer }
 </head>
 <body>
 
-<h1>🚍 Attila MULTI GTFS ENGINE V4</h1>
+<h1>🚍 VOLÁN CLEAN GTFS ENGINE</h1>
 
-<input id="q" placeholder="Megálló / ID">
-<button onclick="searchAll()">KERESÉS</button>
-<button onclick="loadAllGTFS()">GTFS BETÖLTÉS (GitHub)</button>
+<input id="q" placeholder="Megálló név vagy ID">
+<button onclick="searchStops()">KERESÉS</button>
+<button onclick="loadVolanGTFS()">VOLÁN GTFS BETÖLTÉS</button>
 
 <div id="results"></div>
 
 <script>
-// ===== ADATOK =====
-let STOPS=[];
-let ROUTES=[];
-let TRIPS=[];
-let STOP_TIMES=[];
 
-// ===== GTFS BETÖLTÉS =====
-async function loadFile(url){
+let STOPS = [];
+
+// ===== GTFS BETÖLTÉS (VOLÁN) =====
+async function loadVolanGTFS(){
+
+  // IDE TEDD A SAJÁT VOLÁN RAW LINKED
+  let url = "https://raw.githubusercontent.com/attila137142-coder/Attila-Obuda-118/main/stops.txt";
+
   let res = await fetch(url);
-  return await res.text();
-}
+  let text = await res.text();
 
-function parseCSV(text){
-  return text.split("\n").map(l=>l.split(","));
-}
+  let parsed = Papa.parse(text, {
+    header: true,
+    skipEmptyLines: true
+  });
 
-async function loadAllGTFS(){
+  STOPS = parsed.data.map(s => ({
+    id: s.stop_id,
+    name: s.stop_name,
+    lat: parseFloat(s.stop_lat),
+    lon: parseFloat(s.stop_lon)
+  }));
 
-  let base="https://raw.githubusercontent.com/attila137142-coder/Attila-Obuda-118/main/";
-
-  let [stops, routes, trips, stopTimes] = await Promise.all([
-    loadFile(base+"stops.txt"),
-    loadFile(base+"routes.txt"),
-    loadFile(base+"trips.txt"),
-    loadFile(base+"stop_times.txt")
-  ]);
-
-  let s=parseCSV(stops);
-  let r=parseCSV(routes);
-  let t=parseCSV(trips);
-  let st=parseCSV(stopTimes);
-
-  STOPS=s.slice(1).map(x=>({id:x[0],name:x[1],lat:parseFloat(x[2]),lon:parseFloat(x[3])}));
-  ROUTES=r.slice(1).map(x=>({id:x[0],name:x[2]}));
-  TRIPS=t.slice(1).map(x=>({id:x[2],route:x[0]}));
-  STOP_TIMES=st.slice(1).map(x=>({trip:x[0],stop:x[3],time:x[1]}));
-
-  alert("GTFS betöltve: " + STOPS.length + " megálló");
+  alert("VOLÁN GTFS betöltve: " + STOPS.length + " megálló");
 }
 
 // ===== TÁVOLSÁG =====
@@ -69,40 +59,34 @@ function dist(a,b,c,d){
   const toRad=x=>x*Math.PI/180;
   let dLat=toRad(c-a);
   let dLon=toRad(d-b);
-  let A=Math.sin(dLat/2)**2+
-    Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
+
+  let A=Math.sin(dLat/2)**2 +
+    Math.cos(toRad(a))*Math.cos(toRad(c))*
+    Math.sin(dLon/2)**2;
+
+  let C=2*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
+  return R*C;
 }
 
 // ===== GPS =====
 function getLoc(cb){
-  navigator.geolocation.getCurrentPosition(p=>cb(p.coords.latitude,p.coords.longitude));
-}
-
-// ===== JÁRATOK KERESÉSE =====
-function getRoutesForStop(stopId){
-  let tripsForStop = STOP_TIMES.filter(x=>x.stop==stopId).map(x=>x.trip);
-  let routes=[];
-
-  tripsForStop.forEach(tripId=>{
-    let trip=TRIPS.find(t=>t.id==tripId);
-    if(trip) routes.push(trip.route);
+  navigator.geolocation.getCurrentPosition(p=>{
+    cb(p.coords.latitude,p.coords.longitude);
   });
-
-  return [...new Set(routes)];
 }
 
 // ===== KERESÉS =====
-function searchAll(){
+function searchStops(){
 
   let q=document.getElementById('q').value.toLowerCase();
 
-  let results=STOPS.filter(s=>
-    s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q)
+  let results = STOPS.filter(s=>
+    (s.name && s.name.toLowerCase().includes(q)) ||
+    (s.id && s.id.toLowerCase().includes(q))
   );
 
-  if(results.length==0){
-    document.getElementById('results').innerHTML="❌ nincs találat";
+  if(results.length===0){
+    document.getElementById('results').innerHTML="❌ Nincs találat (GTFS betöltve?)";
     return;
   }
 
@@ -115,15 +99,15 @@ function searchAll(){
     results.forEach(s=>{
 
       let d=dist(lat,lon,s.lat,s.lon);
-      let routes=getRoutesForStop(s.id);
 
-      html+=`<div class='card'>
-        <b>${s.name}</b><br>
-        🆔 ${s.id}<br>
-        📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}<br>
-        📏 ${ (d/1000).toFixed(2)} km<br>
-        🚌 Vonalak: ${routes.join(", ") || "nincs"}
-      </div>`;
+      html += `
+        <div class="card">
+          <b>${s.name}</b><br>
+          🆔 ${s.id}<br>
+          📍 ${s.lat?.toFixed(6)}, ${s.lon?.toFixed(6)}<br>
+          📏 ${ (d/1000).toFixed(2)} km
+        </div>
+      `;
 
     });
 
