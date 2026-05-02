@@ -1,9 +1,10 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>V13.2 DISPATCH CORE - TABLE + LIVE CONTEXT</title>
+  <title>V13.3 PERSISTENT MOBILE DISPATCH CORE</title>
 
   <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -24,11 +25,7 @@
     input, button { margin:6px; padding:6px; }
     .small { font-size:12px; opacity:.7; }
 
-    table { width:100%; border-collapse:collapse; margin-top:10px; }
-    th, td { border-bottom:1px solid #333; padding:6px; font-size:12px; }
-
-    .fast { color:#ff4d4d; font-weight:bold; }
-    .delay { color:#4da6ff; }
+    .infoBox { padding:8px; background:#1b1b1b; margin:6px; border-radius:6px; font-size:12px; }
   </style>
 </head>
 <body>
@@ -36,27 +33,127 @@
 <div id="map"></div>
 
 <div id="panel">
-  <div id="header">🚦 V13.2 DISPATCH CORE TABLE MODE</div>
+  <div id="header">🚦 V13.3 PERSISTENT MOBILE CORE</div>
 
   <input type="file" id="zipInput" />
+  <input id="urlInput" placeholder="GTFS ZIP URL (optional)" />
+
+  <button onclick="loadFromURL()">Load from URL</button>
+  <button onclick="clearCache()">Clear Cache</button>
+
   <input id="search" placeholder="Search stop or ID..." />
-  <button onclick="centerAllStops()">Show All</button>
 
   <div id="stops"></div>
   <div id="departures"></div>
 </div>
 
 <script>
+const DB_NAME = "GTFS_DB_V13";
+let db;
+
+let stops=[], stopTimes=[], trips=[], routes=[];
+let markersLayer=L.layerGroup().addTo(map);
+
 const map = L.map('map').setView([47.4979,19.0402],12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let stops=[], stopTimes=[], trips=[], routes=[];
-let userPos=null;
-let markersLayer=L.layerGroup().addTo(map);
+// ---------------- INDEXEDDB ----------------
+function openDB(){
+  return new Promise((res,rej)=>{
+    const req=indexedDB.open(DB_NAME,1);
+    req.onupgradeneeded=e=>{
+      const db=e.target.result;
+      db.createObjectStore("data");
+    };
+    req.onsuccess=e=>{db=e.target.result;res(db)};
+    req.onerror=rej;
+  });
+}
 
-// ---------------- USER LOCATION ----------------
-navigator.geolocation?.watchPosition(pos=>{
-  userPos={lat:pos.coords.latitude, lon:pos.coords.longitude};
+function saveDB(key,val){
+  const tx=db.transaction("data","readwrite");
+  tx.objectStore("data").put(val,key);
+}
+
+function getDB(key){
+  return new Promise(res=>{
+    const tx=db.transaction("data","readonly");
+    const req=tx.objectStore("data").get(key);
+    req.onsuccess=()=>res(req.result||null);
+  });
+}
+
+// ---------------- INIT ----------------
+(async()=>{
+  await openDB();
+
+  const cached=await getDB("gtfs");
+  if(cached){
+    ({stops,stopTimes,trips,routes}=cached);
+    renderStops(stops);
+  }
+})();
+
+// ---------------- LOAD ZIP ----------------
+document.getElementById('zipInput').addEventListener('change', async e=>{
+  const zip=await JSZip.loadAsync(e.target.files[0]);
+
+  const read=async n=>{
+    const f=zip.file(n);
+    if(!f) return [];
+    const txt=await f.async('string');
+    return Papa.parse(txt,{header:true}).data;
+  };
+
+  stops=await read('stops.txt');
+  stopTimes=await read('stop_times.txt');
+  trips=await read('trips.txt');
+  routes=await read('routes.txt');
+
+  saveDB("gtfs",{stops,stopTimes,trips,routes});
+
+  renderStops(stops);
+});
+
+// ---------------- URL LOAD (MOBILE SAFE) ----------------
+async function loadFromURL(){
+  const url=document.getElementById('urlInput').value;
+  if(!url) return alert("No URL");
+
+  const res=await fetch(url);
+  const blob=await res.blob();
+  const zip=await JSZip.loadAsync(blob);
+
+  const read=async n=>{
+    const f=zip.file(n);
+    if(!f) return [];
+    const txt=await f.async('string');
+    return Papa.parse(txt,{header:true}).data;
+  };
+
+  stops=await read('stops.txt');
+  stopTimes=await read('stop_times.txt');
+  trips=await read('trips.txt');
+  routes=await read('routes.txt');
+
+  saveDB("gtfs",{stops,stopTimes,trips,routes});
+
+  renderStops(stops);
+}
+
+// ---------------- CLEAR CACHE ----------------
+async function clearCache(){
+  indexedDB.deleteDatabase(DB_NAME);
+  alert("Cache cleared. Reload page.");
+}
+
+// ---------------- SEARCH ----------------
+document.getElementById('search').addEventListener('input',e=>{
+  const v=e.target.value.toLowerCase();
+  renderStops(stops.filter(s=>
+    (s.stop_name||'').toLowerCase().includes(v) ||
+    (s.stop_id||'').toLowerCase().includes(v)
+  ));
 });
 
 // ---------------- DISTANCE ----------------
@@ -83,35 +180,7 @@ function now(){
   return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
 }
 
-// ---------------- LOAD GTFS ----------------
-document.getElementById('zipInput').addEventListener('change', async e=>{
-  const zip=await JSZip.loadAsync(e.target.files[0]);
-
-  const read=async n=>{
-    const f=zip.file(n);
-    if(!f) return [];
-    const txt=await f.async('string');
-    return Papa.parse(txt,{header:true}).data;
-  };
-
-  stops=await read('stops.txt');
-  stopTimes=await read('stop_times.txt');
-  trips=await read('trips.txt');
-  routes=await read('routes.txt');
-
-  renderStops(stops);
-});
-
-// ---------------- SEARCH ----------------
-document.getElementById('search').addEventListener('input',e=>{
-  const v=e.target.value.toLowerCase();
-  renderStops(stops.filter(s=>
-    (s.stop_name||'').toLowerCase().includes(v) ||
-    (s.stop_id||'').toLowerCase().includes(v)
-  ));
-});
-
-// ---------------- STOPS ----------------
+// ---------------- RENDER STOPS ----------------
 function renderStops(list){
   const c=document.getElementById('stops');
   c.innerHTML='';
@@ -123,10 +192,7 @@ function renderStops(list){
     const div=document.createElement('div');
     div.className='stop';
 
-    const dUser=userPos?distance(userPos,{lat:+s.stop_lat,lon:+s.stop_lon})/1000:0;
-
-    div.innerHTML=`<b>${s.stop_name}</b><br>
-      <span class='small'>ID: ${s.stop_id} | ${dUser.toFixed(2)} km</span>`;
+    div.innerHTML=`<b>${s.stop_name}</b><br><span class='small'>ID: ${s.stop_id}</span>`;
 
     div.onclick=()=>selectStop(s);
     c.appendChild(div);
@@ -150,15 +216,12 @@ function selectStop(stop){
       const trip=trips.find(x=>x.trip_id===t.trip_id)||{};
       const route=routes.find(r=>r.route_id===trip.route_id)||{};
 
-      const vehicleType=route.route_type||'unknown';
-
       return {
         route:route.route_short_name||'?',
         headsign:trip.trip_headsign||'?',
         time:t.departure_time,
         diff,
-        trip_id:t.trip_id,
-        type:vehicleType
+        trip_id:t.trip_id
       };
     })
     .filter(d=>d.diff>0)
@@ -168,16 +231,13 @@ function selectStop(stop){
   const c=document.getElementById('departures');
 
   c.innerHTML=`
-    <h3>${stop.stop_name}</h3>
-    <table>
-      <tr>
-        <th>Line</th>
-        <th>Destination</th>
-        <th>Departure</th>
-        <th>Remaining</th>
-        <th>Trip ID</th>
-        <th>Status</th>
-      </tr>
+    <div class='infoBox'>
+      <b>${stop.stop_name}</b><br>
+      Stop ID: ${stop.stop_id}<br>
+      Lat: ${stop.stop_lat} | Lon: ${stop.stop_lon}
+    </div>
+    <table width='100%'>
+      <tr><th>Line</th><th>Dest</th><th>Time</th><th>Remaining</th></tr>
     </table>
   `;
 
@@ -186,7 +246,6 @@ function selectStop(stop){
   deps.forEach(d=>{
     const min=Math.floor(d.diff/60);
     const sec=d.diff%60;
-
     const fast=d.diff<300;
 
     const tr=document.createElement('tr');
@@ -195,21 +254,11 @@ function selectStop(stop){
       <td>${d.route}</td>
       <td>${d.headsign}</td>
       <td>${d.time}</td>
-      <td class='${fast?'fast':''}'>${min}m ${sec}s</td>
-      <td class='small'>${d.trip_id}</td>
-      <td class='${fast?'fast':'delay'}'>${fast?'Siet':'Normál'}</td>
+      <td style='color:${fast?'red':'#4da6ff'}'>${min}m ${sec}s</td>
     `;
 
     table.appendChild(tr);
   });
-}
-
-// ---------------- CENTER ----------------
-function centerAllStops(){
-  const valid=stops.filter(s=>s.stop_lat);
-  const lat=valid.reduce((a,b)=>a+ +b.stop_lat,0)/valid.length;
-  const lon=valid.reduce((a,b)=>a+ +b.stop_lon,0)/valid.length;
-  map.setView([lat,lon],12);
 }
 </script>
 
