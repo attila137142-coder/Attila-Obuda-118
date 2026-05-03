@@ -3,27 +3,32 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ATTILA TOP FILE SCANNER</title>
+<title>ATTILA ULTRA CLEANER V3</title>
 
 <style>
-body { font-family: Arial; background:#0f172a; color:white; padding:15px }
+body { font-family: Arial; background:#0b1220; color:white; padding:15px }
 h1 { margin-bottom:10px }
 button { padding:10px; border:none; border-radius:8px; margin:5px; background:#22c55e; color:white; font-weight:bold }
 .card { background:#1e293b; padding:10px; border-radius:10px; margin-top:10px }
 .row { display:flex; justify-content:space-between; align-items:center; margin-top:6px }
 img, video { max-width:80px; border-radius:6px }
 .small { font-size:12px; opacity:0.7 }
+.warn { color:#f87171 }
+.ok { color:#22c55e }
 </style>
 
 </head>
 <body>
 
-<h1>💥 ATTILA TOP FILE SCANNER</h1>
+<h1>💥 ATTILA ULTRA CLEANER V3</h1>
 
 <input type="file" id="files" multiple>
 <br>
-<button onclick="scan()">🔍 TOP FÁJLOK KERESÉSE</button>
+<button onclick="scan()">🔍 Teljes Elemzés</button>
+<button onclick="findDuplicates()">🧠 Duplikátok</button>
+<button onclick="findLarge()">📦 Nagy fájlok</button>
 
+<div id="stats"></div>
 <div id="output"></div>
 
 <script>
@@ -34,30 +39,45 @@ document.getElementById("files").addEventListener("change", e=>{
   FILES=[...e.target.files];
 });
 
+function formatMB(size){ return (size/1024/1024).toFixed(2)+" MB" }
+
+// 📊 TELJES ELEMZÉS
 function scan(){
 
-  if(FILES.length===0){
-    alert("Nincs fájl kiválasztva!");
-    return;
-  }
+  if(FILES.length===0){ alert("Nincs fájl!"); return; }
 
-  let sorted=FILES.sort((a,b)=>b.size-a.size).slice(0,20);
+  let total=FILES.reduce((a,f)=>a+f.size,0);
 
-  let html=`<div class="card"><b>Top ${sorted.length} legnagyobb fájl</b></div>`;
+  let images=FILES.filter(f=>f.type.startsWith("image")).length;
+  let videos=FILES.filter(f=>f.type.startsWith("video")).length;
+
+  document.getElementById("stats").innerHTML=`
+    <div class="card">
+      📊 Fájlok: ${FILES.length}<br>
+      💾 Méret: ${formatMB(total)}<br>
+      📸 Képek: ${images}<br>
+      🎥 Videók: ${videos}
+    </div>
+  `;
+
+}
+
+// 📦 NAGY FÁJLOK
+function findLarge(){
+
+  let sorted=[...FILES].sort((a,b)=>b.size-a.size).slice(0,20);
+
+  let html="<div class='card'><b>TOP 20 legnagyobb fájl</b></div>";
 
   sorted.forEach(f=>{
 
     let url=URL.createObjectURL(f);
+    let preview="📄";
 
-    let preview="";
+    if(f.type.startsWith("image")) preview=`<img src="${url}">`;
+    if(f.type.startsWith("video")) preview=`<video src="${url}" controls></video>`;
 
-    if(f.type.startsWith("image")){
-      preview=`<img src="${url}">`;
-    } else if(f.type.startsWith("video")){
-      preview=`<video src="${url}" controls></video>`;
-    } else {
-      preview=`📄`;
-    }
+    let flag = f.size > 50*1024*1024 ? "<span class='warn'>⚠ nagy</span>" : "";
 
     html+=`
       <div class="card">
@@ -65,7 +85,7 @@ function scan(){
           ${preview}
           <div>
             <b>${f.name}</b><br>
-            <span class="small">${(f.size/1024/1024).toFixed(2)} MB</span>
+            <span class="small">${formatMB(f.size)}</span> ${flag}
           </div>
         </div>
       </div>
@@ -73,6 +93,43 @@ function scan(){
   });
 
   document.getElementById("output").innerHTML=html;
+}
+
+// 🧠 DUPLIKÁT
+function findDuplicates(){
+
+  let map={};
+
+  FILES.forEach(f=>{
+    let key=f.name+"_"+f.size;
+    if(!map[key]) map[key]=[];
+    map[key].push(f);
+  });
+
+  let groups=Object.values(map).filter(g=>g.length>1);
+
+  let html="";
+
+  groups.forEach(g=>{
+
+    html+=`<div class="card"><b>Duplikát (${g.length})</b>`;
+
+    g.forEach(f=>{
+      let url=URL.createObjectURL(f);
+
+      html+=`
+        <div class="row">
+          <img src="${url}">
+          <div class="small">${f.name}<br>${formatMB(f.size)}</div>
+        </div>
+      `;
+    });
+
+    html+="</div>";
+  });
+
+  document.getElementById("output").innerHTML=
+    html || "<div class='card ok'>✔ Nincs duplikát</div>";
 }
 
 </script>
