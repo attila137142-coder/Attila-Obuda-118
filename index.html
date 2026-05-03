@@ -1,101 +1,156 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ATTILA PRO STABLE ENGINE</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ATTILA FULL PRO MAP ENGINE</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+
 <style>
-body{font-family:Arial;background:#0b1220;color:#fff;padding:15px}
-button{padding:10px;border:none;border-radius:8px;margin:5px;background:#22c55e;color:#fff;font-weight:bold}
-input{padding:10px;border-radius:8px;width:80%}
-.card{background:#1e293b;padding:10px;border-radius:10px;margin-top:10px}
+body{margin:0;display:flex;height:100vh;font-family:Arial}
+#sidebar{width:320px;padding:10px;overflow:auto;border-right:1px solid #ccc}
+#map{flex:1}
+.stop{padding:6px;border-bottom:1px solid #eee;cursor:pointer}
+.stop:hover{background:#eee}
+input,button{width:100%;padding:8px;margin-bottom:6px}
 </style>
 </head>
 <body>
 
-<h1>🚀 ATTILA PRO STABLE ENGINE</h1>
-
+<div id="sidebar">
+<h3>🚀 PRO MAP ENGINE</h3>
 <button onclick="getLocation()">📍 Saját hely</button>
-<input id="q" placeholder="Megálló keresés...">
-<button onclick="search()">🔍</button>
+<input id="search" placeholder="Keresés..." />
+<div id="list"></div>
+</div>
 
-<div id="zone"></div>
-<div id="me"></div>
-<div id="out"></div>
+<div id="map"></div>
 
 <script>
 
-let STOPS=[];
+const map = L.map('map').setView([47.4979,19.0402],12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let cluster = L.markerClusterGroup();
+map.addLayer(cluster);
+
+let stops=[];
+let vehicles=[];
+let vehicleMarkers=[];
 let MY={lat:null,lon:null};
 
-// 🔥 ZÓNA ADAT (LIGHT!)
-const ZONES={
-  budapest:[
-    {id:"F011",name:"Nád utca",lat:47.55,lon:19.10},
-    {id:"F012",name:"Cinkota H",lat:47.52,lon:19.22}
-  ],
-  dunakanyar:[
-    {id:"D001",name:"Szentendre",lat:47.66,lon:19.07},
-    {id:"D002",name:"Vác",lat:47.78,lon:19.13}
-  ]
+// DEMO LIGHT STOPS
+stops=[
+ {id:'1',name:'Nád utca',lat:47.55,lon:19.10},
+ {id:'2',name:'Cinkota H',lat:47.52,lon:19.22},
+ {id:'3',name:'Szentendre',lat:47.66,lon:19.07}
+];
+
+// 📍 LOCATION
+function getLocation(){
+ navigator.geolocation.getCurrentPosition(pos=>{
+  MY.lat=pos.coords.latitude;
+  MY.lon=pos.coords.longitude;
+  map.setView([MY.lat,MY.lon],14);
+  renderStops();
+ });
+}
+
+// 🔥 SMART STOP RENDER
+function renderStops(){
+ cluster.clearLayers();
+
+ const center = map.getCenter();
+ const zoom = map.getZoom();
+
+ let radius = zoom<12 ? 1000 : 4000;
+
+ let visible = stops.filter(s=>{
+  return map.distance(center,[s.lat,s.lon]) < radius;
+ }).slice(0,100);
+
+ visible.forEach(s=>{
+  const m=L.marker([s.lat,s.lon]).on('click',()=>openStop(s));
+  cluster.addLayer(m);
+ });
+
+ renderList(visible);
+}
+
+// LIST
+function renderList(arr){
+ const list=document.getElementById('list');
+ list.innerHTML='';
+
+ arr.forEach(s=>{
+  const d=document.createElement('div');
+  d.className='stop';
+  d.innerText=s.name;
+  d.onclick=()=>openStop(s);
+  list.appendChild(d);
+ });
+}
+
+// 🔍 SEARCH
+search.oninput=e=>{
+ const q=e.target.value.toLowerCase();
+ const f=stops.filter(s=>s.name.toLowerCase().includes(q)).slice(0,50);
+ renderList(f);
 };
 
-// 📍 HELY
-function getLocation(){
-  navigator.geolocation.getCurrentPosition(pos=>{
-    MY.lat=pos.coords.latitude;
-    MY.lon=pos.coords.longitude;
-
-    document.getElementById('me').innerHTML=`
-    <div class='card'>📍 ${MY.lat.toFixed(6)}, ${MY.lon.toFixed(6)}</div>`;
-
-    detectZone();
-  });
+// 🚏 POPUP
+function openStop(s){
+ L.popup()
+  .setLatLng([s.lat,s.lon])
+  .setContent(`<b>${s.name}</b><br>🆔 ${s.id}`)
+  .openOn(map);
 }
 
-// 🧠 ZÓNA FELISMERÉS
-function detectZone(){
-
-  if(MY.lat>47.6){
-    STOPS=ZONES.dunakanyar;
-    document.getElementById('zone').innerHTML="🟡 Dunakanyar mód";
-  }else{
-    STOPS=ZONES.budapest;
-    document.getElementById('zone').innerHTML="🟢 Budapest mód";
-  }
+// 🚍 VEHICLE ENGINE (SMOOTH)
+function buildVehicles(){
+ vehicles=[];
+ for(let i=0;i<10;i++){
+  let s=stops[Math.floor(Math.random()*stops.length)];
+  vehicles.push({lat:s.lat,lon:s.lon,dx:0,dy:0});
+ }
 }
 
-// 🔍 KERESÉS
-function search(){
+function initVehicleMarkers(){
+ vehicleMarkers.forEach(m=>map.removeLayer(m));
+ vehicleMarkers=[];
 
-  let q=document.getElementById('q').value.toLowerCase();
-
-  let res=STOPS.filter(s=>s.name.toLowerCase().includes(q));
-
-  document.getElementById('out').innerHTML=res.map(s=>{
-
-    let d = MY.lat ? distance(MY.lat,MY.lon,s.lat,s.lon) : 0;
-
-    return `
-      <div class='card'>
-        <b>${s.name}</b><br>
-        🆔 ${s.id}<br>
-        📏 ${Math.round(d)} m / ${(d/1000).toFixed(2)} km
-      </div>`;
-
-  }).join('');
+ vehicles.forEach(v=>{
+  const m=L.circleMarker([v.lat,v.lon],{radius:6,color:'red'}).addTo(map);
+  vehicleMarkers.push(m);
+ });
 }
 
-// 📏 TÁVOLSÁG
-function distance(a,b,c,d){
-  const R=6371000;
-  const toRad=x=>x*Math.PI/180;
-  let dLat=toRad(c-a);
-  let dLon=toRad(d-b);
-  let A=Math.sin(dLat/2)**2+
-    Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
+function updateVehicles(){
+ vehicles.forEach((v,i)=>{
+  v.dx += (Math.random()-0.5)*0.0005;
+  v.dy += (Math.random()-0.5)*0.0005;
+
+  v.lat += v.dx;
+  v.lon += v.dy;
+
+  vehicleMarkers[i].setLatLng([v.lat,v.lon]);
+ });
 }
+
+buildVehicles();
+initVehicleMarkers();
+setInterval(updateVehicles,2000);
+
+// MAP EVENTS
+map.on('moveend', renderStops);
+map.on('zoomend', renderStops);
+
+renderStops();
 
 </script>
 
