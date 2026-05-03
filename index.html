@@ -2,36 +2,26 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
+<title>V6 Route Animation Engine</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>V3 STABLE GTFS ENGINE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body{margin:0;font-family:Arial;display:flex;height:100vh}
-#side{width:380px;padding:10px;overflow:auto;border-right:1px solid #ccc}
-#map{flex:1}
-.stop{padding:6px;border-bottom:1px solid #eee;cursor:pointer}
-.stop:hover{background:#f0f0f0}
-input,button{width:100%;padding:8px;margin:4px 0}
-#status{font-size:12px;margin-bottom:8px}
+body { margin:0; display:flex; height:100vh; font-family:Arial; }
+#sidebar { width:360px; padding:10px; overflow:auto; border-right:1px solid #ccc; }
+#map { flex:1; }
+.stop { padding:6px; border-bottom:1px solid #eee; cursor:pointer; }
+.stop:hover { background:#f2f2f2; }
+button { width:100%; padding:8px; margin-top:8px; }
 </style>
 </head>
 
 <body>
 
-<div id="side">
-<h3>🚆 V3 STABLE GTFS ENGINE</h3>
-
-<div id="status">INIT...</div>
-
-<input type="file" id="zip" multiple>
-<button onclick="clearAll()">🗑 CLEAR CORE</button>
-
-<input id="search" placeholder="keresés...">
-
+<div id="sidebar">
+<h3>🚆 V6 ROUTE ENGINE</h3>
 <div id="list"></div>
 </div>
 
@@ -39,191 +29,137 @@ input,button{width:100%;padding:8px;margin:4px 0}
 
 <script>
 
-// ================= MAP =================
-const map = L.map('map').setView([47.5,19.04],11);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
-.addTo(map);
+const map = L.map('map').setView([47.5,19.05],11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ================= DATA =================
-let STOPS = [];
-let STOP_TIMES = [];
-let TRIPS = {};
-let ROUTES = {};
+// ================= SAMPLE GTFS-LIKE DATA =================
+const STOPS = [
+  {id:"A", name:"Budapest", lat:47.4979, lon:19.0402},
+  {id:"B", name:"Szentendre", lat:47.6611, lon:19.0756},
+  {id:"C", name:"Tahitótfalu", lat:47.7517, lon:19.0782},
+  {id:"D", name:"Vác", lat:47.7819, lon:19.1296}
+];
 
-// ================= SAFE PARSE =================
-function parseCSV(text){
-  const lines = text.split(/\r?\n/).filter(Boolean);
-  const header = lines[0].split(",");
-  return {lines,header};
+const STOP_TIMES = [
+  {trip:"T1", stop:"A", time:"08:00:00"},
+  {trip:"T1", stop:"B", time:"08:25:00"},
+  {trip:"T1", stop:"C", time:"08:45:00"},
+  {trip:"T1", stop:"D", time:"09:10:00"}
+];
+
+const TRIPS = {
+  "T1": { route:"BKK-150", head:"Vác felé" }
+};
+
+// ================= CORE =================
+let ACTIVE = [];
+
+function timeToSec(t){
+  const p = t.split(":");
+  return (+p[0])*3600 + (+p[1])*60 + (+p[2]);
 }
 
-// ================= LOAD ZIP =================
-async function loadZip(file){
-  const zip = await JSZip.loadAsync(file);
-
-  // STOPS
-  if(zip.file("stops.txt")){
-    const t = await zip.file("stops.txt").async("string");
-    const {lines,header} = parseCSV(t);
-
-    const i = {
-      id: header.indexOf("stop_id"),
-      name: header.indexOf("stop_name"),
-      lat: header.indexOf("stop_lat"),
-      lon: header.indexOf("stop_lon")
-    };
-
-    STOPS = lines.slice(1).map(l=>{
-      const c = l.split(",");
-      return {
-        id:c[i.id],
-        name:c[i.name],
-        lat:+c[i.lat],
-        lon:+c[i.lon]
-      };
-    });
-  }
-
-  // ROUTES
-  if(zip.file("routes.txt")){
-    const t = await zip.file("routes.txt").async("string");
-    const {lines,header} = parseCSV(t);
-
-    const i = {
-      id: header.indexOf("route_id"),
-      name: header.indexOf("route_short_name")
-    };
-
-    lines.slice(1).forEach(l=>{
-      const c=l.split(",");
-      ROUTES[c[i.id]] = c[i.name];
-    });
-  }
-
-  // TRIPS
-  if(zip.file("trips.txt")){
-    const t = await zip.file("trips.txt").async("string");
-    const {lines,header} = parseCSV(t);
-
-    const i = {
-      id: header.indexOf("trip_id"),
-      route: header.indexOf("route_id"),
-      head: header.indexOf("trip_headsign")
-    };
-
-    lines.slice(1).forEach(l=>{
-      const c=l.split(",");
-      TRIPS[c[i.id]] = {
-        route: ROUTES[c[i.route]],
-        head: c[i.head]
-      };
-    });
-  }
-
-  // STOP TIMES
-  if(zip.file("stop_times.txt")){
-    const t = await zip.file("stop_times.txt").async("string");
-    const {lines,header} = parseCSV(t);
-
-    const i = {
-      stop: header.indexOf("stop_id"),
-      trip: header.indexOf("trip_id"),
-      time: header.indexOf("departure_time")
-    };
-
-    STOP_TIMES = lines.slice(1).map(l=>{
-      const c=l.split(",");
-      return {
-        stop:c[i.stop],
-        trip:c[i.trip],
-        time:c[i.time]
-      };
-    });
-  }
-
-  document.getElementById("status").innerText =
-    `✔ STOPS: ${STOPS.length} | TRIPS: ${Object.keys(TRIPS).length}`;
-
-  render();
+function interpolate(a,b,t){
+  return [
+    a[0] + (b[0]-a[0])*t,
+    a[1] + (b[1]-a[1])*t
+  ];
 }
 
-// ================= RENDER =================
-let markers=[];
-
-function render(){
-  markers.forEach(m=>map.removeLayer(m));
-  markers=[];
-
-  document.getElementById("list").innerHTML="";
-
-  STOPS.forEach(s=>{
-    const m=L.marker([s.lat,s.lon]).addTo(map);
-    markers.push(m);
-
-    const d=document.createElement("div");
-    d.className="stop";
-    d.innerText=s.name;
-
-    d.onclick=()=>openStop(s);
-    document.getElementById("list").appendChild(d);
-  });
-}
-
-// ================= STOP PANEL =================
-function openStop(stop){
-
-  const now = new Date();
-  const cur = now.getHours()*3600 + now.getMinutes()*60;
+// ================= BUILD ROUTE =================
+function buildRoute(tripId){
 
   const times = STOP_TIMES
-    .filter(t=>t.stop===stop.id)
-    .slice(0,10);
+    .filter(t=>t.trip===tripId)
+    .map(t=>{
+      const s = STOPS.find(x=>x.id===t.stop);
+      return {
+        ...t,
+        sec: timeToSec(t.time),
+        pos:[s.lat,s.lon]
+      };
+    })
+    .sort((a,b)=>a.sec-b.sec);
 
-  let html = `<b>${stop.name}</b><br><br>`;
-
-  times.forEach(t=>{
-    const trip = TRIPS[t.trip];
-    if(!trip) return;
-
-    html += `🚌 ${trip.route || "?"} → ${trip.head || ""}<br>${t.time}<br><br>`;
-  });
-
-  L.popup()
-    .setLatLng([stop.lat,stop.lon])
-    .setContent(html)
-    .openOn(map);
+  return times;
 }
 
-// ================= SEARCH =================
-search.oninput = e=>{
-  const q=e.target.value.toLowerCase();
+// ================= START VEHICLE =================
+function startTrip(tripId){
 
-  const f=STOPS.filter(s=>
-    s.name.toLowerCase().includes(q) ||
-    s.id.toLowerCase().includes(q)
-  );
-
-  document.getElementById("list").innerHTML="";
-
-  f.forEach(s=>{
-    const d=document.createElement("div");
-    d.className="stop";
-    d.innerText=s.name;
-    d.onclick=()=>openStop(s);
-    document.getElementById("list").appendChild(d);
+  ACTIVE.push({
+    tripId,
+    route: buildRoute(tripId),
+    index:0,
+    progress:0
   });
-};
-
-// ================= CLEAR =================
-function clearAll(){
-  STOPS=[];STOP_TIMES=[];TRIPS={};ROUTES={};
-  location.reload();
 }
 
-// ================= INIT =================
-document.getElementById("zip").onchange=e=>{
-  for(const f of e.target.files) loadZip(f);
-};
+// ================= ANIMATION =================
+function update(){
+
+  ACTIVE.forEach(v=>{
+
+    const r = v.route;
+    const a = r[v.index];
+    const b = r[v.index+1];
+
+    if(!a || !b) return;
+
+    v.progress += 0.02;
+
+    const pos = interpolate(a.pos,b.pos,v.progress);
+
+    L.circleMarker(pos,{
+      radius:6,
+      color:"red"
+    }).addTo(map)
+    .bindPopup(`
+      🚌 ${TRIPS[v.tripId].route}<br>
+      ➜ ${TRIPS[v.tripId].head}
+    `);
+
+    if(v.progress>=1){
+      v.progress=0;
+      v.index++;
+    }
+
+  });
+}
+
+// ================= LOOP =================
+setInterval(()=>{
+
+  map.eachLayer(l=>{
+    if(l instanceof L.CircleMarker) map.removeLayer(l);
+  });
+
+  update();
+
+}, 400);
+
+// ================= UI =================
+function renderStops(){
+
+  const list = document.getElementById("list");
+  list.innerHTML="";
+
+  STOPS.forEach(s=>{
+
+    const div = document.createElement("div");
+    div.className="stop";
+    div.innerHTML = `<b>${s.name}</b><br>${s.id}`;
+
+    div.onclick = ()=>{
+      map.setView([s.lat,s.lon],13);
+      startTrip("T1");
+    };
+
+    list.appendChild(div);
+  });
+}
+
+renderStops();
 
 </script>
 
