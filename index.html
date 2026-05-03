@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ATTILA ULTRA SMART SEARCH + AUTO GTFS LOADER</title>
+<title>ATTILA FULL TRANSPORT ENGINE (TRACKING)</title>
 
 <style>
 body { font-family: Arial; background:#0b1220; color:white; padding:15px }
@@ -11,171 +11,154 @@ h1 { margin-bottom:10px }
 button { padding:10px; border:none; border-radius:8px; margin:5px; background:#22c55e; color:white; font-weight:bold }
 input { padding:10px; border-radius:8px; width:80% }
 .card { background:#1e293b; padding:10px; border-radius:10px; margin-top:10px }
-.small { font-size:12px; opacity:0.7 }
-.warn { color:#f87171 }
-.ok { color:#22c55e }
+.bus { color:#22c55e }
+.train { color:#60a5fa }
+.warn { color:red }
 </style>
 
 </head>
 <body>
 
-<h1>🧠 ULTRA SMART SEARCH + AUTO GTFS LOADER</h1>
+<h1>🚍 ATTILA REALTIME VEHICLE TRACKING</h1>
 
 <input type="file" id="zipInput" accept=".zip">
-<button onclick="loadZIP()">📦 GTFS ZIP betöltés</button>
-<button onclick="getLocation()">📍 Saját helyzet</button>
+<button onclick="loadZIP()">📦 GTFS ZIP</button>
+<button onclick="getLocation()">📍 Saját hely</button>
+<button onclick="startTracking()">🚀 TRACKING START</button>
 
 <br><br>
-<input id="q" placeholder="Keresés (pl: nad utca, hidfo)" />
-<button onclick="search()">🔍 KERESÉS</button>
+<input id="q" placeholder="Megálló keresés..." />
+<button onclick="search()">🔍</button>
 
 <div id="me"></div>
 <div id="out"></div>
+<div id="vehicles"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 
 let STOPS=[];
+let VEHICLES=[];
 let MY={lat:null,lon:null};
 
-// 📍 HELYZET + CÍM
-async function getLocation(){
+// 📍 HELYZET
+function getLocation(){
+  navigator.geolocation.getCurrentPosition(pos=>{
+    MY.lat=pos.coords.latitude;
+    MY.lon=pos.coords.longitude;
 
-  navigator.geolocation.getCurrentPosition(async pos=>{
-
-    let lat=pos.coords.latitude;
-    let lon=pos.coords.longitude;
-    let acc=pos.coords.accuracy;
-
-    let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-    let data=await res.json();
-
-    let a=data.address||{};
-
-    document.getElementById("me").innerHTML=`
-      <div class='card'>
-      📍 ${lat.toFixed(6)}, ${lon.toFixed(6)}<br>
-      🌍 ${a.country||"-"}<br>
-      🏙 ${a.city||a.town||a.village||"-"}<br>
-      🏠 ${a.road||"-"} ${a.house_number||""}<br>
-      🎯 ±${Math.round(acc)} m
-      </div>`;
-
-    MY.lat=lat; MY.lon=lon;
-
+    document.getElementById("me").innerHTML=
+      `<div class='card'>📍 ${MY.lat.toFixed(6)}, ${MY.lon.toFixed(6)}</div>`;
   });
 }
 
-// 📦 ZIP → JSON AUTO
+// 📦 ZIP LOAD
 async function loadZIP(){
-
   let file=document.getElementById("zipInput").files[0];
-  if(!file) return alert("Nincs ZIP kiválasztva!");
+  if(!file) return alert("Nincs ZIP!");
 
-  try{
+  let zip=await JSZip.loadAsync(file);
+  let stopsFile=Object.keys(zip.files).find(f=>f.includes("stops.txt"));
 
-    let zip=await JSZip.loadAsync(file);
+  let txt=await zip.file(stopsFile).async("string");
 
-    let stopsFile=Object.keys(zip.files).find(f=>f.includes("stops.txt"));
+  let lines=txt.split("\n");
+  let h=lines[0].split(",");
 
-    if(!stopsFile) throw "Nincs stops.txt!";
+  let iId=h.indexOf("stop_id");
+  let iName=h.indexOf("stop_name");
+  let iLat=h.indexOf("stop_lat");
+  let iLon=h.indexOf("stop_lon");
 
-    let txt=await zip.file(stopsFile).async("string");
+  for(let i=1;i<lines.length;i++){
+    let r=lines[i].split(",");
+    if(r.length<4) continue;
 
-    let lines=txt.split("\n");
-    let headers=lines[0].split(",");
-
-    let iId=headers.indexOf("stop_id");
-    let iName=headers.indexOf("stop_name");
-    let iLat=headers.indexOf("stop_lat");
-    let iLon=headers.indexOf("stop_lon");
-
-    STOPS=[];
-
-    for(let i=1;i<lines.length;i++){
-      let row=lines[i].split(",");
-      if(row.length<4) continue;
-
-      STOPS.push({
-        id:row[iId],
-        name:row[iName],
-        lat:parseFloat(row[iLat]),
-        lon:parseFloat(row[iLon])
-      });
-    }
-
-    // 💾 mentés
-    localStorage.setItem("STOPS",JSON.stringify(STOPS));
-
-    alert("✔ Betöltve: "+STOPS.length+" megálló");
-
-  }catch(e){
-    alert("❌ Hiba: "+e);
+    STOPS.push({
+      id:r[iId],
+      name:r[iName],
+      lat:parseFloat(r[iLat]),
+      lon:parseFloat(r[iLon])
+    });
   }
+
+  localStorage.setItem("STOPS",JSON.stringify(STOPS));
+  alert("✔ "+STOPS.length+" megálló");
 }
 
-// 📥 AUTO LOAD
+// AUTO LOAD
 (function(){
   let s=localStorage.getItem("STOPS");
-  if(s){
-    STOPS=JSON.parse(s);
-    console.log("Auto betöltve:",STOPS.length);
-  }
+  if(s) STOPS=JSON.parse(s);
 })();
 
-// 🧠 NORMALIZÁLÁS
+// 🧠 SEARCH
 function norm(t){
-  return (t||"")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g,"")
-    .replace(/[^a-z0-9 ]/g,"");
+  return (t||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
 }
 
-// 📏 TÁVOLSÁG
-function dist(a,b,c,d){
-  const R=6371000;
-  const toRad=x=>x*Math.PI/180;
-  let dLat=toRad(c-a);
-  let dLon=toRad(d-b);
-  let A=Math.sin(dLat/2)**2+
-    Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
-}
-
-// 🔍 SEARCH
 function search(){
-
-  if(!STOPS.length) return alert("Nincs adat!");
-
   let q=norm(document.getElementById("q").value);
 
-  let res=STOPS.map(s=>{
-
-    let n=norm(s.name);
-    let score=0;
-
-    if(n.includes(q)) score+=2;
-    if(n.startsWith(q)) score+=3;
-
-    let d=MY.lat?dist(MY.lat,MY.lon,s.lat,s.lon):null;
-
-    return {...s,score,dist:d};
-
-  })
-  .filter(x=>x.score>0)
-  .sort((a,b)=>b.score-a.score)
-  .slice(0,20);
+  let res=STOPS.filter(s=>norm(s.name).includes(q)).slice(0,20);
 
   document.getElementById("out").innerHTML=
     res.map(s=>`
       <div class='card'>
         <b>${s.name}</b><br>
         🆔 ${s.id}<br>
-        📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}<br>
-        📏 ${s.dist?Math.round(s.dist)+" m":"n/a"}
+        📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}
       </div>
-    `).join("") || "<div class='card'>Nincs találat</div>";
+    `).join("");
+}
+
+// 🚀 VEHICLE TRACKING (SIMULÁLT)
+function startTracking(){
+
+  if(STOPS.length===0) return alert("Nincs adat!");
+
+  VEHICLES=[];
+
+  // random járművek generálása
+  for(let i=0;i<10;i++){
+    let s=STOPS[Math.floor(Math.random()*STOPS.length)];
+
+    VEHICLES.push({
+      id:i,
+      lat:s.lat,
+      lon:s.lon,
+      type: Math.random()>0.5?"bus":"train"
+    });
+  }
+
+  setInterval(updateVehicles,2000);
+}
+
+function updateVehicles(){
+
+  VEHICLES.forEach(v=>{
+    v.lat += (Math.random()-0.5)*0.001;
+    v.lon += (Math.random()-0.5)*0.001;
+  });
+
+  renderVehicles();
+}
+
+function renderVehicles(){
+
+  document.getElementById("vehicles").innerHTML = VEHICLES.map(v=>{
+
+    let icon = v.type==="bus" ? "🚍" : "🚆";
+    let cls = v.type==="bus" ? "bus" : "train";
+
+    return `
+      <div class='card'>
+        <span class='${cls}'>${icon} Jármű ${v.id}</span><br>
+        📍 ${v.lat.toFixed(6)}, ${v.lon.toFixed(6)}
+      </div>
+    `;
+
+  }).join("");
 }
 
 </script>
