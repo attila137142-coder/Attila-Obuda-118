@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ATTILA GTFS PRO + NEAREST ENGINE</title>
+<title>ATTILA REALTIME COLOR + VEHICLE LINK ENGINE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -11,28 +11,27 @@
 
 <style>
 body{margin:0;display:flex;height:100vh;font-family:Arial}
-#sidebar{width:340px;padding:10px;overflow:auto;border-right:1px solid #ccc}
+#sidebar{width:360px;padding:10px;overflow:auto;border-right:1px solid #ccc}
 #map{flex:1}
 .stop{padding:6px;border-bottom:1px solid #eee;cursor:pointer}
-.stop:hover{background:#eee}
+.stop:hover{background:#f0f0f0}
 input,button{width:100%;padding:8px;margin-bottom:6px}
-.card{background:#f5f5f5;padding:8px;margin-bottom:6px;border-radius:6px}
+.card{background:#f7f7f7;padding:8px;margin-bottom:6px;border-radius:8px}
 </style>
 </head>
 <body>
 
 <div id="sidebar">
-<h3>🚀 NEAREST STOP + GTFS</h3>
+<h3>🚀 REALTIME COLOR + VEHICLE</h3>
 
 <input type="file" id="file" accept=".zip">
-<button onclick="loadGTFS()">📦 GTFS Betöltés</button>
+<button onclick="loadGTFS()">📦 Betöltés</button>
 <button onclick="getLocation()">📍 Saját hely</button>
 
-<input id="search" placeholder="Keresés (név / ID / cím)...">
+<input id="search" placeholder="Keresés (név / ID / ékezet is)...">
 
-<h4>📌 10 legközelebbi</h4>
-<div id="nearest"></div>
-
+<h4>🚏 Megálló panel</h4>
+<div id="panel"></div>
 <hr>
 <div id="list"></div>
 </div>
@@ -45,144 +44,48 @@ const map = L.map('map').setView([47.4979,19.0402],12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let STOPS=[];
+let STOP_TIMES=[];
+let TRIPS={};
+let ROUTES={};
 let MY={lat:null,lon:null};
 let myMarker;
+let vehicleMarkers=[];
 
-// 📦 GTFS LOAD (STOPS ONLY CORE)
+// 🧠 NORMALIZE (FIX Tahitótfalu / Skanzen bug)
+function norm(t){
+return (t||"")
+.toLowerCase()
+.normalize("NFD")
+.replace(/[\u0300-\u036f]/g,"");
+}
+
+// 📦 UTF8 SAFE LOAD
 async function loadGTFS(){
-  const f=document.getElementById('file').files[0];
-  if(!f) return;
+const f=document.getElementById('file').files[0];
+if(!f) return;
 
-  const zip=await JSZip.loadAsync(f);
-  const txt=await zip.file("stops.txt").async("string");
+const zip=await JSZip.loadAsync(f);
 
-  const lines=txt.split('\n');
-  const h=lines[0].split(',');
+const stopsTxt=await zip.file("stops.txt").async("string");
+const sl=stopsTxt.split('\n');
+const sh=sl[0].split(',');
 
-  const idI=h.indexOf('stop_id');
-  const nI=h.indexOf('stop_name');
-  const laI=h.indexOf('stop_lat');
-  const loI=h.indexOf('stop_lon');
+const iId=sh.indexOf('stop_id');
+const iName=sh.indexOf('stop_name');
+const iLat=sh.indexOf('stop_lat');
+const iLon=sh.indexOf('stop_lon');
 
-  STOPS = lines.slice(1)
-    .map(l=>{
-      const c=l.split(',');
-      return {
-        id:c[idI],
-        name:c[nI],
-        lat:+c[laI],
-        lon:+c[loI]
-      };
-    })
-    .filter(s=>!isNaN(s.lat));
-
-  renderMap();
-}
-
-// 📍 LOCATION
-function getLocation(){
-  navigator.geolocation.getCurrentPosition(pos=>{
-    MY.lat=pos.coords.latitude;
-    MY.lon=pos.coords.longitude;
-
-    if(myMarker) map.removeLayer(myMarker);
-
-    myMarker = L.marker([MY.lat,MY.lon])
-      .addTo(map)
-      .bindPopup("📍 Saját hely")
-      .openPopup();
-
-    map.setView([MY.lat,MY.lon],14);
-    updateNearest();
-  });
-}
-
-// 📏 DISTANCE
-function dist(a,b,c,d){
-  const R=6371000;
-  const toRad=x=>x*Math.PI/180;
-  let dLat=toRad(c-a);
-  let dLon=toRad(d-b);
-  let A=Math.sin(dLat/2)**2+
-    Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
-}
-
-// 🚀 NEAREST 10 STOPS
-function updateNearest(){
-  if(!MY.lat) return;
-
-  let sorted = STOPS
-    .map(s=>{
-      return {...s,d:dist(MY.lat,MY.lon,s.lat,s.lon)};
-    })
-    .sort((a,b)=>a.d-b.d)
-    .slice(0,10);
-
-  const box=document.getElementById('nearest');
-  box.innerHTML='';
-
-  sorted.forEach(s=>{
-    const div=document.createElement('div');
-    div.className='card';
-    div.innerHTML=`
-      <b>${s.name}</b><br>
-      🆔 ${s.id}<br>
-      📏 ${Math.round(s.d)} m
-    `;
-    div.onclick=()=>map.setView([s.lat,s.lon],16);
-    box.appendChild(div);
-  });
-}
-
-// 🗺 MAP RENDER
-function renderMap(){
-  map.eachLayer(l=>{
-    if(l instanceof L.Marker && l!==myMarker) map.removeLayer(l);
-  });
-
-  const center=map.getCenter();
-
-  const visible = STOPS
-    .map(s=>({...s,d:map.distance(center,[s.lat,s.lon])}))
-    .filter(s=>s.d<4000)
-    .slice(0,150);
-
-  visible.forEach(s=>{
-    L.marker([s.lat,s.lon])
-      .bindTooltip(`${s.name} (${s.id})`)
-      .addTo(map);
-  });
-}
-
-// 🔍 MULTI SEARCH
-search.oninput=e=>{
-  const q=e.target.value.toLowerCase();
-
-  const f=STOPS
-    .filter(s=>
-      s.name.toLowerCase().includes(q) ||
-      (s.id||"").toLowerCase().includes(q)
-    )
-    .slice(0,100);
-
-  const list=document.getElementById('list');
-  list.innerHTML='';
-
-  f.forEach(s=>{
-    const d=document.createElement('div');
-    d.className='stop';
-    d.innerText=s.name;
-    d.onclick=()=>map.setView([s.lat,s.lon],16);
-    list.appendChild(d);
-  });
+STOPS = sl.slice(1)
+.map(l=>{
+const c=l.split(',');
+return {
+id:c[iId],
+name:c[iName],
+lat:+c[iLat],
+lon:+c[iLon]
 };
+})
+.filter(s=>!isNaN(s.lat));
 
-map.on('moveend',renderMap);
-
-</script>
-
-</body>
+const routesTxt=await zip.file("routes.txt").async("string");
 </html>
-
-
