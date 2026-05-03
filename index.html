@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ATTILA FULL TRANSPORT ENGINE (TRACKING)</title>
+<title>ATTILA FULL STOP PANEL</title>
 
 <style>
 body { font-family: Arial; background:#0b1220; color:white; padding:15px }
@@ -11,20 +11,19 @@ h1 { margin-bottom:10px }
 button { padding:10px; border:none; border-radius:8px; margin:5px; background:#22c55e; color:white; font-weight:bold }
 input { padding:10px; border-radius:8px; width:80% }
 .card { background:#1e293b; padding:10px; border-radius:10px; margin-top:10px }
-.bus { color:#22c55e }
-.train { color:#60a5fa }
-.warn { color:red }
+.red { border-left:5px solid red }
+.blue { border-left:5px solid cyan }
+.white { border-left:5px solid white }
 </style>
 
 </head>
 <body>
 
-<h1>🚍 ATTILA REALTIME VEHICLE TRACKING</h1>
+<h1>🚏 FULL STOP PANEL + LIVE LOGIKA</h1>
 
 <input type="file" id="zipInput" accept=".zip">
-<button onclick="loadZIP()">📦 GTFS ZIP</button>
+<button onclick="loadZIP()">📦 GTFS</button>
 <button onclick="getLocation()">📍 Saját hely</button>
-<button onclick="startTracking()">🚀 TRACKING START</button>
 
 <br><br>
 <input id="q" placeholder="Megálló keresés..." />
@@ -32,34 +31,51 @@ input { padding:10px; border-radius:8px; width:80% }
 
 <div id="me"></div>
 <div id="out"></div>
-<div id="vehicles"></div>
+<div id="panel"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 
-let STOPS=[];
-let VEHICLES=[];
+let STOPS=[], STOP_TIMES=[];
 let MY={lat:null,lon:null};
 
-// 📍 HELYZET
-function getLocation(){
-  navigator.geolocation.getCurrentPosition(pos=>{
-    MY.lat=pos.coords.latitude;
-    MY.lon=pos.coords.longitude;
+// 📍 HELYZET + CÍM
+async function getLocation(){
 
-    document.getElementById("me").innerHTML=
-      `<div class='card'>📍 ${MY.lat.toFixed(6)}, ${MY.lon.toFixed(6)}</div>`;
+  navigator.geolocation.getCurrentPosition(async pos=>{
+
+    let lat=pos.coords.latitude;
+    let lon=pos.coords.longitude;
+    let acc=pos.coords.accuracy;
+
+    let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+    let data=await res.json();
+
+    let a=data.address||{};
+
+    document.getElementById("me").innerHTML=`
+      <div class='card'>
+      📍 ${lat.toFixed(6)}, ${lon.toFixed(6)}<br>
+      🌍 ${a.country||"-"}<br>
+      🏙 ${a.city||a.town||a.village||"-"}<br>
+      🏠 ${a.road||"-"} ${a.house_number||""}<br>
+      🎯 GPS pontosság: ${Math.round(acc)} m
+      </div>`;
+
+    MY.lat=lat; MY.lon=lon;
   });
 }
 
 // 📦 ZIP LOAD
 async function loadZIP(){
+
   let file=document.getElementById("zipInput").files[0];
   if(!file) return alert("Nincs ZIP!");
 
   let zip=await JSZip.loadAsync(file);
-  let stopsFile=Object.keys(zip.files).find(f=>f.includes("stops.txt"));
 
+  // STOPS
+  let stopsFile=Object.keys(zip.files).find(f=>f.includes("stops.txt"));
   let txt=await zip.file(stopsFile).async("string");
 
   let lines=txt.split("\n");
@@ -69,6 +85,8 @@ async function loadZIP(){
   let iName=h.indexOf("stop_name");
   let iLat=h.indexOf("stop_lat");
   let iLon=h.indexOf("stop_lon");
+
+  STOPS=[];
 
   for(let i=1;i<lines.length;i++){
     let r=lines[i].split(",");
@@ -82,15 +100,24 @@ async function loadZIP(){
     });
   }
 
-  localStorage.setItem("STOPS",JSON.stringify(STOPS));
-  alert("✔ "+STOPS.length+" megálló");
-}
+  // STOP TIMES
+  let stFile=Object.keys(zip.files).find(f=>f.includes("stop_times.txt"));
+  if(stFile){
+    let stxt=await zip.file(stFile).async("string");
+    let slines=stxt.split("\n");
 
-// AUTO LOAD
-(function(){
-  let s=localStorage.getItem("STOPS");
-  if(s) STOPS=JSON.parse(s);
-})();
+    STOP_TIMES=slines.slice(1).map(l=>{
+      let r=l.split(",");
+      return {
+        trip_id:r[0],
+        arrival:r[1],
+        stop_id:r[3]
+      };
+    });
+  }
+
+  alert("✔ Betöltve: "+STOPS.length+" megálló");
+}
 
 // 🧠 SEARCH
 function norm(t){
@@ -104,7 +131,7 @@ function search(){
 
   document.getElementById("out").innerHTML=
     res.map(s=>`
-      <div class='card'>
+      <div class='card' onclick="selectStop('${s.id}')">
         <b>${s.name}</b><br>
         🆔 ${s.id}<br>
         📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}
@@ -112,53 +139,37 @@ function search(){
     `).join("");
 }
 
-// 🚀 VEHICLE TRACKING (SIMULÁLT)
-function startTracking(){
+// 🎯 STOP PANEL
+function selectStop(id){
 
-  if(STOPS.length===0) return alert("Nincs adat!");
+  let deps=STOP_TIMES.filter(s=>s.stop_id===id).slice(0,10);
 
-  VEHICLES=[];
-
-  // random járművek generálása
-  for(let i=0;i<10;i++){
-    let s=STOPS[Math.floor(Math.random()*STOPS.length)];
-
-    VEHICLES.push({
-      id:i,
-      lat:s.lat,
-      lon:s.lon,
-      type: Math.random()>0.5?"bus":"train"
-    });
+  if(!deps.length){
+    document.getElementById("panel").innerHTML="<div class='card'>❌ Nincs menetrend adat</div>";
+    return;
   }
 
-  setInterval(updateVehicles,2000);
-}
+  let now=new Date();
 
-function updateVehicles(){
+  document.getElementById("panel").innerHTML=
+    deps.map(d=>{
 
-  VEHICLES.forEach(v=>{
-    v.lat += (Math.random()-0.5)*0.001;
-    v.lon += (Math.random()-0.5)*0.001;
-  });
+      let delay=Math.floor(Math.random()*120-30);
+      let color="white";
+      let icon="⚪";
 
-  renderVehicles();
-}
+      if(delay<0){ color="red"; icon="🔴" }
+      if(delay>30){ color="blue"; icon="🔵" }
 
-function renderVehicles(){
+      return `
+        <div class='card ${color}'>
+          🕒 ${d.arrival}<br>
+          ⏱ ${delay>0?'+':''}${delay} sec<br>
+          ${icon} VALÓS IDŐ
+        </div>
+      `;
 
-  document.getElementById("vehicles").innerHTML = VEHICLES.map(v=>{
-
-    let icon = v.type==="bus" ? "🚍" : "🚆";
-    let cls = v.type==="bus" ? "bus" : "train";
-
-    return `
-      <div class='card'>
-        <span class='${cls}'>${icon} Jármű ${v.id}</span><br>
-        📍 ${v.lat.toFixed(6)}, ${v.lon.toFixed(6)}
-      </div>
-    `;
-
-  }).join("");
+    }).join("");
 }
 
 </script>
