@@ -3,29 +3,37 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ATTILA FULL PRO MAP ENGINE</title>
+<title>ATTILA GTFS PRO + NEAREST ENGINE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
-
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body{margin:0;display:flex;height:100vh;font-family:Arial}
-#sidebar{width:320px;padding:10px;overflow:auto;border-right:1px solid #ccc}
+#sidebar{width:340px;padding:10px;overflow:auto;border-right:1px solid #ccc}
 #map{flex:1}
 .stop{padding:6px;border-bottom:1px solid #eee;cursor:pointer}
 .stop:hover{background:#eee}
 input,button{width:100%;padding:8px;margin-bottom:6px}
+.card{background:#f5f5f5;padding:8px;margin-bottom:6px;border-radius:6px}
 </style>
 </head>
 <body>
 
 <div id="sidebar">
-<h3>🚀 PRO MAP ENGINE</h3>
+<h3>🚀 NEAREST STOP + GTFS</h3>
+
+<input type="file" id="file" accept=".zip">
+<button onclick="loadGTFS()">📦 GTFS Betöltés</button>
 <button onclick="getLocation()">📍 Saját hely</button>
-<input id="search" placeholder="Keresés..." />
+
+<input id="search" placeholder="Keresés (név / ID / cím)...">
+
+<h4>📌 10 legközelebbi</h4>
+<div id="nearest"></div>
+
+<hr>
 <div id="list"></div>
 </div>
 
@@ -36,123 +44,145 @@ input,button{width:100%;padding:8px;margin-bottom:6px}
 const map = L.map('map').setView([47.4979,19.0402],12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let cluster = L.markerClusterGroup();
-map.addLayer(cluster);
-
-let stops=[];
-let vehicles=[];
-let vehicleMarkers=[];
+let STOPS=[];
 let MY={lat:null,lon:null};
+let myMarker;
 
-// DEMO LIGHT STOPS
-stops=[
- {id:'1',name:'Nád utca',lat:47.55,lon:19.10},
- {id:'2',name:'Cinkota H',lat:47.52,lon:19.22},
- {id:'3',name:'Szentendre',lat:47.66,lon:19.07}
-];
+// 📦 GTFS LOAD (STOPS ONLY CORE)
+async function loadGTFS(){
+  const f=document.getElementById('file').files[0];
+  if(!f) return;
+
+  const zip=await JSZip.loadAsync(f);
+  const txt=await zip.file("stops.txt").async("string");
+
+  const lines=txt.split('\n');
+  const h=lines[0].split(',');
+
+  const idI=h.indexOf('stop_id');
+  const nI=h.indexOf('stop_name');
+  const laI=h.indexOf('stop_lat');
+  const loI=h.indexOf('stop_lon');
+
+  STOPS = lines.slice(1)
+    .map(l=>{
+      const c=l.split(',');
+      return {
+        id:c[idI],
+        name:c[nI],
+        lat:+c[laI],
+        lon:+c[loI]
+      };
+    })
+    .filter(s=>!isNaN(s.lat));
+
+  renderMap();
+}
 
 // 📍 LOCATION
 function getLocation(){
- navigator.geolocation.getCurrentPosition(pos=>{
-  MY.lat=pos.coords.latitude;
-  MY.lon=pos.coords.longitude;
-  map.setView([MY.lat,MY.lon],14);
-  renderStops();
- });
+  navigator.geolocation.getCurrentPosition(pos=>{
+    MY.lat=pos.coords.latitude;
+    MY.lon=pos.coords.longitude;
+
+    if(myMarker) map.removeLayer(myMarker);
+
+    myMarker = L.marker([MY.lat,MY.lon])
+      .addTo(map)
+      .bindPopup("📍 Saját hely")
+      .openPopup();
+
+    map.setView([MY.lat,MY.lon],14);
+    updateNearest();
+  });
 }
 
-// 🔥 SMART STOP RENDER
-function renderStops(){
- cluster.clearLayers();
-
- const center = map.getCenter();
- const zoom = map.getZoom();
-
- let radius = zoom<12 ? 1000 : 4000;
-
- let visible = stops.filter(s=>{
-  return map.distance(center,[s.lat,s.lon]) < radius;
- }).slice(0,100);
-
- visible.forEach(s=>{
-  const m=L.marker([s.lat,s.lon]).on('click',()=>openStop(s));
-  cluster.addLayer(m);
- });
-
- renderList(visible);
+// 📏 DISTANCE
+function dist(a,b,c,d){
+  const R=6371000;
+  const toRad=x=>x*Math.PI/180;
+  let dLat=toRad(c-a);
+  let dLon=toRad(d-b);
+  let A=Math.sin(dLat/2)**2+
+    Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
 }
 
-// LIST
-function renderList(arr){
- const list=document.getElementById('list');
- list.innerHTML='';
+// 🚀 NEAREST 10 STOPS
+function updateNearest(){
+  if(!MY.lat) return;
 
- arr.forEach(s=>{
-  const d=document.createElement('div');
-  d.className='stop';
-  d.innerText=s.name;
-  d.onclick=()=>openStop(s);
-  list.appendChild(d);
- });
+  let sorted = STOPS
+    .map(s=>{
+      return {...s,d:dist(MY.lat,MY.lon,s.lat,s.lon)};
+    })
+    .sort((a,b)=>a.d-b.d)
+    .slice(0,10);
+
+  const box=document.getElementById('nearest');
+  box.innerHTML='';
+
+  sorted.forEach(s=>{
+    const div=document.createElement('div');
+    div.className='card';
+    div.innerHTML=`
+      <b>${s.name}</b><br>
+      🆔 ${s.id}<br>
+      📏 ${Math.round(s.d)} m
+    `;
+    div.onclick=()=>map.setView([s.lat,s.lon],16);
+    box.appendChild(div);
+  });
 }
 
-// 🔍 SEARCH
+// 🗺 MAP RENDER
+function renderMap(){
+  map.eachLayer(l=>{
+    if(l instanceof L.Marker && l!==myMarker) map.removeLayer(l);
+  });
+
+  const center=map.getCenter();
+
+  const visible = STOPS
+    .map(s=>({...s,d:map.distance(center,[s.lat,s.lon])}))
+    .filter(s=>s.d<4000)
+    .slice(0,150);
+
+  visible.forEach(s=>{
+    L.marker([s.lat,s.lon])
+      .bindTooltip(`${s.name} (${s.id})`)
+      .addTo(map);
+  });
+}
+
+// 🔍 MULTI SEARCH
 search.oninput=e=>{
- const q=e.target.value.toLowerCase();
- const f=stops.filter(s=>s.name.toLowerCase().includes(q)).slice(0,50);
- renderList(f);
+  const q=e.target.value.toLowerCase();
+
+  const f=STOPS
+    .filter(s=>
+      s.name.toLowerCase().includes(q) ||
+      (s.id||"").toLowerCase().includes(q)
+    )
+    .slice(0,100);
+
+  const list=document.getElementById('list');
+  list.innerHTML='';
+
+  f.forEach(s=>{
+    const d=document.createElement('div');
+    d.className='stop';
+    d.innerText=s.name;
+    d.onclick=()=>map.setView([s.lat,s.lon],16);
+    list.appendChild(d);
+  });
 };
 
-// 🚏 POPUP
-function openStop(s){
- L.popup()
-  .setLatLng([s.lat,s.lon])
-  .setContent(`<b>${s.name}</b><br>🆔 ${s.id}`)
-  .openOn(map);
-}
-
-// 🚍 VEHICLE ENGINE (SMOOTH)
-function buildVehicles(){
- vehicles=[];
- for(let i=0;i<10;i++){
-  let s=stops[Math.floor(Math.random()*stops.length)];
-  vehicles.push({lat:s.lat,lon:s.lon,dx:0,dy:0});
- }
-}
-
-function initVehicleMarkers(){
- vehicleMarkers.forEach(m=>map.removeLayer(m));
- vehicleMarkers=[];
-
- vehicles.forEach(v=>{
-  const m=L.circleMarker([v.lat,v.lon],{radius:6,color:'red'}).addTo(map);
-  vehicleMarkers.push(m);
- });
-}
-
-function updateVehicles(){
- vehicles.forEach((v,i)=>{
-  v.dx += (Math.random()-0.5)*0.0005;
-  v.dy += (Math.random()-0.5)*0.0005;
-
-  v.lat += v.dx;
-  v.lon += v.dy;
-
-  vehicleMarkers[i].setLatLng([v.lat,v.lon]);
- });
-}
-
-buildVehicles();
-initVehicleMarkers();
-setInterval(updateVehicles,2000);
-
-// MAP EVENTS
-map.on('moveend', renderStops);
-map.on('zoomend', renderStops);
-
-renderStops();
+map.on('moveend',renderMap);
 
 </script>
 
 </body>
 </html>
+
+
