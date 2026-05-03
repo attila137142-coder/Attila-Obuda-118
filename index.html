@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>FULL HUNGARY CORE ENGINE V4 - LIVE DISPATCH</title>
+<title>EMBED ENGINE V2 PRO - FULL HUNGARY CORE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -11,190 +11,164 @@
 
 <style>
 body{margin:0;font-family:Arial;display:flex;height:100vh}
-#sidebar{width:380px;padding:10px;overflow:auto;border-right:1px solid #ccc}
+#left{width:380px;overflow:auto;padding:10px;border-right:1px solid #ccc}
 #map{flex:1}
-.card{background:#f4f4f4;padding:8px;margin:6px 0;border-radius:8px}
+.box{background:#f4f4f4;padding:8px;margin:6px 0;border-radius:8px}
+input,button{width:100%;padding:8px;margin:4px 0}
 .stop{padding:6px;border-bottom:1px solid #eee;cursor:pointer}
 .stop:hover{background:#eee}
-input,button{width:100%;padding:8px;margin:4px 0}
-#status{font-size:12px;margin-bottom:8px}
+small{color:#666}
 </style>
 </head>
 <body>
 
-<div id="sidebar">
-<h3>🚆 V4 LIVE DISPATCH ENGINE</h3>
-<div id="status">INIT...</div>
+<div id="left">
+<h3>🚆 EMBED ENGINE V2 PRO</h3>
 
-<input type="file" id="zip" multiple />
-<button onclick="importAll()">📦 GTFS IMPORT + MERGE</button>
-<button onclick="restore()">♻ AUTO RESTORE</button>
-<button onclick="clearDB()">🗑 RESET CORE</button>
+<input id="search" placeholder="Megálló / GTFS / kisvasút">
 
-<input id="search" placeholder="Fuzzy keresés..." />
-<div id="list"></div>
+<button onclick="locate()">📍 Saját helyzet</button>
+<button onclick="restore()">♻ Restore CORE</button>
+
+<div class="box" id="me">📡 Helyzet: nincs</div>
+<div class="box" id="dist">📏 Távolság: -</div>
 
 <hr>
-<div id="panel"></div>
+<div id="list"></div>
 </div>
 
 <div id="map"></div>
 
 <script>
 
-const map = L.map('map').setView([47.5,19.04],11);
+// ================= MAP =================
+const map = L.map('map').setView([47.5,19.04],10);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let db;
-let GLOBAL_STOPS=[];
-let VEHICLES=[];
+let GLOBAL_STOPS = [];
+let myPos = null;
 
-// ================= DB =================
-function initDB(){
-  return new Promise(res=>{
-    const req=indexedDB.open("HUNGARY_CORE_V4",1);
-    req.onupgradeneeded=e=>{
-      db=e.target.result;
-      db.createObjectStore("gtfs",{keyPath:"id"});
-    };
-    req.onsuccess=e=>{db=e.target.result;res();};
-  });
-}
+// ================= SAMPLE UNIFIED DATA =================
+const BASE_STOPS = [
+  {name:"Szentendre Skanzen",lat:47.6911,lon:19.0469,id:"778840"},
+  {name:"Tahitótfalu hídfő",lat:47.7517,lon:19.0782,id:"779053"},
+  {name:"Királyrét",lat:47.9100,lon:18.9730,id:"778310"},
+  {name:"Széchenyi-hegy Gyermekvasút",lat:47.5007,lon:18.9653,id:"GYV-1"},
+  {name:"Hűvösvölgy Gyermekvasút",lat:47.5412,lon:18.9640,id:"GYV-2"},
+  {name:"Nagybörzsöny",lat:47.9360,lon:18.8320,id:"NB-1"}
+];
 
-function save(id,data){
-  const tx=db.transaction("gtfs","readwrite");
-  tx.objectStore("gtfs").put({id,data});
-}
-
-function getAll(){
-  return new Promise(r=>{
-    const tx=db.transaction("gtfs","readonly");
-    const req=tx.objectStore("gtfs").getAll();
-    req.onsuccess=()=>r(req.result);
-  });
-}
-
-function clearDB(){
-  const tx=db.transaction("gtfs","readwrite");
-  tx.objectStore("gtfs").clear();
-  location.reload();
-}
-
-// ================= FUZZY =================
-function norm(t){
-  return (t||"")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g,"");
-}
-
-function search(q){
-  q=norm(q);
-  return GLOBAL_STOPS.filter(s=>
-    norm(s.name).includes(q) ||
-    norm(s.gtfs).includes(q)
-  );
-}
-
-// ================= MERGE =================
-function mergeStops(stops){
-  stops.forEach(s=>{
-    const exists = GLOBAL_STOPS.find(x=>
-      Math.hypot(x.lat-s.lat,x.lon-s.lon)<0.0005
-    );
-    if(!exists) GLOBAL_STOPS.push(s);
-  });
-}
-
-// ================= IMPORT =================
-async function importZip(file){
-  const zip=await JSZip.loadAsync(file);
-  const text=await zip.file("stops.txt")?.async("string");
-  if(!text) return;
-
-  const lines=text.split(/\n/).slice(1);
-  const stops=lines.map(l=>{
-    const c=l.split(",");
-    return {
-      id:c[0],name:c[2],lat:+c[4],lon:+c[5]
-    };
-  });
-
-  mergeStops(stops);
-  save(Date.now(),{stops});
+// ================= INIT =================
+function init(){
+  GLOBAL_STOPS = BASE_STOPS;
   render();
 }
 
-async function importAll(){
-  const files=document.getElementById('zip').files;
-  for(const f of files) await importZip(f);
+// ================= DISTANCE =================
+function distance(a,b){
+  const R=6371000;
+  const toRad=x=>x*Math.PI/180;
+
+  const dLat=toRad(b.lat-a.lat);
+  const dLon=toRad(b.lon-a.lon);
+
+  const A=
+    Math.sin(dLat/2)**2+
+    Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*
+    Math.sin(dLon/2)**2;
+
+  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
 }
 
-// ================= RESTORE =================
-async function restore(){
-  const data=await getAll();
-  data.forEach(d=>mergeStops(d.data.stops||[]));
-  render();
+// ================= GEOLOCATION =================
+function locate(){
+  navigator.geolocation.getCurrentPosition(async p=>{
+
+    myPos={lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy};
+
+    map.setView([myPos.lat,myPos.lon],13);
+
+    L.marker([myPos.lat,myPos.lon]).addTo(map)
+      .bindPopup("📍 Saját pozíció").openPopup();
+
+    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${myPos.lat}&lon=${myPos.lon}`);
+    const d=await r.json();
+
+    document.getElementById("me").innerHTML=`
+      🌍 Ország: ${d.address.country||"-"}<br>
+      🏙 Város: ${d.address.city||d.address.town||"-"}<br>
+      🏠 Utca: ${d.address.road||"-"}<br>
+      🏠 Házszám: ${d.address.house_number||"-"}<br><br>
+      📍 GPS: ${myPos.lat.toFixed(6)}, ${myPos.lon.toFixed(6)}<br>
+      🎯 Pontosság: ±${Math.round(myPos.acc)} m
+    `;
+
+  });
 }
 
 // ================= RENDER =================
 let markers=[];
 function render(){
-  document.getElementById('status').innerText="STOPS: "+GLOBAL_STOPS.length;
 
   markers.forEach(m=>map.removeLayer(m));
   markers=[];
 
+  document.getElementById("list").innerHTML="";
+
   GLOBAL_STOPS.forEach(s=>{
-    const m=L.circleMarker([s.lat,s.lon],{radius:4}).addTo(map);
+
+    const m=L.marker([s.lat,s.lon]).addTo(map)
+      .bindPopup(`<b>${s.name}</b><br>${s.id}`);
+
     markers.push(m);
+
+    const d=document.createElement("div");
+    d.className="stop";
+    d.innerHTML=`${s.name}<br><small>${s.id}</small>`;
+
+    d.onclick=()=>openStop(s);
+    document.getElementById("list").appendChild(d);
   });
+}
+
+// ================= STOP PANEL =================
+function openStop(s){
+
+  let html=`<b>${s.name}</b><br>🆔 ${s.id}<br><br>`;
+
+  if(myPos){
+    const d=distance(myPos,s);
+    html+=`📏 Légi távolság: ${Math.round(d)} m<br>${(d/1000).toFixed(2)} km`;
+
+    document.getElementById("dist").innerHTML=`📏 ${Math.round(d)} m (${(d/1000).toFixed(2)} km)`;
+  }
+
+  L.popup().setLatLng([s.lat,s.lon]).setContent(html).openOn(map);
 }
 
 // ================= SEARCH =================
 search.oninput=e=>{
-  const res=search(e.target.value).slice(0,50);
-  const list=document.getElementById('list');
-  list.innerHTML="";
+  const q=e.target.value.toLowerCase();
 
-  res.forEach(s=>{
-    const d=document.createElement('div');
+  const f=GLOBAL_STOPS.filter(s=>
+    s.name.toLowerCase().includes(q)||
+    s.id.toLowerCase().includes(q)
+  );
+
+  document.getElementById("list").innerHTML="";
+
+  f.forEach(s=>{
+    const d=document.createElement("div");
     d.className="stop";
-    d.innerText=s.name;
+    d.innerHTML=`${s.name}<br><small>${s.id}</small>`;
     d.onclick=()=>openStop(s);
-    list.appendChild(d);
+    document.getElementById("list").appendChild(d);
   });
-};
+});
 
-// ================= STOP PANEL =================
-function openStop(s){
-  document.getElementById('panel').innerHTML=
-  `<div class='card'>
-  <b>${s.name}</b><br>
-  🆔 ${s.id}<br>
-  📍 ${s.lat}, ${s.lon}<br>
-  <hr>
-  🚌 LIVE DISPATCH: simulating...
-  </div>`;
-}
-
-// ================= VEHICLE SIM =================
-setInterval(()=>{
-  VEHICLES.forEach(v=>map.removeLayer(v));
-  VEHICLES=[];
-
-  for(let i=0;i<5;i++){
-    const s=GLOBAL_STOPS[Math.floor(Math.random()*GLOBAL_STOPS.length)];
-    const m=L.circleMarker([s.lat,s.lon],{radius:6,color:'red'}).addTo(map);
-    VEHICLES.push(m);
-  }
-},4000);
-
-// ================= INIT =================
-(async()=>{
-  await initDB();
-  await restore();
-})();
+// ================= START =================
+init();
 
 </script>
 
