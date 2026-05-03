@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>ATTILA REALTIME COLOR + VEHICLE LINK ENGINE</title>
+<title>ATTILA FUZZY + VEHICLE + GTFS PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -22,15 +22,15 @@ input,button{width:100%;padding:8px;margin-bottom:6px}
 <body>
 
 <div id="sidebar">
-<h3>🚀 REALTIME COLOR + VEHICLE</h3>
+<h3>🚀 FUZZY GTFS + VEHICLE ENGINE</h3>
 
 <input type="file" id="file" accept=".zip">
-<button onclick="loadGTFS()">📦 Betöltés</button>
+<button onclick="loadGTFS()">📦 GTFS Betöltés</button>
 <button onclick="getLocation()">📍 Saját hely</button>
 
-<input id="search" placeholder="Keresés (név / ID / ékezet is)...">
+<input id="search" placeholder="Keresés (név / ID / fuzzy)...">
 
-<h4>🚏 Megálló panel</h4>
+<h4>📌 Megálló panel</h4>
 <div id="panel"></div>
 <hr>
 <div id="list"></div>
@@ -43,7 +43,6 @@ input,button{width:100%;padding:8px;margin-bottom:6px}
 const map = L.map('map').setView([47.4979,19.0402],12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let STOPS=[];
 let STOP_TIMES=[];
 let TRIPS={};
 let ROUTES={};
@@ -51,7 +50,40 @@ let MY={lat:null,lon:null};
 let myMarker;
 let vehicleMarkers=[];
 
-// 🧠 NORMALIZE (FIX Tahitótfalu / Skanzen bug)
+// ==============================
+// 🚏 FIXED STOP DATABASE
+// ==============================
+
+let STOPS = [
+{name:"Békásmegyer HÉV-állomás", gtfs:"H5-09183", lat:47.598091, lon:19.054599},
+{name:"Nád utca", gtfs:"BKK-F00457", lat:47.594072, lon:19.048469},
+{name:"Gulácsy Lajos utca", gtfs:"BKK-00438", lat:47.602562, lon:19.048229},
+{name:"Flórián tér", gtfs:"BKK-F00611", lat:47.542896, lon:19.042252},
+{name:"Flórián tér", gtfs:"BKK-F00613", lat:47.541664, lon:19.040084},
+{name:"Batthyány tér (villamos)", gtfs:"BKK-F00057", lat:47.506002, lon:19.039456},
+{name:"Verecke lépcső", gtfs:"BKK-F00265", lat:47.529117, lon:19.003624},
+{name:"Csobánka tér 243 vá", gtfs:"BKK-F044192", lat:47.597795, lon:19.053787},
+{name:"Csobánka tér 160 vá", gtfs:"BKK-008939", lat:47.598425, lon:19.054240},
+{name:"Szentendre HÉV végállomás", gtfs:"H5-09142221", lat:47.661038, lon:19.075607},
+{name:"Örs vezér tér 85/85E", gtfs:"BKK-008030", lat:47.501742, lon:19.135604},
+{name:"Kocka utca kifelé", gtfs:"BKK-1831", lat:47.484915, lon:19.155466},
+{name:"Kocka utca befelé", gtfs:"BKK-1832", lat:47.484708, lon:19.155969},
+{name:"Újhegyi sétány befelé", gtfs:"BKK-F01842", lat:47.470813, lon:19.16451},
+{name:"Gőzmozdony utca kifelé", gtfs:"BKK-008863", lat:47.470028, lon:19.157173},
+{name:"Bojtár utca VOLÁN", gtfs:"VOLÁN-773493", lat:47.560099, lon:19.024711},
+{name:"Szentendre autóbusz-állomás", gtfs:"VOLÁN-778806", lat:47.660403, lon:19.075408},
+{name:"Szentendre Skanzen", gtfs:"VOLÁN-778840", lat:47.691135, lon:19.046955},
+{name:"Tahitótfalu hídfő", gtfs:"VOLÁN-779053", lat:47.751712, lon:19.078215},
+{name:"Vác autóbusz-állomás", gtfs:"VOLÁN-779365", lat:47.781930, lon:19.129643},
+{name:"Kisinóci turistaház", gtfs:"VOLÁN-778186", lat:47.890600, lon:18.927580},
+{name:"Királyrét", gtfs:"VOLÁN-779017", lat:47.895040, lon:18.977687},
+{name:"Szob vasútállomás", gtfs:"VOLÁN-779011", lat:47.821319, lon:18.862602},
+{name:"Dobogókő hegytető", gtfs:"VOLÁN-778561", lat:47.719118, lon:18.897577}
+];
+
+// ==============================
+// 🔍 FUZZY NORMALIZER
+// ==============================
 function norm(t){
   return (t||"")
     .toLowerCase()
@@ -59,22 +91,116 @@ function norm(t){
     .replace(/[\u0300-\u036f]/g,"");
 }
 
-// 📦 UTF8 SAFE LOAD
+// ==============================
+// 📦 GTFS LOAD (OPTIONAL EXTEND)
+// ==============================
 async function loadGTFS(){
   const f=document.getElementById('file').files[0];
   if(!f) return;
 
   const zip=await JSZip.loadAsync(f);
+  const txt=await zip.file("stop_times.txt").async("string");
+  const lines=txt.split('\n');
 
-  const stopsTxt=await zip.file("stops.txt").async("string");
-  const sl=stopsTxt.split('\n');
-  const sh=sl[0].split(',');
+  STOP_TIMES=lines.slice(1,40000).map(l=>{
+    const c=l.split(',');
+    return {stop:c[3],time:c[1],trip:c[0]};
+  });
 
-  const iId=sh.indexOf('stop_id');
-  const iName=sh.indexOf('stop_name');
-  const iLat=sh.indexOf('stop_lat');
-  const iLon=sh.indexOf('stop_lon');
+  alert("GTFS betöltve");
+}
 
-  STOPS = sl.slice(1)
-    .map(l=>{
-      const c=l.split(',');
+// ==============================
+// 📍 LOCATION
+// ==============================
+function getLocation(){
+  navigator.geolocation.getCurrentPosition(pos=>{
+    MY.lat=pos.coords.latitude;
+    MY.lon=pos.coords.longitude;
+
+    if(myMarker) map.removeLayer(myMarker);
+
+    myMarker=L.marker([MY.lat,MY.lon])
+      .addTo(map)
+      .bindPopup("📍 Saját hely")
+      .openPopup();
+
+    map.setView([MY.lat,MY.lon],13);
+  });
+}
+
+// ==============================
+// 📏 DISTANCE
+// ==============================
+function dist(a,b,c,d){
+  const R=6371000;
+  const toRad=x=>x*Math.PI/180;
+  let dLat=toRad(c-a);
+  let dLon=toRad(d-b);
+  let A=Math.sin(dLat/2)**2+
+    Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
+}
+
+// ==============================
+// 🚏 FUZZY SEARCH
+// ==============================
+search.oninput=e=>{
+  const q=norm(e.target.value);
+
+  const f=STOPS
+    .filter(s=>
+      norm(s.name).includes(q) ||
+      norm(s.gtfs).includes(q)
+    )
+    .slice(0,100);
+
+  const list=document.getElementById('list');
+  list.innerHTML='';
+
+  f.forEach(s=>{
+    const d=document.createElement('div');
+    d.className='stop';
+    d.innerText=s.name;
+    d.onclick=()=>openStop(s);
+    list.appendChild(d);
+  });
+};
+
+// ==============================
+// 🚏 OPEN STOP
+// ==============================
+function openStop(s){
+
+  let html=`<div class='card'><b>${s.name}</b><br>🆔 ${s.gtfs}<br>📍 ${s.lat}, ${s.lon}</div>`;
+
+  html+="<div class='card'><b>🚌 jármű link (demo)</b><br>🔴 élő integráció előkészítve</div>";
+
+  document.getElementById('panel').innerHTML=html;
+}
+
+// ==============================
+// 🚍 VEHICLE DEMO LINK
+// ==============================
+setInterval(()=>{
+
+  vehicleMarkers.forEach(m=>map.removeLayer(m));
+  vehicleMarkers=[];
+
+  for(let i=0;i<3;i++){
+    let s=STOPS[Math.floor(Math.random()*STOPS.length)];
+
+    let m=L.circleMarker([s.lat,s.lon],{
+      radius:6,
+      color:'red'
+    }).addTo(map);
+
+    vehicleMarkers.push(m);
+  }
+
+},4000);
+
+</script>
+
+</body>
+</html>
