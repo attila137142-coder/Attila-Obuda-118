@@ -3,23 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ATTILA FULL STOP PANEL</title>
-
+<title>ATTILA FULL STOP PANEL + ROUTES/TRIPS</title>
 <style>
-body { font-family: Arial; background:#0b1220; color:white; padding:15px }
-h1 { margin-bottom:10px }
-button { padding:10px; border:none; border-radius:8px; margin:5px; background:#22c55e; color:white; font-weight:bold }
-input { padding:10px; border-radius:8px; width:80% }
-.card { background:#1e293b; padding:10px; border-radius:10px; margin-top:10px }
-.red { border-left:5px solid red }
-.blue { border-left:5px solid cyan }
-.white { border-left:5px solid white }
+body{font-family:Arial;background:#0b1220;color:#fff;padding:15px}
+button{padding:10px;border:none;border-radius:8px;margin:5px;background:#22c55e;color:#fff;font-weight:bold}
+input{padding:10px;border-radius:8px;width:80%}
+.card{background:#1e293b;padding:10px;border-radius:10px;margin-top:10px}
+.red{border-left:5px solid red}
+.blue{border-left:5px solid cyan}
+.white{border-left:5px solid white}
+.small{font-size:12px;opacity:.7}
 </style>
-
 </head>
 <body>
 
-<h1>🚏 FULL STOP PANEL + LIVE LOGIKA</h1>
+<h1>🚏 FULL STOP PANEL (ROUTES + TRIPS)</h1>
 
 <input type="file" id="zipInput" accept=".zip">
 <button onclick="loadZIP()">📦 GTFS</button>
@@ -36,140 +34,125 @@ input { padding:10px; border-radius:8px; width:80% }
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 
-let STOPS=[], STOP_TIMES=[];
+let STOPS=[], STOP_TIMES=[], TRIPS=[], ROUTES=[];
 let MY={lat:null,lon:null};
 
-// 📍 HELYZET + CÍM
+// CSV parser (idézőjelek kezelése)
+function parseCSV(line){
+  let res=[],cur='',q=false;
+  for(let i=0;i<line.length;i++){
+    let c=line[i];
+    if(c==='\"'){q=!q}
+    else if(c===','&&!q){res.push(cur);cur=''}
+    else{cur+=c}
+  }
+  res.push(cur);
+  return res;
+}
+
+// 📍 hely + cím
 async function getLocation(){
-
   navigator.geolocation.getCurrentPosition(async pos=>{
-
-    let lat=pos.coords.latitude;
-    let lon=pos.coords.longitude;
-    let acc=pos.coords.accuracy;
-
-    let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-    let data=await res.json();
-
-    let a=data.address||{};
-
-    document.getElementById("me").innerHTML=`
+    let lat=pos.coords.latitude, lon=pos.coords.longitude, acc=pos.coords.accuracy;
+    let r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+    let d=await r.json(); let a=d.address||{};
+    document.getElementById('me').innerHTML=`
       <div class='card'>
       📍 ${lat.toFixed(6)}, ${lon.toFixed(6)}<br>
-      🌍 ${a.country||"-"}<br>
-      🏙 ${a.city||a.town||a.village||"-"}<br>
-      🏠 ${a.road||"-"} ${a.house_number||""}<br>
-      🎯 GPS pontosság: ${Math.round(acc)} m
+      🌍 ${a.country||'-'}<br>
+      🏙 ${a.city||a.town||a.village||'-'}<br>
+      🏠 ${a.road||'-'} ${a.house_number||''}<br>
+      🎯 ${Math.round(acc)} m
       </div>`;
-
     MY.lat=lat; MY.lon=lon;
   });
 }
 
-// 📦 ZIP LOAD
+// 📦 GTFS betöltés (stops + stop_times + trips + routes)
 async function loadZIP(){
-
-  let file=document.getElementById("zipInput").files[0];
-  if(!file) return alert("Nincs ZIP!");
-
-  let zip=await JSZip.loadAsync(file);
+  let f=document.getElementById('zipInput').files[0];
+  if(!f) return alert('Nincs ZIP');
+  let zip=await JSZip.loadAsync(f);
 
   // STOPS
-  let stopsFile=Object.keys(zip.files).find(f=>f.includes("stops.txt"));
-  let txt=await zip.file(stopsFile).async("string");
-
-  let lines=txt.split("\n");
-  let h=lines[0].split(",");
-
-  let iId=h.indexOf("stop_id");
-  let iName=h.indexOf("stop_name");
-  let iLat=h.indexOf("stop_lat");
-  let iLon=h.indexOf("stop_lon");
-
+  let sf=Object.keys(zip.files).find(x=>x.includes('stops.txt'));
+  let sTxt=await zip.file(sf).async('string');
+  let sLines=sTxt.split('\n');
+  let sh=parseCSV(sLines[0]);
+  let si={id:sh.indexOf('stop_id'),name:sh.indexOf('stop_name'),lat:sh.indexOf('stop_lat'),lon:sh.indexOf('stop_lon')};
   STOPS=[];
-
-  for(let i=1;i<lines.length;i++){
-    let r=lines[i].split(",");
-    if(r.length<4) continue;
-
-    STOPS.push({
-      id:r[iId],
-      name:r[iName],
-      lat:parseFloat(r[iLat]),
-      lon:parseFloat(r[iLon])
-    });
+  for(let i=1;i<sLines.length;i++){
+    let r=parseCSV(sLines[i]); if(r.length<4) continue;
+    STOPS.push({id:r[si.id]?.trim(),name:r[si.name],lat:parseFloat(r[si.lat]),lon:parseFloat(r[si.lon])});
   }
 
-  // STOP TIMES
-  let stFile=Object.keys(zip.files).find(f=>f.includes("stop_times.txt"));
-  if(stFile){
-    let stxt=await zip.file(stFile).async("string");
-    let slines=stxt.split("\n");
-
-    STOP_TIMES=slines.slice(1).map(l=>{
-      let r=l.split(",");
-      return {
-        trip_id:r[0],
-        arrival:r[1],
-        stop_id:r[3]
-      };
-    });
+  // STOP_TIMES
+  let stf=Object.keys(zip.files).find(x=>x.includes('stop_times.txt'));
+  if(stf){
+    let t=await zip.file(stf).async('string');
+    let L=t.split('\n'); let h=parseCSV(L[0]);
+    let iTrip=h.indexOf('trip_id'), iArr=h.indexOf('arrival_time'), iStop=h.indexOf('stop_id');
+    STOP_TIMES=L.slice(1).map(l=>{let r=parseCSV(l); return {trip_id:r[iTrip]?.trim(),arrival:r[iArr],stop_id:r[iStop]?.trim()}});
   }
 
-  alert("✔ Betöltve: "+STOPS.length+" megálló");
+  // TRIPS
+  let tf=Object.keys(zip.files).find(x=>x.includes('trips.txt'));
+  if(tf){
+    let t=await zip.file(tf).async('string');
+    let L=t.split('\n'); let h=parseCSV(L[0]);
+    let iTrip=h.indexOf('trip_id'), iRoute=h.indexOf('route_id'), iHead=h.indexOf('trip_headsign');
+    TRIPS=L.slice(1).map(l=>{let r=parseCSV(l); return {trip_id:r[iTrip]?.trim(),route_id:r[iRoute],headsign:r[iHead]}});
+  }
+
+  // ROUTES
+  let rf=Object.keys(zip.files).find(x=>x.includes('routes.txt'));
+  if(rf){
+    let t=await zip.file(rf).async('string');
+    let L=t.split('\n'); let h=parseCSV(L[0]);
+    let iRoute=h.indexOf('route_id'), iShort=h.indexOf('route_short_name'), iLong=h.indexOf('route_long_name');
+    ROUTES=L.slice(1).map(l=>{let r=parseCSV(l); return {route_id:r[iRoute],short:r[iShort],long:r[iLong]}});
+  }
+
+  alert(`✔ STOPS:${STOPS.length} | ST:${STOP_TIMES.length} | TRIPS:${TRIPS.length} | ROUTES:${ROUTES.length}`);
 }
 
-// 🧠 SEARCH
-function norm(t){
-  return (t||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
-}
-
+// kereső
+function norm(t){return (t||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'')}
 function search(){
-  let q=norm(document.getElementById("q").value);
-
-  let res=STOPS.filter(s=>norm(s.name).includes(q)).slice(0,20);
-
-  document.getElementById("out").innerHTML=
-    res.map(s=>`
-      <div class='card' onclick="selectStop('${s.id}')">
-        <b>${s.name}</b><br>
-        🆔 ${s.id}<br>
-        📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}
-      </div>
-    `).join("");
+  let q=norm(document.getElementById('q').value);
+  let res=STOPS.filter(s=>norm(s.name).includes(q)).slice(0,25);
+  document.getElementById('out').innerHTML=res.map(s=>`
+    <div class='card' onclick="selectStop('${s.id}')">
+      <b>${s.name}</b><br>
+      🆔 ${s.id}<br>
+      📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}
+    </div>`).join('');
 }
 
-// 🎯 STOP PANEL
+// STOP PANEL (route + irány + idő + késés)
 function selectStop(id){
-
-  let deps=STOP_TIMES.filter(s=>s.stop_id===id).slice(0,10);
-
+  let deps=STOP_TIMES.filter(x=>x.stop_id===id).slice(0,20);
   if(!deps.length){
-    document.getElementById("panel").innerHTML="<div class='card'>❌ Nincs menetrend adat</div>";
+    document.getElementById('panel').innerHTML="<div class='card'>❌ Nincs menetrend adat</div>";
     return;
   }
 
-  let now=new Date();
+  document.getElementById('panel').innerHTML=deps.map(d=>{
+    let trip=TRIPS.find(t=>t.trip_id===d.trip_id) || {};
+    let route=ROUTES.find(r=>r.route_id===trip.route_id) || {};
 
-  document.getElementById("panel").innerHTML=
-    deps.map(d=>{
+    let delay=Math.floor(Math.random()*120-30);
+    let cls='white', icon='⚪';
+    if(delay<0){cls='red';icon='🔴'}
+    if(delay>30){cls='blue';icon='🔵'}
 
-      let delay=Math.floor(Math.random()*120-30);
-      let color="white";
-      let icon="⚪";
-
-      if(delay<0){ color="red"; icon="🔴" }
-      if(delay>30){ color="blue"; icon="🔵" }
-
-      return `
-        <div class='card ${color}'>
-          🕒 ${d.arrival}<br>
-          ⏱ ${delay>0?'+':''}${delay} sec<br>
-          ${icon} VALÓS IDŐ
-        </div>
-      `;
-
-    }).join("");
+    return `
+      <div class='card ${cls}'>
+        🚌 <b>${route.short||'?'}</b> → ${trip.headsign||'-'}<br>
+        🕒 ${d.arrival}<br>
+        ⏱ ${delay>0?'+':''}${delay}s ${icon}
+      </div>`;
+  }).join('');
 }
 
 </script>
