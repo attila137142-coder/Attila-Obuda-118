@@ -1,39 +1,37 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>EMBED ENGINE V2 PRO - FULL HUNGARY CORE</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>V3 STABLE GTFS ENGINE</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body{margin:0;font-family:Arial;display:flex;height:100vh}
-#left{width:380px;overflow:auto;padding:10px;border-right:1px solid #ccc}
+#side{width:380px;padding:10px;overflow:auto;border-right:1px solid #ccc}
 #map{flex:1}
-.box{background:#f4f4f4;padding:8px;margin:6px 0;border-radius:8px}
-input,button{width:100%;padding:8px;margin:4px 0}
 .stop{padding:6px;border-bottom:1px solid #eee;cursor:pointer}
-.stop:hover{background:#eee}
-small{color:#666}
+.stop:hover{background:#f0f0f0}
+input,button{width:100%;padding:8px;margin:4px 0}
+#status{font-size:12px;margin-bottom:8px}
 </style>
 </head>
+
 <body>
 
-<div id="left">
-<h3>🚆 EMBED ENGINE V2 PRO</h3>
+<div id="side">
+<h3>🚆 V3 STABLE GTFS ENGINE</h3>
 
-<input id="search" placeholder="Megálló / GTFS / kisvasút">
+<div id="status">INIT...</div>
 
-<button onclick="locate()">📍 Saját helyzet</button>
-<button onclick="restore()">♻ Restore CORE</button>
+<input type="file" id="zip" multiple>
+<button onclick="clearAll()">🗑 CLEAR CORE</button>
 
-<div class="box" id="me">📡 Helyzet: nincs</div>
-<div class="box" id="dist">📏 Távolság: -</div>
+<input id="search" placeholder="keresés...">
 
-<hr>
 <div id="list"></div>
 </div>
 
@@ -42,90 +40,129 @@ small{color:#666}
 <script>
 
 // ================= MAP =================
-const map = L.map('map').setView([47.5,19.04],10);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+const map = L.map('map').setView([47.5,19.04],11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+.addTo(map);
 
-let db;
-let GLOBAL_STOPS = [];
-let myPos = null;
+// ================= DATA =================
+let STOPS = [];
+let STOP_TIMES = [];
+let TRIPS = {};
+let ROUTES = {};
 
-// ================= SAMPLE UNIFIED DATA =================
-const BASE_STOPS = [
-  {name:"Szentendre Skanzen",lat:47.6911,lon:19.0469,id:"778840"},
-  {name:"Tahitótfalu hídfő",lat:47.7517,lon:19.0782,id:"779053"},
-  {name:"Királyrét",lat:47.9100,lon:18.9730,id:"778310"},
-  {name:"Széchenyi-hegy Gyermekvasút",lat:47.5007,lon:18.9653,id:"GYV-1"},
-  {name:"Hűvösvölgy Gyermekvasút",lat:47.5412,lon:18.9640,id:"GYV-2"},
-  {name:"Nagybörzsöny",lat:47.9360,lon:18.8320,id:"NB-1"}
-];
+// ================= SAFE PARSE =================
+function parseCSV(text){
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  const header = lines[0].split(",");
+  return {lines,header};
+}
 
-// ================= INIT =================
-function init(){
-  GLOBAL_STOPS = BASE_STOPS;
+// ================= LOAD ZIP =================
+async function loadZip(file){
+  const zip = await JSZip.loadAsync(file);
+
+  // STOPS
+  if(zip.file("stops.txt")){
+    const t = await zip.file("stops.txt").async("string");
+    const {lines,header} = parseCSV(t);
+
+    const i = {
+      id: header.indexOf("stop_id"),
+      name: header.indexOf("stop_name"),
+      lat: header.indexOf("stop_lat"),
+      lon: header.indexOf("stop_lon")
+    };
+
+    STOPS = lines.slice(1).map(l=>{
+      const c = l.split(",");
+      return {
+        id:c[i.id],
+        name:c[i.name],
+        lat:+c[i.lat],
+        lon:+c[i.lon]
+      };
+    });
+  }
+
+  // ROUTES
+  if(zip.file("routes.txt")){
+    const t = await zip.file("routes.txt").async("string");
+    const {lines,header} = parseCSV(t);
+
+    const i = {
+      id: header.indexOf("route_id"),
+      name: header.indexOf("route_short_name")
+    };
+
+    lines.slice(1).forEach(l=>{
+      const c=l.split(",");
+      ROUTES[c[i.id]] = c[i.name];
+    });
+  }
+
+  // TRIPS
+  if(zip.file("trips.txt")){
+    const t = await zip.file("trips.txt").async("string");
+    const {lines,header} = parseCSV(t);
+
+    const i = {
+      id: header.indexOf("trip_id"),
+      route: header.indexOf("route_id"),
+      head: header.indexOf("trip_headsign")
+    };
+
+    lines.slice(1).forEach(l=>{
+      const c=l.split(",");
+      TRIPS[c[i.id]] = {
+        route: ROUTES[c[i.route]],
+        head: c[i.head]
+      };
+    });
+  }
+
+  // STOP TIMES
+  if(zip.file("stop_times.txt")){
+    const t = await zip.file("stop_times.txt").async("string");
+    const {lines,header} = parseCSV(t);
+
+    const i = {
+      stop: header.indexOf("stop_id"),
+      trip: header.indexOf("trip_id"),
+      time: header.indexOf("departure_time")
+    };
+
+    STOP_TIMES = lines.slice(1).map(l=>{
+      const c=l.split(",");
+      return {
+        stop:c[i.stop],
+        trip:c[i.trip],
+        time:c[i.time]
+      };
+    });
+  }
+
+  document.getElementById("status").innerText =
+    `✔ STOPS: ${STOPS.length} | TRIPS: ${Object.keys(TRIPS).length}`;
+
   render();
-}
-
-// ================= DISTANCE =================
-function distance(a,b){
-  const R=6371000;
-  const toRad=x=>x*Math.PI/180;
-
-  const dLat=toRad(b.lat-a.lat);
-  const dLon=toRad(b.lon-a.lon);
-
-  const A=
-    Math.sin(dLat/2)**2+
-    Math.cos(toRad(a.lat))*Math.cos(toRad(b.lat))*
-    Math.sin(dLon/2)**2;
-
-  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
-}
-
-// ================= GEOLOCATION =================
-function locate(){
-  navigator.geolocation.getCurrentPosition(async p=>{
-
-    myPos={lat:p.coords.latitude,lon:p.coords.longitude,acc:p.coords.accuracy};
-
-    map.setView([myPos.lat,myPos.lon],13);
-
-    L.marker([myPos.lat,myPos.lon]).addTo(map)
-      .bindPopup("📍 Saját pozíció").openPopup();
-
-    const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${myPos.lat}&lon=${myPos.lon}`);
-    const d=await r.json();
-
-    document.getElementById("me").innerHTML=`
-      🌍 Ország: ${d.address.country||"-"}<br>
-      🏙 Város: ${d.address.city||d.address.town||"-"}<br>
-      🏠 Utca: ${d.address.road||"-"}<br>
-      🏠 Házszám: ${d.address.house_number||"-"}<br><br>
-      📍 GPS: ${myPos.lat.toFixed(6)}, ${myPos.lon.toFixed(6)}<br>
-      🎯 Pontosság: ±${Math.round(myPos.acc)} m
-    `;
-
-  });
 }
 
 // ================= RENDER =================
 let markers=[];
-function render(){
 
+function render(){
   markers.forEach(m=>map.removeLayer(m));
   markers=[];
 
   document.getElementById("list").innerHTML="";
 
-  GLOBAL_STOPS.forEach(s=>{
-
-    const m=L.marker([s.lat,s.lon]).addTo(map)
-      .bindPopup(`<b>${s.name}</b><br>${s.id}`);
-
+  STOPS.forEach(s=>{
+    const m=L.marker([s.lat,s.lon]).addTo(map);
     markers.push(m);
 
     const d=document.createElement("div");
     d.className="stop";
-    d.innerHTML=`${s.name}<br><small>${s.id}</small>`;
+    d.innerText=s.name;
 
     d.onclick=()=>openStop(s);
     document.getElementById("list").appendChild(d);
@@ -133,26 +170,36 @@ function render(){
 }
 
 // ================= STOP PANEL =================
-function openStop(s){
+function openStop(stop){
 
-  let html=`<b>${s.name}</b><br>🆔 ${s.id}<br><br>`;
+  const now = new Date();
+  const cur = now.getHours()*3600 + now.getMinutes()*60;
 
-  if(myPos){
-    const d=distance(myPos,s);
-    html+=`📏 Légi távolság: ${Math.round(d)} m<br>${(d/1000).toFixed(2)} km`;
+  const times = STOP_TIMES
+    .filter(t=>t.stop===stop.id)
+    .slice(0,10);
 
-    document.getElementById("dist").innerHTML=`📏 ${Math.round(d)} m (${(d/1000).toFixed(2)} km)`;
-  }
+  let html = `<b>${stop.name}</b><br><br>`;
 
-  L.popup().setLatLng([s.lat,s.lon]).setContent(html).openOn(map);
+  times.forEach(t=>{
+    const trip = TRIPS[t.trip];
+    if(!trip) return;
+
+    html += `🚌 ${trip.route || "?"} → ${trip.head || ""}<br>${t.time}<br><br>`;
+  });
+
+  L.popup()
+    .setLatLng([stop.lat,stop.lon])
+    .setContent(html)
+    .openOn(map);
 }
 
 // ================= SEARCH =================
-search.oninput=e=>{
+search.oninput = e=>{
   const q=e.target.value.toLowerCase();
 
-  const f=GLOBAL_STOPS.filter(s=>
-    s.name.toLowerCase().includes(q)||
+  const f=STOPS.filter(s=>
+    s.name.toLowerCase().includes(q) ||
     s.id.toLowerCase().includes(q)
   );
 
@@ -161,14 +208,22 @@ search.oninput=e=>{
   f.forEach(s=>{
     const d=document.createElement("div");
     d.className="stop";
-    d.innerHTML=`${s.name}<br><small>${s.id}</small>`;
+    d.innerText=s.name;
     d.onclick=()=>openStop(s);
     document.getElementById("list").appendChild(d);
   });
-});
+};
 
-// ================= START =================
-init();
+// ================= CLEAR =================
+function clearAll(){
+  STOPS=[];STOP_TIMES=[];TRIPS={};ROUTES={};
+  location.reload();
+}
+
+// ================= INIT =================
+document.getElementById("zip").onchange=e=>{
+  for(const f of e.target.files) loadZip(f);
+};
 
 </script>
 
