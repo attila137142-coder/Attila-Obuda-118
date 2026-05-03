@@ -3,135 +3,91 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FULL BKK STYLE ENGINE</title>
-
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<title>ATTILA PHONE CLEANER</title>
 
 <style>
-body { font-family: Arial; background:#0b1220; color:#fff; margin:0; padding:10px }
-button { padding:10px; margin:5px; border-radius:8px; border:none; background:#22c55e; color:#fff; font-weight:bold }
-.card { background:#1e293b; padding:10px; margin:8px 0; border-radius:10px }
+body { font-family: Arial; background:#0f172a; color:white; margin:0; padding:15px }
+h1 { margin-bottom:10px }
+button { padding:10px; border:none; border-radius:8px; margin:5px; background:#22c55e; color:white; font-weight:bold }
+.card { background:#1e293b; padding:10px; border-radius:10px; margin-top:10px }
+img { max-width:80px; border-radius:6px }
+.row { display:flex; align-items:center; justify-content:space-between; margin-top:5px }
 .small { font-size:12px; opacity:0.7 }
-.row { display:flex; justify-content:space-between; border-bottom:1px solid #243041; padding:4px 0 }
 </style>
+
 </head>
 <body>
 
-<h2>🚌 FULL BKK-STYLE NEAREST STOP + LIVE ARRIVAL PANEL</h2>
+<h1>📱 ATTILA PHONE CLEANER</h1>
 
-<button onclick="getLocation()">📍 Saját helyzet</button>
-<button onclick="loadGTFS()">GTFS betöltés</button>
-<button onclick="findNearest()">🔍 Közeli megállók</button>
+<input type="file" id="files" multiple accept="image/*">
+<br>
+<button onclick="analyze()">📊 Elemzés</button>
+<button onclick="findDuplicates()">🧠 Duplikát keresés</button>
 
-<div id="me"></div>
-<div id="list"></div>
+<div id="stats"></div>
+<div id="results"></div>
 
 <script>
 
-let MY={lat:null,lon:null,acc:null};
-let STOPS=[];
-let STOP_TIMES=[];
-let SELECTED=null;
+let FILES=[];
 
-// 🌍 GPS
-function getLocation(){
-  navigator.geolocation.getCurrentPosition(pos=>{
+// 📥 fájlok betöltése
 
-    MY.lat=pos.coords.latitude;
-    MY.lon=pos.coords.longitude;
-    MY.acc=pos.coords.accuracy;
+document.getElementById("files").addEventListener("change", e=>{
+  FILES=[...e.target.files];
+});
 
-    document.getElementById("me").innerHTML=`
-      <div class='card'>
-        📍 GPS:<br>
-        ${MY.lat.toFixed(6)}, ${MY.lon.toFixed(6)}<br>
-        🎯 Pontosság: ±${Math.round(MY.acc)} m
-      </div>
-    `;
+// 📊 statisztika
+function analyze(){
 
-  });
-}
+  if(FILES.length==0) return alert("Nincs fájl!");
 
-// 📏 távolság
-function dist(a,b,c,d){
-  const R=6371000;
-  const t=x=>x*Math.PI/180;
-  let dLat=t(c-a), dLon=t(d-b);
-  let A=Math.sin(dLat/2)**2+
-    Math.cos(t(a))*Math.cos(t(c))*Math.sin(dLon/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
-}
+  let totalSize=FILES.reduce((a,f)=>a+f.size,0);
 
-// 📦 GTFS BETÖLTÉS
-async function loadGTFS(){
-
-  let url="https://gtfs.menetbrand.com/download/volanbusz";
-
-  let zip=await JSZip.loadAsync(await fetch(url).then(r=>r.blob()));
-
-  let stopsTxt=await zip.file("stops.txt").async("string");
-  let timesTxt=await zip.file("stop_times.txt").async("string");
-
-  STOPS=Papa.parse(stopsTxt,{header:true}).data.filter(s=>s.stop_lat && s.stop_lon);
-  STOP_TIMES=Papa.parse(timesTxt,{header:true}).data;
-
-  alert("GTFS betöltve: "+STOPS.length);
-}
-
-// 🔍 legközelebbi megállók
-function findNearest(){
-
-  if(!MY.lat) return alert("Előbb GPS!");
-
-  let res=STOPS.map(s=>({
-    ...s,
-    dist:dist(MY.lat,MY.lon,s.stop_lat,s.stop_lon)
-  })).sort((a,b)=>a.dist-b.dist).slice(0,15);
-
-  document.getElementById("list").innerHTML=res.map(s=>`
-    <div class='card' onclick='showStop("${s.stop_id}")'>
-      <b>${s.stop_name}</b><br>
-      🆔 ${s.stop_id}<br>
-      📍 ${parseFloat(s.stop_lat).toFixed(6)}, ${parseFloat(s.stop_lon).toFixed(6)}<br>
-      📏 ${Math.round(s.dist)} m
-    </div>
-  `).join("");
-}
-
-// 🕒 indulások
-function showStop(id){
-
-  SELECTED=id;
-
-  let now=new Date();
-  let sec=now.getHours()*3600+now.getMinutes()*60+now.getSeconds();
-
-  let deps=STOP_TIMES
-    .filter(x=>x.stop_id==id)
-    .map(x=>x.departure_time||x.arrival_time)
-    .filter(Boolean)
-    .map(t=>({t,sec:timeToSec(t)}))
-    .filter(x=>x.sec>=sec)
-    .sort((a,b)=>a.sec-b.sec)
-    .slice(0,10);
-
-  document.getElementById("list").innerHTML+=`
-    <div class='card'>
-      <h3>🕒 Indulások</h3>
-      ${deps.map(d=>`
-        <div class='row'>
-          <div>${d.t}</div>
-          <div>${Math.round((d.sec-sec)/60)}p</div>
-        </div>
-      `).join('') || "nincs indulás"}
+  document.getElementById("stats").innerHTML=`
+    <div class="card">
+      📊 Fájlok száma: ${FILES.length}<br>
+      💾 Össz méret: ${(totalSize/1024/1024).toFixed(2)} MB
     </div>
   `;
 }
 
-function timeToSec(t){
-  let p=t.split(":");
-  return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
+// 🧠 duplikát keresés (egyszerű név+méret alapján)
+function findDuplicates(){
+
+  let map={};
+
+  FILES.forEach(f=>{
+    let key=f.name+"_"+f.size;
+    if(!map[key]) map[key]=[];
+    map[key].push(f);
+  });
+
+  let dupGroups=Object.values(map).filter(g=>g.length>1);
+
+  let html="";
+
+  dupGroups.forEach(group=>{
+
+    html+=`<div class="card"><b>Duplikát csoport (${group.length})</b>`;
+
+    group.forEach(f=>{
+      let url=URL.createObjectURL(f);
+
+      html+=`
+        <div class="row">
+          <img src="${url}">
+          <div class="small">${f.name}<br>${(f.size/1024).toFixed(1)} KB</div>
+        </div>
+      `;
+    });
+
+    html+="</div>";
+  });
+
+  document.getElementById("results").innerHTML=
+    html || "❌ Nincs duplikát";
 }
 
 </script>
