@@ -2,50 +2,38 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Dispatcher UI V1</title>
+<title>Attila Dispatcher V2 - GTFS CORE</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body { margin:0; font-family:Arial; }
 .page { display:none; height:calc(100vh - 60px); overflow:auto; }
 #map { height:100%; }
 
-/* bottom nav */
 #nav {
-  position:fixed;
-  bottom:0;
-  width:100%;
-  height:60px;
-  background:#111;
-  display:flex;
+  position:fixed; bottom:0; width:100%; height:60px;
+  background:#111; display:flex;
 }
-#nav button {
-  flex:1;
-  border:none;
-  background:#111;
-  color:white;
-  font-size:18px;
-}
+#nav button { flex:1; color:white; background:#111; border:none; }
 
-/* list */
-.stop {
-  padding:10px;
-  border-bottom:1px solid #ddd;
-}
+.stop { padding:10px; border-bottom:1px solid #ddd; }
+#drop { border:2px dashed #888; padding:10px; text-align:center; margin:10px; }
 </style>
 </head>
 
 <body>
 
-<!-- ===== PAGES ===== -->
-
+<!-- PAGES -->
 <div id="home" class="page">
-  <h2>🚆 Attila Dispatcher</h2>
-  <p>✔ Unified rendszer</p>
-  <p>✔ Live dispatch ready</p>
+  <h3>🚆 GTFS CORE</h3>
+  <div id="drop">📦 Húzd ide a GTFS ZIP-et</div>
+  <input type="file" id="fileInput" accept=".zip">
+  <button onclick="clearDB()">🗑 Törlés</button>
+  <div id="status">Indítás...</div>
 </div>
 
 <div id="mapPage" class="page">
@@ -53,73 +41,166 @@ body { margin:0; font-family:Arial; }
 </div>
 
 <div id="stopsPage" class="page">
-  <input id="search" placeholder="Keresés..." style="width:100%;padding:10px;">
+  <input id="search" placeholder="Keresés...">
   <div id="list"></div>
 </div>
 
-<div id="livePage" class="page">
-  <h3>🚍 LIVE DISPATCH</h3>
-  <p>Járművek mozognak a térképen</p>
-</div>
-
-<!-- ===== NAV ===== -->
-
+<!-- NAV -->
 <div id="nav">
   <button onclick="show('home')">🏠</button>
   <button onclick="show('mapPage')">🗺</button>
   <button onclick="show('stopsPage')">🚏</button>
-  <button onclick="show('livePage')">🚍</button>
 </div>
 
 <script>
 
-// ===== PAGE SWITCH =====
+// ===== UI NAV =====
 function show(id){
   document.querySelectorAll('.page').forEach(p=>p.style.display='none');
   document.getElementById(id).style.display='block';
-
-  if(id === "mapPage"){
-    setTimeout(()=>map.invalidateSize(),200);
-  }
+  if(id==="mapPage") setTimeout(()=>map.invalidateSize(),200);
 }
 
 // ===== MAP =====
 const map = L.map('map').setView([47.5,19.05],11);
-
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ===== STOPS =====
-const STOPS = [
-  {name:"Nád utca", id:"F00457", lat:47.594072, lon:19.048469},
-  {name:"Szentendre", id:"F04687", lat:47.661056, lon:19.075675},
-  {name:"Tahitótfalu hídfő", id:"779053-1", lat:47.751712, lon:19.078215}
-];
+let markers = [];
 
-// ===== RENDER STOPS =====
+// ===== DB =====
+let db;
+const DB_NAME = "GTFS_DB";
+
+function initDB(){
+  return new Promise(res=>{
+    const req = indexedDB.open(DB_NAME,1);
+
+    req.onupgradeneeded = e=>{
+      db = e.target.result;
+      db.createObjectStore("files",{keyPath:"name"});
+    };
+
+    req.onsuccess = e=>{
+      db = e.target.result;
+      res();
+    };
+  });
+}
+
+function saveFile(name,data){
+  return new Promise(res=>{
+    const tx = db.transaction("files","readwrite");
+    tx.objectStore("files").put({name,data});
+    tx.oncomplete = ()=>res();
+  });
+}
+
+function getFiles(){
+  return new Promise(res=>{
+    const tx = db.transaction("files","readonly");
+    const req = tx.objectStore("files").getAll();
+    req.onsuccess = ()=>res(req.result);
+  });
+}
+
+function clearDB(){
+  const tx = db.transaction("files","readwrite");
+  tx.objectStore("files").clear();
+  location.reload();
+}
+
+// ===== DATA =====
+let STOPS = [];
+
+function parseCSV(text){
+  const lines = text.split(/\r?\n/).filter(Boolean);
+  const header = lines[0].split(',');
+  return {lines, header};
+}
+
+async function loadZip(file){
+
+  const zip = await JSZip.loadAsync(file);
+
+  if(zip.file("stops.txt")){
+    const text = await zip.file("stops.txt").async("string");
+
+    const {lines, header} = parseCSV(text);
+
+    const idI = header.indexOf("stop_id");
+    const nameI = header.indexOf("stop_name");
+    const latI = header.indexOf("stop_lat");
+    const lonI = header.indexOf("stop_lon");
+
+    STOPS = lines.slice(1).map(l=>{
+      const c = l.split(',');
+      return {
+        id: c[idI],
+        name: c[nameI],
+        lat: +c[latI],
+        lon: +c[lonI]
+      };
+    });
+  }
+
+  renderStops(STOPS);
+  drawStops();
+
+  document.getElementById("status").innerText =
+    `✔ ${STOPS.length} megálló betöltve`;
+}
+
+// ===== LOAD FROM DB =====
+async function loadFromDB(){
+  const files = await getFiles();
+
+  if(!files.length){
+    document.getElementById("status").innerText="Nincs mentett adat";
+    return;
+  }
+
+  for(const f of files){
+    const file = new File([f.data], f.name);
+    await loadZip(file);
+  }
+}
+
+// ===== DRAW =====
+function drawStops(){
+
+  markers.forEach(m=>map.removeLayer(m));
+  markers = [];
+
+  STOPS.forEach(s=>{
+    if(!isNaN(s.lat)){
+      const m = L.circleMarker([s.lat,s.lon],{radius:4})
+        .addTo(map)
+        .bindPopup(`${s.name}<br>${s.id}`);
+
+      markers.push(m);
+    }
+  });
+}
+
+// ===== LIST =====
 function renderStops(list){
 
   const container = document.getElementById("list");
   container.innerHTML = "";
 
-  list.forEach(s=>{
+  list.slice(0,300).forEach(s=>{
     const div = document.createElement("div");
     div.className="stop";
     div.innerHTML = `<b>${s.name}</b><br>${s.id}`;
 
     div.onclick = ()=>{
-      show('mapPage');
+      show("mapPage");
       map.setView([s.lat,s.lon],14);
-
-      L.marker([s.lat,s.lon]).addTo(map)
-        .bindPopup(`<b>${s.name}</b><br>${s.id}`)
-        .openPopup();
     };
 
     container.appendChild(div);
   });
 }
-
-renderStops(STOPS);
 
 // ===== SEARCH =====
 document.getElementById("search").oninput = e=>{
@@ -133,44 +214,43 @@ document.getElementById("search").oninput = e=>{
   renderStops(filtered);
 };
 
-// ===== LIVE VEHICLES (SIM) =====
-let vehicles = [];
+// ===== FILE INPUT =====
+function handleFiles(files){
 
-function initVehicles(){
-  vehicles = STOPS.map(s=>({
-    lat:s.lat,
-    lon:s.lon,
-    speed:20+Math.random()*30
-  }));
+  for(const f of files){
+
+    const reader = new FileReader();
+
+    reader.onload = async e=>{
+      await saveFile(f.name, e.target.result);
+
+      const file = new File([e.target.result], f.name);
+      await loadZip(file);
+    };
+
+    reader.readAsArrayBuffer(f);
+  }
 }
 
-function moveVehicles(){
+document.getElementById("fileInput").onchange =
+  e => handleFiles(e.target.files);
 
-  vehicles.forEach(v=>{
+// drag & drop
+const drop = document.getElementById("drop");
 
-    v.lat += (Math.random()-0.5)*0.002;
-    v.lon += (Math.random()-0.5)*0.002;
+drop.ondragover = e=>e.preventDefault();
 
-    L.circleMarker([v.lat,v.lon],{
-      radius:6,
-      color:"red"
-    }).addTo(map);
-  });
-}
-
-setInterval(()=>{
-  map.eachLayer(l=>{
-    if(l instanceof L.CircleMarker) map.removeLayer(l);
-  });
-
-  moveVehicles();
-
-},2000);
-
-initVehicles();
+drop.ondrop = e=>{
+  e.preventDefault();
+  handleFiles(e.dataTransfer.files);
+};
 
 // ===== INIT =====
-show('home');
+(async()=>{
+  await initDB();
+  await loadFromDB();
+  show("home");
+})();
 
 </script>
 
