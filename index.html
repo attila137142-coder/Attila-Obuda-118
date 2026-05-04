@@ -1,157 +1,204 @@
+Térképes keresö, jol, 4 féle térkép-Utcai---Topo_Vasutas_Turista
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
+<title>ATTILA NAVI PRO MAX FUTÁR</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Attila Discount Engine V2 PRO</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
-body { font-family: Arial; background:#0f172a; color:#fff; padding:20px }
-input, button, select { padding:10px; margin:5px; border-radius:8px; border:none }
-button { cursor:pointer; background:#22c55e; color:white; font-weight:bold }
-.card { background:#1e293b; padding:15px; border-radius:12px; margin-top:10px }
-.best { border:2px solid #4ade80 }
-h2 { margin-top:25px }
+body { margin:0; background:#111; color:#fff; font-family:Arial; }
+#map { height:50vh; }
+.panel { padding:8px; }
+button { margin:3px; padding:8px; border-radius:6px; border:0; font-weight:bold; }
+.box { background:#1e1e1e; padding:8px; border-radius:8px; font-size:12px; }
+input { width:95%; padding:6px; border-radius:6px; border:0; }
+#departuresPanel{
+position:fixed;
+bottom:0;
+left:0;
+right:0;
+background:#000;
+max-height:45%;
+overflow:auto;
+padding:10px;
+display:none;
+}
 </style>
 </head>
+
 <body>
 
-<h1>🔥 Attila Discount Engine V2 PRO</h1>
+<div class="panel">
 
-<h2>🛒 Kosár árak</h2>
-<input id="prices" placeholder="pl: 1000, 2500, 1800">
-<button onclick="calculateAll()">SZÁMOLÁS</button>
+<input id="searchInput" placeholder="Keresés..." />
+<button onclick="searchPlace()">🔎</button><br>
 
-<div id="results"></div>
+<button onclick="setLayer('street')">UTCAI</button>
+<button onclick="setLayer('topo')">TOPO</button>
+<button onclick="toggleRail()">VASÚTI</button>
+<button onclick="toggleHike()">TURISTA</button>
 
-<h2>📊 Gyors kalkulátor</h2>
-<input id="original" placeholder="Eredeti ár (Ft)">
-<input id="discounted" placeholder="Akciós ár (Ft)">
-<button onclick="calcPercent()">% kiszámolás</button>
+<div id="info" class="box">Indítás...</div>
 
-<div id="percentResult"></div>
+</div>
 
-<h2>🔁 Teljes ár visszaszámolás</h2>
-<input id="finalPrice" placeholder="Akciós ár (Ft)">
-<input id="percent" placeholder="Kedvezmény %">
-<button onclick="calcOriginal()">Eredeti ár</button>
-
-<div id="originalResult"></div>
+<div id="map"></div>
+<div id="departuresPanel"></div>
 
 <script>
-function parsePrices() {
-  return document.getElementById('prices').value
-    .split(',')
-    .map(x => parseFloat(x.trim()))
-    .filter(x => !isNaN(x))
-    .sort((a,b)=>a-b);
+
+// ---------- MAP
+let map = L.map('map').setView([47.49,19.04],13);
+
+let baseLayers = {
+ street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
+ topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
+};
+
+let railLayer = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.8});
+let hikeLayer = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',{opacity:0.9});
+
+let currentBase = baseLayers.street;
+currentBase.addTo(map);
+
+function setLayer(t){
+ map.removeLayer(currentBase);
+ currentBase = baseLayers[t];
+ map.addLayer(currentBase);
+}
+function toggleRail(){ map.hasLayer(railLayer)?map.removeLayer(railLayer):map.addLayer(railLayer);}
+function toggleHike(){ map.hasLayer(hikeLayer)?map.removeLayer(hikeLayer):map.addLayer(hikeLayer);}
+
+// ---------- GPS + SPEED
+let userLat,userLng,lastTime=null,speedKmh=0,speedMs=0;
+
+navigator.geolocation.watchPosition(pos=>{
+ let lat=pos.coords.latitude;
+ let lng=pos.coords.longitude;
+ let now=Date.now();
+
+ if(userLat){
+   let d=dist(userLat,userLng,lat,lng);
+   let dt=(now-lastTime)/1000;
+   if(dt>0.5){
+     speedMs=d/dt;
+     speedKmh=speedMs*3.6;
+   }
+ }
+
+ userLat=lat;
+ userLng=lng;
+ lastTime=now;
+
+ document.getElementById("info").innerHTML=
+ `🚀 ${speedKmh.toFixed(1)} km/h<br>⚡ ${speedMs.toFixed(2)} m/s`;
+});
+
+// ---------- DIST
+function dist(a,b,c,d){
+ let R=6371e3;
+ let φ1=a*Math.PI/180, φ2=c*Math.PI/180;
+ let Δφ=(c-a)*Math.PI/180;
+ let Δλ=(d-b)*Math.PI/180;
+ let x=Math.sin(Δφ/2)**2+
+   Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
+ return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-function sum(arr) {
-  return arr.reduce((a,b)=>a+b,0);
+// ---------- ROUTE DIST
+async function getRouteDistance(lat,lng){
+ try{
+   let r=await fetch(`https://router.project-osrm.org/route/v1/foot/${userLng},${userLat};${lng},${lat}?overview=false`);
+   let d=await r.json();
+   return d.routes[0].distance;
+ }catch(e){return null;}
 }
 
-function dealA(p){ let f=Math.floor(p.length/3); return sum(p)-sum(p.slice(0,f)); }
-function dealB(p){ return sum(p)*0.8; }
-function dealC(p){ let d=Math.floor(p.length/2); return sum(p)-sum(p.slice(0,d))*0.33; }
-function dealD(p){ let f=Math.min(Math.floor(p.length/6),1); return sum(p)-sum(p.slice(0,f)); }
-
-function calculateAll(){
-  let p=parsePrices(); if(p.length===0) return;
-  let base=sum(p);
-
-  let A=dealA(p), B=dealB(p), C=dealC(p), D=dealD(p);
-  let min=Math.min(A,B,C,D);
-
-  function save(x){ return (base-x).toFixed(0); }
-  function percent(x){ return (((base-x)/base)*100).toFixed(1); }
-
-  document.getElementById('results').innerHTML=`
-  <div class="card ${A===min?'best':''}">🅰️ 3. ingyen → ${A.toFixed(0)} Ft | -${percent(A)}% | spórolsz ${save(A)} Ft</div>
-  <div class="card ${B===min?'best':''}">🅱️ -20% → ${B.toFixed(0)} Ft | -${percent(B)}% | spórolsz ${save(B)} Ft</div>
-  <div class="card ${C===min?'best':''}">🅲 2. -33% → ${C.toFixed(0)} Ft | -${percent(C)}% | spórolsz ${save(C)} Ft</div>
-  <div class="card ${D===min?'best':''}">🅳 6-ból 1 ingyen (limit 1) → ${D.toFixed(0)} Ft | -${percent(D)}% | spórolsz ${save(D)} Ft</div>
-  <h2>🏆 LEGJOBB: ${A===min?'A':B===min?'B':C===min?'C':'D'}</h2>
-  `;
+// ---------- SEARCH
+async function searchPlace(){
+ let q=document.getElementById("searchInput").value;
+ let r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+ let d=await r.json();
+ if(d[0]) map.setView([d[0].lat,d[0].lon],15);
 }
 
-function calcPercent(){
-  let o=parseFloat(document.getElementById('original').value);
-  let d=parseFloat(document.getElementById('discounted').value);
-  if(!o||!d) return;
-  let diff=o-d;
-  let perc=(diff/o)*100;
-  document.getElementById('percentResult').innerHTML=
-    `Kedvezmény: ${perc.toFixed(2)}% | Megtakarítás: ${diff.toFixed(0)} Ft`;
+// ---------- GTFS
+let gtfsStops=[];
+
+async function loadGTFS(url){
+
+ let res=await fetch(url);
+ let zip=await JSZip.loadAsync(await res.blob());
+
+ let stopsTxt=await zip.file("stops.txt").async("string");
+
+ gtfsStops = stopsTxt.split("\n").slice(1).map(r=>{
+   let c=r.split(",");
+   return {id:c[0],name:c[2],lat:+c[4],lng:+c[5]};
+ });
+
+ drawStops();
 }
 
-function calcOriginal(){
-  let f=parseFloat(document.getElementById('finalPrice').value);
-  let p=parseFloat(document.getElementById('percent').value);
-  if(!f||!p) return;
-  let original=f/(1-p/100);
-  document.getElementById('originalResult').innerHTML=
-    `Eredeti ár: ${original.toFixed(0)} Ft`;
+// ---------- STOPS
+function drawStops(){
+
+ gtfsStops.forEach(s=>{
+
+   let m=L.circleMarker([s.lat,s.lng],{radius:5,color:"yellow"})
+     .addTo(map);
+
+   m.on("click",()=>showDepartures(s));
+ });
 }
+
+// ---------- LIVE DEPS (BACKEND)
+async function showDepartures(stop){
+
+ let air = dist(userLat,userLng,stop.lat,stop.lng);
+ let road = await getRouteDistance(stop.lat,stop.lng);
+
+ let html = `
+ <h3>${stop.name}</h3>
+ ✈️ ${Math.round(air)} m |
+ 🛣️ ${road?Math.round(road)+" m":"..."}<br><br>
+
+ <table width="100%">
+ <tr><th>Visz</th><th>Indul</th><th>Késés</th></tr>
+ `;
+
+ try{
+   let res = await fetch("http://localhost:3000/liveDepartures/"+stop.id);
+   let data = await res.json();
+
+   data.forEach(d=>{
+     let col = d.delay==0?"lime":d.delay<5?"orange":"red";
+     html += `<tr>
+       <td>${d.route}</td>
+       <td>${d.time}</td>
+       <td style="color:${col}">${d.delay}p</td>
+     </tr>`;
+   });
+
+ }catch(e){
+   html += `<tr><td colspan=3>Nincs backend</td></tr>`;
+ }
+
+ html += "</table>";
+
+ let panel=document.getElementById("departuresPanel");
+ panel.innerHTML=html;
+ panel.style.display="block";
+}
+
+// ---------- LOAD BKK
+loadGTFS("https://bkk.hu/gtfs/budapest_gtfs.zip");
+
 </script>
-
-
-<h2>📦 Százalékos megosztás (raktár)</h2>
-<input id="totalWeight" placeholder="Teljes súly (pl: 1000)">
-<input id="p1" placeholder="% (pl: 16)">
-<input id="p2" placeholder="% (pl: 40)">
-<input id="p3" placeholder="% (pl: 30)">
-<input id="p4" placeholder="% (pl: 16)">
-<button onclick="calcDistribution()">Megosztás számolás</button>
-
-<div id="distResult"></div>
-
-<h2>🔁 % visszaszámolás súlyból</h2>
-<input id="partWeight" placeholder="Rész súly (pl: 160)">
-<input id="totalWeight2" placeholder="Teljes súly (pl: 1000)">
-<button onclick="calcBackPercent()">% kiszámolás</button>
-
-<div id="backResult"></div>
-
-<script>
-function calcDistribution(){
-  let total=parseFloat(document.getElementById('totalWeight').value);
-  let p=[
-    parseFloat(document.getElementById('p1').value)||0,
-    parseFloat(document.getElementById('p2').value)||0,
-    parseFloat(document.getElementById('p3').value)||0,
-    parseFloat(document.getElementById('p4').value)||0
-  ];
-  if(!total) return;
-
-  let names=["Ellopták","Megromlott","Kolléga elvitte","Vevők megvették"];
-
-  let html="";
-  let used=0;
-
-  for(let i=0;i<p.length;i++){
-    let weight=total*(p[i]/100);
-    used+=weight;
-    html+=`<div class="card">${names[i]}: ${p[i]}% → ${weight.toFixed(1)} tonna</div>`;
-  }
-
-  let remain=total-used;
-
-  html+=`<div class="card">📦 Maradék: ${remain.toFixed(1)} tonna (${((remain/total)*100).toFixed(1)}%)</div>`;
-
-  document.getElementById('distResult').innerHTML=html;
-}
-
-function calcBackPercent(){
-  let part=parseFloat(document.getElementById('partWeight').value);
-  let total=parseFloat(document.getElementById('totalWeight2').value);
-  if(!part||!total) return;
-
-  let percent=(part/total)*100;
-
-  document.getElementById('backResult').innerHTML=
-    `Ez: ${percent.toFixed(2)}%`;
-}
-</script>
-
 </body>
 </html>
