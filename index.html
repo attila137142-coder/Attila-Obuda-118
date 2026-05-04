@@ -1,7 +1,37 @@
-<div id="matrix"></div>
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>ATTILA DISPATCHER V2 – MATRIX</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-#matrix{
+body { margin:0; font-family:Arial; display:flex; }
+
+#sidebar{
+  width:360px;
+  border-right:1px solid #ddd;
+  overflow:auto;
+}
+
+#map{ flex:1; height:100vh; }
+
+.stop{
+  padding:8px;
+  border-bottom:1px solid #eee;
+  cursor:pointer;
+}
+.stop:hover{ background:#f0f0f0; }
+
+#panel{
+  padding:0;
+}
+
+/* ===== MATRIX ===== */
+.matrix{
   width:100%;
   background:black;
   color:#00ff66;
@@ -14,7 +44,7 @@
   display:flex;
   justify-content:space-between;
   border-bottom:1px solid #003300;
-  padding:6px 0;
+  padding:8px 0;
   font-size:18px;
 }
 
@@ -30,3 +60,145 @@
   50%{opacity:0.2;}
 }
 </style>
+</head>
+
+<body>
+
+<div id="sidebar">
+<h3>🟢 MATRIX DISPATCH</h3>
+<input id="search" placeholder="Keresés...">
+<div id="list"></div>
+<div id="panel">Válassz megállót</div>
+</div>
+
+<div id="map"></div>
+
+<script>
+
+// ===== MAP =====
+const map = L.map('map').setView([47.6,19.05],10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+// ===== ADATOK (RÖVIDÍTETT – IDE TELJES LISTA) =====
+const STOPS = [
+{name:"Nád utca", gtfs:"BKK-F00457", lat:47.594072, lon:19.048469},
+{name:"Bojtár utca (kifelé)", gtfs:"BKK-F00520", lat:47.560099, lon:19.024711},
+{name:"Szentendre, Autóbusz-állomás", gtfs:"VOLÁN-778806-99", lat:47.660403, lon:19.075408},
+
+// Gyermekvasút
+{line:"Gyermekvasút", name:"Széchenyi-hegy", lat:47.5007, lon:18.9653, mav_id:"005546912"},
+{line:"Gyermekvasút", name:"Hűvösvölgy", lat:47.5412, lon:18.9640, mav_id:"005546847"}
+];
+
+// ===== TYPE =====
+function getType(s){
+  if(s.gtfs?.includes("BKK")) return "bkk";
+  if(s.gtfs?.includes("VOLÁN")||s.gtfs?.includes("VOLAN")) return "volan";
+  if(s.line==="Gyermekvasút") return "child";
+  return "other";
+}
+
+// ===== MATRIX ENGINE =====
+function showMatrix(stop){
+
+  const now = new Date();
+  const baseMin = now.getMinutes();
+
+  // DEMO → később GTFS
+  const data = [
+    {line:"34", dest:"Békásmegyer", min:2, delay:-1},
+    {line:"134", dest:"Szentendre", min:5, delay:+2},
+    {line:"H5", dest:"Batthyány tér", min:8, delay:0}
+  ];
+
+  let html = `<div class="matrix">`;
+  html += `<h3>🚏 ${stop.name}</h3>`;
+
+  data.forEach(d=>{
+
+    let delayTxt="";
+    if(d.delay>0) delayTxt=`+${d.delay}p`;
+    if(d.delay<0) delayTxt=`-${Math.abs(d.delay)}p`;
+
+    html += `
+      <div class="row">
+        <div class="line">${d.line}</div>
+        <div class="dest">${d.dest}</div>
+        <div class="time ${d.min<=2?"blink":""}">
+          ${d.min} p
+        </div>
+        <div class="delay">${delayTxt}</div>
+      </div>
+    `;
+  });
+
+  html += `</div>`;
+
+  // opcionális: BKK embed gomb
+  if(getType(stop)==="bkk"){
+    const id = stop.gtfs.match(/F\d+/)?.[0];
+    if(id){
+      html += `
+        <button onclick="showEmbed('${id}')">
+        🔵 Hivatalos kijelző
+        </button>
+      `;
+    }
+  }
+
+  document.getElementById("panel").innerHTML = html;
+}
+
+// ===== EMBED =====
+function showEmbed(id){
+  document.getElementById("panel").innerHTML = `
+    <iframe 
+      src="https://realtimenext.hu/embed/bkv/stops/${id}/schedule"
+      width="100%" height="500" style="border:none;">
+    </iframe>
+  `;
+}
+
+// ===== LISTA =====
+function render(list){
+
+  const c=document.getElementById("list");
+  c.innerHTML="";
+
+  list.forEach(s=>{
+    const d=document.createElement("div");
+    d.className="stop";
+
+    let icon="📍";
+    if(getType(s)==="bkk") icon="🚍";
+    if(getType(s)==="volan") icon="🚌";
+    if(getType(s)==="child") icon="🚂";
+
+    d.innerHTML=`${icon} ${s.name}`;
+    d.onclick=()=>showMatrix(s);
+
+    c.appendChild(d);
+  });
+}
+
+// ===== SEARCH =====
+search.oninput=e=>{
+  const q=e.target.value.toLowerCase();
+  render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
+};
+
+// ===== MAP =====
+STOPS.forEach(s=>{
+  if(s.lat){
+    L.marker([s.lat,s.lon])
+      .addTo(map)
+      .on("click",()=>showMatrix(s));
+  }
+});
+
+render(STOPS);
+
+</script>
+
+</body>
+</html>
