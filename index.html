@@ -2,218 +2,175 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>V3 GTFS-RT MERGE ENGINE</title>
+<title>Attila Dispatcher UI V1</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body { margin:0; display:flex; height:100vh; font-family:Arial; }
-#sidebar { width:380px; padding:10px; overflow:auto; border-right:1px solid #ccc; }
-#map { flex:1; }
-.stop { padding:6px; border-bottom:1px solid #eee; cursor:pointer; }
-.stop:hover { background:#f2f2f2; }
-button { width:100%; padding:8px; margin-top:6px; }
+body { margin:0; font-family:Arial; }
+.page { display:none; height:calc(100vh - 60px); overflow:auto; }
+#map { height:100%; }
+
+/* bottom nav */
+#nav {
+  position:fixed;
+  bottom:0;
+  width:100%;
+  height:60px;
+  background:#111;
+  display:flex;
+}
+#nav button {
+  flex:1;
+  border:none;
+  background:#111;
+  color:white;
+  font-size:18px;
+}
+
+/* list */
+.stop {
+  padding:10px;
+  border-bottom:1px solid #ddd;
+}
 </style>
 </head>
 
 <body>
 
-<div id="sidebar">
-<h3>🚆 V3 GTFS-RT MERGE</h3>
-<button onclick="initSystem()">🔄 LOAD SYSTEM</button>
-<div id="list"></div>
+<!-- ===== PAGES ===== -->
+
+<div id="home" class="page">
+  <h2>🚆 Attila Dispatcher</h2>
+  <p>✔ Unified rendszer</p>
+  <p>✔ Live dispatch ready</p>
 </div>
 
-<div id="map"></div>
+<div id="mapPage" class="page">
+  <div id="map"></div>
+</div>
+
+<div id="stopsPage" class="page">
+  <input id="search" placeholder="Keresés..." style="width:100%;padding:10px;">
+  <div id="list"></div>
+</div>
+
+<div id="livePage" class="page">
+  <h3>🚍 LIVE DISPATCH</h3>
+  <p>Járművek mozognak a térképen</p>
+</div>
+
+<!-- ===== NAV ===== -->
+
+<div id="nav">
+  <button onclick="show('home')">🏠</button>
+  <button onclick="show('mapPage')">🗺</button>
+  <button onclick="show('stopsPage')">🚏</button>
+  <button onclick="show('livePage')">🚍</button>
+</div>
 
 <script>
 
-const map = L.map('map').setView([47.5,19.05],11);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+// ===== PAGE SWITCH =====
+function show(id){
+  document.querySelectorAll('.page').forEach(p=>p.style.display='none');
+  document.getElementById(id).style.display='block';
 
-// ================= UNIFIED STOPS =================
-const STOPS = [
-  {id:"F00457", type:"bkk", name:"Nád utca", lat:47.594072, lon:19.048469},
-  {id:"779053-1", type:"volan", name:"Tahitótfalu hídfő", lat:47.751712, lon:19.078215},
-  {id:"005546862", type:"mav", name:"Szépjuhászné", lat:47.5287, lon:18.9683},
-  {id:"778840", type:"volan", name:"Skanzen", lat:47.691135, lon:19.046955}
-];
-
-// ================= GTFS STATIC =================
-let STOP_TIMES = [];
-let TRIPS = {};
-
-// ================= REALTIME LAYER =================
-let RT_VEHICLES = {};
-let SIM_VEHICLES = [];
-
-// ================= TIME CORE =================
-function timeToSec(t){
-  const p = t.split(":");
-  return (+p[0])*3600 + (+p[1])*60 + (+p[2]);
-}
-
-function nowSec(){
-  const n = new Date();
-  return n.getHours()*3600 + n.getMinutes()*60 + n.getSeconds();
-}
-
-// ================= LOAD GTFS (SIMPLIFIED MOCK) =================
-function loadGTFS(){
-
-  STOP_TIMES = [
-    {trip:"T1", stop:"F00457", time:"08:00:00"},
-    {trip:"T1", stop:"779053-1", time:"08:25:00"},
-    {trip:"T1", stop:"005546862", time:"08:50:00"}
-  ];
-
-  TRIPS = {
-    "T1": {route:"BKK-150", head:"Vác felé"}
-  };
-}
-
-// ================= GTFS-RT FETCH =================
-async function loadRT(){
-
-  try {
-
-    // 🔥 ide jöhet valódi RT endpoint
-    const res = await fetch("https://example.com/gtfs-rt");
-
-    const data = await res.json();
-
-    RT_VEHICLES = data;
-
-  } catch(e){
-
-    console.log("⚠ RT nincs → SIM fallback");
-    buildSimVehicles();
+  if(id === "mapPage"){
+    setTimeout(()=>map.invalidateSize(),200);
   }
 }
 
-// ================= SIM FALLBACK =================
-function buildSimVehicles(){
+// ===== MAP =====
+const map = L.map('map').setView([47.5,19.05],11);
 
-  SIM_VEHICLES = [];
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-  STOP_TIMES.forEach(t=>{
+// ===== STOPS =====
+const STOPS = [
+  {name:"Nád utca", id:"F00457", lat:47.594072, lon:19.048469},
+  {name:"Szentendre", id:"F04687", lat:47.661056, lon:19.075675},
+  {name:"Tahitótfalu hídfő", id:"779053-1", lat:47.751712, lon:19.078215}
+];
 
-    const stop = STOPS.find(s=>s.id === t.stop);
-    if(!stop) return;
+// ===== RENDER STOPS =====
+function renderStops(list){
 
-    SIM_VEHICLES.push({
-      trip: t.trip,
-      stop: t.stop,
-      lat: stop.lat,
-      lon: stop.lon,
-      speed: 20 + Math.random()*40,
-      delay: (Math.random()*300)|0
-    });
+  const container = document.getElementById("list");
+  container.innerHTML = "";
 
+  list.forEach(s=>{
+    const div = document.createElement("div");
+    div.className="stop";
+    div.innerHTML = `<b>${s.name}</b><br>${s.id}`;
+
+    div.onclick = ()=>{
+      show('mapPage');
+      map.setView([s.lat,s.lon],14);
+
+      L.marker([s.lat,s.lon]).addTo(map)
+        .bindPopup(`<b>${s.name}</b><br>${s.id}`)
+        .openPopup();
+    };
+
+    container.appendChild(div);
   });
 }
 
-// ================= LIVE ENGINE =================
-function renderVehicles(){
+renderStops(STOPS);
 
-  const now = Date.now();
+// ===== SEARCH =====
+document.getElementById("search").oninput = e=>{
+  const q = e.target.value.toLowerCase();
 
-  SIM_VEHICLES.forEach(v=>{
+  const filtered = STOPS.filter(s =>
+    s.name.toLowerCase().includes(q) ||
+    s.id.toLowerCase().includes(q)
+  );
 
-    const drift = (Math.sin(now/8000)+1)*0.0007;
+  renderStops(filtered);
+};
 
-    v.lat += (Math.random()-0.5)*drift;
-    v.lon += (Math.random()-0.5)*drift;
+// ===== LIVE VEHICLES (SIM) =====
+let vehicles = [];
 
-    const delayMin = Math.round(v.delay/60);
+function initVehicles(){
+  vehicles = STOPS.map(s=>({
+    lat:s.lat,
+    lon:s.lon,
+    speed:20+Math.random()*30
+  }));
+}
 
-    let color = "green";
-    if(delayMin > 2) color = "red";
-    if(delayMin < -1) color = "blue";
+function moveVehicles(){
+
+  vehicles.forEach(v=>{
+
+    v.lat += (Math.random()-0.5)*0.002;
+    v.lon += (Math.random()-0.5)*0.002;
 
     L.circleMarker([v.lat,v.lon],{
       radius:6,
-      color
-    }).addTo(map)
-    .bindPopup(`
-      🚌 ${v.trip}<br>
-      🚏 ${v.stop}<br>
-      ⚡ ${v.speed.toFixed(0)} km/h<br>
-      ⏱ ${delayMin} perc
-    `);
+      color:"red"
+    }).addTo(map);
   });
 }
 
-// ================= STOP PANEL =================
-function openStop(stop){
-
-  const deps = STOP_TIMES.filter(t=>t.stop===stop.id);
-
-  let html = `
-    <b>🚏 ${stop.name}</b><br>
-    🆔 ${stop.id}<br>
-    🌍 ${stop.type}<br><br>
-
-    <b>🚌 Indulások:</b><br><br>
-  `;
-
-  deps.forEach(d=>{
-
-    const trip = TRIPS[d.trip];
-    const vehicle = SIM_VEHICLES.find(v=>v.stop===stop.id);
-
-    html += `
-      🚍 ${trip?.route || "?"}<br>
-      ➜ ${trip?.head || ""}<br>
-      ⏱ ${d.time}<br>
-      ${vehicle ? "🟢 LIVE VEHICLE" : "⚪ no vehicle"}<br><br>
-    `;
+setInterval(()=>{
+  map.eachLayer(l=>{
+    if(l instanceof L.CircleMarker) map.removeLayer(l);
   });
 
-  L.popup()
-    .setLatLng([stop.lat,stop.lon])
-    .setContent(html)
-    .openOn(map);
-}
+  moveVehicles();
 
-// ================= UI =================
-function renderStops(){
+},2000);
 
-  const list = document.getElementById("list");
-  list.innerHTML = "";
+initVehicles();
 
-  STOPS.forEach(s=>{
-
-    const div = document.createElement("div");
-    div.className="stop";
-    div.innerHTML = `<b>${s.name}</b><br>${s.type}`;
-
-    div.onclick = ()=>openStop(s);
-
-    list.appendChild(div);
-  });
-}
-
-// ================= MAIN INIT =================
-async function initSystem(){
-
-  loadGTFS();
-  await loadRT();
-  renderStops();
-
-  setInterval(()=>{
-
-    map.eachLayer(l=>{
-      if(l instanceof L.CircleMarker) map.removeLayer(l);
-    });
-
-    renderVehicles();
-
-  }, 2000);
-
-}
+// ===== INIT =====
+show('home');
 
 </script>
 
