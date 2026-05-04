@@ -1,150 +1,32 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>ATTILA DISPATCHER – HYBRID CORE</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<div id="matrix"></div>
 
 <style>
-body { margin:0; font-family:Arial; display:flex; }
-#sidebar { width:360px; overflow:auto; border-right:1px solid #ddd; }
-#map { flex:1; height:100vh; }
-.stop { padding:8px; border-bottom:1px solid #eee; cursor:pointer; }
-.stop:hover { background:#f0f0f0; }
-#panel { padding:10px; border-top:1px solid #ccc; }
+#matrix{
+  width:100%;
+  background:black;
+  color:#00ff66;
+  font-family: "Courier New", monospace;
+  padding:10px;
+  box-sizing:border-box;
+}
+
+.row{
+  display:flex;
+  justify-content:space-between;
+  border-bottom:1px solid #003300;
+  padding:6px 0;
+  font-size:18px;
+}
+
+.line{ width:80px; font-weight:bold; }
+.dest{ flex:1; }
+.time{ width:80px; text-align:right; }
+.delay{ width:80px; text-align:right; }
+
+.blink{
+  animation:blink 1s infinite;
+}
+@keyframes blink{
+  50%{opacity:0.2;}
+}
 </style>
-</head>
-
-<body>
-
-<div id="sidebar">
-<h3>🚆 HYBRID DISPATCH</h3>
-<input id="search" placeholder="Keresés...">
-<div id="list"></div>
-<div id="panel">Válassz megállót</div>
-</div>
-
-<div id="map"></div>
-
-<script>
-
-// ===== MAP =====
-const map = L.map('map').setView([47.6,19.05],10);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-// ===== ADATAID (rövidítve – ide tedd be TELJES listát!) =====
-const STOPS = [
-{name:"Nád utca", gtfs:"BKK-F00457", lat:47.594072, lon:19.048469},
-{name:"Bojtár utca (kifelé)", gtfs:"BKK-F00520", lat:47.560099, lon:19.024711},
-{name:"Bojtár utca (befelé)", gtfs:"BKK-F00521", lat:47.559047, lon:19.042921},
-{name:"Szentendre, Autóbusz-állomás", gtfs:"VOLÁN-778806-99", lat:47.660403, lon:19.075408},
-{name:"Tahitótfalu, hídfő 1", gtfs:"VOLÁN-779053-1", lat:47.751712, lon:19.078215},
-
-// ==== GYERMEKVASÚT ====
-{line:"Gyermekvasút", name:"Széchenyi-hegy", lat:47.5007, lon:18.9653, mav_id:"005546912"},
-{line:"Gyermekvasút", name:"Normafa", lat:47.5070, lon:18.9630, mav_id:"005546904"},
-{line:"Gyermekvasút", name:"Csillebérc", lat:47.5109, lon:18.9659, mav_id:"005546896"},
-{line:"Gyermekvasút", name:"Hűvösvölgy", lat:47.5412, lon:18.9640, mav_id:"005546847"}
-];
-
-// ===== TYPE DETECTION =====
-function getType(s){
-  if(s.gtfs?.includes("BKK")) return "bkk";
-  if(s.gtfs?.includes("VOLÁN")||s.gtfs?.includes("VOLAN")) return "volan";
-  if(s.mav_id) return "mav";
-  if(s.line==="Gyermekvasút") return "childrail";
-  return "other";
-}
-
-// ===== CLEAN ID =====
-function getEmbedId(gtfs){
-  if(!gtfs) return null;
-  const m = gtfs.match(/F\d+|\d{8}/);
-  return m ? m[0] : null;
-}
-
-// ===== STOP PANEL =====
-function openStop(s){
-
-  const type = getType(s);
-  const id = getEmbedId(s.gtfs);
-
-  let html = `
-    <h3>🚏 ${s.name}</h3>
-    <div>📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}</div>
-  `;
-
-  // ===== BKK / HÉV =====
-  if(type==="bkk" && id){
-    html += `
-    <iframe 
-      src="https://realtimenext.hu/embed/bkv/stops/${id}/schedule"
-      width="100%" height="400" style="border:none;">
-    </iframe>`;
-  }
-
-  // ===== VOLÁN =====
-  else if(type==="volan"){
-    html += "🚌 VOLÁN – GTFS menetrend (következő modul)";
-  }
-
-  // ===== GYERMEKVASÚT =====
-  else if(type==="childrail"){
-    html += `
-      🚂 Gyermekvasút állomás<br>
-      MÁV ID: ${s.mav_id || "nincs"}<br>
-      (menetrend modul később)
-    `;
-  }
-
-  document.getElementById("panel").innerHTML = html;
-}
-
-// ===== LISTA =====
-function render(list){
-
-  const container = document.getElementById("list");
-  container.innerHTML = "";
-
-  list.forEach(s=>{
-
-    const div = document.createElement("div");
-    div.className="stop";
-
-    let icon="📍";
-    const t=getType(s);
-    if(t==="bkk") icon="🚍";
-    if(t==="volan") icon="🚌";
-    if(t==="childrail") icon="🚂";
-
-    div.innerHTML = `${icon} ${s.name}`;
-    div.onclick = ()=>openStop(s);
-
-    container.appendChild(div);
-  });
-}
-
-// ===== SEARCH =====
-search.oninput = e=>{
-  const q = e.target.value.toLowerCase();
-  render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
-};
-
-// ===== MAP =====
-STOPS.forEach(s=>{
-  if(s.lat){
-    L.marker([s.lat,s.lon])
-      .addTo(map)
-      .on("click", ()=>openStop(s));
-  }
-});
-
-render(STOPS);
-
-</script>
-
-</body>
-</html>
