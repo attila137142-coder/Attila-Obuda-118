@@ -2,27 +2,34 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA DISPATCHER – HYBRID CORE</title>
+<title>ATTILA DISPATCH V4</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body { margin:0; font-family:Arial; display:flex; }
-#sidebar { width:360px; overflow:auto; border-right:1px solid #ddd; }
-#map { flex:1; height:100vh; }
-.stop { padding:8px; border-bottom:1px solid #eee; cursor:pointer; }
-.stop:hover { background:#f0f0f0; }
-#panel { padding:10px; border-top:1px solid #ccc; }
+body{margin:0;display:flex;font-family:Arial}
+#sidebar{width:380px;border-right:1px solid #ccc;overflow:auto}
+#map{flex:1;height:100vh}
+input{width:100%;padding:10px}
+
+/* MATRIX */
+.matrix{background:black;color:#00ff66;font-family:monospace;padding:10px}
+.row{display:grid;grid-template-columns:80px 1fr 120px 120px;padding:10px;border-bottom:1px solid #003300}
+.line{font-size:22px}
+.dest{font-size:18px}
+.time{font-size:22px;text-align:right}
+.delay{text-align:right}
+.blink{animation:blink 1s infinite}
+@keyframes blink{50%{opacity:0.2}}
 </style>
 </head>
 
 <body>
 
 <div id="sidebar">
-<h3>🚆 HYBRID DISPATCH</h3>
-<input id="search" placeholder="Keresés...">
+<input id="search" placeholder="🔍 Megálló / GTFS ID...">
 <div id="list"></div>
 <div id="panel">Válassz megállót</div>
 </div>
@@ -32,201 +39,147 @@ body { margin:0; font-family:Arial; display:flex; }
 <script>
 
 // ===== MAP =====
-const map = L.map('map').setView([47.6,19.05],10);
+const map=L.map('map').setView([47.5,19.05],11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ===== ADATAID (rövidítve – ide tedd be TELJES listát!) =====
-const STOPS = [
+// ===== GPS =====
+let userPos=null, gpsAccuracy=null;
 
-{name: "Békásmegyer HÉV-állomás", gtfs: "H5-09183", lat: 47.598091, lon: 19.054599},
-{name: "Nád utca", gtfs: "BKK-F00457", lat: 47.594072, lon: 19.048469},
-{name: "Gulácsy Lajos utca", gtfs: "BKK-00438", lat: 47.602562, lon: 19.048229},
-{name: "Florián tér", gtfs: "BKK-F00611", lat: 47.542896, lon: 19.042252},
-{name: "Florián tér", gtfs: "BKK-F00613", lat: 47.541664, lon: 19.040084},
-{name: "Batthyány tér (villamos)", gtfs: "BKK-F00057", lat: 47.506002, lon: 19.039456},
-{name: "Verecke lépcsö", gtfs: "BKK-F00265", lat: 47.529117, lon: 19.003624},
-{name: "Csobánka tér-243 vá", gtfs: "BKK-F044192", lat: 47.597795, lon: 19.053787},
-{name: "Csobánka tér-160 vá", gtfs: "BKK-008939", lat: 47.598425, lon: 19.054240},
-{name: "Szentendre, HÉV végállomás", gtfs: "H5-09142221", lat: 47.661038, lon: 19.075607},
-{name: "Örs Vezér tér-85-85E", gtfs: "BKK-008030", lat: 47.501742, lon: 19.135604},
-{name: "Kocka utca (kifelé)", gtfs: "BKK-1831", lat: 47.484915, lon: 19.155466},
-{name: "Kocka utca (befelé)", gtfs: "BKK-1832", lat: 47.484708, lon: 19.155969},
-{name: "Újhegyi sétány (befelé)", gtfs: "BKK-F01842", lat: 47.470813, lon: 19.16451},
-{name: "Gőzmozdony utca (kifelé)", gtfs: "BKK-008863", lat: 47.470028, lon: 19.157173},
-{name: "Bojtár utca (kifelé)", gtfs: "VOLÁN-773493-1-BKK-F00520", lat: 47.560099, lon: 19.024711},
-{name: "Bojtár utca (befelé)", gtfs: "VOLÁN-773493-2-BKK-F00521", lat: 47.559047, lon: 19.042921},
-{name: "Szentendre, Autóbusz-állomás", gtfs: "VOLÁN-778806-99", lat: 47.660403, lon: 19.075408},
-{name: "Szentendre, Skanzen (1)", gtfs: "VOLÁN-778840-1", lat: 47.691135, lon: 19.046955},
-{name: "Szentendre, Skanzen (2)", gtfs: "VOLÁN-778840-2", lat: 47.691273, lon: 19.045667},
-{name: "Tahitótfalu, hídfő 1", gtfs: "VOLÁN-779053-1", lat: 47.751712, lon: 19.078215},
-{name: "Tahitótfalu, hídfő 2", gtfs: "VOLÁN-779053-2", lat: 47.751648, lon: 19.078091},
-{name: "Szentendre, Dömör-kapu", gtfs: "VOLÁN-778803", lat: 47.694900, lon: 19.000210},
-{name: "Vác, Autóbusz-állomás", gtfs: "VOLÁN-779365_99", lat: 47.781930, lon: 19.129643},
-{name: "Kóspallag, templom", gtfs: "VOLÁN-778190", lat: 47.877850, lon: 18.932580},
-{name: "Kisinóci turistaház", gtfs: "VOLAN-778186", lat: 47.890600, lon: 18.927580},
-{name: "Királyrét", gtfs: "VOLAN-779017", lat: 47.895040, lon: 18.977687},
-{name: "Szob, Vasútállomás", gtfs: "VOLAN-779011", lat: 47.821319, lon: 18.862602},
-{name: "Nagybörzsöny, községháza", gtfs: "VOLAN-778310", lat: 47.936030, lon: 18.827710},
-{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-1", lat: 48.015915, lon: 18.888468},
-{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-2", lat: 48.015710, lon: 18.888021},
-{name: "Pilisborosjenő, buszforduló", gtfs: "VOLAN-778532", lat: 47.609100, lon: 18.989680},
-{name: "Dobogókő, hegytető", gtfs: "VOLAN-778561", lat: 47.719118, lon: 18.897577},
-{name: "Vámosmikola, községháza", gtfs: "VOLAN-779478", lat: 47.978190, lon: 18.785890},
-{name: "Dunapataj, iskola", gtfs: "VOLAN-325369", lat: 46.644280, lon: 19.000233},
-{name: "Szelidi-tó, autóbusz-forduló", gtfs: "VOLAN-325374", lat: 46.625050, lon: 19.046159},
-{name: "Pomáz, HÉV állomás", gtfs: "HEV5-09134", lat: 47.642749, lon: 19.032657},
-{name: "Pomáz, autóbusz-állomás", gtfs: "VOLAN-778618", lat: 47.642749, lon: 19.032657},
-{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-1-BKK-009170", lat: 47.645570, lon: 19.027226},
-{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-2-BKK-009171", lat: 47.645554, lon: 19.027001},
-{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-1", lat: 46.789883, lon: 17.181239},
-{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-2", lat: 46.790057, lon: 17.182311},
-{name: "Héviz, Autobusz állomás", gtfs: "VOLAN-561337", lat: 46.792964, lon: 17.192426},
-{name: "Keszhely,Vasut-és  Autobusz állomás", gtfs: "VOLAN-561442", lat: 46.757976, lon: 17.246480},
-{name: "Magas taxi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.92842, lon: 18.92997},
-{name: "Nagyhideghegyi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.936111, lon: 18.921944},
-{name: "Csoványos, (hegycsucs,Börzsöny,kiláto)", gtfs: "ERDÖ", lat: 47.94908, lon: 18.9483},
-{name: "Lakás, (Dino lak)", gtfs: "UTCA", lat: 47.594304, lon: 19.048770},
-/* ================= GYERMEKVASÚT ================= */
-{line:"Gyermekvasút", name:"Széchenyi-hegy", lat:47.5007, lon:18.9653, mav_id:"005546912"},
-{line:"Gyermekvasút", name:"Normafa", lat:47.5070, lon:18.9630, mav_id:"005546904"},
-{line:"Gyermekvasút", name:"Csillebérc", lat:47.5109, lon:18.9659, mav_id:"005546896"},
-{line:"Gyermekvasút", name:"Virágvölgy", lat:47.5185, lon:18.9672, mav_id:"005546888"},
-{line:"Gyermekvasút", name:"Jánoshegy", lat:47.5207, lon:18.9646, mav_id:"005546870"},
-{line:"Gyermekvasút", name:"Vadaspark mh.", lat:47.5365, lon:18.9695, mav_id:null},
-{line:"Gyermekvasút", name:"Szépjuhászné", lat:47.5287, lon:18.9683, mav_id:"005546862"},
-{line:"Gyermekvasút", name:"Hárs-hegy", lat:47.5315, lon:18.9712, mav_id:"005546854"},
-{line:"Gyermekvasút", name:"Hűvösvölgy", lat:47.5412, lon:18.9640, mav_id:"005546847"},
+navigator.geolocation.watchPosition(p=>{
+userPos=[p.coords.latitude,p.coords.longitude];
+gpsAccuracy=p.coords.accuracy;
+});
 
-/* ================= KIRÁLYRÉT ================= */
-{line:"Királyréti Erdei Vasút", name:"Kismaros", lat:47.8270, lon:19.0150, mav_id:null},
-{line:"Királyréti Erdei Vasút", name:"Morgó", lat:47.8440, lon:19.0020, mav_id:null},
-{line:"Királyréti Erdei Vasút", name:"Börzsönyliget", lat:47.8605, lon:18.9940, mav_id:null},
-{line:"Királyréti Erdei Vasút", name:"Pap-hegy", lat:47.8830, lon:18.9840, mav_id:null},
-{line:"Királyréti Erdei Vasút", name:"Királyrét", lat:47.9100, lon:18.9730, mav_id:null},
+// ===== ADATOK =====
+let stops=[], stopTimes=[], trips={}, routes={};
 
-/* ================= KEMENCE ================= */
-{line:"Kemencei Erdei Múzeumvasút", name:"Kemence", lat:47.9980, lon:18.8910, mav_id:null},
-{line:"Kemencei Erdei Múzeumvasút", name:"Godóvár", lat:47.9905, lon:18.8875, mav_id:null},
-{line:"Kemencei Erdei Múzeumvasút", name:"Feketevölgy", lat:47.9830, lon:18.8830, mav_id:null},
-{line:"Kemencei Erdei Múzeumvasút", name:"Hajagos", lat:47.9750, lon:18.8790, mav_id:null},
-{line:"Kemencei Erdei Múzeumvasút", name:"Rózsa-forrás", lat:47.9670, lon:18.8750, mav_id:null},
+// ===== GTFS LOAD =====
+async function loadGTFS(){
+const res=await fetch("stops.txt");
+const txt=await res.text();
 
-/* ================= NAGYBÖRZSÖNY ================= */
-{line:"Nagybörzsönyi Erdei Vasút", name:"Nagybörzsöny", lat:47.9360, lon:18.8320, mav_id:null},
-{line:"Nagybörzsönyi Erdei Vasút", name:"Nagybörzsöny-Észak", lat:47.9430, lon:18.8280, mav_id:null},
-{line:"Nagybörzsönyi Erdei Vasút", name:"Kisirtáspuszta", lat:47.9500, lon:18.8220, mav_id:null},
-{line:"Nagybörzsönyi Erdei Vasút", name:"Nagyirtáspuszta", lat:47.9555, lon:18.8185, mav_id:null},
+txt.split("\n").slice(1).forEach(l=>{
+const c=l.split(",");
+stops.push({
+id:c[0],
+name:c[2],
+lat:+c[4],
+lon:+c[5]
+});
+});
 
-/* ================= SZOBI KISVASÚT (KIEGÉSZÍTVE!) ================= */
-{line:"Szobi Kisvasút", name:"Szob", lat:47.8190, lon:18.8680, mav_id:null},
-{line:"Szobi Kisvasút", name:"Márianosztra", lat:47.8730, lon:18.8700, mav_id:null},
-{line:"Szobi Kisvasút", name:"Máriakút", lat:47.8850, lon:18.8720, mav_id:null},
-{line:"Szobi Kisvasút", name:"Füstös-forrás", lat:47.8950, lon:18.8750, mav_id:null},
-{line:"Szobi Kisvasút", name:"Vetett-fű", lat:47.9050, lon:18.8780, mav_id:null}
-
-// ==== GYERMEKVASÚT ====
-{line:"Gyermekvasút", name:"Széchenyi-hegy", lat:47.5007, lon:18.9653, mav_id:"005546912"},
-{line:"Gyermekvasút", name:"Normafa", lat:47.5070, lon:18.9630, mav_id:"005546904"},
-{line:"Gyermekvasút", name:"Csillebérc", lat:47.5109, lon:18.9659, mav_id:"005546896"},
-{line:"Gyermekvasút", name:"Hűvösvölgy", lat:47.5412, lon:18.9640, mav_id:"005546847"}
-
-];
-
-// ===== TYPE DETECTION =====
-function getType(s){
-  if(s.gtfs?.includes("BKK")) return "bkk";
-  if(s.gtfs?.includes("VOLÁN")||s.gtfs?.includes("VOLAN")) return "volan";
-  if(s.mav_id) return "mav";
-  if(s.line==="Gyermekvasút") return "childrail";
-  return "other";
+render(stops);
 }
 
-// ===== CLEAN ID =====
-function getEmbedId(gtfs){
-  if(!gtfs) return null;
-  const m = gtfs.match(/F\d+|\d{8}/);
-  return m ? m[0] : null;
+// ===== TÁVOLSÁG =====
+function dist(a,b){
+const R=6371;
+const dLat=(b[0]-a[0])*Math.PI/180;
+const dLon=(b[1]-a[1])*Math.PI/180;
+const x=Math.sin(dLat/2)**2+
+Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*
+Math.sin(dLon/2)**2;
+return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ===== STOP PANEL =====
-function openStop(s){
+// ===== ROUTE DIST (OSRM) =====
+async function routeDist(a,b){
+const url=`https://router.project-osrm.org/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=false`;
+const r=await fetch(url);
+const j=await r.json();
+return j.routes[0].distance;
+}
 
-  const type = getType(s);
-  const id = getEmbedId(s.gtfs);
+// ===== REVERSE GEOCODE =====
+async function geo(lat,lon){
+const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+return await r.json();
+}
 
-  let html = `
-    <h3>🚏 ${s.name}</h3>
-    <div>📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}</div>
-  `;
+// ===== MATRIX =====
+function showMatrix(stop){
 
-  // ===== BKK / HÉV =====
-  if(type==="bkk" && id){
-    html += `
-    <iframe 
-      src="https://realtimenext.hu/embed/bkv/stops/${id}/schedule"
-      width="100%" height="400" style="border:none;">
-    </iframe>`;
-  }
+const now=new Date();
+const list=stopTimes.filter(t=>t.stop===stop.id).slice(0,5);
 
-  // ===== VOLÁN =====
-  else if(type==="volan"){
-    html += "🚌 VOLÁN – GTFS menetrend (következő modul)";
-  }
+let html=`<div class="matrix"><h3>${stop.name}</h3>`;
 
-  // ===== GYERMEKVASÚT =====
-  else if(type==="childrail"){
-    html += `
-      🚂 Gyermekvasút állomás<br>
-      MÁV ID: ${s.mav_id || "nincs"}<br>
-      (menetrend modul később)
-    `;
-  }
+list.forEach(t=>{
+const sec=t.sec-now.getHours()*3600;
+const m=Math.floor(sec/60);
+const s=sec%60;
 
-  document.getElementById("panel").innerHTML = html;
+html+=`
+<div class="row">
+<div class="line">${t.route}</div>
+<div class="dest">${t.headsign}</div>
+<div class="time">${m}p ${s}mp</div>
+<div class="delay">-</div>
+</div>
+`;
+});
+
+html+=`</div>`;
+
+showDetails(stop);
+
+document.getElementById("panel").innerHTML=html;
+}
+
+// ===== HELYADAT =====
+async function showDetails(stop){
+
+if(!userPos) return;
+
+const air=dist(userPos,[stop.lat,stop.lon])*1000;
+const road=await routeDist(userPos,[stop.lat,stop.lon]);
+
+const g=await geo(stop.lat,stop.lon);
+
+const info=`
+<div>
+🌍 ${g.address.country}<br>
+🏙 ${g.address.city||g.address.town}<br>
+🏠 ${g.address.road||""} ${g.address.house_number||""}<br>
+📍 ${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}<br>
+📏 Légvonal: ${Math.round(air)} m<br>
+🚗 Útvonal: ${Math.round(road)} m<br>
+📡 GPS pontosság: ${Math.round(gpsAccuracy)} m
+</div>
+`;
+
+document.getElementById("panel").innerHTML+=info;
 }
 
 // ===== LISTA =====
-function render(list){
+function render(arr){
+const list=document.getElementById("list");
+list.innerHTML="";
 
-  const container = document.getElementById("list");
-  container.innerHTML = "";
+arr.slice(0,200).forEach(s=>{
+const d=document.createElement("div");
+d.innerText=`${s.name} (${s.id})`;
+d.onclick=()=>showMatrix(s);
+list.appendChild(d);
 
-  list.forEach(s=>{
-
-    const div = document.createElement("div");
-    div.className="stop";
-
-    let icon="📍";
-    const t=getType(s);
-    if(t==="bkk") icon="🚍";
-    if(t==="volan") icon="🚌";
-    if(t==="childrail") icon="🚂";
-
-    div.innerHTML = `${icon} ${s.name}`;
-    div.onclick = ()=>openStop(s);
-
-    container.appendChild(div);
-  });
+if(s.lat) L.marker([s.lat,s.lon]).addTo(map);
+});
 }
 
 // ===== SEARCH =====
-search.oninput = e=>{
-  const q = e.target.value.toLowerCase();
-  render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
+search.oninput=e=>{
+const q=e.target.value.toLowerCase();
+
+const f=stops.filter(s=>
+s.name.toLowerCase().includes(q) ||
+s.id.toLowerCase().includes(q)
+);
+
+render(f);
 };
 
-// ===== MAP =====
-STOPS.forEach(s=>{
-  if(s.lat){
-    L.marker([s.lat,s.lon])
-      .addTo(map)
-      .on("click", ()=>openStop(s));
-  }
-});
-
-render(STOPS);
+loadGTFS();
 
 </script>
-
 </body>
 </html>
