@@ -1,72 +1,155 @@
-Attila Discount Engine· html
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Attila V3.1 SMART INPUT ENGINE</title>
+<title>Attila Discount Engine V2 PRO</title>
 <style>
 body { font-family: Arial; background:#0f172a; color:#fff; padding:20px }
-input, button, textarea { padding:10px; margin:5px; border-radius:8px; border:none; width:100% }
-button { background:#22c55e; color:#fff; font-weight:bold; cursor:pointer }
-.card { background:#1e293b; padding:10px; border-radius:10px; margin-top:10px }
-table { width:100%; border-collapse:collapse; margin-top:10px }
-th,td { border:1px solid #334155; padding:6px }
+input, button, select { padding:10px; margin:5px; border-radius:8px; border:none }
+button { cursor:pointer; background:#22c55e; color:white; font-weight:bold }
+.card { background:#1e293b; padding:15px; border-radius:12px; margin-top:10px }
+.best { border:2px solid #4ade80 }
+h2 { margin-top:25px }
 </style>
 </head>
 <body>
 
-<h1>🚌 V3.1 SMART INPUT ENGINE</h1>
+<h1>🔥 Attila Discount Engine V2 PRO</h1>
 
-<h2>📥 SMART INPUT</h2>
-<input id="line" placeholder="Vonal (pl: 243)">
-<input id="start" placeholder="Kezdő megálló">
-<input id="end" placeholder="Vég megálló">
+<h2>🛒 Kosár árak</h2>
+<input id="prices" placeholder="pl: 1000, 2500, 1800">
+<button onclick="calculateAll()">SZÁMOLÁS</button>
 
-<button onclick="generateRoute()">GENERÁLÁS</button>
+<div id="results"></div>
 
-<div id="table"></div>
+<h2>📊 Gyors kalkulátor</h2>
+<input id="original" placeholder="Eredeti ár (Ft)">
+<input id="discounted" placeholder="Akciós ár (Ft)">
+<button onclick="calcPercent()">% kiszámolás</button>
+
+<div id="percentResult"></div>
+
+<h2>🔁 Teljes ár visszaszámolás</h2>
+<input id="finalPrice" placeholder="Akciós ár (Ft)">
+<input id="percent" placeholder="Kedvezmény %">
+<button onclick="calcOriginal()">Eredeti ár</button>
+
+<div id="originalResult"></div>
 
 <script>
-// DEMO adatbázis (később GTFS-re cserélhető)
-const demoStops = [
-  {name:"Nád utca", dist:0},
-  {name:"Köztes 1", dist:1200},
-  {name:"Köztes 2", dist:2800},
-  {name:"Köztes 3", dist:4300},
-  {name:"Csobánka tér", dist:6000}
-];
+function parsePrices() {
+  return document.getElementById('prices').value
+    .split(',')
+    .map(x => parseFloat(x.trim()))
+    .filter(x => !isNaN(x))
+    .sort((a,b)=>a-b);
+}
 
-function generateRoute(){
-  let start=document.getElementById('start').value.toLowerCase();
-  let end=document.getElementById('end').value.toLowerCase();
+function sum(arr) {
+  return arr.reduce((a,b)=>a+b,0);
+}
 
-  let filtered=demoStops;
+function dealA(p){ let f=Math.floor(p.length/3); return sum(p)-sum(p.slice(0,f)); }
+function dealB(p){ return sum(p)*0.8; }
+function dealC(p){ let d=Math.floor(p.length/2); return sum(p)-sum(p.slice(0,d))*0.33; }
+function dealD(p){ let f=Math.min(Math.floor(p.length/6),1); return sum(p)-sum(p.slice(0,f)); }
 
-  let total=filtered[filtered.length-1].dist;
+function calculateAll(){
+  let p=parsePrices(); if(p.length===0) return;
+  let base=sum(p);
 
-  let html='<table><tr><th>#</th><th>Megálló</th><th>Táv (m)</th><th>Táv (km)</th><th>Köv</th><th>Hátravan (m)</th><th>%</th></tr>';
+  let A=dealA(p), B=dealB(p), C=dealC(p), D=dealD(p);
+  let min=Math.min(A,B,C,D);
 
-  for(let i=0;i<filtered.length;i++){
-    let s=filtered[i];
-    let next=filtered[i+1]?filtered[i+1].name:'-';
-    let remain=total - s.dist;
-    let perc=(s.dist/total)*100;
+  function save(x){ return (base-x).toFixed(0); }
+  function percent(x){ return (((base-x)/base)*100).toFixed(1); }
 
-    html+=`<tr>
-    <td>${i+1}</td>
-    <td>${s.name}</td>
-    <td>${s.dist}</td>
-    <td>${(s.dist/1000).toFixed(2)}</td>
-    <td>${next}</td>
-    <td>${remain}</td>
-    <td>${perc.toFixed(1)}%</td>
-    </tr>`;
+  document.getElementById('results').innerHTML=`
+  <div class="card ${A===min?'best':''}">🅰️ 3. ingyen → ${A.toFixed(0)} Ft | -${percent(A)}% | spórolsz ${save(A)} Ft</div>
+  <div class="card ${B===min?'best':''}">🅱️ -20% → ${B.toFixed(0)} Ft | -${percent(B)}% | spórolsz ${save(B)} Ft</div>
+  <div class="card ${C===min?'best':''}">🅲 2. -33% → ${C.toFixed(0)} Ft | -${percent(C)}% | spórolsz ${save(C)} Ft</div>
+  <div class="card ${D===min?'best':''}">🅳 6-ból 1 ingyen (limit 1) → ${D.toFixed(0)} Ft | -${percent(D)}% | spórolsz ${save(D)} Ft</div>
+  <h2>🏆 LEGJOBB: ${A===min?'A':B===min?'B':C===min?'C':'D'}</h2>
+  `;
+}
+
+function calcPercent(){
+  let o=parseFloat(document.getElementById('original').value);
+  let d=parseFloat(document.getElementById('discounted').value);
+  if(!o||!d) return;
+  let diff=o-d;
+  let perc=(diff/o)*100;
+  document.getElementById('percentResult').innerHTML=
+    `Kedvezmény: ${perc.toFixed(2)}% | Megtakarítás: ${diff.toFixed(0)} Ft`;
+}
+
+function calcOriginal(){
+  let f=parseFloat(document.getElementById('finalPrice').value);
+  let p=parseFloat(document.getElementById('percent').value);
+  if(!f||!p) return;
+  let original=f/(1-p/100);
+  document.getElementById('originalResult').innerHTML=
+    `Eredeti ár: ${original.toFixed(0)} Ft`;
+}
+</script>
+
+
+<h2>📦 Százalékos megosztás (raktár)</h2>
+<input id="totalWeight" placeholder="Teljes súly (pl: 1000)">
+<input id="p1" placeholder="% (pl: 16)">
+<input id="p2" placeholder="% (pl: 40)">
+<input id="p3" placeholder="% (pl: 30)">
+<input id="p4" placeholder="% (pl: 16)">
+<button onclick="calcDistribution()">Megosztás számolás</button>
+
+<div id="distResult"></div>
+
+<h2>🔁 % visszaszámolás súlyból</h2>
+<input id="partWeight" placeholder="Rész súly (pl: 160)">
+<input id="totalWeight2" placeholder="Teljes súly (pl: 1000)">
+<button onclick="calcBackPercent()">% kiszámolás</button>
+
+<div id="backResult"></div>
+
+<script>
+function calcDistribution(){
+  let total=parseFloat(document.getElementById('totalWeight').value);
+  let p=[
+    parseFloat(document.getElementById('p1').value)||0,
+    parseFloat(document.getElementById('p2').value)||0,
+    parseFloat(document.getElementById('p3').value)||0,
+    parseFloat(document.getElementById('p4').value)||0
+  ];
+  if(!total) return;
+
+  let names=["Ellopták","Megromlott","Kolléga elvitte","Vevők megvették"];
+
+  let html="";
+  let used=0;
+
+  for(let i=0;i<p.length;i++){
+    let weight=total*(p[i]/100);
+    used+=weight;
+    html+=`<div class="card">${names[i]}: ${p[i]}% → ${weight.toFixed(1)} tonna</div>`;
   }
 
-  html+='</table>';
+  let remain=total-used;
 
-  document.getElementById('table').innerHTML=html;
+  html+=`<div class="card">📦 Maradék: ${remain.toFixed(1)} tonna (${((remain/total)*100).toFixed(1)}%)</div>`;
+
+  document.getElementById('distResult').innerHTML=html;
+}
+
+function calcBackPercent(){
+  let part=parseFloat(document.getElementById('partWeight').value);
+  let total=parseFloat(document.getElementById('totalWeight2').value);
+  if(!part||!total) return;
+
+  let percent=(part/total)*100;
+
+  document.getElementById('backResult').innerHTML=
+    `Ez: ${percent.toFixed(2)}%`;
 }
 </script>
 
