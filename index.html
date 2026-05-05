@@ -1,73 +1,246 @@
-<!-- Csak az ÚJ részeket mutatom, mert a teljes fájl már megvan nálad -->
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8" />
+<title>GLOBAL STOP ENGINE V1</title>
+
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://unpkg.com/rbush@3.0.1/rbush.min.js"></script>
+
+<style>
+body { font-family: Arial; background:#0f172a; color:white; padding:20px; }
+h1 { color:#38bdf8; }
+input, button { padding:10px; margin:5px; }
+table { width:100%; border-collapse: collapse; margin-top:20px; }
+th, td { border:1px solid #334155; padding:8px; font-size:14px; }
+th { background:#1e293b; }
+.card { background:#1e293b; padding:10px; margin-top:10px; border-radius:8px; }
+</style>
+</head>
+
+<body>
+
+<h1>🌐 GLOBAL STOP ENGINE V1</h1>
+
+<input type="file" id="gtfsFile" />
+<button onclick="loadGTFS()">GTFS BETÖLTÉS</button>
+<button onclick="runMerge()">MERGE ENGINE FUTTATÁS</button>
+
+<div class="card">
+  <b>Státusz:</b> <span id="status">Várakozás...</span>
+</div>
+
+<table>
+<thead>
+<tr>
+<th>GLOBAL ID</th>
+<th>Név</th>
+<th>Lat</th>
+<th>Lon</th>
+<th>Források</th>
+</tr>
+</thead>
+<tbody id="output"></tbody>
+</table>
 
 <script>
 
-// ================= VEHICLES =================
-let vehicles = [];
+// -----------------------------
+// GLOBAL DB
+// -----------------------------
+let stops = [];
+let tree = new RBush();
+let globalNodes = [];
+let idCounter = 1;
 
-function spawnVehicles(){
+// -----------------------------
+// GTFS LOAD (stops.txt)
+// -----------------------------
+function loadGTFS() {
+    const file = document.getElementById('gtfsFile').files[0];
+    if (!file) return alert("Nincs fájl!");
 
-  vehicles.forEach(v=>map.removeLayer(v.marker));
-  vehicles = [];
+    Papa.parse(file, {
+        header: true,
+        complete: function(results) {
+            stops = results.data
+                .filter(s => s.stop_lat && s.stop_lon)
+                .map(s => ({
+                    stop_id: s.stop_id,
+                    name: s.stop_name,
+                    lat: parseFloat(s.stop_lat),
+                    lon: parseFloat(s.stop_lon)
+                }));
 
-  if(!GTFS.stop_times.length) return;
+            document.getElementById("status").innerText =
+                `GTFS betöltve: ${stops.length} stop`;
 
-  // 10 random aktív trip
-  const activeTrips = GTFS.trips.slice(0,20);
+            indexStops();
+        }
+    });
+}
 
-  activeTrips.forEach(trip=>{
+// -----------------------------
+// R-TREE INDEX
+// -----------------------------
+function indexStops() {
+    tree.clear();
 
-    const route = GTFS.routes.find(r=>r.route_id===trip.route_id);
-
-    const color = getColor(route?.route_short_name);
-
-    const marker = L.circleMarker([47.5,19.05],{
-      radius:6,
-      color:color,
-      fillOpacity:1
-    }).addTo(map);
-
-    vehicles.push({
-      trip_id: trip.trip_id,
-      marker,
-      index: 0
+    stops.forEach(s => {
+        tree.insert({
+            minX: s.lon,
+            minY: s.lat,
+            maxX: s.lon,
+            maxY: s.lat,
+            data: s
+        });
     });
 
-  });
+    document.getElementById("status").innerText =
+        "R-tree index kész";
 }
 
-// ================= MOVE =================
-function moveVehicles(){
+// -----------------------------
+// DISTANCE (Haversine)
+// -----------------------------
+function distance(a, b) {
+    const R = 6371e3;
+    const toRad = x => x * Math.PI / 180;
 
-  vehicles.forEach(v=>{
+    const dLat = toRad(b.lat - a.lat);
+    const dLon = toRad(b.lon - a.lon);
 
-    const stops = GTFS.stop_times
-      .filter(st=>st.trip_id===v.trip_id)
-      .sort((a,b)=>a.stop_sequence-b.stop_sequence);
+    const lat1 = toRad(a.lat);
+    const lat2 = toRad(b.lat);
 
-    if(stops.length < 2) return;
+    const x = Math.sin(dLat/2) ** 2 +
+        Math.cos(lat1) * Math.cos(lat2) *
+        Math.sin(dLon/2) ** 2;
 
-    const current = stops[v.index % stops.length];
-    const next = stops[(v.index+1) % stops.length];
-
-    const s1 = GTFS.stops.find(s=>s.stop_id===current.stop_id);
-    const s2 = GTFS.stops.find(s=>s.stop_id===next.stop_id);
-
-    if(!s1 || !s2) return;
-
-    // linear move
-    const lat = (parseFloat(s1.stop_lat)+parseFloat(s2.stop_lat))/2;
-    const lon = (parseFloat(s1.stop_lon)+parseFloat(s2.stop_lon))/2;
-
-    v.marker.setLatLng([lat,lon]);
-
-    v.index++;
-  });
+    return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
 }
 
-// ================= LOOP =================
-setInterval(()=>{
-  moveVehicles();
-},2000);
+// -----------------------------
+// NAME NORMALIZE
+// -----------------------------
+function norm(name) {
+    return (name || "")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/megallo|allomas|station|stop/g, "")
+        .replace(/[^a-z0-9]/g, "");
+}
+
+// -----------------------------
+// MATCH SCORE
+// -----------------------------
+function score(a, b) {
+    const d = distance(a, b);
+
+    let geo = d < 50 ? 1 : d < 150 ? 0.7 : 0;
+
+    let na = norm(a.name);
+    let nb = norm(b.name);
+
+    let nameSim = na === nb ? 1 : (na.includes(nb) || nb.includes(na)) ? 0.7 : 0.3;
+
+    return geo * 0.7 + nameSim * 0.3;
+}
+
+// -----------------------------
+// GLOBAL NODE FIND OR CREATE
+// -----------------------------
+function getOrCreateNode(stop) {
+
+    let nearby = tree.search({
+        minX: stop.lon - 0.002,
+        minY: stop.lat - 0.002,
+        maxX: stop.lon + 0.002,
+        maxY: stop.lat + 0.002
+    });
+
+    let best = null;
+    let bestScore = 0;
+
+    nearby.forEach(n => {
+        let s = score(stop, n.data);
+        if (s > bestScore) {
+            bestScore = s;
+            best = n.data;
+        }
+    });
+
+    if (best && bestScore > 0.85) {
+
+        let node = globalNodes.find(g =>
+            g.sources.some(x => x.stop_id === best.stop_id)
+        );
+
+        if (!node) {
+            node = {
+                global_id: "HUN_STOP_" + String(idCounter++).padStart(6,"0"),
+                name: stop.name,
+                lat: stop.lat,
+                lon: stop.lon,
+                sources: []
+            };
+            globalNodes.push(node);
+        }
+
+        node.sources.push(stop);
+        return node;
+    }
+
+    let node = {
+        global_id: "HUN_STOP_" + String(idCounter++).padStart(6,"0"),
+        name: stop.name,
+        lat: stop.lat,
+        lon: stop.lon,
+        sources: [stop]
+    };
+
+    globalNodes.push(node);
+    return node;
+}
+
+// -----------------------------
+// MERGE ENGINE
+// -----------------------------
+function runMerge() {
+    globalNodes = [];
+    idCounter = 1;
+
+    stops.forEach(s => getOrCreateNode(s));
+
+    render();
+    document.getElementById("status").innerText =
+        "Merge kész: " + globalNodes.length + " node";
+}
+
+// -----------------------------
+// RENDER
+// -----------------------------
+function render() {
+    let out = document.getElementById("output");
+    out.innerHTML = "";
+
+    globalNodes.forEach(n => {
+        let tr = document.createElement("tr");
+
+        tr.innerHTML = `
+            <td>${n.global_id}</td>
+            <td>${n.name}</td>
+            <td>${n.lat.toFixed(5)}</td>
+            <td>${n.lon.toFixed(5)}</td>
+            <td>${n.sources.length}</td>
+        `;
+
+        out.appendChild(tr);
+    });
+}
 
 </script>
+
+</body>
+</html>
