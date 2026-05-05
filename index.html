@@ -1,116 +1,94 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>GTFS FILE ROUTER ENGINE V1</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-
-<style>
-body { margin:0; font-family:Arial; background:#0b1220; color:white; }
-#map { height:70vh; }
-.panel { padding:10px; background:#111a2e; }
-pre { white-space:pre-wrap; }
-button { margin:5px; padding:8px; }
-</style>
-</head>
-
-<body>
-
-<div class="panel">
-<h2>🚆 GTFS FILE ROUTER ENGINE V1</h2>
-
-<input type="file" id="files" multiple>
-<button onclick="loadFiles()">LOAD GTFS FILES</button>
-<button onclick="build()">BUILD ENGINE</button>
-
-<div id="status">READY</div>
-<pre id="debug"></pre>
-</div>
-
-<div id="map"></div>
-
 <script>
 
-const map = L.map('map').setView([47.5,19.05],10);
+let feeds = [];
+let parsed = 0;
+let totalFiles = 0;
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'OSM'
-}).addTo(map);
-
-// ---------------- STORAGE ----------------
-let routes = [];
 let stops = [];
-let stopTimes = [];
 let trips = [];
+let routes = [];
+let stopTimes = [];
 
 // ---------------- ROUTER ----------------
-function routeFile(file){
+function routeFile(name){
+    name = name.toLowerCase();
 
-    let name = file.name.toLowerCase();
-
-    if(name.includes("stops.txt")) return "stops";
-    if(name.includes("stop_times.txt")) return "stop_times";
-    if(name.includes("trips.txt")) return "trips";
-    if(name.includes("routes.txt")) return "routes";
+    if(name.includes("stops")) return "stops";
+    if(name.includes("stop_times")) return "stop_times";
+    if(name.includes("trips")) return "trips";
+    if(name.includes("routes")) return "routes";
 
     return "unknown";
 }
 
-// ---------------- LOAD FILES ----------------
+// ---------------- LOAD ----------------
 function loadFiles(){
 
-    let files = document.getElementById("files").files;
+    const files = document.getElementById("files").files;
+
+    if(!files.length){
+        alert("Nincs file!");
+        return;
+    }
+
+    feeds = [];
+    parsed = 0;
+    totalFiles = files.length;
+
+    debug("Loading " + totalFiles + " files...");
 
     for(let f of files){
 
-        let type = routeFile(f);
+        const type = routeFile(f.name);
 
         Papa.parse(f,{
             header:true,
             skipEmptyLines:true,
             complete:(r)=>{
 
-                debugLog(`Loaded ${f.name} → ${type} (${r.data.length})`);
+                parsed++;
 
-                if(type === "stops"){
-                    stops = r.data;
-                }
+                debug("Loaded: " + f.name + " → " + type);
 
-                if(type === "stop_times"){
-                    stopTimes = r.data;
-                }
+                if(type === "stops") stops = r.data;
+                if(type === "stop_times") stopTimes = r.data;
+                if(type === "trips") trips = r.data;
+                if(type === "routes") routes = r.data;
 
-                if(type === "trips"){
-                    trips = r.data;
-                }
-
-                if(type === "routes"){
-                    routes = r.data;
-                }
-
-                if(type === "unknown"){
-                    debugLog("⚠ UNKNOWN FILE: " + f.name);
-                }
+                checkReady();
             }
         });
     }
 }
 
-// ---------------- BUILD ENGINE ----------------
+// ---------------- READY CHECK ----------------
+function checkReady(){
+
+    debug(`Progress: ${parsed}/${totalFiles}`);
+
+    if(parsed === totalFiles){
+        debug("ALL FILES LOADED ✔");
+        document.getElementById("status").innerText = "READY TO BUILD ✔";
+    }
+}
+
+// ---------------- BUILD GUARD ----------------
 function build(){
 
-    debugLog("=== BUILD START ===");
+    if(parsed !== totalFiles){
+        alert("⛔ Még nem töltődött be minden GTFS file!");
+        return;
+    }
 
-    debugLog("STOPS: " + stops.length);
-    debugLog("STOP_TIMES: " + stopTimes.length);
-    debugLog("TRIPS: " + trips.length);
-    debugLog("ROUTES: " + routes.length);
+    debug("=== BUILD START ===");
+
+    debug("STOPS: " + stops.length);
+    debug("TRIPS: " + trips.length);
+    debug("ROUTES: " + routes.length);
+    debug("STOP_TIMES: " + stopTimes.length);
 
     if(stops.length === 0){
-        alert("❌ NINCS stops.txt BETÖLTVE!");
+        alert("❌ NINCS stops.txt!");
         return;
     }
 
@@ -126,35 +104,14 @@ function build(){
         }))
         .filter(s=>!isNaN(s.lat) && !isNaN(s.lon));
 
-    debugLog("VALID STOPS: " + valid.length);
+    debug("VALID STOPS: " + valid.length);
 
     render(valid);
 }
 
-// ---------------- MAP ----------------
-function render(stops){
-
-    map.eachLayer(l=>{
-        if(l instanceof L.CircleMarker) map.removeLayer(l);
-    });
-
-    stops.forEach(s=>{
-
-        L.circleMarker([s.lat,s.lon],{
-            radius:4,
-            color:"cyan"
-        }).addTo(map)
-        .bindPopup(s.name + "<br>" + s.id);
-
-    });
-}
-
 // ---------------- DEBUG ----------------
-function debugLog(t){
+function debug(t){
     document.getElementById("debug").innerText += t + "\n";
 }
 
 </script>
-
-</body>
-</html>
