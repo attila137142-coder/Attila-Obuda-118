@@ -1,16 +1,85 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>GTFS ZIP LOADER ENGINE V2</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<!-- ZIP UNPACKER -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
+<style>
+body { margin:0; font-family:Arial; background:#0b1220; color:white; }
+#map { height:70vh; }
+.panel { padding:10px; background:#111a2e; }
+pre { white-space:pre-wrap; }
+button { padding:8px; margin:5px; }
+</style>
+</head>
+
+<body>
+
+<div class="panel">
+<h2>🚆 GTFS ZIP LOADER ENGINE V2</h2>
+
+<input type="file" id="zipfile" accept=".zip">
+<button onclick="loadZip()">LOAD GTFS ZIP</button>
+<button onclick="build()">BUILD NETWORK</button>
+
+<div id="status">READY</div>
+<pre id="debug"></pre>
+</div>
+
+<div id="map"></div>
+
 <script>
 
-let feeds = [];
-let parsed = 0;
-let totalFiles = 0;
+const map = L.map('map').setView([47.5,19.05],9);
 
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'OSM'
+}).addTo(map);
+
+// ---------------- STORAGE ----------------
+let files = {};
 let stops = [];
 let trips = [];
 let routes = [];
 let stopTimes = [];
 
-// ---------------- ROUTER ----------------
-function routeFile(name){
+// ---------------- ZIP LOADER ----------------
+async function loadZip(){
+
+    const file = document.getElementById("zipfile").files[0];
+    if(!file) return alert("Nincs ZIP!");
+
+    debug("📦 ZIP loading...");
+
+    const zip = await JSZip.loadAsync(file);
+
+    files = {};
+
+    const keys = Object.keys(zip.files);
+
+    for(let k of keys){
+
+        let content = await zip.files[k].async("string");
+
+        files[k] = content;
+
+        debug("Loaded file: " + k);
+    }
+
+    parseFiles();
+}
+
+// ---------------- FILE ROUTER ----------------
+function route(name){
+
     name = name.toLowerCase();
 
     if(name.includes("stops")) return "stops";
@@ -21,64 +90,44 @@ function routeFile(name){
     return "unknown";
 }
 
-// ---------------- LOAD ----------------
-function loadFiles(){
+// ---------------- PARSE ALL ----------------
+function parseFiles(){
 
-    const files = document.getElementById("files").files;
+    stops = [];
+    trips = [];
+    routes = [];
+    stopTimes = [];
 
-    if(!files.length){
-        alert("Nincs file!");
-        return;
-    }
+    let count = 0;
 
-    feeds = [];
-    parsed = 0;
-    totalFiles = files.length;
+    for(let name in files){
 
-    debug("Loading " + totalFiles + " files...");
+        let type = route(name);
 
-    for(let f of files){
-
-        const type = routeFile(f.name);
-
-        Papa.parse(f,{
+        Papa.parse(files[name],{
             header:true,
             skipEmptyLines:true,
-            complete:(r)=>{
+            complete:(res)=>{
 
-                parsed++;
+                count++;
 
-                debug("Loaded: " + f.name + " → " + type);
+                debug(`Parsed: ${name} → ${type} (${res.data.length})`);
 
-                if(type === "stops") stops = r.data;
-                if(type === "stop_times") stopTimes = r.data;
-                if(type === "trips") trips = r.data;
-                if(type === "routes") routes = r.data;
+                if(type === "stops") stops = res.data;
+                if(type === "trips") trips = res.data;
+                if(type === "routes") routes = res.data;
+                if(type === "stop_times") stopTimes = res.data;
 
-                checkReady();
+                if(count === Object.keys(files).length){
+                    setStatus("READY TO BUILD ✔");
+                }
             }
         });
     }
 }
 
-// ---------------- READY CHECK ----------------
-function checkReady(){
-
-    debug(`Progress: ${parsed}/${totalFiles}`);
-
-    if(parsed === totalFiles){
-        debug("ALL FILES LOADED ✔");
-        document.getElementById("status").innerText = "READY TO BUILD ✔";
-    }
-}
-
-// ---------------- BUILD GUARD ----------------
+// ---------------- BUILD NETWORK ----------------
 function build(){
-
-    if(parsed !== totalFiles){
-        alert("⛔ Még nem töltődött be minden GTFS file!");
-        return;
-    }
 
     debug("=== BUILD START ===");
 
@@ -88,18 +137,17 @@ function build(){
     debug("STOP_TIMES: " + stopTimes.length);
 
     if(stops.length === 0){
-        alert("❌ NINCS stops.txt!");
+        alert("❌ NINCS stops.txt a ZIP-ben!");
         return;
     }
 
     let valid = stops
         .map(s=>({
 
-            id: s.stop_id || s.id,
-            name: s.stop_name || s.name,
-
-            lat: parseFloat(s.stop_lat || s.lat),
-            lon: parseFloat(s.stop_lon || s.lon)
+            id: s.stop_id,
+            name: s.stop_name,
+            lat: parseFloat(s.stop_lat),
+            lon: parseFloat(s.stop_lon)
 
         }))
         .filter(s=>!isNaN(s.lat) && !isNaN(s.lon));
@@ -109,9 +157,34 @@ function build(){
     render(valid);
 }
 
-// ---------------- DEBUG ----------------
+// ---------------- MAP ----------------
+function render(data){
+
+    map.eachLayer(l=>{
+        if(l instanceof L.CircleMarker) map.removeLayer(l);
+    });
+
+    data.forEach(s=>{
+
+        L.circleMarker([s.lat,s.lon],{
+            radius:4,
+            color:"cyan"
+        }).addTo(map)
+        .bindPopup(s.name);
+
+    });
+}
+
+// ---------------- UI ----------------
 function debug(t){
     document.getElementById("debug").innerText += t + "\n";
 }
 
+function setStatus(t){
+    document.getElementById("status").innerText = t;
+}
+
 </script>
+
+</body>
+</html>
