@@ -2,31 +2,29 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA MULTI-LAYER DISPATCHER V3</title>
+<title>GTFS FILE ROUTER ENGINE V1</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://unpkg.com/rbush@3.0.1/rbush.min.js"></script>
 
 <style>
 body { margin:0; font-family:Arial; background:#0b1220; color:white; }
 #map { height:70vh; }
 .panel { padding:10px; background:#111a2e; }
-button { margin:5px; padding:8px; }
-.small { font-size:12px; opacity:0.8; }
 pre { white-space:pre-wrap; }
+button { margin:5px; padding:8px; }
 </style>
 </head>
 
 <body>
 
 <div class="panel">
-<h2>🚆 ATTILA DISPATCHER V3 (MULTI-LAYER)</h2>
+<h2>🚆 GTFS FILE ROUTER ENGINE V1</h2>
 
-<input type="file" id="file" multiple>
-<button onclick="loadAll()">LOAD FEED(S)</button>
-<button onclick="build()">BUILD GLOBAL ENGINE</button>
+<input type="file" id="files" multiple>
+<button onclick="loadFiles()">LOAD GTFS FILES</button>
+<button onclick="build()">BUILD ENGINE</button>
 
 <div id="status">READY</div>
 <pre id="debug"></pre>
@@ -36,172 +34,122 @@ pre { white-space:pre-wrap; }
 
 <script>
 
-const map = L.map('map').setView([47.5, 19.05], 9);
+const map = L.map('map').setView([47.5,19.05],10);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'OSM'
+  attribution:'OSM'
 }).addTo(map);
 
-// ---------------- GLOBAL ----------------
-let feeds = [];
-let rawFeeds = [];
-let globalStops = [];
-let tree = new RBush();
-let idCounter = 1;
+// ---------------- STORAGE ----------------
+let routes = [];
+let stops = [];
+let stopTimes = [];
+let trips = [];
 
-// ---------------- FEED DETECTION ----------------
-function detectFeed(name=""){
-    name = name.toLowerCase();
-    if(name.includes("bkk")) return "BKK";
-    if(name.includes("volán")) return "VOLAN";
-    if(name.includes("máv")) return "MAV";
-    if(name.includes("hév")) return "HEV";
-    if(name.includes("vasút")) return "RAIL";
-    return "UNKNOWN";
-}
+// ---------------- ROUTER ----------------
+function routeFile(file){
 
-// ---------------- NORMALIZE ----------------
-function normalize(name){
-    return (name||"")
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g,"")
-        .replace(/[^a-z0-9]/g,"");
-}
+    let name = file.name.toLowerCase();
 
-// ---------------- DISTANCE ----------------
-function dist(a,b){
-    const R=6371e3;
-    const t=x=>x*Math.PI/180;
-    let dLat=t(b.lat-a.lat);
-    let dLon=t(b.lon-a.lon);
-    let A=t(a.lat),B=t(b.lat);
+    if(name.includes("stops.txt")) return "stops";
+    if(name.includes("stop_times.txt")) return "stop_times";
+    if(name.includes("trips.txt")) return "trips";
+    if(name.includes("routes.txt")) return "routes";
 
-    let x=Math.sin(dLat/2)**2+
-          Math.cos(A)*Math.cos(B)*Math.sin(dLon/2)**2;
-
-    return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+    return "unknown";
 }
 
 // ---------------- LOAD FILES ----------------
-function loadAll(){
-    const files = document.getElementById("file").files;
-    if(!files.length) return alert("No files!");
+function loadFiles(){
 
-    feeds = [];
+    let files = document.getElementById("files").files;
 
     for(let f of files){
+
+        let type = routeFile(f);
+
         Papa.parse(f,{
             header:true,
             skipEmptyLines:true,
             complete:(r)=>{
 
-                feeds.push({
-                    name:f.name,
-                    data:r.data,
-                    feed_id: detectFeed(f.name)
-                });
+                debugLog(`Loaded ${f.name} → ${type} (${r.data.length})`);
 
-                debugLog("Loaded: " + f.name + " rows:" + r.data.length);
+                if(type === "stops"){
+                    stops = r.data;
+                }
+
+                if(type === "stop_times"){
+                    stopTimes = r.data;
+                }
+
+                if(type === "trips"){
+                    trips = r.data;
+                }
+
+                if(type === "routes"){
+                    routes = r.data;
+                }
+
+                if(type === "unknown"){
+                    debugLog("⚠ UNKNOWN FILE: " + f.name);
+                }
             }
         });
     }
 }
 
-// ---------------- TRANSLATE STOP ----------------
-function translate(s, feed_id){
-
-    let id = s.stop_id || s.id || s.ID;
-    let name = s.stop_name || s.name || s.NEV;
-
-    let lat = s.stop_lat || s.lat || s.y;
-    let lon = s.stop_lon || s.lon || s.x;
-
-    return {
-        id: feed_id + ":" + id,
-        name,
-        lat: parseFloat(lat),
-        lon: parseFloat(lon),
-        feed: feed_id
-    };
-}
-
-// ---------------- BUILD GLOBAL ----------------
+// ---------------- BUILD ENGINE ----------------
 function build(){
 
-    globalStops = [];
+    debugLog("=== BUILD START ===");
 
-    for(let f of feeds){
+    debugLog("STOPS: " + stops.length);
+    debugLog("STOP_TIMES: " + stopTimes.length);
+    debugLog("TRIPS: " + trips.length);
+    debugLog("ROUTES: " + routes.length);
 
-        for(let s of f.data){
-
-            let t = translate(s, f.feed_id);
-
-            if(!t.id || !t.name || isNaN(t.lat) || isNaN(t.lon))
-                continue;
-
-            globalStops.push(t);
-        }
+    if(stops.length === 0){
+        alert("❌ NINCS stops.txt BETÖLTVE!");
+        return;
     }
 
-    buildIndex();
-    render();
-    setStatus("ENGINE READY ✔ stops: " + globalStops.length);
+    let valid = stops
+        .map(s=>({
+
+            id: s.stop_id || s.id,
+            name: s.stop_name || s.name,
+
+            lat: parseFloat(s.stop_lat || s.lat),
+            lon: parseFloat(s.stop_lon || s.lon)
+
+        }))
+        .filter(s=>!isNaN(s.lat) && !isNaN(s.lon));
+
+    debugLog("VALID STOPS: " + valid.length);
+
+    render(valid);
 }
 
-// ---------------- INDEX ----------------
-function buildIndex(){
-    tree.clear();
-
-    for(let s of globalStops){
-        tree.insert({
-            minX:s.lon,
-            minY:s.lat,
-            maxX:s.lon,
-            maxY:s.lat,
-            data:s
-        });
-    }
-}
-
-// ---------------- MERGE LOGIC ----------------
-function merge(a,b){
-    let d = dist(a,b);
-    let n = (normalize(a.name) === normalize(b.name));
-
-    return d < 80 && n;
-}
-
-// ---------------- RENDER ----------------
-function render(){
+// ---------------- MAP ----------------
+function render(stops){
 
     map.eachLayer(l=>{
         if(l instanceof L.CircleMarker) map.removeLayer(l);
     });
 
-    globalStops.forEach(s=>{
-
-        let color = "cyan";
-        if(s.feed==="BKK") color="blue";
-        if(s.feed==="VOLAN") color="green";
-        if(s.feed==="MAV") color="orange";
-        if(s.feed==="HEV") color="red";
+    stops.forEach(s=>{
 
         L.circleMarker([s.lat,s.lon],{
             radius:4,
-            color:color
+            color:"cyan"
         }).addTo(map)
-        .bindPopup(
-            `<b>${s.name}</b><br>${s.id}<br>${s.feed}`
-        );
+        .bindPopup(s.name + "<br>" + s.id);
+
     });
 }
 
-// ---------------- UI ----------------
-function setStatus(t){
-    document.getElementById("status").innerText = t;
-}
-
+// ---------------- DEBUG ----------------
 function debugLog(t){
     document.getElementById("debug").innerText += t + "\n";
 }
