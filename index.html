@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<title>ATTILA DISPATCHER V2.1 PATCH</title>
+<title>ATTILA DISPATCHER V2.1 FIX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -14,28 +14,21 @@ body { margin:0; font-family:Arial; background:#0b1220; color:white; }
 #map { height:70vh; }
 .panel { padding:10px; background:#111a2e; }
 button { padding:8px; margin:5px; }
-.legend span { margin-right:10px; }
+.small { font-size:12px; opacity:0.8; }
 </style>
 </head>
 
 <body>
 
 <div class="panel">
-<h2>🚆 ATTILA DISPATCHER V2.1 PATCH</h2>
+<h2>🚆 ATTILA DISPATCHER V2.1 FIX</h2>
 
 <input type="file" id="file">
-<button onclick="load()">GTFS LOAD</button>
+<button onclick="loadGTFS()">GTFS LOAD</button>
 <button onclick="build()">BUILD ENGINE</button>
-<button onclick="toggleDebug()">DEBUG TOGGLE</button>
 
-<div class="legend">
-<span style="color:cyan">● BKK</span>
-<span style="color:green">● VOLÁN</span>
-<span style="color:orange">● HÉV</span>
-<span style="color:yellow">● TOURIST</span>
-</div>
-
-<span id="status">READY</span>
+<div id="status">READY</div>
+<div class="small" id="debug"></div>
 </div>
 
 <div id="map"></div>
@@ -43,48 +36,78 @@ button { padding:8px; margin:5px; }
 <script>
 
 // ---------------- MAP ----------------
-const map = L.map('map').setView([47.5, 19.0], 10);
+const map = L.map('map').setView([47.4979, 19.0402], 10);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   attribution:'OSM'
 }).addTo(map);
 
 // ---------------- DATA ----------------
-let stops=[];
-let tree=new RBush();
-let nodes=[];
-let debug=false;
+let raw = [];
+let stops = [];
+let nodes = [];
+let tree = new RBush();
+let idc = 1;
 
-// ---------------- FEED TYPE DETECTION ----------------
-function detectFeed(s){
-    let name=(s.stop_name||"").toLowerCase();
+// ---------------- SAFE FIELD PICKER ----------------
+function pick(obj, keys){
+    for(let k of keys){
+        if(obj[k] !== undefined && obj[k] !== null && obj[k] !== "")
+            return obj[k];
+    }
+    return null;
+}
 
-    if(name.includes("hév")||name.includes("szentendre")) return "HEV";
-    if(name.includes("volán")||name.includes("busz")) return "VOLAN";
-    if(name.includes("vasút")) return "MAV";
+// ---------------- FEED DETECT ----------------
+function detect(s){
+    let n=(s.name||"").toLowerCase();
+
+    if(n.includes("hév")||n.includes("szentendre")) return "HEV";
+    if(n.includes("volán")) return "VOLAN";
+    if(n.includes("vasút")) return "MAV";
     return "BKK";
 }
 
-// ---------------- LOAD ----------------
-function load(){
+// ---------------- LOAD GTFS ----------------
+function loadGTFS(){
     const f=document.getElementById("file").files[0];
-    if(!f) return alert("nincs file");
+    if(!f) return alert("Nincs file!");
 
     Papa.parse(f,{
         header:true,
+        skipEmptyLines:true,
         complete:(r)=>{
 
-            stops=r.data
-            .filter(s=>s.stop_lat&&s.stop_lon)
-            .map(s=>({
-                id:s.stop_id,
-                name:s.stop_name,
-                lat:+s.stop_lat,
-                lon:+s.stop_lon,
-                feed:detectFeed(s)
-            }));
+            raw = r.data;
 
-            set("loaded "+stops.length);
+            console.log("RAW SAMPLE:", raw.slice(0,5));
+
+            stops = raw.map(s=>{
+
+                let id = pick(s,["stop_id","id","STOP_ID"]);
+                let name = pick(s,["stop_name","name","STOP_NAME"]);
+
+                let lat = pick(s,["stop_lat","lat","y","STOP_LAT"]);
+                let lon = pick(s,["stop_lon","lon","x","STOP_LON"]);
+
+                return {
+                    id,
+                    name,
+                    lat: parseFloat(lat),
+                    lon: parseFloat(lon),
+                    feed: "GTFS"
+                };
+
+            })
+            .filter(s =>
+                s.id &&
+                s.name &&
+                !isNaN(s.lat) &&
+                !isNaN(s.lon)
+            );
+
+            set("GTFS loaded: " + stops.length);
+            debug("OK rows: " + stops.length);
             index();
         }
     });
@@ -104,18 +127,18 @@ function index(){
         });
     });
 
-    set("indexed");
+    set("indexed ✔");
 }
 
 // ---------------- DIST ----------------
 function dist(a,b){
     const R=6371e3;
-    const to=x=>x*Math.PI/180;
+    const t=x=>x*Math.PI/180;
 
-    let dLat=to(b.lat-a.lat);
-    let dLon=to(b.lon-a.lon);
+    let dLat=t(b.lat-a.lat);
+    let dLon=t(b.lon-a.lon);
 
-    let A=to(a.lat),B=to(b.lat);
+    let A=t(a.lat),B=t(b.lat);
 
     let x=Math.sin(dLat/2)**2+
           Math.cos(A)*Math.cos(B)*Math.sin(dLon/2)**2;
@@ -125,31 +148,23 @@ function dist(a,b){
 
 // ---------------- SCORE ----------------
 function score(a,b){
-
     let d=dist(a,b);
-
-    let geo=d<60?1:d<200?0.7:0;
+    let geo=d<80?1:d<200?0.6:0;
 
     let na=(a.name||"").toLowerCase();
     let nb=(b.name||"").toLowerCase();
 
     let name=(na.includes(nb)||nb.includes(na))?0.8:0.4;
 
-    return geo*0.7+name*0.3;
-}
-
-// ---------------- GLOBAL ID FIX ----------------
-function gid(s){
-    return s.feed+":"+s.id;
+    return geo*0.7 + name*0.3;
 }
 
 // ---------------- GET NODE ----------------
 function get(s){
 
-    // 🔥 HÉV BOOST FIX (Szentendre miatt)
-    let range = (s.feed==="HEV") ? 0.02 : 0.01;
+    let range = (s.name||"").includes("szentendre") ? 0.03 : 0.01;
 
-    let near=tree.search({
+    let near = tree.search({
         minX:s.lon-range,
         minY:s.lat-range,
         maxX:s.lon+range,
@@ -167,12 +182,13 @@ function get(s){
     });
 
     if(best && bestS>0.85){
-        let node=nodes.find(n=>n.base===gid(best));
+
+        let node = nodes.find(n=>n.base===best.id);
 
         if(!node){
             node={
-                id:"GLOBAL_"+gid(s),
-                base:gid(best),
+                id:"GLOBAL_"+(idc++),
+                base:best.id,
                 name:s.name,
                 lat:s.lat,
                 lon:s.lon,
@@ -186,8 +202,8 @@ function get(s){
     }
 
     let node={
-        id:"GLOBAL_"+gid(s),
-        base:gid(s),
+        id:"GLOBAL_"+(idc++),
+        base:s.id,
         name:s.name,
         lat:s.lat,
         lon:s.lon,
@@ -202,11 +218,18 @@ function get(s){
 function build(){
 
     nodes=[];
+    idc=1;
 
     stops.forEach(s=>get(s));
 
+    render();
     draw();
-    set("engine ready: "+nodes.length);
+
+    set("ENGINE READY ✔ nodes: "+nodes.length);
+
+    if(nodes.length===0){
+        alert("❌ NINCS VALID GTFS ADAT → ellenőrizd a fájlt!");
+    }
 }
 
 // ---------------- DRAW ----------------
@@ -216,34 +239,30 @@ function draw(){
 
         let color="cyan";
 
-        let f=n.sources[0].feed;
-
-        if(f==="VOLAN") color="green";
-        if(f==="HEV") color="orange";
-        if(f==="TOURIST") color="yellow";
+        if((n.name||"").toLowerCase().includes("hév")) color="orange";
+        if((n.name||"").toLowerCase().includes("volán")) color="green";
 
         L.circleMarker([n.lat,n.lon],{
-            radius:6,
+            radius:5,
             color:color
         }).addTo(map)
-        .bindPopup(`
-            <b>${n.name}</b><br>
-            ${n.id}<br>
-            sources: ${n.sources.length}<br>
-            feed: ${f}
-        `);
+        .bindPopup(
+            `<b>${n.name}</b><br>${n.id}<br>${n.sources.length} source`
+        );
     });
 }
 
-// ---------------- DEBUG ----------------
-function toggleDebug(){
-    debug=!debug;
-    alert("DEBUG: "+debug);
-}
-
-// ---------------- STATUS ----------------
+// ---------------- UI ----------------
 function set(t){
     document.getElementById("status").innerText=t;
+}
+
+function debug(t){
+    document.getElementById("debug").innerText=t;
+}
+
+function render(){
+    console.log("nodes:",nodes.length);
 }
 
 </script>
