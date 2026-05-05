@@ -2,43 +2,47 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>DISPATCH V8.2 – FULL TABLE</title>
+<title>DISPATCH V8.3 – OFFLINE CORE</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<!-- ZIP + CSV -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body{margin:0;display:flex;font-family:Arial;}
 #sidebar{width:360px;border-right:1px solid #ccc;overflow:auto;}
 #map{flex:1;height:100vh;}
 
-.matrix{
-  background:black;
-  color:#00ff66;
-  font-family:monospace;
-  padding:10px;
-}
-
-.row{
-  display:flex;
-  justify-content:space-between;
-  border-bottom:1px solid #003300;
-  padding:6px;
-  cursor:pointer;
-}
-
+.matrix{background:black;color:#00ff66;font-family:monospace;padding:10px;}
+.row{display:flex;justify-content:space-between;border-bottom:1px solid #003300;padding:6px;cursor:pointer;}
 .badge{font-size:11px;opacity:0.7;}
 .blink{animation:blink 1s infinite;}
 @keyframes blink{50%{opacity:0.2;}}
-button{margin-top:10px;padding:6px;}
+
+.drop{
+  border:2px dashed #888;
+  padding:10px;
+  margin:10px;
+  text-align:center;
+}
 </style>
 </head>
 
 <body>
 
 <div id="sidebar">
-<h3>🟢 DISPATCH V8.2</h3>
+<h3>🟢 DISPATCH V8.3</h3>
+
+<div class="drop" id="drop">
+📦 Húzd ide a GTFS.zip-et
+<br><input type="file" id="file">
+</div>
+
+<button onclick="resetGTFS()">♻ CACHE RESET</button>
+
 <input id="search" placeholder="Keresés...">
 <div id="list"></div>
 <div id="panel">Indulás...</div>
@@ -59,23 +63,18 @@ const STOPS = [
  {name:"Batthyány tér",lat:47.506,lon:19.039}
 ];
 
-let CURRENT_STOP = null;
+let CURRENT_STOP=null;
 
 // ================= GTFS =================
 let GTFS = {stops:[],trips:[],stop_times:[],routes:[]};
 
 // ================= DEMO =================
 function demoDepartures(){
-  return [
-    {route:"H5",headsign:"Batthyány tér",time:"12:05",delay:0},
-    {route:"34",headsign:"Óbuda",time:"12:08",delay:1},
-    {route:"134",headsign:"Szentendre",time:"12:12",delay:-1}
-  ];
+  return [{route:"---",headsign:"NINCS GTFS",time:"--:--",delay:0}];
 }
 
 // ================= CSV =================
 function parseCSV(text){
-  if(!text) return [];
   const lines = text.split("\n").filter(l=>l.trim());
   const headers = lines[0].split(",");
   return lines.slice(1).map(line=>{
@@ -86,75 +85,74 @@ function parseCSV(text){
   });
 }
 
-// ================= LOAD =================
-async function loadGTFS(){
-  try{
-    const res = await Promise.allSettled([
-      fetch("/stops.txt"),
-      fetch("/trips.txt"),
-      fetch("/stop_times.txt"),
-      fetch("/routes.txt")
-    ]);
+// ================= ZIP LOAD =================
+async function loadZIP(file){
 
-    const texts = await Promise.allSettled(
-      res.map(r=>r.status==="fulfilled"?r.value.text():null)
-    );
+  const zip = await JSZip.loadAsync(file);
 
-    if(texts[0].value) GTFS.stops = parseCSV(texts[0].value);
-    if(texts[1].value) GTFS.trips = parseCSV(texts[1].value);
-    if(texts[2].value) GTFS.stop_times = parseCSV(texts[2].value);
-    if(texts[3].value) GTFS.routes = parseCSV(texts[3].value);
-
-    console.log("GTFS:", GTFS.stops.length);
-
-  }catch(e){
-    console.warn("GTFS fallback");
+  async function read(name){
+    return zip.file(name)?.async("string") || "";
   }
+
+  GTFS.stops = parseCSV(await read("stops.txt"));
+  GTFS.trips = parseCSV(await read("trips.txt"));
+  GTFS.stop_times = parseCSV(await read("stop_times.txt"));
+  GTFS.routes = parseCSV(await read("routes.txt"));
+
+  localStorage.setItem("GTFS_CACHE", JSON.stringify(GTFS));
+
+  alert("✅ GTFS BETÖLTVE!");
+}
+
+// ================= CACHE =================
+function loadCache(){
+  const c = localStorage.getItem("GTFS_CACHE");
+  if(c){
+    GTFS = JSON.parse(c);
+    console.log("⚡ CACHE LOADED");
+  }
+}
+
+function resetGTFS(){
+  localStorage.removeItem("GTFS_CACHE");
+  alert("Cache törölve");
 }
 
 // ================= DEPARTURES =================
 function getDepartures(stop){
 
-  if(!GTFS.stop_times.length || !GTFS.stops.length){
-    return demoDepartures();
-  }
+  if(!GTFS.stop_times.length) return demoDepartures();
 
-  const gtfsStop = GTFS.stops.find(s =>
-    s.stop_name?.toLowerCase().includes(stop.name.toLowerCase())
-  );
+  const gtfsStop = GTFS.stops.find(s=>{
+    const a=s.stop_name?.toLowerCase()||"";
+    const b=stop.name.toLowerCase();
+    return a.includes(b)||b.includes(a);
+  });
 
   if(!gtfsStop) return demoDepartures();
 
-  const now = new Date();
-  const nowSec = now.getHours()*3600 + now.getMinutes()*60;
+  const now=new Date();
+  const nowSec=now.getHours()*3600+now.getMinutes()*60;
 
-  const results = GTFS.stop_times
-    .filter(st => st.stop_id === gtfsStop.stop_id)
+  const res = GTFS.stop_times
+    .filter(st=>st.stop_id===gtfsStop.stop_id)
     .map(st=>{
-      const t = st.departure_time;
-      if(!t) return null;
-
-      const [h,m,s] = t.split(":").map(Number);
-      const sec = h*3600 + m*60 + s;
-
-      return {
-        trip_id: st.trip_id,
-        time: t,
-        diff: sec - nowSec
-      };
+      const [h,m,s]=st.departure_time.split(":").map(Number);
+      const sec=h*3600+m*60+s;
+      return {trip_id:st.trip_id,time:st.departure_time,diff:sec-nowSec};
     })
-    .filter(x=>x && x.diff>0)
+    .filter(x=>x.diff>0)
     .sort((a,b)=>a.diff-b.diff)
-    .slice(0,10);
+    .slice(0,15);
 
-  return results.map(r=>{
-    const trip = GTFS.trips.find(t=>t.trip_id===r.trip_id);
-    const route = GTFS.routes.find(ro=>ro.route_id===trip?.route_id);
+  return res.map(r=>{
+    const trip=GTFS.trips.find(t=>t.trip_id===r.trip_id);
+    const route=GTFS.routes.find(ro=>ro.route_id===trip?.route_id);
 
     return {
       trip_id:r.trip_id,
       route:route?.route_short_name||"?",
-      headsign:trip?.trip_headsign||"ismeretlen",
+      headsign:trip?.trip_headsign||"",
       time:r.time.slice(0,5),
       delay:0
     };
@@ -163,111 +161,92 @@ function getDepartures(stop){
 
 // ================= FULL TRIP =================
 function getFullTrip(trip_id){
-
-  const stops = GTFS.stop_times
-    .filter(st => st.trip_id === trip_id)
-    .sort((a,b)=> a.stop_sequence - b.stop_sequence);
-
-  return stops.map(st=>{
-    const stop = GTFS.stops.find(s=>s.stop_id===st.stop_id);
-    return {
-      name: stop?.stop_name || "???",
-      time: st.departure_time?.slice(0,5) || "--:--"
-    };
-  });
+  return GTFS.stop_times
+    .filter(st=>st.trip_id===trip_id)
+    .sort((a,b)=>a.stop_sequence-b.stop_sequence)
+    .map(st=>{
+      const s=GTFS.stops.find(x=>x.stop_id===st.stop_id);
+      return {name:s?.stop_name||"???",time:st.departure_time.slice(0,5)};
+    });
 }
 
-// ================= MATRIX =================
+// ================= UI =================
 function showMatrix(stop){
 
-  CURRENT_STOP = stop;
+  CURRENT_STOP=stop;
 
-  let html = `<div class="matrix">`;
-  html += `<h3>${stop.name}</h3>`;
-  html += `<div class="badge">${GTFS.stop_times.length?"GTFS":"DEMO"} MODE</div>`;
+  let html=`<div class="matrix"><h3>${stop.name}</h3>`;
+  html+=`<div class="badge">${GTFS.stop_times.length?"GTFS":"DEMO"}</div>`;
 
-  const deps = getDepartures(stop);
+  const deps=getDepartures(stop);
 
   deps.forEach((d,i)=>{
-    html += `
+    html+=`
     <div class="row" onclick="showTrip('${d.trip_id||""}')">
       <div>${d.route}</div>
       <div>${d.headsign}</div>
       <div class="${i<2?'blink':''}">${d.time}</div>
-      <div>${d.delay>0?`+${d.delay}`:d.delay}</div>
+      <div>${d.delay}</div>
     </div>`;
   });
 
-  html += `</div>`;
-  document.getElementById("panel").innerHTML = html;
+  html+=`</div>`;
+  panel.innerHTML=html;
 }
 
-// ================= TRIP VIEW =================
-function showTrip(trip_id){
+function showTrip(id){
+  if(!id){alert("Nincs GTFS");return;}
+  const stops=getFullTrip(id);
 
-  if(!trip_id){
-    alert("Nincs GTFS adat (DEMO mód)");
-    return;
-  }
-
-  const stops = getFullTrip(trip_id);
-
-  let html = `<div class="matrix">`;
-  html += `<h3>📋 Teljes menetrend</h3>`;
-
+  let html=`<div class="matrix"><h3>📋 Menetrend</h3>`;
   stops.forEach((s,i)=>{
-    const highlight = (s.name === CURRENT_STOP.name) ? "style='color:yellow'" : "";
-
-    html += `
-    <div class="row" ${highlight}>
-      <div>${i+1}</div>
-      <div>${s.name}</div>
-      <div>${s.time}</div>
-    </div>`;
+    const hl=(s.name===CURRENT_STOP.name)?"style='color:yellow'":"";
+    html+=`<div class="row" ${hl}><div>${i+1}</div><div>${s.name}</div><div>${s.time}</div></div>`;
   });
 
-  html += `<button onclick="back()">⬅ Vissza</button>`;
-  html += `</div>`;
-
-  document.getElementById("panel").innerHTML = html;
-}
-
-// ================= BACK =================
-function back(){
-  if(CURRENT_STOP) showMatrix(CURRENT_STOP);
+  html+=`<button onclick="showMatrix(CURRENT_STOP)">⬅ Vissza</button></div>`;
+  panel.innerHTML=html;
 }
 
 // ================= SEARCH =================
-document.getElementById("search").oninput = e=>{
-  const q = e.target.value.toLowerCase();
+search.oninput=e=>{
+  const q=e.target.value.toLowerCase();
   render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
 };
 
 // ================= LIST =================
 function render(list=STOPS){
-  const c = document.getElementById("list");
-  c.innerHTML = "";
+  listDiv.innerHTML="";
   list.forEach(s=>{
-    const d = document.createElement("div");
-    d.innerHTML = "📍 "+s.name;
-    d.onclick = ()=>showMatrix(s);
-    c.appendChild(d);
+    const d=document.createElement("div");
+    d.innerHTML="📍 "+s.name;
+    d.onclick=()=>showMatrix(s);
+    listDiv.appendChild(d);
   });
 }
 
+const listDiv=document.getElementById("list");
+const panel=document.getElementById("panel");
+
 // ================= MAP =================
 STOPS.forEach(s=>{
-  L.marker([s.lat,s.lon]).addTo(map)
-    .on("click",()=>showMatrix(s));
+  L.marker([s.lat,s.lon]).addTo(map).on("click",()=>showMatrix(s));
 });
 
-// ================= START =================
-(async ()=>{
-  render();
-  await loadGTFS();
-  showMatrix(STOPS[0]);
-})();
-</script>
+// ================= FILE =================
+file.onchange=e=>loadZIP(e.target.files[0]);
 
+drop.ondragover=e=>e.preventDefault();
+drop.ondrop=e=>{
+  e.preventDefault();
+  loadZIP(e.dataTransfer.files[0]);
+};
+
+// ================= START =================
+loadCache();
+render();
+showMatrix(STOPS[0]);
+
+</script>
 </body>
 </html>
