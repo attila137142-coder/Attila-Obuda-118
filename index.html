@@ -1,252 +1,73 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>DISPATCH V8.3 – OFFLINE CORE</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<!-- ZIP + CSV -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
-<style>
-body{margin:0;display:flex;font-family:Arial;}
-#sidebar{width:360px;border-right:1px solid #ccc;overflow:auto;}
-#map{flex:1;height:100vh;}
-
-.matrix{background:black;color:#00ff66;font-family:monospace;padding:10px;}
-.row{display:flex;justify-content:space-between;border-bottom:1px solid #003300;padding:6px;cursor:pointer;}
-.badge{font-size:11px;opacity:0.7;}
-.blink{animation:blink 1s infinite;}
-@keyframes blink{50%{opacity:0.2;}}
-
-.drop{
-  border:2px dashed #888;
-  padding:10px;
-  margin:10px;
-  text-align:center;
-}
-</style>
-</head>
-
-<body>
-
-<div id="sidebar">
-<h3>🟢 DISPATCH V8.3</h3>
-
-<div class="drop" id="drop">
-📦 Húzd ide a GTFS.zip-et
-<br><input type="file" id="file">
-</div>
-
-<button onclick="resetGTFS()">♻ CACHE RESET</button>
-
-<input id="search" placeholder="Keresés...">
-<div id="list"></div>
-<div id="panel">Indulás...</div>
-</div>
-
-<div id="map"></div>
+<!-- Csak az ÚJ részeket mutatom, mert a teljes fájl már megvan nálad -->
 
 <script>
 
-// ================= MAP =================
-const map = L.map('map').setView([47.6,19.05],11);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+// ================= VEHICLES =================
+let vehicles = [];
 
-// ================= STOPS =================
-const STOPS = [
- {name:"Békásmegyer",lat:47.598,lon:19.054},
- {name:"Flórián tér",lat:47.542,lon:19.042},
- {name:"Batthyány tér",lat:47.506,lon:19.039}
-];
+function spawnVehicles(){
 
-let CURRENT_STOP=null;
+  vehicles.forEach(v=>map.removeLayer(v.marker));
+  vehicles = [];
 
-// ================= GTFS =================
-let GTFS = {stops:[],trips:[],stop_times:[],routes:[]};
+  if(!GTFS.stop_times.length) return;
 
-// ================= DEMO =================
-function demoDepartures(){
-  return [{route:"---",headsign:"NINCS GTFS",time:"--:--",delay:0}];
-}
+  // 10 random aktív trip
+  const activeTrips = GTFS.trips.slice(0,20);
 
-// ================= CSV =================
-function parseCSV(text){
-  const lines = text.split("\n").filter(l=>l.trim());
-  const headers = lines[0].split(",");
-  return lines.slice(1).map(line=>{
-    const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
-    let obj={};
-    headers.forEach((h,i)=>obj[h]=values[i]?.replace(/"/g,""));
-    return obj;
-  });
-}
+  activeTrips.forEach(trip=>{
 
-// ================= ZIP LOAD =================
-async function loadZIP(file){
+    const route = GTFS.routes.find(r=>r.route_id===trip.route_id);
 
-  const zip = await JSZip.loadAsync(file);
+    const color = getColor(route?.route_short_name);
 
-  async function read(name){
-    return zip.file(name)?.async("string") || "";
-  }
+    const marker = L.circleMarker([47.5,19.05],{
+      radius:6,
+      color:color,
+      fillOpacity:1
+    }).addTo(map);
 
-  GTFS.stops = parseCSV(await read("stops.txt"));
-  GTFS.trips = parseCSV(await read("trips.txt"));
-  GTFS.stop_times = parseCSV(await read("stop_times.txt"));
-  GTFS.routes = parseCSV(await read("routes.txt"));
-
-  localStorage.setItem("GTFS_CACHE", JSON.stringify(GTFS));
-
-  alert("✅ GTFS BETÖLTVE!");
-}
-
-// ================= CACHE =================
-function loadCache(){
-  const c = localStorage.getItem("GTFS_CACHE");
-  if(c){
-    GTFS = JSON.parse(c);
-    console.log("⚡ CACHE LOADED");
-  }
-}
-
-function resetGTFS(){
-  localStorage.removeItem("GTFS_CACHE");
-  alert("Cache törölve");
-}
-
-// ================= DEPARTURES =================
-function getDepartures(stop){
-
-  if(!GTFS.stop_times.length) return demoDepartures();
-
-  const gtfsStop = GTFS.stops.find(s=>{
-    const a=s.stop_name?.toLowerCase()||"";
-    const b=stop.name.toLowerCase();
-    return a.includes(b)||b.includes(a);
-  });
-
-  if(!gtfsStop) return demoDepartures();
-
-  const now=new Date();
-  const nowSec=now.getHours()*3600+now.getMinutes()*60;
-
-  const res = GTFS.stop_times
-    .filter(st=>st.stop_id===gtfsStop.stop_id)
-    .map(st=>{
-      const [h,m,s]=st.departure_time.split(":").map(Number);
-      const sec=h*3600+m*60+s;
-      return {trip_id:st.trip_id,time:st.departure_time,diff:sec-nowSec};
-    })
-    .filter(x=>x.diff>0)
-    .sort((a,b)=>a.diff-b.diff)
-    .slice(0,15);
-
-  return res.map(r=>{
-    const trip=GTFS.trips.find(t=>t.trip_id===r.trip_id);
-    const route=GTFS.routes.find(ro=>ro.route_id===trip?.route_id);
-
-    return {
-      trip_id:r.trip_id,
-      route:route?.route_short_name||"?",
-      headsign:trip?.trip_headsign||"",
-      time:r.time.slice(0,5),
-      delay:0
-    };
-  });
-}
-
-// ================= FULL TRIP =================
-function getFullTrip(trip_id){
-  return GTFS.stop_times
-    .filter(st=>st.trip_id===trip_id)
-    .sort((a,b)=>a.stop_sequence-b.stop_sequence)
-    .map(st=>{
-      const s=GTFS.stops.find(x=>x.stop_id===st.stop_id);
-      return {name:s?.stop_name||"???",time:st.departure_time.slice(0,5)};
+    vehicles.push({
+      trip_id: trip.trip_id,
+      marker,
+      index: 0
     });
-}
 
-// ================= UI =================
-function showMatrix(stop){
-
-  CURRENT_STOP=stop;
-
-  let html=`<div class="matrix"><h3>${stop.name}</h3>`;
-  html+=`<div class="badge">${GTFS.stop_times.length?"GTFS":"DEMO"}</div>`;
-
-  const deps=getDepartures(stop);
-
-  deps.forEach((d,i)=>{
-    html+=`
-    <div class="row" onclick="showTrip('${d.trip_id||""}')">
-      <div>${d.route}</div>
-      <div>${d.headsign}</div>
-      <div class="${i<2?'blink':''}">${d.time}</div>
-      <div>${d.delay}</div>
-    </div>`;
-  });
-
-  html+=`</div>`;
-  panel.innerHTML=html;
-}
-
-function showTrip(id){
-  if(!id){alert("Nincs GTFS");return;}
-  const stops=getFullTrip(id);
-
-  let html=`<div class="matrix"><h3>📋 Menetrend</h3>`;
-  stops.forEach((s,i)=>{
-    const hl=(s.name===CURRENT_STOP.name)?"style='color:yellow'":"";
-    html+=`<div class="row" ${hl}><div>${i+1}</div><div>${s.name}</div><div>${s.time}</div></div>`;
-  });
-
-  html+=`<button onclick="showMatrix(CURRENT_STOP)">⬅ Vissza</button></div>`;
-  panel.innerHTML=html;
-}
-
-// ================= SEARCH =================
-search.oninput=e=>{
-  const q=e.target.value.toLowerCase();
-  render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
-};
-
-// ================= LIST =================
-function render(list=STOPS){
-  listDiv.innerHTML="";
-  list.forEach(s=>{
-    const d=document.createElement("div");
-    d.innerHTML="📍 "+s.name;
-    d.onclick=()=>showMatrix(s);
-    listDiv.appendChild(d);
   });
 }
 
-const listDiv=document.getElementById("list");
-const panel=document.getElementById("panel");
+// ================= MOVE =================
+function moveVehicles(){
 
-// ================= MAP =================
-STOPS.forEach(s=>{
-  L.marker([s.lat,s.lon]).addTo(map).on("click",()=>showMatrix(s));
-});
+  vehicles.forEach(v=>{
 
-// ================= FILE =================
-file.onchange=e=>loadZIP(e.target.files[0]);
+    const stops = GTFS.stop_times
+      .filter(st=>st.trip_id===v.trip_id)
+      .sort((a,b)=>a.stop_sequence-b.stop_sequence);
 
-drop.ondragover=e=>e.preventDefault();
-drop.ondrop=e=>{
-  e.preventDefault();
-  loadZIP(e.dataTransfer.files[0]);
-};
+    if(stops.length < 2) return;
 
-// ================= START =================
-loadCache();
-render();
-showMatrix(STOPS[0]);
+    const current = stops[v.index % stops.length];
+    const next = stops[(v.index+1) % stops.length];
+
+    const s1 = GTFS.stops.find(s=>s.stop_id===current.stop_id);
+    const s2 = GTFS.stops.find(s=>s.stop_id===next.stop_id);
+
+    if(!s1 || !s2) return;
+
+    // linear move
+    const lat = (parseFloat(s1.stop_lat)+parseFloat(s2.stop_lat))/2;
+    const lon = (parseFloat(s1.stop_lon)+parseFloat(s2.stop_lon))/2;
+
+    v.marker.setLatLng([lat,lon]);
+
+    v.index++;
+  });
+}
+
+// ================= LOOP =================
+setInterval(()=>{
+  moveVehicles();
+},2000);
 
 </script>
-</body>
-</html>
