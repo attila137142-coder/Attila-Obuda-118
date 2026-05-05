@@ -2,21 +2,19 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS ZIP LOADER ENGINE V2</title>
+<title>ATTILA GLOBAL FEED ENGINE V4</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-<!-- ZIP UNPACKER -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
 <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
 <style>
 body { margin:0; font-family:Arial; background:#0b1220; color:white; }
 #map { height:70vh; }
 .panel { padding:10px; background:#111a2e; }
-pre { white-space:pre-wrap; }
+pre { white-space:pre-wrap; font-size:12px; }
 button { padding:8px; margin:5px; }
 </style>
 </head>
@@ -24,14 +22,14 @@ button { padding:8px; margin:5px; }
 <body>
 
 <div class="panel">
-<h2>🚆 GTFS ZIP LOADER ENGINE V2</h2>
+<h2>🚆 GLOBAL FEED MERGE ENGINE V4</h2>
 
-<input type="file" id="zipfile" accept=".zip">
-<button onclick="loadZip()">LOAD GTFS ZIP</button>
-<button onclick="build()">BUILD NETWORK</button>
+<input type="file" id="zip" multiple accept=".zip">
+<button onclick="loadZips()">LOAD GTFS ZIPS</button>
+<button onclick="build()">BUILD GLOBAL NETWORK</button>
 
 <div id="status">READY</div>
-<pre id="debug"></pre>
+<pre id="log"></pre>
 </div>
 
 <div id="map"></div>
@@ -44,144 +42,151 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     attribution:'OSM'
 }).addTo(map);
 
-// ---------------- STORAGE ----------------
-let files = {};
-let stops = [];
-let trips = [];
-let routes = [];
-let stopTimes = [];
+// ---------------- GLOBAL STATE ----------------
+let rawFeeds = [];
+let globalStops = [];
 
-// ---------------- ZIP LOADER ----------------
-async function loadZip(){
-
-    const file = document.getElementById("zipfile").files[0];
-    if(!file) return alert("Nincs ZIP!");
-
-    debug("📦 ZIP loading...");
-
-    const zip = await JSZip.loadAsync(file);
-
-    files = {};
-
-    const keys = Object.keys(zip.files);
-
-    for(let k of keys){
-
-        let content = await zip.files[k].async("string");
-
-        files[k] = content;
-
-        debug("Loaded file: " + k);
-    }
-
-    parseFiles();
+// ---------------- UTIL ----------------
+function log(t){
+    document.getElementById("log").innerText += t + "\n";
 }
 
-// ---------------- FILE ROUTER ----------------
-function route(name){
-
-    name = name.toLowerCase();
-
-    if(name.includes("stops")) return "stops";
-    if(name.includes("stop_times")) return "stop_times";
-    if(name.includes("trips")) return "trips";
-    if(name.includes("routes")) return "routes";
-
-    return "unknown";
+function setStatus(t){
+    document.getElementById("status").innerText = t;
 }
 
-// ---------------- PARSE ALL ----------------
-function parseFiles(){
+// ---------------- NORMALIZE ----------------
+function norm(n){
+    return (n||"")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g,"")
+        .replace(/[^a-z0-9]/g,"");
+}
 
-    stops = [];
-    trips = [];
-    routes = [];
-    stopTimes = [];
+// ---------------- DISTANCE ----------------
+function dist(a,b){
+    const dx = a.lat - b.lat;
+    const dy = a.lon - b.lon;
+    return Math.sqrt(dx*dx+dy*dy)*111000;
+}
 
-    let count = 0;
+// ---------------- MERGE LOGIC ----------------
+function shouldMerge(a,b){
+    return dist(a,b) < 70 &&
+           norm(a.name) === norm(b.name);
+}
 
-    for(let name in files){
+// ---------------- LOAD ZIP ----------------
+async function loadZips(){
 
-        let type = route(name);
+    const files = document.getElementById("zip").files;
 
-        Papa.parse(files[name],{
-            header:true,
-            skipEmptyLines:true,
-            complete:(res)=>{
+    rawFeeds = [];
 
-                count++;
+    for(let file of files){
 
-                debug(`Parsed: ${name} → ${type} (${res.data.length})`);
+        const zip = await JSZip.loadAsync(file);
 
-                if(type === "stops") stops = res.data;
-                if(type === "trips") trips = res.data;
-                if(type === "routes") routes = res.data;
-                if(type === "stop_times") stopTimes = res.data;
+        let feed = [];
 
-                if(count === Object.keys(files).length){
-                    setStatus("READY TO BUILD ✔");
-                }
+        for(let name in zip.files){
+
+            let text = await zip.files[name].async("string");
+
+            if(name.includes("stops")){
+
+                let parsed = Papa.parse(text,{
+                    header:true,
+                    skipEmptyLines:true
+                });
+
+                feed.push({
+                    type:"stops",
+                    data:parsed.data
+                });
             }
-        });
+        }
+
+        rawFeeds.push(feed);
+
+        log("Loaded ZIP: " + file.name);
     }
+
+    setStatus("LOADED ✔");
 }
 
-// ---------------- BUILD NETWORK ----------------
+// ---------------- BUILD ----------------
 function build(){
 
-    debug("=== BUILD START ===");
+    globalStops = [];
 
-    debug("STOPS: " + stops.length);
-    debug("TRIPS: " + trips.length);
-    debug("ROUTES: " + routes.length);
-    debug("STOP_TIMES: " + stopTimes.length);
+    log("=== BUILD START ===");
 
-    if(stops.length === 0){
-        alert("❌ NINCS stops.txt a ZIP-ben!");
-        return;
+    for(let feed of rawFeeds){
+
+        for(let part of feed){
+
+            if(part.type !== "stops") continue;
+
+            for(let s of part.data){
+
+                let stop = {
+                    name: s.stop_name,
+                    lat: parseFloat(s.stop_lat),
+                    lon: parseFloat(s.stop_lon),
+                    feeds:1
+                };
+
+                if(isNaN(stop.lat) || isNaN(stop.lon)) continue;
+
+                addGlobal(stop);
+            }
+        }
     }
 
-    let valid = stops
-        .map(s=>({
+    log("GLOBAL STOPS: " + globalStops.length);
 
-            id: s.stop_id,
-            name: s.stop_name,
-            lat: parseFloat(s.stop_lat),
-            lon: parseFloat(s.stop_lon)
+    render();
 
-        }))
-        .filter(s=>!isNaN(s.lat) && !isNaN(s.lon));
-
-    debug("VALID STOPS: " + valid.length);
-
-    render(valid);
+    setStatus("ENGINE READY ✔");
 }
 
-// ---------------- MAP ----------------
-function render(data){
+// ---------------- GLOBAL MERGE ----------------
+function addGlobal(stop){
+
+    for(let g of globalStops){
+        if(shouldMerge(g, stop)){
+            g.feeds++;
+            return;
+        }
+    }
+
+    globalStops.push({
+        ...stop,
+        id:"G"+globalStops.length
+    });
+}
+
+// ---------------- RENDER ----------------
+function render(){
 
     map.eachLayer(l=>{
         if(l instanceof L.CircleMarker) map.removeLayer(l);
     });
 
-    data.forEach(s=>{
+    globalStops.forEach(s=>{
+
+        let r = 3 + Math.min(s.feeds,5);
 
         L.circleMarker([s.lat,s.lon],{
-            radius:4,
+            radius:r,
             color:"cyan"
         }).addTo(map)
-        .bindPopup(s.name);
-
+        .bindPopup(
+            `<b>${s.name}</b><br>feeds: ${s.feeds}<br>${s.id}`
+        );
     });
-}
-
-// ---------------- UI ----------------
-function debug(t){
-    document.getElementById("debug").innerText += t + "\n";
-}
-
-function setStatus(t){
-    document.getElementById("status").innerText = t;
 }
 
 </script>
