@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA DISPATCHER V8 – REAL CORE</title>
+<title>ATTILA DISPATCH V7.5 – GTFS STABLE</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
@@ -24,13 +24,7 @@ body{margin:0;display:flex;font-family:Arial;}
   display:flex;
   justify-content:space-between;
   border-bottom:1px solid #003300;
-  padding:5px;
-}
-
-.vehicle{
-  border-bottom:1px solid #003300;
   padding:6px;
-  font-size:13px;
 }
 
 .blink{animation:blink 1s infinite;}
@@ -41,7 +35,7 @@ body{margin:0;display:flex;font-family:Arial;}
 <body>
 
 <div id="sidebar">
-<h3>🟢 DISPATCH V8</h3>
+<h3>🟢 DISPATCH V7.5</h3>
 <input id="search" placeholder="Keresés...">
 <div id="list"></div>
 <div id="panel">Válassz megállót</div>
@@ -55,126 +49,87 @@ body{margin:0;display:flex;font-family:Arial;}
 const map = L.map('map').setView([47.6,19.05],11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ===== GPS =====
-let userPos=null;
-navigator.geolocation.getCurrentPosition(p=>{
-  userPos={lat:p.coords.latitude,lon:p.coords.longitude};
-});
-
-// ===== DIST =====
-function distance(a,b,c,d){
-  const R=6371000;
-  const toRad=x=>x*Math.PI/180;
-  const dLat=toRad(c-a);
-  const dLon=toRad(d-b);
-  const x=Math.sin(dLat/2)**2+
-    Math.cos(toRad(a))*Math.cos(toRad(c))*
-    Math.sin(dLon/2)**2;
-  return R*(2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
-}
-
-// ===== STOPS =====
+// ===== STOPS (ALAP LISTA) =====
 const STOPS=[
  {name:"Békásmegyer",lat:47.598,lon:19.054},
- {name:"Flórián tér",lat:47.542,lon:19.042}
+ {name:"Flórián tér",lat:47.542,lon:19.042},
+ {name:"Batthyány tér",lat:47.506,lon:19.039}
 ];
 
-// ===== GTFS STATIC =====
-let GTFS={stops:[],trips:[],stop_times:[]};
+// ===== GTFS =====
+let GTFS={stops:[],trips:[],stop_times:[],routes:[]};
 
-// ===== GTFS-RT =====
-let GTFS_RT={
-  vehicles:[],   // position
-  updates:{}     // trip_id -> delay
-};
+// ===== CSV PARSER (STABIL) =====
+function parseCSV(text){
+  const lines = text.split("\n").filter(l=>l.trim());
+  const headers = lines[0].split(",");
 
-// ===== CSV =====
-function parseCSV(t){
-  const r=t.split("\n").map(x=>x.trim()).filter(Boolean);
-  const h=r[0].split(",");
-  return r.slice(1).map(l=>{
-    const c=l.split(",");
-    let o={};
-    h.forEach((k,i)=>o[k]=c[i]);
-    return o;
+  return lines.slice(1).map(line=>{
+    const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+
+    let obj = {};
+    headers.forEach((h,i)=>{
+      obj[h] = values[i]?.replace(/"/g,"");
+    });
+
+    return obj;
   });
 }
 
-// ===== LOAD STATIC =====
+// ===== GTFS LOAD =====
 async function loadGTFS(){
   try{
-    const [a,b,c]=await Promise.all([
-      fetch("stops.txt").then(r=>r.text()),
-      fetch("trips.txt").then(r=>r.text()),
-      fetch("stop_times.txt").then(r=>r.text())
+    const [a,b,c,d]=await Promise.all([
+      fetch("/stops.txt").then(r=>r.text()),
+      fetch("/trips.txt").then(r=>r.text()),
+      fetch("/stop_times.txt").then(r=>r.text()),
+      fetch("/routes.txt").then(r=>r.text())
     ]);
+
     GTFS.stops=parseCSV(a);
     GTFS.trips=parseCSV(b);
     GTFS.stop_times=parseCSV(c);
+    GTFS.routes=parseCSV(d);
+
+    console.log("GTFS OK:", GTFS.stops.length);
+
   }catch(e){
-    console.log("GTFS fail",e);
+    console.error("GTFS HIBA:", e);
   }
 }
 
-// ===== LOAD REALTIME (PROXY NEEDED) =====
-async function loadRT(){
-  try{
-    const res=await fetch("/api/gtfsrt"); // <-- proxy!
-    const data=await res.json();
-
-    GTFS_RT.vehicles=data.vehicles || [];
-    GTFS_RT.updates=data.updates || {};
-
-  }catch(e){
-    console.log("RT fallback");
-  }
-}
-
-// ===== FIND STOP =====
+// ===== STOP ID =====
 function findStopId(stop){
-  const s=GTFS.stops.find(x=>
-    x.stop_name.toLowerCase().includes(stop.name.toLowerCase())
+  const s = GTFS.stops.find(x =>
+    x.stop_name.toLowerCase().trim() === stop.name.toLowerCase().trim()
   );
   return s?.stop_id;
 }
 
 // ===== DEPARTURES =====
-function getDeps(stop){
+function getDepartures(stop){
 
-  const id=findStopId(stop);
+  if(!GTFS.stop_times.length){
+    return [{route:"--", headsign:"Nincs adat", time:"--"}];
+  }
+
+  const id = findStopId(stop);
   if(!id) return [];
 
   return GTFS.stop_times
     .filter(x=>x.stop_id===id)
-    .slice(0,30)
+    .slice(0,50)
     .map(st=>{
       const trip=GTFS.trips.find(t=>t.trip_id===st.trip_id);
-      const delay=GTFS_RT.updates[st.trip_id]||0;
+      const route=GTFS.routes.find(r=>r.route_id===trip?.route_id);
 
       return {
-        route:trip?.route_id||"?",
-        headsign:trip?.trip_headsign||"?",
-        time:st.departure_time,
-        delay:delay,
-        trip_id:st.trip_id
+        route:route?.route_short_name || trip?.route_id || "?",
+        headsign:trip?.trip_headsign || "?",
+        time:st.departure_time
       };
     })
     .slice(0,15);
-}
-
-// ===== VEHICLE BIND =====
-function bindVehicles(stop){
-
-  return GTFS_RT.vehicles.map(v=>{
-
-    const d=distance(v.lat,v.lon,stop.lat,stop.lon);
-
-    return {
-      ...v,
-      dist:d
-    };
-
-  }).sort((a,b)=>a.dist-b.dist).slice(0,5);
 }
 
 // ===== MATRIX =====
@@ -183,12 +138,11 @@ function showMatrix(stop){
  let html=`<div class="matrix">`;
  html+=`<h3>${stop.name}</h3>`;
 
- const deps=getDeps(stop);
+ const deps=getDepartures(stop);
 
  if(deps.length){
 
   deps.forEach((d,i)=>{
-
     html+=`
     <div class="row">
       <div>${d.route}</div>
@@ -196,51 +150,44 @@ function showMatrix(stop){
       <div class="${i<2?'blink':''}">
         ${d.time}
       </div>
-      <div>${d.delay>0?`+${d.delay}`:d.delay}</div>
     </div>`;
   });
 
  }else{
-  html+=`⚠️ nincs GTFS adat`;
+  html+=`⚠️ nincs adat`;
  }
-
- html+=`<hr><b>🚍 JÁRMŰVEK</b>`;
-
- const veh=bindVehicles(stop);
-
- veh.forEach(v=>{
-  html+=`
-  <div class="vehicle">
-    ${v.line||"?"} | ${v.id||"?"}<br>
-    📏 ${Math.round(v.dist)} m
-  </div>`;
- });
 
  html+=`</div>`;
  document.getElementById("panel").innerHTML=html;
 }
 
-// ===== INIT =====
-loadGTFS();
-setInterval(loadRT,5000);
-
 // ===== LIST =====
-function render(){
+function render(list=STOPS){
  const c=document.getElementById("list");
- STOPS.forEach(s=>{
+ c.innerHTML="";
+ list.forEach(s=>{
   const d=document.createElement("div");
   d.innerHTML="📍 "+s.name;
   d.onclick=()=>showMatrix(s);
   c.appendChild(d);
  });
 }
-render();
+
+// ===== SEARCH =====
+document.getElementById("search").oninput=e=>{
+ const q=e.target.value.toLowerCase();
+ render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
+};
 
 // ===== MAP =====
 STOPS.forEach(s=>{
  L.marker([s.lat,s.lon]).addTo(map)
   .on("click",()=>showMatrix(s));
 });
+
+// ===== INIT =====
+render();
+loadGTFS();
 
 </script>
 
