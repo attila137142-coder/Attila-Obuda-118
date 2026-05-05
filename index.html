@@ -1,43 +1,212 @@
-complete:(r)=>{
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>ATTILA MULTI-LAYER DISPATCHER V3</title>
 
-    raw = r.data;
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://unpkg.com/rbush@3.0.1/rbush.min.js"></script>
 
-    console.log("RAW SAMPLE:", raw.slice(0,5));
+<style>
+body { margin:0; font-family:Arial; background:#0b1220; color:white; }
+#map { height:70vh; }
+.panel { padding:10px; background:#111a2e; }
+button { margin:5px; padding:8px; }
+.small { font-size:12px; opacity:0.8; }
+pre { white-space:pre-wrap; }
+</style>
+</head>
 
-    let keys = Object.keys(raw[0] || {});
-    console.log("GTFS COLUMNS:", keys);
+<body>
 
-    let ok = 0;
-    let bad = 0;
+<div class="panel">
+<h2>🚆 ATTILA DISPATCHER V3 (MULTI-LAYER)</h2>
 
-    stops = raw.map(s=>{
+<input type="file" id="file" multiple>
+<button onclick="loadAll()">LOAD FEED(S)</button>
+<button onclick="build()">BUILD GLOBAL ENGINE</button>
 
-        let id = pick(s,["stop_id","id","STOP_ID"]);
-        let name = pick(s,["stop_name","name","STOP_NAME"]);
+<div id="status">READY</div>
+<pre id="debug"></pre>
+</div>
 
-        let lat = pick(s,["stop_lat","lat","y","STOP_LAT"]);
-        let lon = pick(s,["stop_lon","lon","x","STOP_LON"]);
+<div id="map"></div>
 
-        if(id && name && lat && lon) ok++; else bad++;
+<script>
 
-        return {
-            id,
-            name,
-            lat: parseFloat(lat),
-            lon: parseFloat(lon),
-            feed:"GTFS"
-        };
-    })
-    .filter(s=>!isNaN(s.lat)&&!isNaN(s.lon));
+const map = L.map('map').setView([47.5, 19.05], 9);
 
-    set(`OK:${ok} BAD:${bad} FINAL:${stops.length}`);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'OSM'
+}).addTo(map);
 
-    debug(`
-COLUMNS: ${keys.join(", ")}
-OK rows: ${ok}
-BAD rows: ${bad}
-FINAL stops: ${stops.length}
-    `);
+// ---------------- GLOBAL ----------------
+let feeds = [];
+let rawFeeds = [];
+let globalStops = [];
+let tree = new RBush();
+let idCounter = 1;
 
-    index();
+// ---------------- FEED DETECTION ----------------
+function detectFeed(name=""){
+    name = name.toLowerCase();
+    if(name.includes("bkk")) return "BKK";
+    if(name.includes("volán")) return "VOLAN";
+    if(name.includes("máv")) return "MAV";
+    if(name.includes("hév")) return "HEV";
+    if(name.includes("vasút")) return "RAIL";
+    return "UNKNOWN";
 }
+
+// ---------------- NORMALIZE ----------------
+function normalize(name){
+    return (name||"")
+        .toLowerCase()
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g,"")
+        .replace(/[^a-z0-9]/g,"");
+}
+
+// ---------------- DISTANCE ----------------
+function dist(a,b){
+    const R=6371e3;
+    const t=x=>x*Math.PI/180;
+    let dLat=t(b.lat-a.lat);
+    let dLon=t(b.lon-a.lon);
+    let A=t(a.lat),B=t(b.lat);
+
+    let x=Math.sin(dLat/2)**2+
+          Math.cos(A)*Math.cos(B)*Math.sin(dLon/2)**2;
+
+    return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// ---------------- LOAD FILES ----------------
+function loadAll(){
+    const files = document.getElementById("file").files;
+    if(!files.length) return alert("No files!");
+
+    feeds = [];
+
+    for(let f of files){
+        Papa.parse(f,{
+            header:true,
+            skipEmptyLines:true,
+            complete:(r)=>{
+
+                feeds.push({
+                    name:f.name,
+                    data:r.data,
+                    feed_id: detectFeed(f.name)
+                });
+
+                debugLog("Loaded: " + f.name + " rows:" + r.data.length);
+            }
+        });
+    }
+}
+
+// ---------------- TRANSLATE STOP ----------------
+function translate(s, feed_id){
+
+    let id = s.stop_id || s.id || s.ID;
+    let name = s.stop_name || s.name || s.NEV;
+
+    let lat = s.stop_lat || s.lat || s.y;
+    let lon = s.stop_lon || s.lon || s.x;
+
+    return {
+        id: feed_id + ":" + id,
+        name,
+        lat: parseFloat(lat),
+        lon: parseFloat(lon),
+        feed: feed_id
+    };
+}
+
+// ---------------- BUILD GLOBAL ----------------
+function build(){
+
+    globalStops = [];
+
+    for(let f of feeds){
+
+        for(let s of f.data){
+
+            let t = translate(s, f.feed_id);
+
+            if(!t.id || !t.name || isNaN(t.lat) || isNaN(t.lon))
+                continue;
+
+            globalStops.push(t);
+        }
+    }
+
+    buildIndex();
+    render();
+    setStatus("ENGINE READY ✔ stops: " + globalStops.length);
+}
+
+// ---------------- INDEX ----------------
+function buildIndex(){
+    tree.clear();
+
+    for(let s of globalStops){
+        tree.insert({
+            minX:s.lon,
+            minY:s.lat,
+            maxX:s.lon,
+            maxY:s.lat,
+            data:s
+        });
+    }
+}
+
+// ---------------- MERGE LOGIC ----------------
+function merge(a,b){
+    let d = dist(a,b);
+    let n = (normalize(a.name) === normalize(b.name));
+
+    return d < 80 && n;
+}
+
+// ---------------- RENDER ----------------
+function render(){
+
+    map.eachLayer(l=>{
+        if(l instanceof L.CircleMarker) map.removeLayer(l);
+    });
+
+    globalStops.forEach(s=>{
+
+        let color = "cyan";
+        if(s.feed==="BKK") color="blue";
+        if(s.feed==="VOLAN") color="green";
+        if(s.feed==="MAV") color="orange";
+        if(s.feed==="HEV") color="red";
+
+        L.circleMarker([s.lat,s.lon],{
+            radius:4,
+            color:color
+        }).addTo(map)
+        .bindPopup(
+            `<b>${s.name}</b><br>${s.id}<br>${s.feed}`
+        );
+    });
+}
+
+// ---------------- UI ----------------
+function setStatus(t){
+    document.getElementById("status").innerText = t;
+}
+
+function debugLog(t){
+    document.getElementById("debug").innerText += t + "\n";
+}
+
+</script>
+
+</body>
+</html>
