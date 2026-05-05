@@ -1,271 +1,43 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8" />
-<title>ATTILA DISPATCHER V2.1 FIX</title>
+complete:(r)=>{
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://unpkg.com/rbush@3.0.1/rbush.min.js"></script>
+    raw = r.data;
 
-<style>
-body { margin:0; font-family:Arial; background:#0b1220; color:white; }
-#map { height:70vh; }
-.panel { padding:10px; background:#111a2e; }
-button { padding:8px; margin:5px; }
-.small { font-size:12px; opacity:0.8; }
-</style>
-</head>
+    console.log("RAW SAMPLE:", raw.slice(0,5));
 
-<body>
+    let keys = Object.keys(raw[0] || {});
+    console.log("GTFS COLUMNS:", keys);
 
-<div class="panel">
-<h2>🚆 ATTILA DISPATCHER V2.1 FIX</h2>
+    let ok = 0;
+    let bad = 0;
 
-<input type="file" id="file">
-<button onclick="loadGTFS()">GTFS LOAD</button>
-<button onclick="build()">BUILD ENGINE</button>
+    stops = raw.map(s=>{
 
-<div id="status">READY</div>
-<div class="small" id="debug"></div>
-</div>
+        let id = pick(s,["stop_id","id","STOP_ID"]);
+        let name = pick(s,["stop_name","name","STOP_NAME"]);
 
-<div id="map"></div>
+        let lat = pick(s,["stop_lat","lat","y","STOP_LAT"]);
+        let lon = pick(s,["stop_lon","lon","x","STOP_LON"]);
 
-<script>
+        if(id && name && lat && lon) ok++; else bad++;
 
-// ---------------- MAP ----------------
-const map = L.map('map').setView([47.4979, 19.0402], 10);
+        return {
+            id,
+            name,
+            lat: parseFloat(lat),
+            lon: parseFloat(lon),
+            feed:"GTFS"
+        };
+    })
+    .filter(s=>!isNaN(s.lat)&&!isNaN(s.lon));
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'OSM'
-}).addTo(map);
+    set(`OK:${ok} BAD:${bad} FINAL:${stops.length}`);
 
-// ---------------- DATA ----------------
-let raw = [];
-let stops = [];
-let nodes = [];
-let tree = new RBush();
-let idc = 1;
+    debug(`
+COLUMNS: ${keys.join(", ")}
+OK rows: ${ok}
+BAD rows: ${bad}
+FINAL stops: ${stops.length}
+    `);
 
-// ---------------- SAFE FIELD PICKER ----------------
-function pick(obj, keys){
-    for(let k of keys){
-        if(obj[k] !== undefined && obj[k] !== null && obj[k] !== "")
-            return obj[k];
-    }
-    return null;
+    index();
 }
-
-// ---------------- FEED DETECT ----------------
-function detect(s){
-    let n=(s.name||"").toLowerCase();
-
-    if(n.includes("hév")||n.includes("szentendre")) return "HEV";
-    if(n.includes("volán")) return "VOLAN";
-    if(n.includes("vasút")) return "MAV";
-    return "BKK";
-}
-
-// ---------------- LOAD GTFS ----------------
-function loadGTFS(){
-    const f=document.getElementById("file").files[0];
-    if(!f) return alert("Nincs file!");
-
-    Papa.parse(f,{
-        header:true,
-        skipEmptyLines:true,
-        complete:(r)=>{
-
-            raw = r.data;
-
-            console.log("RAW SAMPLE:", raw.slice(0,5));
-
-            stops = raw.map(s=>{
-
-                let id = pick(s,["stop_id","id","STOP_ID"]);
-                let name = pick(s,["stop_name","name","STOP_NAME"]);
-
-                let lat = pick(s,["stop_lat","lat","y","STOP_LAT"]);
-                let lon = pick(s,["stop_lon","lon","x","STOP_LON"]);
-
-                return {
-                    id,
-                    name,
-                    lat: parseFloat(lat),
-                    lon: parseFloat(lon),
-                    feed: "GTFS"
-                };
-
-            })
-            .filter(s =>
-                s.id &&
-                s.name &&
-                !isNaN(s.lat) &&
-                !isNaN(s.lon)
-            );
-
-            set("GTFS loaded: " + stops.length);
-            debug("OK rows: " + stops.length);
-            index();
-        }
-    });
-}
-
-// ---------------- INDEX ----------------
-function index(){
-    tree.clear();
-
-    stops.forEach(s=>{
-        tree.insert({
-            minX:s.lon,
-            minY:s.lat,
-            maxX:s.lon,
-            maxY:s.lat,
-            data:s
-        });
-    });
-
-    set("indexed ✔");
-}
-
-// ---------------- DIST ----------------
-function dist(a,b){
-    const R=6371e3;
-    const t=x=>x*Math.PI/180;
-
-    let dLat=t(b.lat-a.lat);
-    let dLon=t(b.lon-a.lon);
-
-    let A=t(a.lat),B=t(b.lat);
-
-    let x=Math.sin(dLat/2)**2+
-          Math.cos(A)*Math.cos(B)*Math.sin(dLon/2)**2;
-
-    return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-// ---------------- SCORE ----------------
-function score(a,b){
-    let d=dist(a,b);
-    let geo=d<80?1:d<200?0.6:0;
-
-    let na=(a.name||"").toLowerCase();
-    let nb=(b.name||"").toLowerCase();
-
-    let name=(na.includes(nb)||nb.includes(na))?0.8:0.4;
-
-    return geo*0.7 + name*0.3;
-}
-
-// ---------------- GET NODE ----------------
-function get(s){
-
-    let range = (s.name||"").includes("szentendre") ? 0.03 : 0.01;
-
-    let near = tree.search({
-        minX:s.lon-range,
-        minY:s.lat-range,
-        maxX:s.lon+range,
-        maxY:s.lat+range
-    });
-
-    let best=null,bestS=0;
-
-    near.forEach(n=>{
-        let sc=score(s,n.data);
-        if(sc>bestS){
-            bestS=sc;
-            best=n.data;
-        }
-    });
-
-    if(best && bestS>0.85){
-
-        let node = nodes.find(n=>n.base===best.id);
-
-        if(!node){
-            node={
-                id:"GLOBAL_"+(idc++),
-                base:best.id,
-                name:s.name,
-                lat:s.lat,
-                lon:s.lon,
-                sources:[]
-            };
-            nodes.push(node);
-        }
-
-        node.sources.push(s);
-        return node;
-    }
-
-    let node={
-        id:"GLOBAL_"+(idc++),
-        base:s.id,
-        name:s.name,
-        lat:s.lat,
-        lon:s.lon,
-        sources:[s]
-    };
-
-    nodes.push(node);
-    return node;
-}
-
-// ---------------- BUILD ----------------
-function build(){
-
-    nodes=[];
-    idc=1;
-
-    stops.forEach(s=>get(s));
-
-    render();
-    draw();
-
-    set("ENGINE READY ✔ nodes: "+nodes.length);
-
-    if(nodes.length===0){
-        alert("❌ NINCS VALID GTFS ADAT → ellenőrizd a fájlt!");
-    }
-}
-
-// ---------------- DRAW ----------------
-function draw(){
-
-    nodes.forEach(n=>{
-
-        let color="cyan";
-
-        if((n.name||"").toLowerCase().includes("hév")) color="orange";
-        if((n.name||"").toLowerCase().includes("volán")) color="green";
-
-        L.circleMarker([n.lat,n.lon],{
-            radius:5,
-            color:color
-        }).addTo(map)
-        .bindPopup(
-            `<b>${n.name}</b><br>${n.id}<br>${n.sources.length} source`
-        );
-    });
-}
-
-// ---------------- UI ----------------
-function set(t){
-    document.getElementById("status").innerText=t;
-}
-
-function debug(t){
-    document.getElementById("debug").innerText=t;
-}
-
-function render(){
-    console.log("nodes:",nodes.length);
-}
-
-</script>
-
-</body>
-</html>
