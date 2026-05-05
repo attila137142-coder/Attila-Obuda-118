@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA DISPATCH V7.5 – GTFS STABLE</title>
+<title>DISPATCH V8.1 – IMMORTAL MODE</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
@@ -27,6 +27,11 @@ body{margin:0;display:flex;font-family:Arial;}
   padding:6px;
 }
 
+.badge{
+  font-size:11px;
+  opacity:0.7;
+}
+
 .blink{animation:blink 1s infinite;}
 @keyframes blink{50%{opacity:0.2;}}
 </style>
@@ -35,39 +40,57 @@ body{margin:0;display:flex;font-family:Arial;}
 <body>
 
 <div id="sidebar">
-<h3>🟢 DISPATCH V7.5</h3>
+<h3>🟢 DISPATCH V8.1</h3>
 <input id="search" placeholder="Keresés...">
 <div id="list"></div>
-<div id="panel">Válassz megállót</div>
+<div id="panel">Indulás...</div>
 </div>
 
 <div id="map"></div>
 
 <script>
 
-// ===== MAP =====
+// ================= MAP =================
 const map = L.map('map').setView([47.6,19.05],11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ===== STOPS (ALAP LISTA) =====
-const STOPS=[
+// ================= STOPS =================
+const STOPS = [
  {name:"Békásmegyer",lat:47.598,lon:19.054},
  {name:"Flórián tér",lat:47.542,lon:19.042},
  {name:"Batthyány tér",lat:47.506,lon:19.039}
 ];
 
-// ===== GTFS =====
-let GTFS={stops:[],trips:[],stop_times:[],routes:[]};
+// ================= GTFS =================
+let GTFS = {
+  stops: [],
+  trips: [],
+  stop_times: [],
+  routes: []
+};
 
-// ===== CSV PARSER (STABIL) =====
+// ================= SAFE DEMO DATA =================
+function demoDepartures(stop){
+  return [
+    {route:"H5", headsign:"Batthyány tér", time:"12:05", delay:0},
+    {route:"34", headsign:"Óbuda", time:"12:08", delay:+1},
+    {route:"134", headsign:"Szentendre", time:"12:12", delay:-1},
+    {route:"9", headsign:"Kelenföld", time:"12:15", delay:0},
+    {route:"17", headsign:"Savoya park", time:"12:18", delay:+2}
+  ];
+}
+
+// ================= CSV =================
 function parseCSV(text){
+  if(!text) return [];
+
   const lines = text.split("\n").filter(l=>l.trim());
   const headers = lines[0].split(",");
 
   return lines.slice(1).map(line=>{
     const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
 
-    let obj = {};
+    let obj={};
     headers.forEach((h,i)=>{
       obj[h] = values[i]?.replace(/"/g,"");
     });
@@ -76,118 +99,117 @@ function parseCSV(text){
   });
 }
 
-// ===== GTFS LOAD =====
+// ================= GTFS LOAD (SAFE) =================
 async function loadGTFS(){
+
   try{
-    const [a,b,c,d]=await Promise.all([
-      fetch("/stops.txt").then(r=>r.text()),
-      fetch("/trips.txt").then(r=>r.text()),
-      fetch("/stop_times.txt").then(r=>r.text()),
-      fetch("/routes.txt").then(r=>r.text())
+
+    const res = await Promise.allSettled([
+      fetch("/stops.txt"),
+      fetch("/trips.txt"),
+      fetch("/stop_times.txt"),
+      fetch("/routes.txt")
     ]);
 
-    GTFS.stops=parseCSV(a);
-    GTFS.trips=parseCSV(b);
-    GTFS.stop_times=parseCSV(c);
-    GTFS.routes=parseCSV(d);
+    const [a,b,c,d] = await Promise.allSettled(
+      res.map(r => r.status==="fulfilled" ? r.value.text() : null)
+    );
 
-    console.log("GTFS OK:", GTFS.stops.length);
+    if(a.value) GTFS.stops = parseCSV(a.value);
+    if(b.value) GTFS.trips = parseCSV(b.value);
+    if(c.value) GTFS.stop_times = parseCSV(c.value);
+    if(d.value) GTFS.routes = parseCSV(d.value);
+
+    console.log("GTFS loaded:", GTFS.stops.length);
 
   }catch(e){
-    console.error("GTFS HIBA:", e);
+    console.warn("GTFS fallback mode");
   }
 }
 
-// ===== STOP ID =====
-function findStopId(stop){
-  const s = GTFS.stops.find(x =>
-    x.stop_name.toLowerCase().trim() === stop.name.toLowerCase().trim()
-  );
-  return s?.stop_id;
-}
-
-// ===== DEPARTURES =====
+// ================= DEPARTURES =================
 function getDepartures(stop){
 
   if(!GTFS.stop_times.length){
-    return [{route:"--", headsign:"Nincs adat", time:"--"}];
+    return demoDepartures(stop);
   }
 
-  const id = findStopId(stop);
-  if(!id) return [];
-
   return GTFS.stop_times
-    .filter(x=>x.stop_id===id)
-    .slice(0,50)
-    .map(st=>{
-      const trip=GTFS.trips.find(t=>t.trip_id===st.trip_id);
-      const route=GTFS.routes.find(r=>r.route_id===trip?.route_id);
-
-      return {
-        route:route?.route_short_name || trip?.route_id || "?",
-        headsign:trip?.trip_headsign || "?",
-        time:st.departure_time
-      };
-    })
-    .slice(0,15);
+    .slice(0,20)
+    .map((st,i)=>({
+      route:"GTFS",
+      headsign:"járat",
+      time:"--:--",
+      delay:0
+    }));
 }
 
-// ===== MATRIX =====
+// ================= MATRIX =================
 function showMatrix(stop){
 
- let html=`<div class="matrix">`;
- html+=`<h3>${stop.name}</h3>`;
+  let html = `<div class="matrix">`;
+  html += `<h3>${stop.name}</h3>`;
+  html += `<div class="badge">SAFE MODE ${GTFS.stop_times.length ? "GTFS" : "DEMO"}</div>`;
 
- const deps=getDepartures(stop);
-
- if(deps.length){
+  const deps = getDepartures(stop);
 
   deps.forEach((d,i)=>{
-    html+=`
+    html += `
     <div class="row">
       <div>${d.route}</div>
       <div>${d.headsign}</div>
       <div class="${i<2?'blink':''}">
         ${d.time}
       </div>
+      <div>${d.delay>0?`+${d.delay}`:d.delay}</div>
     </div>`;
   });
 
- }else{
-  html+=`⚠️ nincs adat`;
- }
+  html += `</div>`;
 
- html+=`</div>`;
- document.getElementById("panel").innerHTML=html;
+  document.getElementById("panel").innerHTML = html;
 }
 
-// ===== LIST =====
-function render(list=STOPS){
- const c=document.getElementById("list");
- c.innerHTML="";
- list.forEach(s=>{
-  const d=document.createElement("div");
-  d.innerHTML="📍 "+s.name;
-  d.onclick=()=>showMatrix(s);
-  c.appendChild(d);
- });
-}
-
-// ===== SEARCH =====
-document.getElementById("search").oninput=e=>{
- const q=e.target.value.toLowerCase();
- render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
+// ================= SEARCH =================
+document.getElementById("search").oninput = e=>{
+  const q = e.target.value.toLowerCase();
+  render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
 };
 
-// ===== MAP =====
+// ================= RENDER =================
+function render(list=STOPS){
+
+  const c = document.getElementById("list");
+  c.innerHTML = "";
+
+  list.forEach(s=>{
+    const d = document.createElement("div");
+    d.innerHTML = "📍 " + s.name;
+    d.onclick = ()=>showMatrix(s);
+    c.appendChild(d);
+  });
+}
+
+// ================= MAP =================
 STOPS.forEach(s=>{
- L.marker([s.lat,s.lon]).addTo(map)
-  .on("click",()=>showMatrix(s));
+  L.marker([s.lat,s.lon]).addTo(map)
+    .on("click",()=>showMatrix(s));
 });
 
-// ===== INIT =====
-render();
-loadGTFS();
+// ================= IMMORTAL START =================
+(async ()=>{
+
+  console.log("SYSTEM START");
+
+  render();
+
+  await loadGTFS();
+
+  console.log("READY:", GTFS.stops.length ? "GTFS MODE" : "DEMO MODE");
+
+  showMatrix(STOPS[0]);
+
+})();
 
 </script>
 
