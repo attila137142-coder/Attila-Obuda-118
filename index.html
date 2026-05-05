@@ -2,16 +2,16 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA DISPATCHER V5 – REALTIME CORE</title>
+<title>ATTILA DISPATCHER V6 – CONTROL CENTER</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body { margin:0; font-family:Arial; display:flex; }
-#sidebar{ width:360px; border-right:1px solid #ddd; overflow:auto; }
-#map{ flex:1; height:100vh; }
+body{margin:0;display:flex;font-family:Arial;}
+#sidebar{width:360px;border-right:1px solid #ccc;overflow:auto;}
+#map{flex:1;height:100vh;}
 
 .matrix{
   background:black;
@@ -24,18 +24,24 @@ body { margin:0; font-family:Arial; display:flex; }
   display:flex;
   justify-content:space-between;
   border-bottom:1px solid #003300;
-  padding:6px 0;
+  padding:5px;
 }
 
-.blink{ animation:blink 1s infinite; }
+.blink{animation:blink 1s infinite;}
 @keyframes blink{50%{opacity:0.2;}}
+
+.vehicle{
+  border-bottom:1px solid #003300;
+  padding:6px;
+  font-size:13px;
+}
 </style>
 </head>
 
 <body>
 
 <div id="sidebar">
-<h3>🟢 DISPATCH V5</h3>
+<h3>🟢 DISPATCH V6</h3>
 <input id="search" placeholder="Keresés...">
 <div id="list"></div>
 <div id="panel">Válassz megállót</div>
@@ -55,7 +61,7 @@ navigator.geolocation.getCurrentPosition(pos=>{
   userPos={lat:pos.coords.latitude,lon:pos.coords.longitude};
 });
 
-// ===== DISTANCE =====
+// ===== DIST =====
 function distance(lat1,lon1,lat2,lon2){
   const R=6371000;
   const toRad=x=>x*Math.PI/180;
@@ -67,43 +73,46 @@ function distance(lat1,lon1,lat2,lon2){
   return R*(2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
 }
 
-// ===== STOPS (rövid) =====
+// ===== STOPS =====
 const STOPS=[
  {name:"Békásmegyer HÉV",lat:47.598,lon:19.054},
  {name:"Flórián tér",lat:47.542,lon:19.042},
- {name:"Batthyány tér",lat:47.506,lon:19.039}
+ {name:"Batthyány tér",lat:47.506,lon:19.039},
+ {name:"Vác, Autóbusz-állomás",lat:47.78,lon:19.13},
+ {name:"Kismaros",lat:47.83,lon:19.01}
 ];
 
+// ===== VEHICLE META =====
+const VEHICLE_META={
+ "H5-01":{plate:"HÉV-0921",run:"H5/21",type:"HÉV",vehicleType:"motorvonat"},
+ "34-1":{plate:"BKK-1342",run:"34/A",type:"busz",vehicleType:"csuklós"},
+ "34-2":{plate:"BKK-9981",run:"34/B",type:"busz",vehicleType:"szóló"}
+};
+
 // ===== LIVE VEHICLES =====
-let LIVE_VEHICLES=[];
+let LIVE_VEHICLES=[
+ {id:"H5-01",line:"H5",lat:47.60,lon:19.05,speed:40,delay:1},
+ {id:"34-1",line:"34",lat:47.58,lon:19.04,speed:30,delay:-1},
+ {id:"34-2",line:"34",lat:47.55,lon:19.03,speed:28,delay:0}
+];
 
-// ===== MOCK GENERATOR =====
-function generateMock(){
-  LIVE_VEHICLES=[
-    {id:"H5-01",line:"H5",lat:47.60,lon:19.05,speed:40,delay:1},
-    {id:"34-1",line:"34",lat:47.58,lon:19.04,speed:30,delay:-1}
-  ];
-}
-generateMock();
-
-// ===== GTFS-RT LOAD (PLACEHOLDER) =====
-async function loadGTFS(){
-  try{
-    // ide jön majd proxy:
-    // const res = await fetch("/api/gtfsrt");
-    // parse protobuf...
-  }catch(e){
-    console.log("GTFS fallback → MOCK");
-    generateMock();
-  }
+// ===== ENRICH =====
+function enrich(v){
+  const m=VEHICLE_META[v.id]||{};
+  return {
+    ...v,
+    plate:m.plate||"–",
+    run:m.run||"–",
+    type:m.type||"ismeretlen",
+    vehicleType:m.vehicleType||"–"
+  };
 }
 
-// ===== MOVE ENGINE =====
+// ===== MOVE =====
 setInterval(()=>{
   LIVE_VEHICLES.forEach(v=>{
-    const d=v.speed*1000/3600*5;
-    v.lat+= (Math.random()-0.5)*0.001;
-    v.lon+= (Math.random()-0.5)*0.001;
+    v.lat+=(Math.random()-0.5)*0.002;
+    v.lon+=(Math.random()-0.5)*0.002;
     if(Math.random()<0.3){
       v.delay+=Math.floor(Math.random()*3-1);
     }
@@ -111,7 +120,7 @@ setInterval(()=>{
   updateMarkers();
 },5000);
 
-// ===== MARKERS =====
+// ===== MAP VEH =====
 const markers={};
 function updateMarkers(){
   LIVE_VEHICLES.forEach(v=>{
@@ -124,86 +133,97 @@ function updateMarkers(){
 }
 
 // ===== DIST ENGINE =====
-function vehicleDist(v,stop){
-  const air=distance(v.lat,v.lon,stop.lat,stop.lon);
+function calc(v,s){
+  const air=distance(v.lat,v.lon,s.lat,s.lon);
   const road=air*1.25;
   const eta=road/(v.speed*1000/3600)/60;
-  return {air,road,eta};
+
+  let status="távol";
+  if(air<200) status="megállóban";
+  else if(air<800) status="közeledik";
+
+  return {air,road,eta,status};
 }
 
 // ===== MATRIX =====
 function showMatrix(stop){
 
-  let html=`<div class="matrix">`;
-  html+=`<h3>🚏 ${stop.name}</h3>`;
+ let html=`<div class="matrix">`;
+ html+=`<h3>${stop.name}</h3>`;
+ html+=`${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}<br>`;
 
-  html+=`${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}<br>`;
+ if(userPos){
+  const d=distance(userPos.lat,userPos.lon,stop.lat,stop.lon);
+  html+=`📍 ${Math.round(d)} m<br>`;
+ }
 
-  if(userPos){
-    const d=distance(userPos.lat,userPos.lon,stop.lat,stop.lon);
-    html+=`📍 ${Math.round(d)} m / ${(d/1000).toFixed(2)} km<br>`;
-  }
+ html+=`<hr>`;
 
-  html+=`<hr>`;
+ for(let i=0;i<15;i++){
+  html+=`<div class="row">
+   <div>${["34","H5","7"][i%3]}</div>
+   <div>${["Szentendre","Deák"][i%2]}</div>
+   <div>${i*2}</div>
+  </div>`;
+ }
 
-  // 15 indulás
-  for(let i=0;i<15;i++){
-    const t=(new Date().getMinutes()+i*2)%60;
-    html+=`<div class="row">
-      <div>${["34","H5","7"][i%3]}</div>
-      <div>${["Szentendre","Batthyány"][i%2]}</div>
-      <div>${t}</div>
+ html+=`<hr><b>🚍 JÁRMŰVEK</b>`;
+
+ LIVE_VEHICLES
+  .map(v=>{
+    const e=enrich(v);
+    const d=calc(e,stop);
+    return {...e,...d};
+  })
+  .sort((a,b)=>a.road-b.road)
+  .slice(0,6)
+  .forEach(v=>{
+
+    html+=`
+    <div class="vehicle">
+      <b>${v.line}</b> | ${v.id}<br>
+
+      🆔 ${v.plate}<br>
+      🧾 Forda: ${v.run}<br>
+
+      🚍 ${v.type} | ${v.vehicleType}<br>
+
+      📏 ${Math.round(v.air)} m<br>
+      🛣 ${(v.road/1000).toFixed(2)} km<br>
+      ⏱ ${v.eta.toFixed(1)} perc<br>
+
+      🚦 ${v.status}<br>
+      ${v.delay>0?`🔴 +${v.delay}`:v.delay<0?`🟢 ${v.delay}`:"⚪ 0"}
     </div>`;
-  }
+  });
 
-  html+=`<hr><b>🚍 LIVE járművek</b>`;
-
-  LIVE_VEHICLES
-    .map(v=>{
-      const d=vehicleDist(v,stop);
-      return {...v,...d};
-    })
-    .sort((a,b)=>a.road-b.road)
-    .slice(0,5)
-    .forEach(v=>{
-      html+=`
-      <div style="border-bottom:1px solid #003300;padding:6px;">
-        ${v.line} | ${v.id}<br>
-        📏 ${Math.round(v.air)} m<br>
-        🛣 ${(v.road/1000).toFixed(2)} km<br>
-        ⏱ ${v.eta.toFixed(1)} perc<br>
-        ${v.delay>0?`🔴 +${v.delay}`:v.delay<0?`🟢 ${v.delay}`:"⚪ 0"}
-      </div>`;
-    });
-
-  html+=`</div>`;
-
-  document.getElementById("panel").innerHTML=html;
+ html+=`</div>`;
+ document.getElementById("panel").innerHTML=html;
 }
 
 // ===== LIST =====
 function render(list){
-  const c=document.getElementById("list");
-  c.innerHTML="";
-  list.forEach(s=>{
-    const d=document.createElement("div");
-    d.innerHTML="📍 "+s.name;
-    d.onclick=()=>showMatrix(s);
-    c.appendChild(d);
-  });
+ const c=document.getElementById("list");
+ c.innerHTML="";
+ list.forEach(s=>{
+  const d=document.createElement("div");
+  d.innerHTML="📍 "+s.name;
+  d.onclick=()=>showMatrix(s);
+  c.appendChild(d);
+ });
 }
 render(STOPS);
 
 // ===== SEARCH =====
 search.oninput=e=>{
-  const q=e.target.value.toLowerCase();
-  render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
+ const q=e.target.value.toLowerCase();
+ render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
 };
 
-// ===== MAP MARKERS =====
+// ===== MAP STOPS =====
 STOPS.forEach(s=>{
-  L.marker([s.lat,s.lon]).addTo(map)
-    .on("click",()=>showMatrix(s));
+ L.marker([s.lat,s.lon]).addTo(map)
+  .on("click",()=>showMatrix(s));
 });
 
 updateMarkers();
