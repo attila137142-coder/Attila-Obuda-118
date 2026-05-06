@@ -2,13 +2,13 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>SLOPE ENGINE V1</title>
+<title>SLOPE ENGINE V1.1</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
   body { margin:0; font-family:Arial; background:#111; color:#fff; }
-  #map { height: 60vh; }
+  #map { height: 55vh; }
   #panel { padding:10px; }
-  button { padding:10px; margin:5px; }
+  input, button { padding:10px; margin:5px; font-size:14px; }
   table { width:100%; font-size:12px; border-collapse: collapse; }
   td, th { border:1px solid #444; padding:4px; }
 </style>
@@ -18,9 +18,9 @@
 <div id="map"></div>
 
 <div id="panel">
-  <button onclick="loadOSM()">UTAK BETÖLTÉSE</button>
-  <button onclick="calcSlope()">MEREDESÉG SZÁMÍTÁS</button>
-  <button onclick="exportPDF()">PDF EXPORT</button>
+  <input id="street" placeholder="Pl: Hegyalja út">
+  <button onclick="searchStreet()">UTCA KERESÉS</button>
+  <button onclick="calcSlope()">MEREDESÉG</button>
 
   <table id="table">
     <tr>
@@ -33,7 +33,6 @@
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <script>
 let map = L.map('map').setView([47.4979, 19.0402], 13);
@@ -41,53 +40,84 @@ let map = L.map('map').setView([47.4979, 19.0402], 13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
 .addTo(map);
 
+let road = null;
 let segments = [];
 
-function loadOSM() {
-  fetch("roads.geojson") // saját export!
-  .then(res => res.json())
-  .then(data => {
-    window.roads = data.features;
-    alert("UTAK BETÖLTVE!");
+async function searchStreet() {
+  let name = document.getElementById("street").value;
+
+  let url = `https://nominatim.openstreetmap.org/search?format=json&q=${name}, Budapest`;
+
+  let res = await fetch(url);
+  let data = await res.json();
+
+  if (data.length == 0) {
+    alert("Nincs találat!");
+    return;
+  }
+
+  let place = data[0];
+
+  map.setView([place.lat, place.lon], 16);
+
+  // Overpass API – utca lekérés
+  let overpass = `
+  [out:json];
+  way["name"="${name}"](47.3,18.9,47.7,19.3);
+  out geom;
+  `;
+
+  let res2 = await fetch("https://overpass-api.de/api/interpreter", {
+    method: "POST",
+    body: overpass
   });
+
+  let osm = await res2.json();
+
+  if (osm.elements.length == 0) {
+    alert("Utca nincs OSM-ben így!");
+    return;
+  }
+
+  let coords = osm.elements[0].geometry.map(p => [p.lat, p.lon]);
+
+  if (road) map.removeLayer(road);
+
+  road = L.polyline(coords, {color:"cyan"}).addTo(map);
+
+  window.coords = coords;
+
+  alert("Utca betöltve!");
 }
 
 function getElevation(lat, lon) {
-  // DEM helyett demo random (cseréld API-ra!)
-  return 100 + Math.sin(lat*10)*20 + Math.cos(lon*10)*20;
+  // DEM helyett ideiglenes (később API!)
+  return 100 + Math.sin(lat*20)*15 + Math.cos(lon*20)*15;
 }
 
 function calcSlope() {
+  if (!window.coords) {
+    alert("Előbb keress utcát!");
+    return;
+  }
+
   segments = [];
 
-  roads.forEach(road => {
-    let coords = road.geometry.coordinates;
+  for (let i=0; i<coords.length-1; i++) {
 
-    for (let i=0; i<coords.length-1; i++) {
+    let [lat1, lon1] = coords[i];
+    let [lat2, lon2] = coords[i+1];
 
-      let [lon1, lat1] = coords[i];
-      let [lon2, lat2] = coords[i+1];
+    let h1 = getElevation(lat1, lon1);
+    let h2 = getElevation(lat2, lon2);
 
-      let h1 = getElevation(lat1, lon1);
-      let h2 = getElevation(lat2, lon2);
+    let dist = map.distance([lat1, lon1],[lat2, lon2]);
 
-      let dist = map.distance([lat1, lon1], [lat2, lon2]);
+    let slope = ((h2-h1)/dist)*100;
 
-      let slope = ((h2 - h1) / dist) * 100;
-
-      segments.push({
-        dist: dist.toFixed(1),
-        dh: (h2-h1).toFixed(1),
-        slope: slope.toFixed(2),
-        coords: [[lat1, lon1],[lat2, lon2]]
-      });
-
-      drawSegment(lat1, lon1, lat2, lon2, slope);
-      addRow(dist, h2-h1, slope);
-    }
-  });
-
-  alert("KÉSZ!");
+    drawSegment(lat1, lon1, lat2, lon2, slope);
+    addRow(dist, h2-h1, slope);
+  }
 }
 
 function drawSegment(lat1, lon1, lat2, lon2, slope) {
@@ -97,12 +127,13 @@ function drawSegment(lat1, lon1, lat2, lon2, slope) {
 
   L.polyline([[lat1,lon1],[lat2,lon2]], {
     color: color,
-    weight: 4
+    weight: 5
   }).addTo(map);
 }
 
 function addRow(dist, dh, slope) {
   let table = document.getElementById("table");
+
   let row = table.insertRow();
 
   row.innerHTML = `
@@ -111,22 +142,6 @@ function addRow(dist, dh, slope) {
     <td>${dh.toFixed(1)}</td>
     <td>${slope.toFixed(2)}</td>
   `;
-}
-
-function exportPDF() {
-  const { jsPDF } = window.jspdf;
-  let doc = new jsPDF();
-
-  let y = 10;
-  segments.forEach((s,i) => {
-    doc.text(
-      `#${i} | ${s.dist}m | Δh:${s.dh}m | ${s.slope}%`,
-      10, y
-    );
-    y+=6;
-  });
-
-  doc.save("budapest_slope.pdf");
 }
 </script>
 
