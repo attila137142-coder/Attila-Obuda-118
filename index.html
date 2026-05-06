@@ -1,117 +1,271 @@
 <!DOCTYPE html>
-<html>
+<html lang="hu">
 <head>
-<meta charset="utf-8"/>
-<title>STABLE SLOPE CORE</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<meta charset="UTF-8">
+<title>ATTILA DISPATCHER V7.1 – AUTO UI FIX</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+
 <style>
-body { margin:0; font-family:Arial; background:#111; color:white; }
-#map { height:60vh; }
-#panel { padding:10px; }
-input,button { padding:10px; margin:5px; }
-table { width:100%; font-size:12px; }
-td,th { border:1px solid #444; padding:4px; }
+body{margin:0;font-family:Arial;display:flex;height:100vh;}
+#sidebar{width:380px;background:#0b1220;color:#00ff66;overflow:auto;}
+#map{flex:1;}
+
+.tabbar{
+  display:flex;
+  background:#001a00;
+}
+
+.tab{
+  flex:1;
+  padding:8px;
+  text-align:center;
+  cursor:pointer;
+  border-bottom:2px solid transparent;
+}
+
+.tab.active{
+  border-bottom:2px solid #00ff66;
+}
+
+.panel{
+  padding:10px;
+  font-family:monospace;
+}
+
+.matrix{
+  background:black;
+  color:#00ff66;
+  padding:10px;
+}
+
+.row{
+  display:flex;
+  justify-content:space-between;
+  border-bottom:1px solid #003300;
+  padding:4px;
+}
+
+button{
+  padding:6px;
+  margin:4px;
+  background:#003300;
+  color:#00ff66;
+  border:none;
+}
 </style>
 </head>
+
 <body>
+
+<div id="sidebar">
+
+<h3>🟢 V7.1 DISPATCH</h3>
+
+<input type="file" id="zip">
+<button onclick="loadGTFS()">LOAD GTFS</button>
+
+<div class="tabbar">
+  <div class="tab active" onclick="setView('list')">LISTA</div>
+  <div class="tab" onclick="setView('board')">INDULÁS</div>
+  <div class="tab" onclick="setView('debug')">DEBUG</div>
+</div>
+
+<div id="content"></div>
+
+</div>
 
 <div id="map"></div>
 
-<div id="panel">
-<input id="q" placeholder="utca / hegy / turista út">
-<button onclick="go()">START</button>
-
-<table>
-<tr><th>#</th><th>táv</th><th>emelkedés</th><th>%</th></tr>
-<tbody id="t"></tbody>
-</table>
-</div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script>
-let map = L.map('map').setView([47.5,19.1],12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let line;
+// ================= MAP =================
+const map = L.map('map').setView([47.5,19.05],10);
 
-async function go(){
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'OSM'
+}).addTo(map);
 
-  let q = document.getElementById("q").value;
+// ================= STATE =================
+let stops = [];
+let stopTimes = [];
+let departures = {};
+let currentView = "list";
 
-  let r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q},Hungary&limit=1`);
-  let d = await r.json();
+// ================= SAFE STATE =================
+function safe(v, fallback=[]){
+  return v && v.length ? v : fallback;
+}
 
-  if(!d.length) return alert("Nincs találat");
+// ================= VIEW SWITCH =================
+function setView(v){
+  currentView = v;
 
-  let p = d[0];
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  event.target.classList.add("active");
 
-  map.setView([p.lat,p.lon],15);
+  renderUI(lastSelectedStop);
+}
 
-  let o = await fetch("https://overpass-api.de/api/interpreter",{
-    method:"POST",
-    body:`
-    [out:json];
-    way["highway"](around:1200,${p.lat},${p.lon});
-    out geom;
-    `
-  });
+// ================= GTFS LOAD =================
+let lastSelectedStop = null;
 
-  let data = await o.json();
+async function loadGTFS(){
 
-  let coords = [];
+  const file = document.getElementById("zip").files[0];
+  const zip = await JSZip.loadAsync(file);
 
-  data.elements.forEach(e=>{
-    if(e.geometry){
-      e.geometry.forEach(n=>{
-        coords.push([n.lat,n.lon]);
-      });
+  stops = [];
+  stopTimes = [];
+  departures = {};
+
+  for(let path in zip.files){
+
+    let name = path.toLowerCase().split("/").pop();
+    let content = await zip.files[path].async("string");
+
+    if(name==="stops.txt"){
+      stops = Papa.parse(content,{header:true,skipEmptyLines:true}).data
+        .filter(s=>s.stop_lat && s.stop_lon);
     }
+
+    if(name==="stop_times.txt"){
+      stopTimes = Papa.parse(content,{header:true,skipEmptyLines:true}).data;
+    }
+  }
+
+  buildDepartures();
+  renderStops();
+
+  console.log("GTFS LOADED ✔", stops.length, stopTimes.length);
+
+  // 🔥 AUTO UI TRIGGER (EZ A LÉNYEG)
+  setTimeout(()=>{
+    renderUI(stops[0]);
+  },100);
+}
+
+// ================= BUILD DEPARTURES =================
+function buildDepartures(){
+
+  departures = {};
+
+  stopTimes.forEach(st=>{
+
+    if(!departures[st.stop_id]){
+      departures[st.stop_id]=[];
+    }
+
+    departures[st.stop_id].push({
+      trip: st.trip_id,
+      time: st.departure_time
+    });
+  });
+}
+
+// ================= STOPS =================
+function renderStops(){
+
+  map.eachLayer(l=>{
+    if(l instanceof L.CircleMarker) map.removeLayer(l);
   });
 
-  if(line) map.removeLayer(line);
+  stops.forEach(s=>{
 
-  line = L.polyline(coords,{color:"cyan"}).addTo(map);
+    L.circleMarker([s.stop_lat,s.stop_lon],{
+      radius:4,
+      color:"cyan"
+    }).addTo(map)
+    .on("click",()=>{
+      lastSelectedStop = s;
+      renderUI(s);
+    });
+  });
 
-  let elev = await getElev(coords);
+  renderList();
+}
 
-  let tbody = document.getElementById("t");
-  tbody.innerHTML = "";
+// ================= LIST =================
+function renderList(){
 
-  for(let i=0;i<coords.length-1;i++){
+  let html = "<div class='panel'>📍 MEGÁLLÓK<br><br>";
 
-    let d = map.distance(coords[i],coords[i+1]);
-    let h = elev[i+1]-elev[i];
-    let s = (h/d)*100;
+  safe(stops).slice(0,50).forEach(s=>{
+    html += `📍 ${s.stop_name}<br>`;
+  });
 
-    let c = s>10 ? "red" : s>5 ? "orange" : "green";
+  html += "</div>";
 
-    L.polyline([coords[i],coords[i+1]],{color:c,weight:4}).addTo(map);
-
-    tbody.innerHTML += `
-      <tr>
-        <td>${i}</td>
-        <td>${d.toFixed(1)}</td>
-        <td>${h.toFixed(1)}</td>
-        <td>${s.toFixed(2)}</td>
-      </tr>
-    `;
+  if(currentView==="list"){
+    document.getElementById("content").innerHTML = html;
   }
 }
 
-async function getElev(points){
+// ================= MATRIX BOARD =================
+function renderBoard(stop){
 
-  let r = await fetch("https://api.open-elevation.com/api/v1/lookup",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({
-      locations: points.map(p=>({latitude:p[0],longitude:p[1]}))
-    })
+  let list = departures[stop?.stop_id] || [];
+
+  let html = `
+  <div class="matrix">
+    🟢 INDULÁSOK<br>
+    <b>${stop?.stop_name || "–"}</b>
+    <hr>
+    <div class="row"><b>Trip</b><b>Idő</b></div>
+  `;
+
+  list.slice(0,15).forEach(d=>{
+    html += `
+    <div class="row">
+      <div>${d.trip}</div>
+      <div>${d.time}</div>
+    </div>`;
   });
 
-  let d = await r.json();
-  return d.results.map(x=>x.elevation);
+  html += "</div>";
+
+  if(currentView==="board"){
+    document.getElementById("content").innerHTML = html;
+  }
 }
+
+// ================= DEBUG =================
+function renderDebug(){
+
+  let html = `
+  <div class="panel">
+    🧠 DEBUG<br><br>
+    stops: ${stops.length}<br>
+    stop_times: ${stopTimes.length}<br>
+    departures keys: ${Object.keys(departures).length}<br>
+  </div>
+  `;
+
+  if(currentView==="debug"){
+    document.getElementById("content").innerHTML = html;
+  }
+}
+
+// ================= UI MASTER =================
+function renderUI(stop){
+
+  if(!stops.length){
+    document.getElementById("content").innerHTML =
+      "❌ NINCS GTFS BETÖLTVE";
+    return;
+  }
+
+  renderList();
+  renderBoard(stop);
+  renderDebug();
+}
+
 </script>
 
 </body>
