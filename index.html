@@ -2,8 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA DISPATCHER V7.1 – AUTO UI FIX</title>
-
+<title>GTFS CORE V8 – SMART DISPATCH</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
@@ -17,48 +16,16 @@ body{margin:0;font-family:Arial;display:flex;height:100vh;}
 #sidebar{width:380px;background:#0b1220;color:#00ff66;overflow:auto;}
 #map{flex:1;}
 
-.tabbar{
-  display:flex;
-  background:#001a00;
-}
+.tabbar{display:flex;background:#001a00;}
+.tab{flex:1;padding:8px;text-align:center;cursor:pointer;}
+.tab.active{border-bottom:2px solid #00ff66;}
 
-.tab{
-  flex:1;
-  padding:8px;
-  text-align:center;
-  cursor:pointer;
-  border-bottom:2px solid transparent;
-}
+.panel{padding:10px;font-family:monospace;}
+.matrix{background:black;color:#00ff66;padding:10px;}
+.row{display:flex;justify-content:space-between;border-bottom:1px solid #003300;padding:4px;}
 
-.tab.active{
-  border-bottom:2px solid #00ff66;
-}
-
-.panel{
-  padding:10px;
-  font-family:monospace;
-}
-
-.matrix{
-  background:black;
-  color:#00ff66;
-  padding:10px;
-}
-
-.row{
-  display:flex;
-  justify-content:space-between;
-  border-bottom:1px solid #003300;
-  padding:4px;
-}
-
-button{
-  padding:6px;
-  margin:4px;
-  background:#003300;
-  color:#00ff66;
-  border:none;
-}
+button{padding:6px;margin:4px;background:#003300;color:#00ff66;border:none;}
+small{color:#66ff99;}
 </style>
 </head>
 
@@ -66,7 +33,7 @@ button{
 
 <div id="sidebar">
 
-<h3>🟢 V7.1 DISPATCH</h3>
+<h3>🟢 GTFS CORE V8</h3>
 
 <input type="file" id="zip">
 <button onclick="loadGTFS()">LOAD GTFS</button>
@@ -78,7 +45,6 @@ button{
 </div>
 
 <div id="content"></div>
-
 </div>
 
 <div id="map"></div>
@@ -87,43 +53,68 @@ button{
 
 // ================= MAP =================
 const map = L.map('map').setView([47.5,19.05],10);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'OSM'
-}).addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 // ================= STATE =================
 let stops = [];
 let stopTimes = [];
+let trips = [];
 let departures = {};
 let currentView = "list";
+let lastSelectedStop = null;
+let userPos = null;
 
-// ================= SAFE STATE =================
-function safe(v, fallback=[]){
-  return v && v.length ? v : fallback;
+// ================= GPS =================
+function startGPS(){
+  navigator.geolocation.watchPosition(pos=>{
+    userPos = {
+      lat: pos.coords.latitude,
+      lon: pos.coords.longitude,
+      acc: pos.coords.accuracy
+    };
+    updateDistances();
+  });
+}
+startGPS();
+
+// ================= DISTANCE =================
+function haversine(lat1, lon1, lat2, lon2){
+  const R = 6371000;
+  const toRad = x => x*Math.PI/180;
+
+  const dLat = toRad(lat2-lat1);
+  const dLon = toRad(lon2-lon1);
+
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*
+    Math.sin(dLon/2)**2;
+
+  return 2*R*Math.asin(Math.sqrt(a));
 }
 
-// ================= VIEW SWITCH =================
+function gpsQuality(){
+  if(!userPos) return "NO GPS";
+  if(userPos.acc < 10) return "🟢 PRECÍZ";
+  if(userPos.acc < 50) return "🟡 KÖZEPES";
+  return "🔴 GYENGE";
+}
+
+// ================= VIEW =================
 function setView(v){
   currentView = v;
-
   document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
   event.target.classList.add("active");
-
   renderUI(lastSelectedStop);
 }
 
-// ================= GTFS LOAD =================
-let lastSelectedStop = null;
-
+// ================= LOAD GTFS =================
 async function loadGTFS(){
 
   const file = document.getElementById("zip").files[0];
   const zip = await JSZip.loadAsync(file);
 
-  stops = [];
-  stopTimes = [];
-  departures = {};
+  stops=[]; stopTimes=[]; trips=[]; departures={};
 
   for(let path in zip.files){
 
@@ -131,30 +122,30 @@ async function loadGTFS(){
     let content = await zip.files[path].async("string");
 
     if(name==="stops.txt"){
-      stops = Papa.parse(content,{header:true,skipEmptyLines:true}).data
+      stops = Papa.parse(content,{header:true}).data
         .filter(s=>s.stop_lat && s.stop_lon);
     }
 
     if(name==="stop_times.txt"){
-      stopTimes = Papa.parse(content,{header:true,skipEmptyLines:true}).data;
+      stopTimes = Papa.parse(content,{header:true}).data;
+    }
+
+    if(name==="trips.txt"){
+      trips = Papa.parse(content,{header:true}).data;
     }
   }
 
   buildDepartures();
   renderStops();
+  startGPS();
 
-  console.log("GTFS LOADED ✔", stops.length, stopTimes.length);
-
-  // 🔥 AUTO UI TRIGGER (EZ A LÉNYEG)
-  setTimeout(()=>{
-    renderUI(stops[0]);
-  },100);
+  setTimeout(()=>renderUI(stops[0]),200);
 }
 
-// ================= BUILD DEPARTURES =================
+// ================= DEPARTURES =================
 function buildDepartures(){
 
-  departures = {};
+  departures={};
 
   stopTimes.forEach(st=>{
 
@@ -167,9 +158,32 @@ function buildDepartures(){
       time: st.departure_time
     });
   });
+
+  for(let k in departures){
+    departures[k].sort((a,b)=>a.time.localeCompare(b.time));
+  }
 }
 
-// ================= STOPS =================
+// ================= DISTANCE UPDATE =================
+function updateDistances(){
+
+  if(!userPos) return;
+
+  stops.forEach(s=>{
+    const d = haversine(
+      userPos.lat,userPos.lon,
+      parseFloat(s.stop_lat),
+      parseFloat(s.stop_lon)
+    );
+
+    s.distance_m = d;
+    s.distance_km = (d/1000).toFixed(2);
+  });
+
+  renderList();
+}
+
+// ================= MAP STOPS =================
 function renderStops(){
 
   map.eachLayer(l=>{
@@ -177,13 +191,11 @@ function renderStops(){
   });
 
   stops.forEach(s=>{
-
     L.circleMarker([s.stop_lat,s.stop_lon],{
-      radius:4,
-      color:"cyan"
+      radius:4,color:"cyan"
     }).addTo(map)
     .on("click",()=>{
-      lastSelectedStop = s;
+      lastSelectedStop=s;
       renderUI(s);
     });
   });
@@ -194,70 +206,76 @@ function renderStops(){
 // ================= LIST =================
 function renderList(){
 
-  let html = "<div class='panel'>📍 MEGÁLLÓK<br><br>";
+  if(currentView!=="list") return;
 
-  safe(stops).slice(0,50).forEach(s=>{
-    html += `📍 ${s.stop_name}<br>`;
+  let html="<div class='panel'>📍 MEGÁLLÓK<br><br>";
+
+  stops.slice(0,50).forEach(s=>{
+    html+=`
+📍 ${s.stop_name}<br>
+<small>
+ID: ${s.stop_id}<br>
+📏 ${s.distance_m ? s.distance_m.toFixed(0)+" m" : "n/a"} |
+${s.distance_km ? s.distance_km+" km" : ""}
+</small><br><br>`;
   });
 
-  html += "</div>";
+  html+="</div>";
 
-  if(currentView==="list"){
-    document.getElementById("content").innerHTML = html;
-  }
+  document.getElementById("content").innerHTML=html;
 }
 
-// ================= MATRIX BOARD =================
+// ================= BOARD =================
 function renderBoard(stop){
 
-  let list = departures[stop?.stop_id] || [];
+  if(currentView!=="board") return;
 
-  let html = `
+  let list = departures[stop?.stop_id]||[];
+
+  let html=`
   <div class="matrix">
-    🟢 INDULÁSOK<br>
-    <b>${stop?.stop_name || "–"}</b>
-    <hr>
-    <div class="row"><b>Trip</b><b>Idő</b></div>
+  🟢 INDULÁSOK<br>
+  <b>${stop?.stop_name||"–"}</b>
+  <hr>
+  <div class="row"><b>Trip</b><b>Idő</b></div>
   `;
 
   list.slice(0,15).forEach(d=>{
-    html += `
+    html+=`
     <div class="row">
-      <div>${d.trip}</div>
+      <div>${d.trip.slice(0,8)}</div>
       <div>${d.time}</div>
     </div>`;
   });
 
-  html += "</div>";
+  html+="</div>";
 
-  if(currentView==="board"){
-    document.getElementById("content").innerHTML = html;
-  }
+  document.getElementById("content").innerHTML=html;
 }
 
 // ================= DEBUG =================
 function renderDebug(){
 
-  let html = `
-  <div class="panel">
-    🧠 DEBUG<br><br>
-    stops: ${stops.length}<br>
-    stop_times: ${stopTimes.length}<br>
-    departures keys: ${Object.keys(departures).length}<br>
-  </div>
-  `;
+  if(currentView!=="debug") return;
 
-  if(currentView==="debug"){
-    document.getElementById("content").innerHTML = html;
-  }
+  document.getElementById("content").innerHTML=`
+  <div class="panel">
+  🧠 DEBUG<br><br>
+  stops: ${stops.length}<br>
+  stop_times: ${stopTimes.length}<br>
+  trips: ${trips.length}<br>
+  departures: ${Object.keys(departures).length}<br><br>
+
+  GPS: ${gpsQuality()}<br>
+  accuracy: ${userPos?.acc?.toFixed(0)||"n/a"} m
+  </div>`;
 }
 
-// ================= UI MASTER =================
+// ================= MASTER =================
 function renderUI(stop){
 
   if(!stops.length){
-    document.getElementById("content").innerHTML =
-      "❌ NINCS GTFS BETÖLTVE";
+    document.getElementById("content").innerHTML="❌ Nincs GTFS";
     return;
   }
 
