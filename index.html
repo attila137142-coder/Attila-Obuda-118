@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA DISPATCHER V7 – GTFS DEPARTURE ENGINE</title>
+<title>ATTILA DISPATCHER V7.1 – AUTO UI FIX</title>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
@@ -17,10 +17,31 @@ body{margin:0;font-family:Arial;display:flex;height:100vh;}
 #sidebar{width:380px;background:#0b1220;color:#00ff66;overflow:auto;}
 #map{flex:1;}
 
+.tabbar{
+  display:flex;
+  background:#001a00;
+}
+
+.tab{
+  flex:1;
+  padding:8px;
+  text-align:center;
+  cursor:pointer;
+  border-bottom:2px solid transparent;
+}
+
+.tab.active{
+  border-bottom:2px solid #00ff66;
+}
+
+.panel{
+  padding:10px;
+  font-family:monospace;
+}
+
 .matrix{
   background:black;
   color:#00ff66;
-  font-family:monospace;
   padding:10px;
 }
 
@@ -31,13 +52,12 @@ body{margin:0;font-family:Arial;display:flex;height:100vh;}
   padding:4px;
 }
 
-.btn{
+button{
   padding:6px;
   margin:4px;
   background:#003300;
   color:#00ff66;
   border:none;
-  cursor:pointer;
 }
 </style>
 </head>
@@ -45,40 +65,65 @@ body{margin:0;font-family:Arial;display:flex;height:100vh;}
 <body>
 
 <div id="sidebar">
-<h3>🟢 V7 GTFS DISPATCH</h3>
+
+<h3>🟢 V7.1 DISPATCH</h3>
 
 <input type="file" id="zip">
-<button class="btn" onclick="loadGTFS()">LOAD GTFS</button>
+<button onclick="loadGTFS()">LOAD GTFS</button>
 
-<div id="list"></div>
-<div id="panel">Válassz megállót</div>
+<div class="tabbar">
+  <div class="tab active" onclick="setView('list')">LISTA</div>
+  <div class="tab" onclick="setView('board')">INDULÁS</div>
+  <div class="tab" onclick="setView('debug')">DEBUG</div>
+</div>
+
+<div id="content"></div>
+
 </div>
 
 <div id="map"></div>
 
 <script>
 
-// ---------------- MAP ----------------
+// ================= MAP =================
 const map = L.map('map').setView([47.5,19.05],10);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   attribution:'OSM'
 }).addTo(map);
 
-// ---------------- STATE ----------------
+// ================= STATE =================
 let stops = [];
 let stopTimes = [];
-let trips = [];
-let routes = [];
-
-// stop → departures cache
 let departures = {};
+let currentView = "list";
 
-// ---------------- LOAD GTFS ----------------
+// ================= SAFE STATE =================
+function safe(v, fallback=[]){
+  return v && v.length ? v : fallback;
+}
+
+// ================= VIEW SWITCH =================
+function setView(v){
+  currentView = v;
+
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  event.target.classList.add("active");
+
+  renderUI(lastSelectedStop);
+}
+
+// ================= GTFS LOAD =================
+let lastSelectedStop = null;
+
 async function loadGTFS(){
 
   const file = document.getElementById("zip").files[0];
   const zip = await JSZip.loadAsync(file);
+
+  stops = [];
+  stopTimes = [];
+  departures = {};
 
   for(let path in zip.files){
 
@@ -86,60 +131,50 @@ async function loadGTFS(){
     let content = await zip.files[path].async("string");
 
     if(name==="stops.txt"){
-      let p = Papa.parse(content,{header:true,skipEmptyLines:true});
-      stops = p.data.filter(s=>s.stop_lat && s.stop_lon);
+      stops = Papa.parse(content,{header:true,skipEmptyLines:true}).data
+        .filter(s=>s.stop_lat && s.stop_lon);
     }
 
     if(name==="stop_times.txt"){
-      let p = Papa.parse(content,{header:true,skipEmptyLines:true});
-      stopTimes = p.data;
-    }
-
-    if(name==="trips.txt"){
-      let p = Papa.parse(content,{header:true,skipEmptyLines:true});
-      trips = p.data;
-    }
-
-    if(name==="routes.txt"){
-      let p = Papa.parse(content,{header:true,skipEmptyLines:true});
-      routes = p.data;
+      stopTimes = Papa.parse(content,{header:true,skipEmptyLines:true}).data;
     }
   }
 
   buildDepartures();
   renderStops();
-  console.log("V7 READY ✔");
+
+  console.log("GTFS LOADED ✔", stops.length, stopTimes.length);
+
+  // 🔥 AUTO UI TRIGGER (EZ A LÉNYEG)
+  setTimeout(()=>{
+    renderUI(stops[0]);
+  },100);
 }
 
-// ---------------- BUILD DEPARTURES ----------------
+// ================= BUILD DEPARTURES =================
 function buildDepartures(){
 
   departures = {};
 
-  for(let st of stopTimes){
+  stopTimes.forEach(st=>{
 
-    let sid = st.stop_id;
-    if(!departures[sid]) departures[sid]=[];
+    if(!departures[st.stop_id]){
+      departures[st.stop_id]=[];
+    }
 
-    departures[sid].push({
+    departures[st.stop_id].push({
       trip: st.trip_id,
       time: st.departure_time
     });
-  }
+  });
 }
 
-// ---------------- FIND ROUTE LABEL ----------------
-function getRoute(trip_id){
-
-  let trip = trips.find(t=>t.trip_id===trip_id);
-  if(!trip) return "–";
-
-  let route = routes.find(r=>r.route_id===trip.route_id);
-  return route ? route.route_short_name : "–";
-}
-
-// ---------------- RENDER STOPS ----------------
+// ================= STOPS =================
 function renderStops(){
+
+  map.eachLayer(l=>{
+    if(l instanceof L.CircleMarker) map.removeLayer(l);
+  });
 
   stops.forEach(s=>{
 
@@ -147,40 +182,88 @@ function renderStops(){
       radius:4,
       color:"cyan"
     }).addTo(map)
-    .on("click",()=>showBoard(s));
+    .on("click",()=>{
+      lastSelectedStop = s;
+      renderUI(s);
+    });
   });
 
-  document.getElementById("list").innerHTML =
-    stops.slice(0,50).map(s=>`📍 ${s.stop_name}`).join("<br>");
+  renderList();
 }
 
-// ---------------- ZÖLD INDULÁSI TÁBLA ----------------
-function showBoard(stop){
+// ================= LIST =================
+function renderList(){
 
-  let list = departures[stop.stop_id] || [];
+  let html = "<div class='panel'>📍 MEGÁLLÓK<br><br>";
+
+  safe(stops).slice(0,50).forEach(s=>{
+    html += `📍 ${s.stop_name}<br>`;
+  });
+
+  html += "</div>";
+
+  if(currentView==="list"){
+    document.getElementById("content").innerHTML = html;
+  }
+}
+
+// ================= MATRIX BOARD =================
+function renderBoard(stop){
+
+  let list = departures[stop?.stop_id] || [];
 
   let html = `
   <div class="matrix">
-    <h3>🟢 INDULÁSOK</h3>
-    <b>${stop.stop_name}</b>
-    <div class="row">
-      <b>Vonal</b><b>Trip</b><b>Idő</b>
-    </div>
+    🟢 INDULÁSOK<br>
+    <b>${stop?.stop_name || "–"}</b>
+    <hr>
+    <div class="row"><b>Trip</b><b>Idő</b></div>
   `;
 
   list.slice(0,15).forEach(d=>{
-
     html += `
     <div class="row">
-      <div>${getRoute(d.trip)}</div>
       <div>${d.trip}</div>
       <div>${d.time}</div>
     </div>`;
   });
 
-  html += `</div>`;
+  html += "</div>";
 
-  document.getElementById("panel").innerHTML = html;
+  if(currentView==="board"){
+    document.getElementById("content").innerHTML = html;
+  }
+}
+
+// ================= DEBUG =================
+function renderDebug(){
+
+  let html = `
+  <div class="panel">
+    🧠 DEBUG<br><br>
+    stops: ${stops.length}<br>
+    stop_times: ${stopTimes.length}<br>
+    departures keys: ${Object.keys(departures).length}<br>
+  </div>
+  `;
+
+  if(currentView==="debug"){
+    document.getElementById("content").innerHTML = html;
+  }
+}
+
+// ================= UI MASTER =================
+function renderUI(stop){
+
+  if(!stops.length){
+    document.getElementById("content").innerHTML =
+      "❌ NINCS GTFS BETÖLTVE";
+    return;
+  }
+
+  renderList();
+  renderBoard(stop);
+  renderDebug();
 }
 
 </script>
