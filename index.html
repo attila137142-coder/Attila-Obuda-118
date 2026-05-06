@@ -1,228 +1,116 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>V8 HYBRID SLOPE ENGINE FIX</title>
-
+<meta charset="utf-8"/>
+<title>STABLE SLOPE CORE</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
 <style>
-body { margin:0; font-family:Arial; background:#111; color:#fff;}
-#map { height:55vh;}
-#panel { padding:10px;}
-input,button { padding:10px; margin:5px;}
-#results div { padding:6px; border-bottom:1px solid #333; cursor:pointer;}
-#results div:hover { background:#333;}
-table { width:100%; font-size:12px; border-collapse:collapse;}
-td,th { border:1px solid #444; padding:4px;}
+body { margin:0; font-family:Arial; background:#111; color:white; }
+#map { height:60vh; }
+#panel { padding:10px; }
+input,button { padding:10px; margin:5px; }
+table { width:100%; font-size:12px; }
+td,th { border:1px solid #444; padding:4px; }
 </style>
-
 </head>
 <body>
 
 <div id="map"></div>
 
 <div id="panel">
-<input id="street" placeholder="utca / turista út (pl: Hármashatárhegy)">
-<button onclick="search()">KERESÉS</button>
-<button onclick="clearClicks()">CLICK RESET</button>
+<input id="q" placeholder="utca / hegy / turista út">
+<button onclick="go()">START</button>
 
-<div id="results"></div>
-
-<table id="tbl">
-<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>
+<table>
+<tr><th>#</th><th>táv</th><th>emelkedés</th><th>%</th></tr>
+<tbody id="t"></tbody>
 </table>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-let map = L.map('map').setView([47.4979,19.0402],13);
+let map = L.map('map').setView([47.5,19.1],12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  opacity:0.9
-}).addTo(map);
+let line;
 
-// --------------------
-// STATE
-// --------------------
-let coords = [];
-let routeLine = null;
+async function go(){
 
-let clickPts = [];
-let clickLine = null;
+  let q = document.getElementById("q").value;
 
-// --------------------
-// SEARCH
-// --------------------
-async function search(){
+  let r = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q},Hungary&limit=1`);
+  let d = await r.json();
 
-  let q = street.value;
+  if(!d.length) return alert("Nincs találat");
 
-  let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q},Hungary&limit=5`);
-  let data = await res.json();
-
-  results.innerHTML="";
-
-  if(data.length==0){
-    alert("Nincs találat!");
-    return;
-  }
-
-  data.forEach(p=>{
-    let d=document.createElement("div");
-    d.innerText=p.display_name;
-    d.onclick=()=>loadRoute(p);
-    results.appendChild(d);
-  });
-
-  await loadRoute(data[0]);
-}
-
-// --------------------
-// LOAD ROUTE
-// --------------------
-async function loadRoute(p){
+  let p = d[0];
 
   map.setView([p.lat,p.lon],15);
 
-  let q = `
-  [out:json];
-  (
-    way["highway"~"primary|secondary|tertiary|residential|service"](around:1500,${p.lat},${p.lon});
-    way["highway"~"path|footway|track"](around:1500,${p.lat},${p.lon});
-  );
-  out geom;
-  `;
+  let o = await fetch("https://overpass-api.de/api/interpreter",{
+    method:"POST",
+    body:`
+    [out:json];
+    way["highway"](around:1200,${p.lat},${p.lon});
+    out geom;
+    `
+  });
 
-  let res = await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:q});
-  let data = await res.json();
+  let data = await o.json();
 
-  coords = [];
+  let coords = [];
 
-  data.elements.forEach(el=>{
-    if(el.geometry){
-      el.geometry.forEach(p=>{
-        coords.push([p.lat,p.lon]);
+  data.elements.forEach(e=>{
+    if(e.geometry){
+      e.geometry.forEach(n=>{
+        coords.push([n.lat,n.lon]);
       });
     }
   });
 
-  if(routeLine) map.removeLayer(routeLine);
+  if(line) map.removeLayer(line);
 
-  routeLine = L.polyline(coords,{
-    color:"cyan",
-    weight:4
-  }).addTo(map);
+  line = L.polyline(coords,{color:"cyan"}).addTo(map);
 
-  await runSlope(coords);
-}
+  let elev = await getElev(coords);
 
-// --------------------
-// SLOPE ENGINE (ROUTE)
-// --------------------
-async function runSlope(path){
+  let tbody = document.getElementById("t");
+  tbody.innerHTML = "";
 
-  if(!path || path.length<2) return;
+  for(let i=0;i<coords.length-1;i++){
 
-  let elev = await getElev(path);
+    let d = map.distance(coords[i],coords[i+1]);
+    let h = elev[i+1]-elev[i];
+    let s = (h/d)*100;
 
-  tbl.innerHTML="<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>";
+    let c = s>10 ? "red" : s>5 ? "orange" : "green";
 
-  for(let i=0;i<path.length-1;i++){
+    L.polyline([coords[i],coords[i+1]],{color:c,weight:4}).addTo(map);
 
-    let p1 = path[i];
-    let p2 = path[i+1];
-
-    let d = map.distance(p1,p2);
-    let dh = elev[i+1]-elev[i];
-    let slope = (dh/d)*100;
-
-    let color = "green";
-    if(slope>5) color="orange";
-    if(slope>10) color="red";
-
-    L.polyline([p1,p2],{
-      color:color,
-      weight:5
-    }).addTo(map);
-
-    let r = tbl.insertRow();
-    r.innerHTML=`
-      <td>${i}</td>
-      <td>${d.toFixed(1)}</td>
-      <td>${dh.toFixed(1)}</td>
-      <td>${slope.toFixed(2)}</td>
+    tbody.innerHTML += `
+      <tr>
+        <td>${i}</td>
+        <td>${d.toFixed(1)}</td>
+        <td>${h.toFixed(1)}</td>
+        <td>${s.toFixed(2)}</td>
+      </tr>
     `;
   }
 }
 
-// --------------------
-// CLICK MODE
-// --------------------
-map.on("click", async e=>{
-
-  let p=[e.latlng.lat,e.latlng.lng];
-  clickPts.push(p);
-
-  L.marker(p).addTo(map);
-
-  if(clickPts.length==2){
-
-    let elev = await getElev(clickPts);
-
-    let d = map.distance(clickPts[0],clickPts[1]);
-    let dh = elev[1]-elev[0];
-    let slope = (dh/d)*100;
-
-    if(clickLine) map.removeLayer(clickLine);
-
-    let color="green";
-    if(slope>5) color="orange";
-    if(slope>10) color="red";
-
-    clickLine = L.polyline(clickPts,{
-      color:color,
-      weight:6
-    }).addTo(map);
-
-    alert(
-`CLICK SLOPE:
-Hossz: ${d.toFixed(1)} m
-Δh: ${dh.toFixed(1)} m
-Slope: ${slope.toFixed(2)} %`
-    );
-
-    clickPts=[];
-  }
-});
-
-// --------------------
-// ELEVATION
-// --------------------
 async function getElev(points){
 
-  let res = await fetch("https://api.open-elevation.com/api/v1/lookup",{
+  let r = await fetch("https://api.open-elevation.com/api/v1/lookup",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body: JSON.stringify({
-      locations: points.map(p=>({
-        latitude:p[0],
-        longitude:p[1]
-      }))
+      locations: points.map(p=>({latitude:p[0],longitude:p[1]}))
     })
   });
 
-  let data = await res.json();
-  return data.results.map(r=>r.elevation);
-}
-
-// --------------------
-// RESET
-// --------------------
-function clearClicks(){
-  clickPts=[];
-  alert("Click reset ✔");
+  let d = await r.json();
+  return d.results.map(x=>x.elevation);
 }
 </script>
 
