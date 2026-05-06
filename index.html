@@ -2,180 +2,152 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS ENGINE V4.1 ROBUST ZIP PARSER</title>
+<title>GTFS HARD VALIDATION ENGINE V1</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
 <style>
-body { margin:0; font-family:Arial; background:#0b1220; color:white; }
-#map { height:70vh; }
+body { font-family:Arial; background:#0b1220; color:white; margin:0; }
 .panel { padding:10px; background:#111a2e; }
-pre { font-size:12px; white-space:pre-wrap; }
+pre { white-space:pre-wrap; font-size:12px; }
 button { padding:8px; margin:5px; }
+.ok { color:#4cff4c; }
+.err { color:#ff4c4c; }
+.warn { color:#ffcc00; }
 </style>
 </head>
 
 <body>
 
 <div class="panel">
-<h2>🚆 V4.1 ROBUST GTFS ZIP PARSER</h2>
+<h2>🚆 GTFS HARD VALIDATION ENGINE V1</h2>
 
-<input type="file" id="zip" multiple accept=".zip">
-<button onclick="load()">LOAD ZIP(S)</button>
-<button onclick="build()">BUILD GLOBAL NETWORK</button>
+<input type="file" id="zip" accept=".zip">
+<button onclick="run()">ANALYZE GTFS ZIP</button>
 
-<div id="status">READY</div>
 <pre id="log"></pre>
 </div>
 
-<div id="map"></div>
-
 <script>
 
-const map = L.map('map').setView([47.5,19.05],9);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:'OSM'
-}).addTo(map);
-
-// ---------------- STATE ----------------
-let feeds = [];
-let stops = [];
-
-// ---------------- LOG ----------------
-function log(t){
-    document.getElementById("log").innerText += t + "\n";
+function log(t, type=""){
+    document.getElementById("log").innerText += (type ? `[${type}] ` : "") + t + "\n";
 }
 
-function setStatus(t){
-    document.getElementById("status").innerText = t;
+function ok(t){ log(t,"OK"); }
+function err(t){ log(t,"ERROR"); }
+function warn(t){ log(t,"WARN"); }
+
+function clean(name){
+    return name.toLowerCase().split("/").pop();
 }
 
-// ---------------- NORMALIZE FILE NAME ----------------
-function cleanFileName(path){
+// ---------------- MAIN ----------------
+async function run(){
 
-    return path
-        .toLowerCase()
-        .split("/")
-        .pop()
-        .trim();
-}
+    document.getElementById("log").innerText = "";
 
-// ---------------- GTFS FILE ROUTER ----------------
-function routeFile(name){
+    const file = document.getElementById("zip").files[0];
 
-    name = cleanFileName(name);
-
-    if(name === "stops.txt") return "stops";
-    if(name === "routes.txt") return "routes";
-    if(name === "trips.txt") return "trips";
-    if(name === "stop_times.txt") return "stop_times";
-
-    return "unknown";
-}
-
-// ---------------- LOAD ZIP ----------------
-async function load(){
-
-    const files = document.getElementById("zip").files;
-
-    feeds = [];
-
-    for(let file of files){
-
-        const zip = await JSZip.loadAsync(file);
-
-        let feed = {
-            name: file.name,
-            stops: []
-        };
-
-        log("📦 ZIP LOADED: " + file.name);
-
-        // scan ALL files safely
-        for(let path in zip.files){
-
-            let fileName = cleanFileName(path);
-
-            log("  ↳ FILE FOUND: " + path);
-
-            let content = await zip.files[path].async("string");
-
-            let type = routeFile(path);
-
-            if(type === "stops"){
-
-                let parsed = Papa.parse(content,{
-                    header:true,
-                    skipEmptyLines:true
-                });
-
-                log("    ✔ STOPS PARSED: " + parsed.data.length);
-
-                feed.stops = parsed.data;
-            }
-        }
-
-        feeds.push(feed);
+    if(!file){
+        err("Nincs ZIP kiválasztva!");
+        return;
     }
 
-    setStatus("LOADED ✔");
-}
+    ok("ZIP betöltés indul...");
 
-// ---------------- BUILD GLOBAL ENGINE ----------------
-function build(){
+    const zip = await JSZip.loadAsync(file);
 
-    log("=== BUILD START ===");
+    let foundFiles = [];
+    let stopsRaw = null;
 
-    stops = [];
+    // ---------------- SCAN ZIP ----------------
+    for(let path in zip.files){
 
-    for(let f of feeds){
+        foundFiles.push(path);
 
-        if(!f.stops || f.stops.length === 0){
-            log("⚠ NO STOPS IN FEED: " + f.name);
-            continue;
-        }
+        let name = clean(path);
 
-        for(let s of f.stops){
+        ok("FÁJL TALÁLVA: " + path);
 
-            let stop = {
-                name: s.stop_name,
-                lat: parseFloat(s.stop_lat),
-                lon: parseFloat(s.stop_lon),
-                feed: f.name
-            };
+        let content = await zip.files[path].async("string");
 
-            if(isNaN(stop.lat) || isNaN(stop.lon)) continue;
+        // --- DEBUG RAW ---
+        log("   SIZE: " + content.length);
 
-            stops.push(stop);
+        if(name === "stops.txt"){
+
+            ok("STOPS.TXT MEGTALÁLVA!");
+
+            log("FIRST 200 CHARS:");
+            log(content.slice(0,200));
+
+            stopsRaw = content;
         }
     }
 
-    log("GLOBAL STOPS: " + stops.length);
+    // ---------------- ZIP SUMMARY ----------------
+    log("=== ZIP SUMMARY ===");
+    log("Total files: " + foundFiles.length);
 
-    render();
-    setStatus("ENGINE READY ✔");
-}
+    if(!stopsRaw){
+        err("NINCS stops.txt a ZIP-ben!");
+        return;
+    }
 
-// ---------------- MAP ----------------
-function render(){
+    // ---------------- PARSE TEST ----------------
+    ok("PARSING stops.txt...");
 
-    map.eachLayer(l=>{
-        if(l instanceof L.CircleMarker) map.removeLayer(l);
+    let parsed = Papa.parse(stopsRaw.trim(), {
+        header:true,
+        skipEmptyLines:true
     });
 
-    stops.forEach(s=>{
+    log("ROWS: " + parsed.data.length);
 
-        L.circleMarker([s.lat,s.lon],{
-            radius:4,
-            color:"cyan"
-        }).addTo(map)
-        .bindPopup(s.name + "<br>" + s.feed);
+    // ---------------- FIELD CHECK ----------------
+    let sample = parsed.data[0];
 
-    });
+    if(!sample){
+        err("ÜRES stops.txt (nincs sor)");
+        return;
+    }
+
+    log("COLUMNS: " + Object.keys(sample).join(", "));
+
+    // ---------------- REQUIRED FIELDS ----------------
+    let required = ["stop_id","stop_name","stop_lat","stop_lon"];
+
+    for(let r of required){
+
+        if(!(r in sample)){
+            err("HIÁNYZIK OSZLOP: " + r);
+        } else {
+            ok("OK FIELD: " + r);
+        }
+    }
+
+    // ---------------- VALID ROW CHECK ----------------
+    let valid = parsed.data.filter(s =>
+        s.stop_lat && s.stop_lon &&
+        !isNaN(parseFloat(s.stop_lat)) &&
+        !isNaN(parseFloat(s.stop_lon))
+    );
+
+    log("VALID STOPS: " + valid.length);
+
+    if(valid.length === 0){
+        err("0 VALID STOP → EZ A PROBLÉMA!");
+        warn("valószínű: rossz oszlopnév vagy rossz CSV formátum");
+    }
+
+    // ---------------- SAMPLE DEBUG ----------------
+    log("=== SAMPLE STOP ===");
+    log(JSON.stringify(valid[0],null,2));
+
+    ok("ANALYSIS DONE ✔");
+
 }
 
 </script>
