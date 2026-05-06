@@ -2,50 +2,37 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA DISPATCHER V7.2</title>
+<title>ATTILA DISPATCHER V7.5 – LIGHT DB</title>
 
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-
 <style>
-body{margin:0;font-family:Arial;display:flex;height:100vh;}
-#sidebar{width:380px;background:#0b1220;color:#00ff66;overflow:auto;}
-#map{flex:1;}
-
-.tabbar{display:flex;background:#001a00;}
-.tab{flex:1;padding:8px;text-align:center;cursor:pointer;}
-.tab.active{border-bottom:2px solid #00ff66;}
+body{margin:0;display:flex;font-family:Arial;}
+#sidebar{width:360px;background:#0b1220;color:#00ff66;overflow:auto;}
+#map{flex:1;height:100vh;}
 
 .panel{padding:10px;font-family:monospace;}
 
 .matrix{background:black;color:#00ff66;padding:10px;}
 .row{display:flex;justify-content:space-between;border-bottom:1px solid #003300;padding:4px;}
 
-button{padding:6px;margin:4px;background:#003300;color:#00ff66;border:none;}
-input{padding:5px;}
+input,button{width:100%;margin:4px 0;padding:6px;background:#003300;color:#00ff66;border:none;}
 </style>
 </head>
 
 <body>
 
 <div id="sidebar">
-<h3>🟢 V7.2 DISPATCH</h3>
+<h3>🟢 ATTILA V7.5</h3>
 
-<input type="file" id="zip">
-<button onclick="loadGTFS()">LOAD GTFS</button>
+<input id="search" placeholder="Keresés...">
+<button onclick="findNearest()">📍 Legközelebbi</button>
 
-<div class="tabbar">
-  <div class="tab active" onclick="setView('list',event)">LISTA</div>
-  <div class="tab" onclick="setView('board',event)">INDULÁS</div>
-  <div class="tab" onclick="setView('debug',event)">DEBUG</div>
-</div>
-
-<div id="content"></div>
+<div id="list"></div>
+<div id="panel">Válassz megállót</div>
 </div>
 
 <div id="map"></div>
@@ -53,258 +40,114 @@ input{padding:5px;}
 <script>
 
 // ===== MAP =====
-const map = L.map('map').setView([47.5,19.05],10);
+const map = L.map('map').setView([47.5,19.05],11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// ===== STATE =====
-let stops = [];
-let stopTimes = [];
-let departures = {};
-let currentView = "list";
-let lastSelectedStop = null;
-let userPos = null;
+// ===== FAKE DB =====
+const DB = {
+
+stops:[
+ {id:"ORS",name:"Örs vezér tere",lat:47.5003,lon:19.1357},
+ {id:"BAT",name:"Batthyány tér",lat:47.506,lon:19.039},
+ {id:"FLO",name:"Flórián tér",lat:47.542,lon:19.042},
+ {id:"SZENT",name:"Szentendre HÉV",lat:47.669,lon:19.075},
+ {id:"VAC",name:"Vác, autóbusz-állomás",lat:47.78,lon:19.13}
+],
+
+departures:{
+ "ORS":[{l:"H8",t:"12:01"},{l:"H9",t:"12:05"},{l:"2",t:"12:07"}],
+ "BAT":[{l:"H5",t:"12:02"},{l:"19",t:"12:06"}],
+ "FLO":[{l:"34",t:"12:03"},{l:"106",t:"12:09"}],
+ "SZENT":[{l:"H5",t:"12:10"}],
+ "VAC":[{l:"300",t:"12:15"}]
+}
+
+};
 
 // ===== GPS =====
-navigator.geolocation.getCurrentPosition(pos=>{
-  userPos = {lat:pos.coords.latitude, lon:pos.coords.longitude};
+let userPos=null;
+navigator.geolocation.getCurrentPosition(p=>{
+ userPos={lat:p.coords.latitude,lon:p.coords.longitude};
 });
 
-// ===== VIEW =====
-function setView(v,e){
-  currentView = v;
-  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
-  if(e) e.target.classList.add("active");
-  renderUI(lastSelectedStop);
-}
-
-// ===== LOAD GTFS =====
-async function loadGTFS(){
-
-  const file = document.getElementById("zip").files[0];
-  const zip = await JSZip.loadAsync(file);
-
-  stops = [];
-  stopTimes = [];
-  departures = {};
-
-  for(let path in zip.files){
-
-    let name = path.toLowerCase().split("/").pop();
-    let content = await zip.files[path].async("string");
-
-    if(name==="stops.txt"){
-      stops = Papa.parse(content,{header:true,skipEmptyLines:true}).data
-        .filter(s=>s.stop_lat && s.stop_lon);
-    }
-
-    if(name==="stop_times.txt"){
-      stopTimes = Papa.parse(content,{header:true,skipEmptyLines:true}).data;
-    }
-  }
-
-  buildDepartures();
-  renderStops();
-
-  setTimeout(()=>renderUI(stops[0]),100);
-}
-
-// ===== BUILD =====
-function buildDepartures(){
-  departures = {};
-  stopTimes.forEach(st=>{
-    if(!departures[st.stop_id]) departures[st.stop_id]=[];
-    departures[st.stop_id].push({
-      trip: st.trip_id,
-      time: st.departure_time
-    });
-  });
-}
-
-// ===== MAP STOPS =====
-function renderStops(){
-  map.eachLayer(l=>{
-    if(l instanceof L.CircleMarker) map.removeLayer(l);
-  });
-
-  stops.forEach(s=>{
-    L.circleMarker([s.stop_lat,s.stop_lon],{radius:4,color:"cyan"})
-    .addTo(map)
-    .on("click",()=>{
-      lastSelectedStop = s;
-      setView("board");
-      renderUI(s);
-    });
-  });
-}
-
-// ===== NORMALIZE =====
-function normalize(t){
-  return t.toLowerCase()
-    .replace(/[öő]/g,"o")
-    .replace(/[üű]/g,"u")
-    .replace(/[á]/g,"a")
-    .replace(/[é]/g,"e")
-    .replace(/[í]/g,"i")
-    .replace(/[ó]/g,"o")
-    .replace(/[ú]/g,"u");
-}
-
-// ===== SEARCH =====
-function smartSearch(q){
-
-  let nq = normalize(q);
-
-  let res = stops.filter(s=>{
-    return normalize(s.stop_name).includes(nq);
-  });
-
-  renderResults(res.slice(0,100), q);
-}
-
-// ===== RESULTS =====
-function renderResults(list, q){
-
-  let html = `<br>🔎 "${q}" találatok:<br><br>`;
-
-  list.forEach(s=>{
-    html += `
-      <div style="cursor:pointer;padding:5px;border-bottom:1px solid #003300"
-           onclick="selectStop('${s.stop_id}')">
-        📍 ${s.stop_name}
-      </div>`;
-  });
-
-  document.getElementById("results").innerHTML = html;
-}
-
-// ===== SELECT STOP =====
-function selectStop(id){
-  const s = stops.find(x=>x.stop_id===id);
-  if(!s) return;
-  lastSelectedStop = s;
-  setView("board");
-  renderUI(s);
-}
-
-// ===== NEAREST =====
+// ===== DIST =====
 function dist(a,b){
-  const R=6371000;
-  const dLat=(b.lat-a.lat)*Math.PI/180;
-  const dLon=(b.lon-a.lon)*Math.PI/180;
-
-  const x=Math.sin(dLat/2)**2+
-    Math.cos(a.lat*Math.PI/180)*
-    Math.cos(b.lat*Math.PI/180)*
-    Math.sin(dLon/2)**2;
-
-  return R*(2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
-}
-
-function findNearest(){
-
-  if(!userPos){
-    alert("GPS nem elérhető");
-    return;
-  }
-
-  let res = stops.map(s=>({
-    ...s,
-    d: dist(userPos,{lat:+s.stop_lat,lon:+s.stop_lon})
-  }))
-  .sort((a,b)=>a.d-b.d)
-  .slice(0,20);
-
-  let html = "📍 LEGKÖZELEBBI MEGÁLLÓK:<br><br>";
-
-  res.forEach(s=>{
-    html += `
-      <div style="cursor:pointer;padding:5px;border-bottom:1px solid #003300"
-           onclick="selectStop('${s.stop_id}')">
-        📍 ${s.stop_name} (${Math.round(s.d)} m)
-      </div>`;
-  });
-
-  document.getElementById("results").innerHTML = html;
+ const R=6371000;
+ const dLat=(b.lat-a.lat)*Math.PI/180;
+ const dLon=(b.lon-a.lon)*Math.PI/180;
+ const x=Math.sin(dLat/2)**2+
+  Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*
+  Math.sin(dLon/2)**2;
+ return R*(2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
 }
 
 // ===== LIST =====
-function renderList(){
+function render(list){
 
-  let html = `
-  <div class="panel">
-    🔎 KERESÉS<br>
-    <input id="search" style="width:100%;margin:5px 0;"><br>
-    <button onclick="findNearest()">📍 Legközelebbi</button>
-    <div id="results"></div>
-  </div>
-  `;
+ const c=document.getElementById("list");
+ c.innerHTML="";
 
-  if(currentView==="list"){
-    document.getElementById("content").innerHTML = html;
-
-    document.getElementById("search").oninput = e=>{
-      smartSearch(e.target.value);
-    };
-
-    smartSearch("");
-  }
+ list.forEach(s=>{
+  const d=document.createElement("div");
+  d.innerHTML="📍 "+s.name;
+  d.style.cursor="pointer";
+  d.onclick=()=>showStop(s);
+  c.appendChild(d);
+ });
 }
 
-// ===== BOARD =====
-function renderBoard(stop){
+// ===== SEARCH =====
+search.oninput=e=>{
+ const q=e.target.value.toLowerCase();
+ render(DB.stops.filter(s=>s.name.toLowerCase().includes(q)));
+};
 
-  if(!stop) return;
+// ===== NEAREST =====
+function findNearest(){
 
-  let list = departures[stop.stop_id] || [];
+ if(!userPos){alert("GPS nincs");return;}
 
-  let html = `
-  <div class="matrix">
-    🟢 INDULÁSOK<br>
-    <b>${stop.stop_name}</b>
-    <hr>
-    <div class="row"><b>Trip</b><b>Idő</b></div>
-  `;
+ let res=DB.stops.map(s=>({
+  ...s,
+  d:dist(userPos,{lat:s.lat,lon:s.lon})
+ }))
+ .sort((a,b)=>a.d-b.d)
+ .slice(0,5);
 
-  list.slice(0,20).forEach(d=>{
-    html += `
-    <div class="row">
-      <div>${d.trip}</div>
-      <div>${d.time}</div>
-    </div>`;
-  });
-
-  html += "</div>";
-
-  if(currentView==="board"){
-    document.getElementById("content").innerHTML = html;
-  }
+ render(res);
 }
 
-// ===== DEBUG =====
-function renderDebug(){
-  if(currentView==="debug"){
-    document.getElementById("content").innerHTML = `
-      <div class="panel">
-      stops: ${stops.length}<br>
-      stop_times: ${stopTimes.length}<br>
-      departures: ${Object.keys(departures).length}
-      </div>`;
-  }
+// ===== PANEL =====
+function showStop(s){
+
+ let list=DB.departures[s.id]||[];
+
+ let html=`
+ <div class="matrix">
+ <h3>${s.name}</h3>
+ <hr>
+ `;
+
+ list.forEach(d=>{
+  html+=`
+  <div class="row">
+   <div>${d.l}</div>
+   <div>${d.t}</div>
+  </div>`;
+ });
+
+ html+="</div>";
+
+ document.getElementById("panel").innerHTML=html;
 }
 
-// ===== UI =====
-function renderUI(stop){
+// ===== MAP =====
+DB.stops.forEach(s=>{
+ L.marker([s.lat,s.lon]).addTo(map)
+  .on("click",()=>showStop(s));
+});
 
-  if(!stops.length){
-    document.getElementById("content").innerHTML =
-      "❌ NINCS GTFS BETÖLTVE";
-    return;
-  }
-
-  renderList();
-  renderBoard(stop);
-  renderDebug();
-}
+render(DB.stops);
 
 </script>
 
