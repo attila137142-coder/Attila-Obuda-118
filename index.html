@@ -2,19 +2,17 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>PRECÍZ UTCA MATCH V2</title>
+<title>SLOPE ENGINE V3</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
-  body { margin:0; font-family:Arial; background:#111; color:#fff; }
-  #map { height: 50vh; }
-  #panel { padding:10px; }
-  input, button { padding:10px; margin:5px; font-size:14px; }
-  #results div {
-    padding:6px;
-    border-bottom:1px solid #333;
-    cursor:pointer;
-  }
-  #results div:hover { background:#333; }
+body { margin:0; font-family:Arial; background:#111; color:#fff; }
+#map { height:50vh; }
+#panel { padding:10px; }
+input, button { padding:10px; margin:5px; }
+#results div { padding:6px; cursor:pointer; border-bottom:1px solid #333; }
+#results div:hover { background:#333; }
+table { width:100%; font-size:12px; border-collapse:collapse; }
+td,th { border:1px solid #444; padding:4px; }
 </style>
 </head>
 <body>
@@ -22,108 +20,125 @@
 <div id="map"></div>
 
 <div id="panel">
-  <input id="street" placeholder="Pl: Hármashatárhegyi út">
-  <button onclick="searchStreet()">KERESÉS</button>
+<input id="street" placeholder="Pl: Hegyalja út">
+<button onclick="searchStreet()">KERESÉS</button>
+<button onclick="calcSlope()">MEREDESÉG</button>
+<button onclick="exportPDF()">PDF</button>
 
-  <div id="results"></div>
+<div id="results"></div>
+
+<table id="table">
+<tr>
+<th>#</th><th>Hossz (m)</th><th>Δh (m)</th><th>%</th>
+</tr>
+</table>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <script>
-let map = L.map('map').setView([47.4979, 19.0402], 13);
+let map = L.map('map').setView([47.4979,19.0402],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
-.addTo(map);
+let coords = [];
+let line = null;
+let segments = [];
 
-let currentLine = null;
-
+// 🔍 keresés
 async function searchStreet() {
-  let name = document.getElementById("street").value;
-  let resultsDiv = document.getElementById("results");
-  resultsDiv.innerHTML = "Keresés...";
-
-  let url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=10&q=${encodeURIComponent(name + ", Budapest")}`;
-
-  let res = await fetch(url);
+  let name = street.value;
+  let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${name},Budapest&limit=5`);
   let data = await res.json();
 
-  if (data.length === 0) {
-    resultsDiv.innerHTML = "Nincs találat 😢";
-    return;
-  }
+  results.innerHTML = "";
 
-  resultsDiv.innerHTML = "";
-
-  data.forEach((place, i) => {
+  data.forEach(p=>{
     let div = document.createElement("div");
-
-    div.innerHTML = `
-      <b>${place.display_name.split(",")[0]}</b><br>
-      <small>${place.display_name}</small>
-    `;
-
-    div.onclick = () => loadExactStreet(place);
-
-    resultsDiv.appendChild(div);
+    div.innerHTML = p.display_name;
+    div.onclick = ()=>loadStreet(p);
+    results.appendChild(div);
   });
 }
 
-async function loadExactStreet(place) {
+// 📍 utca betöltés
+async function loadStreet(p) {
+  map.setView([p.lat,p.lon],16);
 
-  map.setView([place.lat, place.lon], 16);
+  let q = `[out:json];way["highway"](around:800,${p.lat},${p.lon});out geom;`;
+  let res = await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:q});
+  let data = await res.json();
 
-  // Overpass – pontos név + fallback
-  let name = place.display_name.split(",")[0];
+  let best = data.elements[0];
+  coords = best.geometry.map(p=>[p.lat,p.lon]);
 
-  let queryExact = `
-  [out:json];
-  way["name"="${name}"]["highway"](around:1000,${place.lat},${place.lon});
-  out geom;
-  `;
+  if(line) map.removeLayer(line);
+  line = L.polyline(coords,{color:"cyan"}).addTo(map);
 
-  let res = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    body: queryExact
+  alert("Utca betöltve!");
+}
+
+// ⛰️ magasság lekérés
+async function getElevations(points) {
+  let locations = points.map(p=>`${p[0]},${p[1]}`).join("|");
+
+  let res = await fetch("https://api.open-elevation.com/api/v1/lookup",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({locations: points.map(p=>({latitude:p[0],longitude:p[1]}))})
   });
 
   let data = await res.json();
+  return data.results.map(r=>r.elevation);
+}
 
-  // fallback ha nincs exact
-  if (data.elements.length === 0) {
-    let queryFallback = `
-    [out:json];
-    way["highway"](around:500,${place.lat},${place.lon});
-    out geom;
-    `;
+// 📊 meredekség
+async function calcSlope() {
+  if(coords.length==0) return alert("Nincs utca!");
 
-    let res2 = await fetch("https://overpass-api.de/api/interpreter", {
-      method: "POST",
-      body: queryFallback
-    });
+  let elev = await getElevations(coords);
 
-    data = await res2.json();
+  segments = [];
+  table.innerHTML = "<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>";
+
+  for(let i=0;i<coords.length-1;i++){
+    let p1 = coords[i];
+    let p2 = coords[i+1];
+
+    let d = map.distance(p1,p2);
+    let dh = elev[i+1]-elev[i];
+    let slope = (dh/d)*100;
+
+    segments.push({d,dh,slope});
+
+    draw(p1,p2,slope);
+
+    let row = table.insertRow();
+    row.innerHTML = `<td>${i}</td><td>${d.toFixed(1)}</td><td>${dh.toFixed(1)}</td><td>${slope.toFixed(2)}</td>`;
   }
+}
 
-  if (data.elements.length === 0) {
-    alert("Nem találtam utat 😢");
-    return;
-  }
+// 🎨 színezés
+function draw(p1,p2,s){
+  let c="green";
+  if(s>5) c="orange";
+  if(s>10) c="red";
 
-  let best = data.elements[0];
+  L.polyline([p1,p2],{color:c,weight:5}).addTo(map);
+}
 
-  let coords = best.geometry.map(p => [p.lat, p.lon]);
+// 📄 PDF
+function exportPDF(){
+  const {jsPDF} = window.jspdf;
+  let doc = new jsPDF();
 
-  if (currentLine) map.removeLayer(currentLine);
+  let y=10;
+  segments.forEach((s,i)=>{
+    doc.text(`#${i} ${s.d.toFixed(1)}m Δ${s.dh.toFixed(1)}m ${s.slope.toFixed(2)}%`,10,y);
+    y+=6;
+  });
 
-  currentLine = L.polyline(coords, {
-    color: "cyan",
-    weight: 5
-  }).addTo(map);
-
-  window.coords = coords;
-
-  alert("Utca betöltve ✔");
+  doc.save("slope.pdf");
 }
 </script>
 
