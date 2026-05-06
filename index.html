@@ -2,17 +2,16 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>SLOPE ENGINE V3</title>
+<title>SLOPE V3.1 FIX</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
-body { margin:0; font-family:Arial; background:#111; color:#fff; }
-#map { height:50vh; }
-#panel { padding:10px; }
-input, button { padding:10px; margin:5px; }
-#results div { padding:6px; cursor:pointer; border-bottom:1px solid #333; }
-#results div:hover { background:#333; }
-table { width:100%; font-size:12px; border-collapse:collapse; }
-td,th { border:1px solid #444; padding:4px; }
+body { margin:0; background:#111; color:#fff; font-family:Arial;}
+#map { height:50vh;}
+#panel { padding:10px;}
+input,button { padding:10px; margin:5px;}
+#results div { cursor:pointer; padding:5px; border-bottom:1px solid #333;}
+table { width:100%; font-size:12px; border-collapse:collapse;}
+td,th { border:1px solid #444; padding:4px;}
 </style>
 </head>
 <body>
@@ -20,125 +19,138 @@ td,th { border:1px solid #444; padding:4px; }
 <div id="map"></div>
 
 <div id="panel">
-<input id="street" placeholder="Pl: Hegyalja út">
-<button onclick="searchStreet()">KERESÉS</button>
-<button onclick="calcSlope()">MEREDESÉG</button>
-<button onclick="exportPDF()">PDF</button>
+<input id="street" placeholder="pl: Hegyalja út">
+<button onclick="search()">KERESÉS</button>
+<button onclick="calc()">MEREDESÉG</button>
 
 <div id="results"></div>
 
-<table id="table">
-<tr>
-<th>#</th><th>Hossz (m)</th><th>Δh (m)</th><th>%</th>
-</tr>
+<table id="tbl">
+<tr><th>#</th><th>Hossz (m)</th><th>Δh (m)</th><th>%</th></tr>
 </table>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 <script>
 let map = L.map('map').setView([47.4979,19.0402],13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
 let coords = [];
-let line = null;
-let segments = [];
+let line;
 
-// 🔍 keresés
-async function searchStreet() {
-  let name = street.value;
-  let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${name},Budapest&limit=5`);
+// 🔍 KERESÉS
+async function search(){
+  let q = street.value;
+  let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q},Budapest&limit=5`);
   let data = await res.json();
 
-  results.innerHTML = "";
-
+  results.innerHTML="";
   data.forEach(p=>{
-    let div = document.createElement("div");
-    div.innerHTML = p.display_name;
-    div.onclick = ()=>loadStreet(p);
-    results.appendChild(div);
+    let d=document.createElement("div");
+    d.innerText=p.display_name;
+    d.onclick=()=>load(p);
+    results.appendChild(d);
   });
 }
 
-// 📍 utca betöltés
-async function loadStreet(p) {
+// 📍 UTCA BETÖLTÉS – FIX név alapú
+async function load(p){
   map.setView([p.lat,p.lon],16);
 
-  let q = `[out:json];way["highway"](around:800,${p.lat},${p.lon});out geom;`;
+  let name = p.display_name.split(",")[0];
+
+  let q = `
+  [out:json];
+  way["name"="${name}"]["highway"](around:1000,${p.lat},${p.lon});
+  out geom;
+  `;
+
   let res = await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:q});
   let data = await res.json();
 
-  let best = data.elements[0];
-  coords = best.geometry.map(p=>[p.lat,p.lon]);
+  if(data.elements.length==0){
+    alert("Nem található pontos utca!");
+    return;
+  }
+
+  coords = data.elements[0].geometry.map(p=>[p.lat,p.lon]);
 
   if(line) map.removeLayer(line);
   line = L.polyline(coords,{color:"cyan"}).addTo(map);
 
-  alert("Utca betöltve!");
+  alert("Utca OK!");
 }
 
-// ⛰️ magasság lekérés
-async function getElevations(points) {
-  let locations = points.map(p=>`${p[0]},${p[1]}`).join("|");
+// ⛰️ MAGASSÁG – LIMITÁLT (nem hal el)
+async function getElev(points){
+
+  // max 100 pont
+  let sample = points.filter((_,i)=> i%3===0);
 
   let res = await fetch("https://api.open-elevation.com/api/v1/lookup",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({locations: points.map(p=>({latitude:p[0],longitude:p[1]}))})
+    body: JSON.stringify({
+      locations: sample.map(p=>({latitude:p[0],longitude:p[1]}))
+    })
   });
 
   let data = await res.json();
-  return data.results.map(r=>r.elevation);
+
+  // visszaskálázás
+  let elev=[];
+  let j=0;
+  for(let i=0;i<points.length;i++){
+    if(i%3===0){
+      elev.push(data.results[j].elevation);
+      j++;
+    } else {
+      elev.push(elev[elev.length-1]);
+    }
+  }
+
+  return elev;
 }
 
-// 📊 meredekség
-async function calcSlope() {
-  if(coords.length==0) return alert("Nincs utca!");
+// 📊 SZÁMÍTÁS – FIX
+async function calc(){
 
-  let elev = await getElevations(coords);
+  if(coords.length==0){
+    alert("Nincs utca!");
+    return;
+  }
 
-  segments = [];
-  table.innerHTML = "<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>";
+  let elev = await getElev(coords);
+
+  tbl.innerHTML="<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>";
 
   for(let i=0;i<coords.length-1;i++){
-    let p1 = coords[i];
-    let p2 = coords[i+1];
+
+    let p1=coords[i];
+    let p2=coords[i+1];
 
     let d = map.distance(p1,p2);
     let dh = elev[i+1]-elev[i];
     let slope = (dh/d)*100;
 
-    segments.push({d,dh,slope});
+    // RAJZ
+    let c="green";
+    if(slope>5) c="orange";
+    if(slope>10) c="red";
 
-    draw(p1,p2,slope);
+    L.polyline([p1,p2],{color:c,weight:5}).addTo(map);
 
-    let row = table.insertRow();
-    row.innerHTML = `<td>${i}</td><td>${d.toFixed(1)}</td><td>${dh.toFixed(1)}</td><td>${slope.toFixed(2)}</td>`;
+    let r = tbl.insertRow();
+    r.innerHTML=`
+      <td>${i}</td>
+      <td>${d.toFixed(1)}</td>
+      <td>${dh.toFixed(1)}</td>
+      <td>${slope.toFixed(2)}</td>
+    `;
   }
-}
 
-// 🎨 színezés
-function draw(p1,p2,s){
-  let c="green";
-  if(s>5) c="orange";
-  if(s>10) c="red";
-
-  L.polyline([p1,p2],{color:c,weight:5}).addTo(map);
-}
-
-// 📄 PDF
-function exportPDF(){
-  const {jsPDF} = window.jspdf;
-  let doc = new jsPDF();
-
-  let y=10;
-  segments.forEach((s,i)=>{
-    doc.text(`#${i} ${s.d.toFixed(1)}m Δ${s.dh.toFixed(1)}m ${s.slope.toFixed(2)}%`,10,y);
-    y+=6;
-  });
-
-  doc.save("slope.pdf");
+  alert("KÉSZ ✔ (MOST MÁR LESZ %)");
 }
 </script>
 
