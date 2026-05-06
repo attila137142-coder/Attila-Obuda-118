@@ -2,11 +2,12 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>V5 HYBRID SLOPE ENGINE</title>
+<title>V6 TERRAIN HEATMAP ENGINE</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
 <style>
 body { margin:0; font-family:Arial; background:#111; color:#fff;}
-#map { height:50vh;}
+#map { height:55vh;}
 #panel { padding:10px;}
 input,button { padding:10px; margin:5px;}
 #results div { padding:6px; border-bottom:1px solid #333; cursor:pointer;}
@@ -15,15 +16,14 @@ table { width:100%; font-size:12px; border-collapse:collapse;}
 td,th { border:1px solid #444; padding:4px;}
 </style>
 </head>
+
 <body>
 
 <div id="map"></div>
 
 <div id="panel">
 <input id="street" placeholder="pl: Hármashatárhegyi út / turista út">
-<button onclick="search()">KERESÉS</button>
-<button onclick="calcRoute()">ÚTVONAL SLOPE</button>
-<button onclick="clearClicks()">KATTINTÁS RESET</button>
+<button onclick="search()">KERESÉS + HEATMAP</button>
 
 <div id="results"></div>
 
@@ -36,20 +36,17 @@ td,th { border:1px solid #444; padding:4px;}
 
 <script>
 let map = L.map('map').setView([47.4979,19.0402],13);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// -------------------------
-// GLOBAL STATE
-// -------------------------
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  opacity:0.9
+}).addTo(map);
+
 let coords = [];
-let routeLine = null;
+let layers = [];
 
-let clickPoints = [];
-let clickLine = null;
-
-// =========================
-// 🔍 SEARCH (V5)
-/// =========================
+// ==========================
+// 🔍 SEARCH + ROUTE LOAD
+// ==========================
 async function search(){
 
   let q = street.value;
@@ -74,9 +71,9 @@ async function search(){
   await loadRoute(data[0]);
 }
 
-// =========================
-// 🧭 ROUTE LOADING (V4 FIXED)
-// =========================
+// ==========================
+// 🧭 ROUTE + TURISTA UTAK
+// ==========================
 async function loadRoute(p){
 
   map.setView([p.lat,p.lon],15);
@@ -100,34 +97,39 @@ async function loadRoute(p){
 
   coords = [];
 
-  // 🔥 WAY MERGE (helyes sorrend)
   data.elements.forEach(el=>{
     if(el.geometry){
-      el.geometry.forEach(pt=>{
-        coords.push([pt.lat,pt.lon]);
+      el.geometry.forEach(p=>{
+        coords.push([p.lat,p.lon]);
       });
     }
   });
 
-  if(routeLine) map.removeLayer(routeLine);
-
-  routeLine = L.polyline(coords,{
-    color:"cyan",
-    weight:4
-  }).addTo(map);
-
-  alert(`Út betöltve ✔ (${coords.length} pont)`);
+  drawBaseRoute();
+  await buildTerrain();
 }
 
-// =========================
-// ⛰️ ROUTE SLOPE
-// =========================
-async function calcRoute(){
+// ==========================
+// 🗺️ BASE ROUTE
+// ==========================
+function drawBaseRoute(){
 
-  if(coords.length<2){
-    alert("Nincs út!");
-    return;
-  }
+  layers.forEach(l=>map.removeLayer(l));
+  layers=[];
+
+  let line = L.polyline(coords,{
+    color:"#00d4ff",
+    weight:4,
+    opacity:0.8
+  }).addTo(map);
+
+  layers.push(line);
+}
+
+// ==========================
+// ⛰️ TERRAIN ENGINE
+// ==========================
+async function buildTerrain(){
 
   let elev = await getElev(coords);
 
@@ -142,69 +144,43 @@ async function calcRoute(){
     let dh = elev[i+1]-elev[i];
     let slope = (dh/d)*100;
 
-    let c="green";
-    if(slope>5) c="orange";
-    if(slope>10) c="red";
+    // 🎨 HEATMAP COLOR
+    let color = getColor(slope);
 
-    L.polyline([p1,p2],{color:c,weight:4}).addTo(map);
+    let seg = L.polyline([p1,p2],{
+      color:color,
+      weight:6,
+      opacity:0.9
+    }).addTo(map);
+
+    layers.push(seg);
 
     let r = tbl.insertRow();
-    r.innerHTML=`<td>${i}</td><td>${d.toFixed(1)}</td><td>${dh.toFixed(1)}</td><td>${slope.toFixed(2)}</td>`;
+    r.innerHTML=`
+      <td>${i}</td>
+      <td>${d.toFixed(1)}</td>
+      <td>${dh.toFixed(1)}</td>
+      <td>${slope.toFixed(2)}</td>
+    `;
   }
 
-  alert("Route slope kész ✔");
+  alert("HEATMAP kész ✔");
 }
 
-// =========================
-// 🖱️ CLICK MODE
-// =========================
-map.on("click", async function(e){
+// ==========================
+// 🎨 COLOR LOGIC
+// ==========================
+function getColor(s){
 
-  let p = [e.latlng.lat,e.latlng.lng];
-  clickPoints.push(p);
-
-  L.marker(p).addTo(map);
-
-  if(clickPoints.length==2){
-    await calcClickSlope();
-  }
-
-  if(clickPoints.length>2){
-    clearClicks();
-  }
-});
-
-async function calcClickSlope(){
-
-  let elev = await getElev(clickPoints);
-
-  let p1=clickPoints[0];
-  let p2=clickPoints[1];
-
-  let d = map.distance(p1,p2);
-  let dh = elev[1]-elev[0];
-  let slope = (dh/d)*100;
-
-  if(clickLine) map.removeLayer(clickLine);
-
-  clickLine = L.polyline(clickPoints,{
-    color: slope>10?"red":slope>5?"orange":"green",
-    weight:6
-  }).addTo(map);
-
-  alert(
-`CLICK SLOPE:
-Hossz: ${d.toFixed(1)} m
-Δh: ${dh.toFixed(1)} m
-Slope: ${slope.toFixed(2)} %`
-  );
-
-  clickPoints=[];
+  if(s < 2) return "#00ff6a";   // zöld (könnyű)
+  if(s < 5) return "#ffd000";   // sárga
+  if(s < 10) return "#ff7a00";  // narancs
+  return "#ff1e1e";             // piros (meredek)
 }
 
-// =========================
+// ==========================
 // ⛰️ ELEVATION API
-// =========================
+// ==========================
 async function getElev(points){
 
   let res = await fetch("https://api.open-elevation.com/api/v1/lookup",{
@@ -217,15 +193,6 @@ async function getElev(points){
 
   let data = await res.json();
   return data.results.map(r=>r.elevation);
-}
-
-// =========================
-// RESET CLICK MODE
-// =========================
-function clearClicks(){
-  clickPoints=[];
-  if(clickLine) map.removeLayer(clickLine);
-  alert("Click reset ✔");
 }
 </script>
 
