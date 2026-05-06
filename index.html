@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>V11.3 DISPATCH TABLE ENGINE</title>
+<title>V11.5 OPERATOR DASHBOARD</title>
 
 <style>
 body{
@@ -15,7 +15,7 @@ body{
 
 header{
     background:#111827;
-    padding:14px;
+    padding:12px;
     text-align:center;
     font-weight:bold;
     color:#38bdf8;
@@ -26,9 +26,9 @@ header{
     height:100vh;
 }
 
-/* LEFT SIDE */
+/* LEFT */
 .left{
-    width:65%;
+    width:60%;
     display:flex;
     flex-direction:column;
     border-right:1px solid #1f2937;
@@ -43,8 +43,8 @@ input,button{
     width:100%;
     padding:10px;
     margin-top:6px;
-    border-radius:8px;
     border:none;
+    border-radius:8px;
 }
 
 input{
@@ -57,28 +57,24 @@ button{
     font-weight:bold;
 }
 
-/* TABLE */
-.table{
+/* LIST */
+.list{
     flex:1;
     overflow:auto;
     padding:10px;
 }
 
-.row{
+.card{
     background:#0f172a;
+    border:1px solid #1f2937;
     padding:10px;
     margin-bottom:8px;
     border-radius:10px;
-    border:1px solid #1f2937;
 }
 
-.row:hover{
-    background:#111827;
-}
-
-/* RIGHT SIDE */
+/* RIGHT */
 .right{
-    width:35%;
+    width:40%;
     display:flex;
     flex-direction:column;
 }
@@ -89,6 +85,7 @@ button{
     font-size:12px;
     overflow:auto;
     background:#0a0f1a;
+    border-left:1px solid #1f2937;
 }
 .badge{
     display:inline-block;
@@ -103,7 +100,7 @@ button{
 <body>
 
 <header>
-🚦 V11.3 VALÓDI DISZPÁCSOLÓ TÁBLÁZAT MOTOR
+🚦 V11.5 REAL BKK OPERATOR DASHBOARD
 </header>
 
 <div class="container">
@@ -112,20 +109,18 @@ button{
 <div class="left">
 
 <div class="panel">
-<input id="q" placeholder="Megálló / GTFS ID / Skanzen / Királyrét / stb">
-<button onclick="search()">KERESÉS</button>
-<button onclick="loadDepartures()">INDULÁSI TÁBLA BETÖLTÉS</button>
+<input id="q" placeholder="Megálló / GTFS / Skanzen / Királyrét">
+<button onclick="searchStops()">KERESÉS</button>
+<button onclick="findNearest()">LEGKÖZELEBBI MEGÁLLÓ</button>
 </div>
 
-<div class="table" id="table"></div>
+<div class="list" id="list"></div>
 
 </div>
 
 <!-- RIGHT -->
 <div class="right">
-
 <div class="log" id="log"></div>
-
 </div>
 
 </div>
@@ -139,102 +134,109 @@ function log(m){
     el.scrollTop=el.scrollHeight;
 }
 
-// ---------------- GTFS STOP DB ----------------
+// ---------------- STOP DB (GTFS + GEO) ----------------
 let STOPS=[
-    {id:"SKANZEN",name:"Skanzen"},
-    {id:"KIRALYRET",name:"Királyrét"},
-    {id:"TAHITOTFALU",name:"Tahitótfalu"},
-    {id:"HIDFO",name:"Hídfő"},
-    {id:"NAD",name:"Nád utca"}
+    {id:"SKANZEN",name:"Skanzen",lat:47.6952,lon:19.0756},
+    {id:"KIRALYRET",name:"Királyrét",lat:47.9271,lon:18.9952},
+    {id:"TAHITOTFALU",name:"Tahitótfalu",lat:47.7568,lon:19.0794},
+    {id:"HIDFO",name:"Hídfő",lat:47.4979,lon:19.0402},
+    {id:"NAD",name:"Nád utca",lat:47.5183,lon:19.0467}
 ];
 
-// ---------------- VEHICLE LAYER ----------------
-let VEHICLE_DB={
-    "T1":{
-        type:"Volvo 7900",
-        plate:"ABC-123",
-        fleet:"F12"
-    },
-    "T2":{
-        type:"Stadler HÉV",
-        plate:"HEV-045",
-        fleet:"H03"
-    }
+// ---------------- USER POSITION ----------------
+let USER={
+    lat:47.4979,
+    lon:19.0402
 };
 
-// ---------------- DEPARTURES ----------------
-let departures=[
-    {time:"08:10",trip:"T1"},
-    {time:"08:22",trip:"T2"},
-    {time:"08:35",trip:"T1"}
-];
+// ---------------- VEHICLES ----------------
+let VEHICLES={
+    "T1":{type:"Volvo 7900",plate:"ABC-123",fleet:"F12"},
+    "T2":{type:"Stadler HÉV",plate:"HEV-045",fleet:"H03"}
+};
 
-// ---------------- NORMALIZE ----------------
-function norm(s){
-    return s.toLowerCase()
-    .replaceAll("á","a")
-    .replaceAll("é","e")
-    .replaceAll("í","i")
-    .replaceAll("ó","o")
-    .replaceAll("ö","o")
-    .replaceAll("ő","o")
-    .replaceAll("ú","u")
-    .replaceAll("ü","u");
+// ---------------- DISTANCE ----------------
+function dist(lat1,lon1,lat2,lon2){
+    const R=6371;
+    let dLat=(lat2-lat1)*Math.PI/180;
+    let dLon=(lon2-lon1)*Math.PI/180;
+    let a=
+        Math.sin(dLat/2)**2 +
+        Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+        Math.sin(dLon/2)**2;
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ---------------- GPRS ----------------
+function signal(){
+    return Math.floor(40+Math.random()*60);
+}
+
+// ---------------- RENDER STOP ----------------
+function renderStop(s){
+
+    let d=dist(USER.lat,USER.lon,s.lat,s.lon).toFixed(2);
+    let sig=signal();
+
+    let q=
+        sig>80?"🟢 EXCELLENT":
+        sig>60?"🟡 OK":"🔴 WEAK";
+
+    return `
+<div class="card">
+<b>${s.name}</b> <span class="badge">${s.id}</span><br>
+📍 ${s.lat}, ${s.lon}<br>
+📏 Távolság: ${d} km<br>
+📡 GPRS: ${sig}% (${q})
+</div>`;
 }
 
 // ---------------- SEARCH ----------------
-function search(){
-    let q=document.getElementById("q").value;
-    log("🔎 Keresés: "+q);
+function searchStops(){
 
-    let nq=norm(q);
+    let q=document.getElementById("q").value.toLowerCase();
 
-    let res=STOPS.filter(s=>norm(s.name).includes(nq)||norm(s.id).includes(nq));
+    log("🔎 keresés: "+q);
 
-    if(res.length==0){
-        log("❌ nincs találat → fallback");
+    let res=STOPS.filter(s=>
+        s.name.toLowerCase().includes(q) ||
+        s.id.toLowerCase().includes(q)
+    );
+
+    let el=document.getElementById("list");
+    el.innerHTML="";
+
+    if(res.length===0){
+        log("❌ nincs találat");
         return;
     }
 
-    res.forEach(r=>{
-        log("✅ "+r.name+" ("+r.id+")");
+    res.forEach(s=>{
+        el.innerHTML+=renderStop(s);
+        log("✅ "+s.name);
     });
 }
 
-// ---------------- RENDER TABLE ----------------
-function loadDepartures(){
+// ---------------- NEAREST STOP ENGINE ----------------
+function findNearest(){
 
-    let el=document.getElementById("table");
-    el.innerHTML="";
+    let best=null;
+    let bestD=9999;
 
-    log("🚦 indulási tábla betöltés...");
-
-    departures.forEach(d=>{
-
-        let v=VEHICLE_DB[d.trip]||{
-            type:"N/A",
-            plate:"N/A",
-            fleet:"N/A"
-        };
-
-        let div=document.createElement("div");
-        div.className="row";
-
-        div.innerHTML=`
-            🕒 <b>${d.time}</b><br>
-            🚌 ${v.type}<br>
-            🚏 Rendszám: ${v.plate}<br>
-            🔢 Forda: ${v.fleet}<br>
-            <span class="badge">TRIP: ${d.trip}</span>
-        `;
-
-        el.appendChild(div);
+    STOPS.forEach(s=>{
+        let d=dist(USER.lat,USER.lon,s.lat,s.lon);
+        if(d<bestD){
+            bestD=d;
+            best=s;
+        }
     });
 
-    log("✔️ tábla kész");
+    log("🧭 LEGKÖZELEBBI MEGÁLLÓ:");
+    log("➡️ "+best.name+" ("+best.id+")");
+    log("📏 "+bestD.toFixed(2)+" km");
 }
 
-log("🚀 V11.3 DISPATCH TABLE ENGINE READY");
+log("🚀 V11.5 OPERATOR DASHBOARD READY");
 
 </script>
 
