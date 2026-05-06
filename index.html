@@ -1,153 +1,115 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<title>ATTILA DISPATCHER V7.5 – LIGHT DB</title>
-
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<style>
-body{margin:0;display:flex;font-family:Arial;}
-#sidebar{width:360px;background:#0b1220;color:#00ff66;overflow:auto;}
-#map{flex:1;height:100vh;}
-
-.panel{padding:10px;font-family:monospace;}
-
-.matrix{background:black;color:#00ff66;padding:10px;}
-.row{display:flex;justify-content:space-between;border-bottom:1px solid #003300;padding:4px;}
-
-input,button{width:100%;margin:4px 0;padding:6px;background:#003300;color:#00ff66;border:none;}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GTFS LIGHT DB EXPORTER</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#0f172a; color:#e2e8f0; margin:0; padding:0; }
+    header { padding:16px; background:#111827; font-size:18px; font-weight:bold; }
+    .container { padding:16px; }
+    .row { display:flex; gap:12px; flex-wrap:wrap; }
+    .card { background:#1f2937; padding:12px; border-radius:12px; flex:1; min-width:280px; }
+    button { padding:10px 12px; border:none; border-radius:10px; cursor:pointer; background:#22c55e; color:black; font-weight:bold; }
+    button.secondary { background:#38bdf8; }
+    button.danger { background:#ef4444; color:white; }
+    pre { background:#0b1220; padding:10px; border-radius:10px; overflow:auto; max-height:300px; }
+    input { width:100%; padding:10px; border-radius:8px; border:none; margin-top:6px; }
+    .small { font-size:12px; opacity:0.8; }
+  </style>
 </head>
-
 <body>
 
-<div id="sidebar">
-<h3>🟢 ATTILA V7.5</h3>
+<header>🚆 GTFS → LIGHT DB EXPORTER (V1 MERGE ENGINE)</header>
 
-<input id="search" placeholder="Keresés...">
-<button onclick="findNearest()">📍 Legközelebbi</button>
+<div class="container">
 
-<div id="list"></div>
-<div id="panel">Válassz megállót</div>
+  <div class="row">
+
+    <div class="card">
+      <h3>📦 GTFS Loader</h3>
+      <input type="file" id="gtfsFile" />
+      <p class="small">ZIP / CSV betöltés (demo parser)</p>
+      <button onclick="loadGTFS()">Betöltés</button>
+    </div>
+
+    <div class="card">
+      <h3>⚙️ Export Engine</h3>
+      <button class="secondary" onclick="exportLightDB()">EXPORT → LIGHT DB</button>
+      <button class="danger" onclick="clearDB()">RESET DB</button>
+      <p class="small">Stop + járat + indulási cache</p>
+    </div>
+
+    <div class="card">
+      <h3>🔎 Megálló kereső</h3>
+      <input id="search" placeholder="Név vagy GTFS ID" oninput="searchStop()" />
+      <div id="searchResult"></div>
+    </div>
+
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <h3>🧠 LIGHT DB OUTPUT</h3>
+    <pre id="dbOut">Üres...</pre>
+  </div>
+
 </div>
-
-<div id="map"></div>
 
 <script>
 
-// ===== MAP =====
-const map = L.map('map').setView([47.5,19.05],11);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-// ===== FAKE DB =====
-const DB = {
-
-stops:[
- {id:"ORS",name:"Örs vezér tere",lat:47.5003,lon:19.1357},
- {id:"BAT",name:"Batthyány tér",lat:47.506,lon:19.039},
- {id:"FLO",name:"Flórián tér",lat:47.542,lon:19.042},
- {id:"SZENT",name:"Szentendre HÉV",lat:47.669,lon:19.075},
- {id:"VAC",name:"Vác, autóbusz-állomás",lat:47.78,lon:19.13}
-],
-
-departures:{
- "ORS":[{l:"H8",t:"12:01"},{l:"H9",t:"12:05"},{l:"2",t:"12:07"}],
- "BAT":[{l:"H5",t:"12:02"},{l:"19",t:"12:06"}],
- "FLO":[{l:"34",t:"12:03"},{l:"106",t:"12:09"}],
- "SZENT":[{l:"H5",t:"12:10"}],
- "VAC":[{l:"300",t:"12:15"}]
-}
-
+let LIGHT_DB = {
+  stops: [],
+  trips: [],
+  departures: []
 };
 
-// ===== GPS =====
-let userPos=null;
-navigator.geolocation.getCurrentPosition(p=>{
- userPos={lat:p.coords.latitude,lon:p.coords.longitude};
-});
+function loadGTFS() {
+  const file = document.getElementById('gtfsFile').files[0];
+  if (!file) return alert("Nincs fájl kiválasztva");
 
-// ===== DIST =====
-function dist(a,b){
- const R=6371000;
- const dLat=(b.lat-a.lat)*Math.PI/180;
- const dLon=(b.lon-a.lon)*Math.PI/180;
- const x=Math.sin(dLat/2)**2+
-  Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*
-  Math.sin(dLon/2)**2;
- return R*(2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
+  // DEMO: fake import
+  LIGHT_DB.stops = [
+    { id:"F00456", name:"Nád utca", lat:47.5, lon:19.04 },
+    { id:"S00123", name:"Szentendre Skanzen", lat:47.68, lon:19.08 },
+    { id:"T00999", name:"Tahitótfalu Hídfő", lat:47.75, lon:19.09 }
+  ];
+
+  LIGHT_DB.departures = [
+    { stop:"F00456", time:"08:15", route:"H5" },
+    { stop:"F00456", time:"08:45", route:"H5" },
+    { stop:"S00123", time:"09:10", route:"H5" }
+  ];
+
+  updateDB();
 }
 
-// ===== LIST =====
-function render(list){
-
- const c=document.getElementById("list");
- c.innerHTML="";
-
- list.forEach(s=>{
-  const d=document.createElement("div");
-  d.innerHTML="📍 "+s.name;
-  d.style.cursor="pointer";
-  d.onclick=()=>showStop(s);
-  c.appendChild(d);
- });
+function exportLightDB() {
+  const blob = new Blob([JSON.stringify(LIGHT_DB, null, 2)], {type:"application/json"});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = "light_gtfs_db.json";
+  a.click();
 }
 
-// ===== SEARCH =====
-search.oninput=e=>{
- const q=e.target.value.toLowerCase();
- render(DB.stops.filter(s=>s.name.toLowerCase().includes(q)));
-};
-
-// ===== NEAREST =====
-function findNearest(){
-
- if(!userPos){alert("GPS nincs");return;}
-
- let res=DB.stops.map(s=>({
-  ...s,
-  d:dist(userPos,{lat:s.lat,lon:s.lon})
- }))
- .sort((a,b)=>a.d-b.d)
- .slice(0,5);
-
- render(res);
+function clearDB() {
+  LIGHT_DB = { stops:[], trips:[], departures:[] };
+  updateDB();
 }
 
-// ===== PANEL =====
-function showStop(s){
-
- let list=DB.departures[s.id]||[];
-
- let html=`
- <div class="matrix">
- <h3>${s.name}</h3>
- <hr>
- `;
-
- list.forEach(d=>{
-  html+=`
-  <div class="row">
-   <div>${d.l}</div>
-   <div>${d.t}</div>
-  </div>`;
- });
-
- html+="</div>";
-
- document.getElementById("panel").innerHTML=html;
+function updateDB() {
+  document.getElementById("dbOut").textContent = JSON.stringify(LIGHT_DB, null, 2);
 }
 
-// ===== MAP =====
-DB.stops.forEach(s=>{
- L.marker([s.lat,s.lon]).addTo(map)
-  .on("click",()=>showStop(s));
-});
+function searchStop() {
+  const q = document.getElementById("search").value.toLowerCase();
+  const res = LIGHT_DB.stops.filter(s =>
+    s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q)
+  );
 
-render(DB.stops);
+  document.getElementById("searchResult").innerHTML = res.map(r =>
+    `<div>🚏 ${r.name} (${r.id})</div>`
+  ).join("");
+}
 
 </script>
 
