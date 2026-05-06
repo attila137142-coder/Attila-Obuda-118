@@ -2,11 +2,10 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA GLOBAL FEED ENGINE V4</title>
+<title>GTFS ENGINE V4.1 ROBUST ZIP PARSER</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
@@ -14,7 +13,7 @@
 body { margin:0; font-family:Arial; background:#0b1220; color:white; }
 #map { height:70vh; }
 .panel { padding:10px; background:#111a2e; }
-pre { white-space:pre-wrap; font-size:12px; }
+pre { font-size:12px; white-space:pre-wrap; }
 button { padding:8px; margin:5px; }
 </style>
 </head>
@@ -22,10 +21,10 @@ button { padding:8px; margin:5px; }
 <body>
 
 <div class="panel">
-<h2>🚆 GLOBAL FEED MERGE ENGINE V4</h2>
+<h2>🚆 V4.1 ROBUST GTFS ZIP PARSER</h2>
 
 <input type="file" id="zip" multiple accept=".zip">
-<button onclick="loadZips()">LOAD GTFS ZIPS</button>
+<button onclick="load()">LOAD ZIP(S)</button>
 <button onclick="build()">BUILD GLOBAL NETWORK</button>
 
 <div id="status">READY</div>
@@ -42,11 +41,11 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
     attribution:'OSM'
 }).addTo(map);
 
-// ---------------- GLOBAL STATE ----------------
-let rawFeeds = [];
-let globalStops = [];
+// ---------------- STATE ----------------
+let feeds = [];
+let stops = [];
 
-// ---------------- UTIL ----------------
+// ---------------- LOG ----------------
 function log(t){
     document.getElementById("log").innerText += t + "\n";
 }
@@ -55,137 +54,127 @@ function setStatus(t){
     document.getElementById("status").innerText = t;
 }
 
-// ---------------- NORMALIZE ----------------
-function norm(n){
-    return (n||"")
+// ---------------- NORMALIZE FILE NAME ----------------
+function cleanFileName(path){
+
+    return path
         .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g,"")
-        .replace(/[^a-z0-9]/g,"");
+        .split("/")
+        .pop()
+        .trim();
 }
 
-// ---------------- DISTANCE ----------------
-function dist(a,b){
-    const dx = a.lat - b.lat;
-    const dy = a.lon - b.lon;
-    return Math.sqrt(dx*dx+dy*dy)*111000;
-}
+// ---------------- GTFS FILE ROUTER ----------------
+function routeFile(name){
 
-// ---------------- MERGE LOGIC ----------------
-function shouldMerge(a,b){
-    return dist(a,b) < 70 &&
-           norm(a.name) === norm(b.name);
+    name = cleanFileName(name);
+
+    if(name === "stops.txt") return "stops";
+    if(name === "routes.txt") return "routes";
+    if(name === "trips.txt") return "trips";
+    if(name === "stop_times.txt") return "stop_times";
+
+    return "unknown";
 }
 
 // ---------------- LOAD ZIP ----------------
-async function loadZips(){
+async function load(){
 
     const files = document.getElementById("zip").files;
 
-    rawFeeds = [];
+    feeds = [];
 
     for(let file of files){
 
         const zip = await JSZip.loadAsync(file);
 
-        let feed = [];
+        let feed = {
+            name: file.name,
+            stops: []
+        };
 
-        for(let name in zip.files){
+        log("📦 ZIP LOADED: " + file.name);
 
-            let text = await zip.files[name].async("string");
+        // scan ALL files safely
+        for(let path in zip.files){
 
-            if(name.includes("stops")){
+            let fileName = cleanFileName(path);
 
-                let parsed = Papa.parse(text,{
+            log("  ↳ FILE FOUND: " + path);
+
+            let content = await zip.files[path].async("string");
+
+            let type = routeFile(path);
+
+            if(type === "stops"){
+
+                let parsed = Papa.parse(content,{
                     header:true,
                     skipEmptyLines:true
                 });
 
-                feed.push({
-                    type:"stops",
-                    data:parsed.data
-                });
+                log("    ✔ STOPS PARSED: " + parsed.data.length);
+
+                feed.stops = parsed.data;
             }
         }
 
-        rawFeeds.push(feed);
-
-        log("Loaded ZIP: " + file.name);
+        feeds.push(feed);
     }
 
     setStatus("LOADED ✔");
 }
 
-// ---------------- BUILD ----------------
+// ---------------- BUILD GLOBAL ENGINE ----------------
 function build(){
-
-    globalStops = [];
 
     log("=== BUILD START ===");
 
-    for(let feed of rawFeeds){
+    stops = [];
 
-        for(let part of feed){
+    for(let f of feeds){
 
-            if(part.type !== "stops") continue;
+        if(!f.stops || f.stops.length === 0){
+            log("⚠ NO STOPS IN FEED: " + f.name);
+            continue;
+        }
 
-            for(let s of part.data){
+        for(let s of f.stops){
 
-                let stop = {
-                    name: s.stop_name,
-                    lat: parseFloat(s.stop_lat),
-                    lon: parseFloat(s.stop_lon),
-                    feeds:1
-                };
+            let stop = {
+                name: s.stop_name,
+                lat: parseFloat(s.stop_lat),
+                lon: parseFloat(s.stop_lon),
+                feed: f.name
+            };
 
-                if(isNaN(stop.lat) || isNaN(stop.lon)) continue;
+            if(isNaN(stop.lat) || isNaN(stop.lon)) continue;
 
-                addGlobal(stop);
-            }
+            stops.push(stop);
         }
     }
 
-    log("GLOBAL STOPS: " + globalStops.length);
+    log("GLOBAL STOPS: " + stops.length);
 
     render();
-
     setStatus("ENGINE READY ✔");
 }
 
-// ---------------- GLOBAL MERGE ----------------
-function addGlobal(stop){
-
-    for(let g of globalStops){
-        if(shouldMerge(g, stop)){
-            g.feeds++;
-            return;
-        }
-    }
-
-    globalStops.push({
-        ...stop,
-        id:"G"+globalStops.length
-    });
-}
-
-// ---------------- RENDER ----------------
+// ---------------- MAP ----------------
 function render(){
 
     map.eachLayer(l=>{
         if(l instanceof L.CircleMarker) map.removeLayer(l);
     });
 
-    globalStops.forEach(s=>{
-
-        let r = 3 + Math.min(s.feeds,5);
+    stops.forEach(s=>{
 
         L.circleMarker([s.lat,s.lon],{
-            radius:r,
+            radius:4,
             color:"cyan"
         }).addTo(map)
-        .bindPopup(
-            `<b>${s.name}</b><br>feeds: ${s.feeds}<br>${s.id}`
-        );
+        .bindPopup(s.name + "<br>" + s.feed);
+
     });
 }
 
