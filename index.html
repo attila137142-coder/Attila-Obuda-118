@@ -1,212 +1,134 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>GTFS V5 MAP + REALTIME ENGINE</title>
-
-  <!-- LIBS -->
-  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-  <style>
-    body { margin:0; font-family:Arial; background:#0b1220; color:#e5e7eb; }
-    header { padding:12px; background:#111827; font-weight:bold; }
-    .wrap { display:flex; height:calc(100vh - 48px); }
-
-    #sidebar {
-      width:360px; background:#1f2937; padding:10px; overflow:auto;
-    }
-
-    #map { flex:1; }
-
-    .card { background:#0b1220; padding:10px; border-radius:10px; margin-bottom:10px; }
-
-    input, button { width:100%; padding:10px; margin-top:6px; border-radius:8px; border:0; }
-    button { font-weight:bold; cursor:pointer; }
-    .g { background:#22c55e; }
-    .b { background:#38bdf8; }
-    .r { background:#ef4444; color:white; }
-
-    .stop { padding:6px; margin-top:6px; background:#0a0f1d; border-radius:8px; }
-  </style>
+<meta charset="UTF-8">
+<title>SLOPE ENGINE V1</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<style>
+  body { margin:0; font-family:Arial; background:#111; color:#fff; }
+  #map { height: 60vh; }
+  #panel { padding:10px; }
+  button { padding:10px; margin:5px; }
+  table { width:100%; font-size:12px; border-collapse: collapse; }
+  td, th { border:1px solid #444; padding:4px; }
+</style>
 </head>
 <body>
 
-<header>🚆 V5 MAP + REALTIME GTFS ENGINE (DISPATCHER CORE)</header>
+<div id="map"></div>
 
-<div class="wrap">
+<div id="panel">
+  <button onclick="loadOSM()">UTAK BETÖLTÉSE</button>
+  <button onclick="calcSlope()">MEREDESÉG SZÁMÍTÁS</button>
+  <button onclick="exportPDF()">PDF EXPORT</button>
 
-  <div id="sidebar">
-
-    <div class="card">
-      <b>📦 GTFS IMPORT</b>
-      <input type="file" id="file" />
-      <button class="g" onclick="loadGTFS()">LOAD GTFS ZIP</button>
-    </div>
-
-    <div class="card">
-      <b>⚙️ ENGINE</b>
-      <button class="b" onclick="buildIndexes()">BUILD INDEX</button>
-      <button class="r" onclick="resetDB()">RESET</button>
-    </div>
-
-    <div class="card">
-      <b>🔎 STOP SEARCH</b>
-      <input id="q" placeholder="stop name / id" oninput="search()" />
-      <div id="out"></div>
-    </div>
-
-    <div class="card">
-      <b>🚍 REALTIME SIM</b>
-      <button class="g" onclick="startSim()">START SIM</button>
-      <button class="r" onclick="stopSim()">STOP</button>
-      <div id="sim"></div>
-    </div>
-
-  </div>
-
-  <div id="map"></div>
-
+  <table id="table">
+    <tr>
+      <th>Szakasz</th>
+      <th>Hossz (m)</th>
+      <th>Δh (m)</th>
+      <th>Meredekség (%)</th>
+    </tr>
+  </table>
 </div>
 
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
 <script>
+let map = L.map('map').setView([47.4979, 19.0402], 13);
 
-let DB = { stops:[], trips:[], stop_times:[] };
-let INDEX = { stopTimeMap:new Map() };
-let map;
-let markers = [];
-let vehicles = [];
-let simInterval;
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+.addTo(map);
 
-// INIT MAP
-map = L.map('map').setView([47.4979,19.0402], 12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+let segments = [];
 
-function loadGTFS() {
-  const file = document.getElementById("file").files[0];
-  if (!file) return alert("Nincs file");
+function loadOSM() {
+  fetch("roads.geojson") // saját export!
+  .then(res => res.json())
+  .then(data => {
+    window.roads = data.features;
+    alert("UTAK BETÖLTVE!");
+  });
+}
 
-  JSZip.loadAsync(file).then(zip => {
+function getElevation(lat, lon) {
+  // DEM helyett demo random (cseréld API-ra!)
+  return 100 + Math.sin(lat*10)*20 + Math.cos(lon*10)*20;
+}
 
-    let tasks = [];
+function calcSlope() {
+  segments = [];
 
-    zip.forEach((path, entry) => {
-      if (path.includes("stops.txt") || path.includes("stop_times.txt") || path.includes("trips.txt")) {
-        tasks.push(entry.async("string").then(d => ({path, d})));
-      }
-    });
+  roads.forEach(road => {
+    let coords = road.geometry.coordinates;
 
-    Promise.all(tasks).then(files => {
+    for (let i=0; i<coords.length-1; i++) {
 
-      files.forEach(f => {
+      let [lon1, lat1] = coords[i];
+      let [lon2, lat2] = coords[i+1];
 
-        if (f.path.includes("stops.txt")) DB.stops = Papa.parse(f.d, {header:true}).data;
-        if (f.path.includes("stop_times.txt")) DB.stop_times = Papa.parse(f.d, {header:true}).data;
-        if (f.path.includes("trips.txt")) DB.trips = Papa.parse(f.d, {header:true}).data;
+      let h1 = getElevation(lat1, lon1);
+      let h2 = getElevation(lat2, lon2);
 
+      let dist = map.distance([lat1, lon1], [lat2, lon2]);
+
+      let slope = ((h2 - h1) / dist) * 100;
+
+      segments.push({
+        dist: dist.toFixed(1),
+        dh: (h2-h1).toFixed(1),
+        slope: slope.toFixed(2),
+        coords: [[lat1, lon1],[lat2, lon2]]
       });
 
-      buildIndexes();
-      drawStops();
-
-    });
-  });
-}
-
-function buildIndexes() {
-  INDEX.stopTimeMap.clear();
-
-  DB.stop_times.forEach(st => {
-    if (!INDEX.stopTimeMap.has(st.stop_id)) INDEX.stopTimeMap.set(st.stop_id, []);
-    INDEX.stopTimeMap.get(st.stop_id).push(st);
-  });
-}
-
-function drawStops() {
-  markers.forEach(m => map.removeLayer(m));
-  markers = [];
-
-  DB.stops.forEach(s => {
-    if (!s.stop_lat || !s.stop_lon) return;
-
-    const m = L.marker([parseFloat(s.stop_lat), parseFloat(s.stop_lon)])
-      .addTo(map)
-      .bindPopup(`🚏 ${s.stop_name}<br>${s.stop_id}<br><button onclick="selectStop('${s.stop_id}')">OPEN</button>`);
-
-    markers.push(m);
-  });
-}
-
-function selectStop(id) {
-  const times = INDEX.stopTimeMap.get(id) || [];
-
-  alert(
-    "STOP: " + id + "\n" +
-    times.slice(0,10).map(t => t.departure_time + " trip " + t.trip_id).join("\n")
-  );
-}
-
-function search() {
-  const q = document.getElementById("q").value.toLowerCase();
-
-  const res = DB.stops.filter(s =>
-    (s.stop_name||"").toLowerCase().includes(q) ||
-    (s.stop_id||"").toLowerCase().includes(q)
-  );
-
-  document.getElementById("out").innerHTML = res.slice(0,8).map(s => `
-    <div class="stop">
-      🚏 ${s.stop_name}<br>
-      <small>${s.stop_id}</small>
-    </div>
-  `).join("");
-}
-
-// ---------------- REALTIME SIM ----------------
-
-function startSim() {
-  stopSim();
-
-  vehicles = DB.trips.slice(0,5).map((t,i)=>({
-    id:t.trip_id,
-    lat:47.4979 + (i*0.01),
-    lon:19.0402 + (i*0.01),
-    marker:null
-  }));
-
-  vehicles.forEach(v => {
-    v.marker = L.circleMarker([v.lat,v.lon], {radius:8}).addTo(map);
+      drawSegment(lat1, lon1, lat2, lon2, slope);
+      addRow(dist, h2-h1, slope);
+    }
   });
 
-  simInterval = setInterval(() => {
-    vehicles.forEach(v => {
-      v.lat += (Math.random()-0.5)*0.001;
-      v.lon += (Math.random()-0.5)*0.001;
-      v.marker.setLatLng([v.lat,v.lon]);
-    });
-  }, 800);
-
-  document.getElementById("sim").innerText = "SIM RUNNING";
+  alert("KÉSZ!");
 }
 
-function stopSim() {
-  clearInterval(simInterval);
-  vehicles.forEach(v => v.marker && map.removeLayer(v.marker));
-  vehicles = [];
-  document.getElementById("sim").innerText = "STOPPED";
+function drawSegment(lat1, lon1, lat2, lon2, slope) {
+  let color = "green";
+  if (slope > 5) color = "orange";
+  if (slope > 10) color = "red";
+
+  L.polyline([[lat1,lon1],[lat2,lon2]], {
+    color: color,
+    weight: 4
+  }).addTo(map);
 }
 
-function resetDB() {
-  DB = { stops:[], trips:[], stop_times:[] };
-  INDEX.stopTimeMap.clear();
-  drawStops();
+function addRow(dist, dh, slope) {
+  let table = document.getElementById("table");
+  let row = table.insertRow();
+
+  row.innerHTML = `
+    <td>Szakasz</td>
+    <td>${dist.toFixed(1)}</td>
+    <td>${dh.toFixed(1)}</td>
+    <td>${slope.toFixed(2)}</td>
+  `;
 }
 
+function exportPDF() {
+  const { jsPDF } = window.jspdf;
+  let doc = new jsPDF();
+
+  let y = 10;
+  segments.forEach((s,i) => {
+    doc.text(
+      `#${i} | ${s.dist}m | Δh:${s.dh}m | ${s.slope}%`,
+      10, y
+    );
+    y+=6;
+  });
+
+  doc.save("budapest_slope.pdf");
+}
 </script>
 
 </body>
 </html>
-
