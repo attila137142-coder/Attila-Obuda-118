@@ -2,198 +2,97 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>V6 TERRAIN HEATMAP ENGINE</title>
+<title>V7 TERRAIN DIFFICULTY MAP</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
 <style>
 body { margin:0; font-family:Arial; background:#111; color:#fff;}
-#map { height:55vh;}
-#panel { padding:10px;}
-input,button { padding:10px; margin:5px;}
-#results div { padding:6px; border-bottom:1px solid #333; cursor:pointer;}
-#results div:hover { background:#333;}
-table { width:100%; font-size:12px; border-collapse:collapse;}
-td,th { border:1px solid #444; padding:4px;}
+#map { height:100vh;}
 </style>
 </head>
-
 <body>
 
 <div id="map"></div>
 
-<div id="panel">
-<input id="street" placeholder="pl: Hármashatárhegyi út / turista út">
-<button onclick="search()">KERESÉS + HEATMAP</button>
-
-<div id="results"></div>
-
-<table id="tbl">
-<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>
-</table>
-</div>
-
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-let map = L.map('map').setView([47.4979,19.0402],13);
+let map = L.map('map').setView([47.5,19.1],11);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  opacity:0.9
+  opacity:0.7
 }).addTo(map);
 
-let coords = [];
+// ------------------------
+// 🔥 GRID SETTINGS
+// ------------------------
+const step = 0.003; // ~300m (demo)
+
 let layers = [];
 
-// ==========================
-// 🔍 SEARCH + ROUTE LOAD
-// ==========================
-async function search(){
-
-  let q = street.value;
-
-  let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q},Hungary&limit=5`);
-  let data = await res.json();
-
-  results.innerHTML="";
-
-  if(data.length==0){
-    alert("Nincs találat!");
-    return;
-  }
-
-  data.forEach(p=>{
-    let d=document.createElement("div");
-    d.innerText=p.display_name;
-    d.onclick=()=>loadRoute(p);
-    results.appendChild(d);
-  });
-
-  await loadRoute(data[0]);
-}
-
-// ==========================
-// 🧭 ROUTE + TURISTA UTAK
-// ==========================
-async function loadRoute(p){
-
-  map.setView([p.lat,p.lon],15);
-
-  let q = `
-  [out:json];
-  (
-    way["highway"~"primary|secondary|tertiary|residential|service"](around:1500,${p.lat},${p.lon});
-    way["highway"~"path|footway|track"](around:1500,${p.lat},${p.lon});
-  );
-  out geom;
-  `;
-
-  let res = await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:q});
-  let data = await res.json();
-
-  if(data.elements.length==0){
-    alert("Nincs út!");
-    return;
-  }
-
-  coords = [];
-
-  data.elements.forEach(el=>{
-    if(el.geometry){
-      el.geometry.forEach(p=>{
-        coords.push([p.lat,p.lon]);
-      });
-    }
-  });
-
-  drawBaseRoute();
-  await buildTerrain();
-}
-
-// ==========================
-// 🗺️ BASE ROUTE
-// ==========================
-function drawBaseRoute(){
-
-  layers.forEach(l=>map.removeLayer(l));
-  layers=[];
-
-  let line = L.polyline(coords,{
-    color:"#00d4ff",
-    weight:4,
-    opacity:0.8
-  }).addTo(map);
-
-  layers.push(line);
-}
-
-// ==========================
-// ⛰️ TERRAIN ENGINE
-// ==========================
-async function buildTerrain(){
-
-  let elev = await getElev(coords);
-
-  tbl.innerHTML="<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>";
-
-  for(let i=0;i<coords.length-1;i++){
-
-    let p1=coords[i];
-    let p2=coords[i+1];
-
-    let d = map.distance(p1,p2);
-    let dh = elev[i+1]-elev[i];
-    let slope = (dh/d)*100;
-
-    // 🎨 HEATMAP COLOR
-    let color = getColor(slope);
-
-    let seg = L.polyline([p1,p2],{
-      color:color,
-      weight:6,
-      opacity:0.9
-    }).addTo(map);
-
-    layers.push(seg);
-
-    let r = tbl.insertRow();
-    r.innerHTML=`
-      <td>${i}</td>
-      <td>${d.toFixed(1)}</td>
-      <td>${dh.toFixed(1)}</td>
-      <td>${slope.toFixed(2)}</td>
-    `;
-  }
-
-  alert("HEATMAP kész ✔");
-}
-
-// ==========================
-// 🎨 COLOR LOGIC
-// ==========================
-function getColor(s){
-
-  if(s < 2) return "#00ff6a";   // zöld (könnyű)
-  if(s < 5) return "#ffd000";   // sárga
-  if(s < 10) return "#ff7a00";  // narancs
-  return "#ff1e1e";             // piros (meredek)
-}
-
-// ==========================
-// ⛰️ ELEVATION API
-// ==========================
-async function getElev(points){
+// ------------------------
+// ⛰️ ELEVATION
+// ------------------------
+async function getElevation(lat,lon){
 
   let res = await fetch("https://api.open-elevation.com/api/v1/lookup",{
     method:"POST",
     headers:{"Content-Type":"application/json"},
     body: JSON.stringify({
-      locations: points.map(p=>({latitude:p[0],longitude:p[1]}))
+      locations:[{latitude:lat,longitude:lon}]
     })
   });
 
   let data = await res.json();
-  return data.results.map(r=>r.elevation);
+  return data.results[0].elevation;
 }
+
+// ------------------------
+// 🧠 TERRAIN SCORE
+// ------------------------
+function score(slope){
+
+  if(slope < 2) return "#00ff6a";
+  if(slope < 5) return "#ffd000";
+  if(slope < 10) return "#ff7a00";
+  return "#ff1e1e";
+}
+
+// ------------------------
+// 🗺️ GRID GENERATION
+// ------------------------
+async function buildTerrain(){
+
+  let bounds = map.getBounds();
+
+  for(let lat = bounds.getSouth(); lat < bounds.getNorth(); lat += step){
+    for(let lon = bounds.getWest(); lon < bounds.getEast(); lon += step){
+
+      let h1 = await getElevation(lat,lon);
+      let h2 = await getElevation(lat+step,lon+step);
+
+      let dist = map.distance([lat,lon],[lat+step,lon+step]);
+      let slope = ((h2-h1)/dist)*100;
+
+      let color = score(Math.abs(slope));
+
+      let cell = L.rectangle(
+        [[lat,lon],[lat+step,lon+step]],
+        {
+          color:color,
+          weight:0,
+          fillOpacity:0.5
+        }
+      ).addTo(map);
+
+      layers.push(cell);
+    }
+  }
+
+  alert("TERRAIN MAP kész ✔");
+}
+
+// auto start
+buildTerrain();
 </script>
 
 </body>
