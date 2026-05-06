@@ -1,88 +1,196 @@
 <!DOCTYPE html>
+<html lang="hu">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GTFS V4 FULL CORE ENGINE</title>
+
+  <!-- CSV + ZIP SUPPORT -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+  <style>
+    body { font-family: Arial; margin:0; background:#0b1220; color:#e5e7eb; }
+    header { padding:14px; background:#111827; font-weight:bold; }
+    .wrap { padding:14px; }
+    .grid { display:flex; gap:12px; flex-wrap:wrap; }
+    .card { background:#1f2937; padding:12px; border-radius:12px; flex:1; min-width:280px; }
+    button { padding:10px; border:0; border-radius:10px; cursor:pointer; font-weight:bold; }
+    .g { background:#22c55e; }
+    .b { background:#38bdf8; }
+    .r { background:#ef4444; color:white; }
+    input { width:100%; padding:10px; border-radius:8px; border:0; margin-top:6px; }
+    pre { background:#0a0f1d; padding:10px; border-radius:10px; overflow:auto; max-height:280px; }
+    .stop { padding:8px; margin-top:8px; background:#0a0f1d; border-radius:10px; }
+    .small { font-size:12px; opacity:0.7; }
+  </style>
+</head>
+<body>
+
+<header>🚆 V4 FULL GTFS CORE ENGINE (REAL PARSER + INDEX + DISPATCHER)</header>
+
+<div class="wrap">
+
+  <div class="grid">
+
+    <div class="card">
+      <h3>📦 GTFS Loader (ZIP / CSV)</h3>
+      <input type="file" id="file" />
+      <button class="g" onclick="loadGTFS()">IMPORT GTFS</button>
+      <p class="small">stops.txt / trips.txt / stop_times.txt / routes.txt</p>
+    </div>
+
+    <div class="card">
+      <h3>⚙️ ENGINE</h3>
+      <button class="b" onclick="buildIndexes()">BUILD INDEX</button>
+      <button class="r" onclick="resetDB()">RESET</button>
+      <p class="small">STOP ↔ TRIP ↔ STOP_TIMES JOIN</p>
+    </div>
+
+    <div class="card">
+      <h3>🔎 STOP SEARCH</h3>
+      <input id="q" placeholder="név / GTFS ID" oninput="search()" />
+      <div id="out"></div>
+    </div>
+
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <h3>🧠 DB DEBUG</h3>
+    <pre id="db">üres</pre>
+  </div>
+
+</div>
+
+<script>
+
+let DB = {
   stops: [],
   trips: [],
-  stop_times: []
+  stop_times: [],
+  routes: []
+};
+
+let INDEX = {
+  stopMap: new Map(),
+  stopTimeMap: new Map()
 };
 
 function loadGTFS() {
-  const file = document.getElementById('gtfsFile').files[0];
-  if (!file) return alert("Nincs fájl kiválasztva");
+  const file = document.getElementById("file").files[0];
+  if (!file) return alert("Nincs fájl");
 
-  // FIXED: nincs több random hajó / hülye kapcsolat
-  LIGHT_DB.stops = [
-    { id:"F00456", name:"Nád utca", lat:47.500123, lon:19.040456 },
-    { id:"S00123", name:"Szentendre Skanzen", lat:47.685912, lon:19.083214 },
-    { id:"T00999", name:"Tahitótfalu Hídfő", lat:47.751234, lon:19.095678 }
-  ];
+  const isZip = file.name.endsWith(".zip");
 
-  LIGHT_DB.trips = [
-    { id:"H5-001", route:"H5" },
-    { id:"H5-002", route:"H5" }
-  ];
+  if (isZip) {
+    JSZip.loadAsync(file).then(zip => {
 
-  // FIXED GTFS-STYLE stop_times (VALÓS logika)
-  LIGHT_DB.stop_times = [
-    { stop_id:"F00456", trip_id:"H5-001", time:"08:15" },
-    { stop_id:"F00456", trip_id:"H5-002", time:"08:45" },
-    { stop_id:"S00123", trip_id:"H5-001", time:"09:10" },
-    { stop_id:"T00999", trip_id:"H5-001", time:"09:22" }
-  ];
+      const tasks = [];
 
-  updateDB();
+      zip.forEach((path, entry) => {
+        if (path.includes("stops.txt") || path.includes("trips.txt") || path.includes("stop_times.txt") || path.includes("routes.txt")) {
+          tasks.push(entry.async("string").then(data => {
+            return { name: path, data };
+          }));
+        }
+      });
+
+      Promise.all(tasks).then(files => {
+        parseFiles(files);
+      });
+
+    });
+  } else {
+    alert("CSV demo mode (több fájl kell ZIP-ben)");
+  }
 }
 
-function exportLightDB() {
-  const blob = new Blob([JSON.stringify(LIGHT_DB, null, 2)], {type:"application/json"});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = "light_gtfs_db.json";
-  a.click();
-}
+function parseFiles(files) {
 
-function clearDB() {
-  LIGHT_DB = { stops:[], trips:[], stop_times:[] };
-  updateDB();
-  document.getElementById("searchResult").innerHTML = "";
-}
+  files.forEach(f => {
 
-function updateDB() {
-  document.getElementById("dbOut").textContent = JSON.stringify(LIGHT_DB, null, 2);
-}
-
-// FIXED: REAL GTFS JOIN LOGIC
-function searchStop() {
-  const q = document.getElementById("search").value.toLowerCase();
-
-  const res = LIGHT_DB.stops.filter(s =>
-    s.name.toLowerCase().includes(q) || s.id.toLowerCase().includes(q)
-  );
-
-  document.getElementById("searchResult").innerHTML = res.map(stop => {
-
-    const times = LIGHT_DB.stop_times.filter(st => st.stop_id === stop.id);
-
-    if (times.length === 0) {
-      return `
-        <div class="stopCard">
-          🚏 <b>${stop.name}</b> (${stop.id})<br>
-          📍 ${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}<br>
-          ⚠️ Nincs indulási adat ehhez a megállóhoz
-        </div>
-      `;
+    if (f.name.includes("stops.txt")) {
+      DB.stops = Papa.parse(f.data, { header:true }).data;
     }
 
+    if (f.name.includes("trips.txt")) {
+      DB.trips = Papa.parse(f.data, { header:true }).data;
+    }
+
+    if (f.name.includes("stop_times.txt")) {
+      DB.stop_times = Papa.parse(f.data, { header:true }).data;
+    }
+
+    if (f.name.includes("routes.txt")) {
+      DB.routes = Papa.parse(f.data, { header:true }).data;
+    }
+
+  });
+
+  buildIndexes();
+}
+
+function buildIndexes() {
+
+  INDEX.stopMap.clear();
+  INDEX.stopTimeMap.clear();
+
+  DB.stops.forEach(s => {
+    if (!s.stop_id) return;
+    INDEX.stopMap.set(s.stop_id, s);
+  });
+
+  DB.stop_times.forEach(st => {
+    if (!INDEX.stopTimeMap.has(st.stop_id)) {
+      INDEX.stopTimeMap.set(st.stop_id, []);
+    }
+    INDEX.stopTimeMap.get(st.stop_id).push(st);
+  });
+
+  updateDB();
+}
+
+function search() {
+  const q = document.getElementById("q").value.toLowerCase();
+
+  const stops = DB.stops.filter(s =>
+    (s.stop_name || "").toLowerCase().includes(q) ||
+    (s.stop_id || "").toLowerCase().includes(q)
+  );
+
+  document.getElementById("out").innerHTML = stops.map(s => {
+
+    const times = (INDEX.stopTimeMap.get(s.stop_id) || [])
+      .sort((a,b)=>a.departure_time > b.departure_time ? 1 : -1);
+
     return `
-      <div class="stopCard">
-        🚏 <b>${stop.name}</b> (${stop.id})<br>
-        📍 ${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}<br>
-        <br><b>Indulások:</b><br>
-        ${times.map(t => `🕒 ${t.time} - ${t.trip_id}`).join("<br>")}
+      <div class="stop">
+        🚏 <b>${s.stop_name}</b> (${s.stop_id})<br>
+        📍 ${parseFloat(s.stop_lat).toFixed(6)}, ${parseFloat(s.stop_lon).toFixed(6)}<br>
+        <br>
+        🕒 INDULÁSOK:<br>
+        ${times.slice(0,10).map(t => `→ ${t.departure_time} | trip ${t.trip_id}`).join("<br>")}
       </div>
     `;
+
   }).join("");
 }
 
-updateDB();
+function resetDB() {
+  DB = { stops:[], trips:[], stop_times:[], routes:[] };
+  INDEX.stopMap.clear();
+  INDEX.stopTimeMap.clear();
+  updateDB();
+}
+
+function updateDB() {
+  document.getElementById("db").textContent = JSON.stringify({
+    stops: DB.stops.length,
+    trips: DB.trips.length,
+    stop_times: DB.stop_times.length,
+    routes: DB.routes.length
+  }, null, 2);
+}
 
 </script>
 
