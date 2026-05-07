@@ -1,89 +1,73 @@
 <!DOCTYPE html>
-<input id="kmInput" placeholder="pl. 12,5 km / 12.5 / 12" />
-<button onclick="handleInput()">Feldolgozás</button>
-<p id="result"></p>
-</div>
-
-<div class="box">
-<h3>📊 Excel (demo input mező)</h3>
-<input id="excelInput" placeholder="Excel cella érték" />
-<button onclick="handleExcel()">Excel feldolgozás</button>
-</div>
-
-<div class="box">
-<h3>📄 PDF (szimulált szöveg)</h3>
-<input id="pdfInput" placeholder="PDF szöveg pl. 12 km" />
-<button onclick="handlePDF()">PDF feldolgozás</button>
-</div>
-
-<script>
-
-// ==============================
-// 🔥 V2 KM IMPORT ENGINE CORE
 // ==============================
 
-function parseKm(input) {
-    if (input === null || input === undefined) return null;
+/*
+TARGET:
+- BKK + MÁV + VOLÁN + 5 erdei vasút
+- Only: Budapest + Pest + Zala
+- Stops: name + GTFS ID + coords
+- Distance: straight + road
+*/
 
-    let str = String(input).trim();
+// 📍 Haversine (légvonal)
+function distanceKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
 
-    // km szó eltávolítás
-    str = str.replace(/km/i, "").trim();
+    const a =
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
 
-    // vessző → pont
-    str = str.replace(",", ".");
-
-    // spacek törlése
-    str = str.replace(/\s+/g, "");
-
-    const num = Number(str);
-
-    if (!isFinite(num)) return null;
-
-    // 2 tizedesre kerekítés
-    return Math.round(num * 100) / 100;
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+    return Math.round((R * c) * 100) / 100;
 }
 
-// ==============================
-// ✍️ HTML INPUT
-// ==============================
-function handleInput() {
-    const value = document.getElementById("kmInput").value;
-    const km = parseKm(value);
-
-    const out = document.getElementById("result");
-
-    if (km === null) {
-        out.innerHTML = "❌ Nem megfelelő formátum";
-    } else {
-        out.innerHTML = "✅ OK KM: " + km;
-    }
+// 🧠 STOP FILTER (region-based)
+function isAllowedRegion(stop) {
+    const zala = stop.county === "Zala";
+    const pest = stop.county === "Pest";
+    const budapest = stop.city === "Budapest";
+    return zala || pest || budapest;
 }
 
-// ==============================
-// 📊 EXCEL SIMULATION
-// ==============================
-function handleExcel() {
-    const value = document.getElementById("excelInput").value;
-    const km = parseKm(value);
+// 📦 SAMPLE GTFS STOP STRUCTURE
+/*
+stop = {
+    id: "BKK_001",
+    name: "Kossuth Lajos tér",
+    lat: 47.506,
+    lon: 19.046,
+    city: "Budapest",
+    county: "Budapest"
+}
+*/
 
-    alert(km === null ? "Excel: hibás adat" : "Excel KM: " + km);
+// 📍 DISTANCE FROM USER
+function enrichStops(stops, userLat, userLon) {
+    return stops
+        .filter(isAllowedRegion)
+        .map(s => ({
+            ...s,
+            distanceStraight: distanceKm(userLat, userLon, s.lat, s.lon)
+        }))
+        .sort((a,b) => a.distanceStraight - b.distanceStraight);
 }
 
-// ==============================
-// 📄 PDF SIMULATION
-// ==============================
-function handlePDF() {
-    const value = document.getElementById("pdfInput").value;
-    const km = parseKm(value);
-
-    alert(km === null ? "PDF: hibás adat" : "PDF KM: " + km);
+// 🚧 ROAD DISTANCE (placeholder OSRM)
+async function getRoadDistance(fromLat, fromLon, toLat, toLon) {
+    // TODO: OSRM / GraphHopper API
+    return distanceKm(fromLat, fromLon, toLat, toLon) * 1.25; // fallback approx
 }
 
-// ==============================
-// 🚀 BACKEND READY EXPORT
-// ==============================
-// Node.js / PHP / Python mind ezt a logikát használhatja
+/*
+NEXT STEP V3 UPGRADE:
+- GTFS ZIP parser (stops.txt)
+- SQLite / IndexedDB cache
+- OSRM routing real road distance
+- Map rendering (Leaflet)
+*/
 
 </script>
 
