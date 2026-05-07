@@ -1,162 +1,70 @@
 <!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>PRO OPS LIVE SYSTEM – REAL ENGINE V1</title>
 
-<style>
-body { margin:0; font-family:Arial; background:#061a16; color:white; }
-#panel { padding:10px; white-space:pre; font-family:monospace; }
-</style>
-</head>
+    stopLayer.clearLayers();
 
-<body>
+    GTFS.stops.slice(0,5000).forEach(stop=>{
 
-<h3 style="padding:10px;">🚍 REAL ENGINE V1 – CONTROL CORE</h3>
-<input type="file" id="file">
-<div id="panel">GTFS ENGINE READY</div>
+        const lat=parseFloat(stop.stop_lat);
+        const lon=parseFloat(stop.stop_lon);
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+        if(isNaN(lat) || isNaN(lon)) return;
 
-<script>
+        const marker=L.circleMarker([lat,lon],{
+            radius:4,
+            color:'#ffee00',
+            fillColor:'#00ff88',
+            fillOpacity:0.8
+        }).addTo(stopLayer);
 
-/* =========================
-   🧠 STORAGE
-========================= */
+        marker.bindTooltip(
+            stop.stop_name +
+            '<br>GTFS: '+stop.stop_id
+        );
 
-let GTFS = {
-  stops:[],
-  trips:[],
-  stop_times:[]
-};
-
-let INDEX = {
-  stop:{},
-  trip:{}
-};
-
-/* =========================
-   📦 PARSER
-========================= */
-
-function parse(text){
-  const lines=text.trim().split("\n");
-  const h=lines[0].split(",");
-
-  return lines.slice(1).map(l=>{
-    const o={};
-    l.split(",").forEach((v,i)=>o[h[i]]=v);
-    return o;
-  });
-}
-
-/* =========================
-   🧠 INDEX BUILD
-========================= */
-
-function buildIndex(){
-
-  INDEX.stop={};
-  INDEX.trip={};
-
-  GTFS.stop_times.forEach(st=>{
-
-    if(!INDEX.stop[st.stop_id])
-      INDEX.stop[st.stop_id]=[];
-
-    INDEX.stop[st.stop_id].push({
-      trip:st.trip_id,
-      time:st.departure_time
+        marker.on('click',()=>{
+            OPS.selectedStop=stop.stop_id;
+            renderDeparturePanel(stop.stop_id);
+        });
     });
 
-    if(!INDEX.trip[st.trip_id])
-      INDEX.trip[st.trip_id]=[];
-
-    INDEX.trip[st.trip_id].push({
-      stop:st.stop_id,
-      time:st.departure_time
-    });
-
-  });
-
+    log('STOPS RENDERED');
 }
 
-/* =========================
-   ⏱ TIME ENGINE
-========================= */
+/* =====================================
+   🧭 ÓBUDA–SZENTENDRE VIEW
+===================================== */
 
-function nowSec(){
-  const d=new Date();
-  return d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds();
+function loadDemoView(){
+
+    map.setView([47.593,19.045],12);
+
+    log('ÓBUDA–SZENTENDRE VIEW ACTIVE');
 }
 
-function toSec(t){
-  const p=t.split(":");
-  return (+p[0])*3600 + (+p[1])*60 + (+p[2]||0);
-}
+/* =====================================
+   📦 INPUT
+===================================== */
 
-/* =========================
-   🚏 CORE API
-========================= */
+document.getElementById('zipInput').addEventListener('change',async e=>{
 
-function getDepartures(stop_id){
+    const files=[...e.target.files];
 
-  const list=INDEX.stop[stop_id]||[];
-  const now=nowSec();
+    for(const file of files){
+        await loadGTFS(file);
+    }
+});
 
-  return list.map(d=>({
-    trip:d.trip,
-    time:d.time,
-    diff:toSec(d.time)-now
-  }))
-  .sort((a,b)=>a.diff-b.diff)
-  .slice(0,8);
-}
+/* =====================================
+   ⏱ LIVE REFRESH
+===================================== */
 
-/* =========================
-   🧭 VIEW FILTER (ÓBUDA–SZENTENDRE)
-========================= */
+setInterval(()=>{
 
-const VIEW_STOPS = ["BKS","KAS","OBU","AQI","RUF","SZT"];
+    if(OPS.selectedStop)
+        renderDeparturePanel(OPS.selectedStop);
 
-function render(){
-
-  let out="";
-
-  VIEW_STOPS.forEach(s=>{
-
-    const dep=getDepartures(s);
-
-    dep.forEach(d=>{
-      out+=`${s} | ${d.trip} | ${d.time} | ${d.diff}\n`;
-    });
-
-  });
-
-  document.getElementById("panel").innerText=out;
-
-}
-
-/* =========================
-   📦 LOAD GTFS
-========================= */
-
-document.getElementById("file").onchange=async e=>{
-
-  const zip=await JSZip.loadAsync(e.target.files[0]);
-
-  GTFS.stops=parse(await zip.file("stops.txt").async("string"));
-  GTFS.trips=parse(await zip.file("trips.txt").async("string"));
-  GTFS.stop_times=parse(await zip.file("stop_times.txt").async("string"));
-
-  buildIndex();
-  render();
-
-};
-
-setInterval(render,1000);
+},1000);
 
 </script>
-
 </body>
 </html>
