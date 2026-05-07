@@ -1,51 +1,55 @@
 <!DOCTYPE html>
-  if(!bounds.contains([s.stop_lat,s.stop_lon])){
-   layer.removeLayer(m);
-   markerCache.delete(id);
-  }
- });
+   "</div>"
+  );
+ }
 
- },120);
+ document.getElementById("panel").innerHTML=html.join("");
+
+ });
 }
 
 /* =========================
-PANEL
+🗺 SAFE RENDER (NO CRASH + CACHE)
 ========================= */
 
-function renderPanel(stop_id){
+function renderStops(){
+ safeRun(()=>{
 
- const list=INDEX.stop[stop_id]||[];
- const meta=GTFS.stops.find(s=>s.stop_id==stop_id)||{};
- const now=nowSec();
+ const bounds=map.getBounds();
 
- let out='';
+ GTFS.stops.forEach(s=>{
 
- out+=meta.stop_name+'<br>GTFS:'+stop_id+'<hr>';
+  const id=s.stop_id;
 
- list.slice(0,15).forEach(d=>{
+  if(markerCache.has(id)) return;
 
-  const diff=toSec(d.departure_time)-now;
+  const lat=parseFloat(s.stop_lat);
+  const lon=parseFloat(s.stop_lon);
 
-  let cls='green';
-  if(diff>30) cls='blue';
-  if(diff<-30) cls='red';
+  if(!lat||!lon) return;
+  if(!bounds.contains([lat,lon])) return;
 
-  out+=`<div class='row'>
-   <div>${d.trip_id?.slice(0,5)||''}</div>
-   <div>${d.departure_time}</div>
-   <div class='${cls}'>${diff>0?'+':''}${Math.floor(diff/60)}m</div>
-  </div>`;
+  const m=L.circleMarker([lat,lon],{
+   radius:3,
+   color:'#ffee00',
+   fillColor:'#00ff88',
+   fillOpacity:0.7
+  }).addTo(layer);
+
+  m.on('click',()=>renderPanel(id));
+
+  markerCache.set(id,m);
  });
 
- document.getElementById('panel').innerHTML=out;
+ });
 }
 
 /* =========================
 EVENTS
 ========================= */
 
-map.on('moveend',()=>renderStops());
-map.on('zoomend',()=>renderStops());
+map.on('moveend',renderStops);
+map.on('zoomend',renderStops);
 
 function setView(){
  map.setView([47.59,19.04],12);
