@@ -1,10 +1,11 @@
-🚦 V12 “REAL GPS + GTFS + ROUTE ENGINE” 
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>V12 CONTROL ROOM CORE</title>
+<title>V12.2 OPERATOR CONSOLE</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
 body{
@@ -16,7 +17,7 @@ body{
 
 header{
     background:#111827;
-    padding:12px;
+    padding:10px;
     text-align:center;
     font-weight:bold;
     color:#38bdf8;
@@ -27,8 +28,9 @@ header{
     height:100vh;
 }
 
+/* LEFT */
 .left{
-    width:60%;
+    width:40%;
     display:flex;
     flex-direction:column;
     border-right:1px solid #1f2937;
@@ -64,29 +66,25 @@ button:hover{
     background:#0f172a;
     border:1px solid #1f2937;
     padding:10px;
-    border-radius:10px;
     margin-bottom:8px;
+    border-radius:10px;
 }
 
+/* RIGHT MAP */
 .right{
-    width:40%;
-    display:flex;
-    flex-direction:column;
+    width:60%;
 }
 
-.log{
-    flex:1;
-    padding:10px;
-    font-size:12px;
-    overflow:auto;
-    background:#0a0f1a;
+#map{
+    height:100%;
 }
-.badge{
-    display:inline-block;
-    padding:2px 6px;
-    background:#1f2937;
-    border-radius:6px;
-    font-size:11px;
+
+/* GPS PANEL */
+.gps{
+    font-size:12px;
+    background:#0a0f1a;
+    padding:8px;
+    border-top:1px solid #1f2937;
 }
 </style>
 </head>
@@ -94,37 +92,45 @@ button:hover{
 <body>
 
 <header>
-🚦 V12 REAL GPS + GTFS + ROUTE ENGINE CONTROL ROOM
+🟦 V12.2 REAL OPERATOR CONSOLE (GPS + GTFS + ROUTE + MAP)
 </header>
 
 <div class="container">
 
+<!-- LEFT -->
 <div class="left">
 
 <div class="panel">
-<button onclick="getGPS()">📍 GPS BEOLVASÁS</button>
+<button onclick="startGPS()">📍 LIVE GPS START</button>
 <button onclick="findNearest()">🧭 LEGKÖZELEBBI MEGÁLLÓ</button>
-<button onclick="routeTest()">🚦 ROUTE TEST (A → B)</button>
+<button onclick="routeDemo()">🚦 ROUTE DEMO</button>
 </div>
 
 <div class="list" id="list"></div>
 
+<div class="gps" id="gps">
+📡 GPS: waiting...
 </div>
 
+</div>
+
+<!-- MAP -->
 <div class="right">
-<div class="log" id="log"></div>
+<div id="map"></div>
 </div>
 
 </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
-// ---------------- LOG ----------------
-function log(m){
-    let el=document.getElementById("log");
-    el.innerHTML+=m+"<br>";
-    el.scrollTop=el.scrollHeight;
-}
+// ---------------- MAP INIT ----------------
+let map = L.map('map').setView([47.4979,19.0402], 11);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    maxZoom:19
+}).addTo(map);
 
 // ---------------- GTFS STOPS ----------------
 let STOPS=[
@@ -135,10 +141,11 @@ let STOPS=[
     {id:"NAD",name:"Nád utca",lat:47.5183,lon:19.0467}
 ];
 
-// ---------------- USER GPS ----------------
+// ---------------- USER ----------------
 let USER={
     lat:null,
-    lon:null
+    lon:null,
+    marker:null
 };
 
 // ---------------- DISTANCE ----------------
@@ -146,6 +153,7 @@ function dist(lat1,lon1,lat2,lon2){
     const R=6371;
     let dLat=(lat2-lat1)*Math.PI/180;
     let dLon=(lon2-lon1)*Math.PI/180;
+
     let a=
         Math.sin(dLat/2)**2 +
         Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
@@ -155,32 +163,47 @@ function dist(lat1,lon1,lat2,lon2){
 }
 
 // ---------------- GPS ----------------
-function getGPS(){
+function startGPS(){
 
     if(!navigator.geolocation){
-        log("❌ GPS nem támogatott");
+        alert("GPS nem támogatott");
         return;
     }
 
-    navigator.geolocation.getCurrentPosition(pos=>{
+    navigator.geolocation.watchPosition(pos=>{
 
         USER.lat=pos.coords.latitude;
         USER.lon=pos.coords.longitude;
 
-        log("📍 GPS OK:");
-        log("LAT: "+USER.lat);
-        log("LON: "+USER.lon);
+        document.getElementById("gps").innerHTML=
+        `📍 LAT: ${USER.lat}<br>📍 LON: ${USER.lon}`;
 
-    },err=>{
-        log("❌ GPS hiba");
+        // marker update
+        if(USER.marker){
+            map.removeLayer(USER.marker);
+        }
+
+        USER.marker=L.marker([USER.lat,USER.lon])
+        .addTo(map)
+        .bindPopup("YOU");
+
+        map.setView([USER.lat,USER.lon],13);
+
     });
 }
 
-// ---------------- NEAREST STOP ENGINE ----------------
+// ---------------- STOPS ON MAP ----------------
+STOPS.forEach(s=>{
+    L.marker([s.lat,s.lon])
+    .addTo(map)
+    .bindPopup(`${s.name} (${s.id})`);
+});
+
+// ---------------- NEAREST STOP ----------------
 function findNearest(){
 
     if(!USER.lat){
-        log("❌ nincs GPS adat");
+        alert("nincs GPS");
         return;
     }
 
@@ -195,35 +218,19 @@ function findNearest(){
         }
     });
 
-    log("🧭 LEGKÖZELEBBI MEGÁLLÓ:");
-    log("➡️ "+best.name+" ("+best.id+")");
-    log("📏 "+bestD.toFixed(2)+" km");
+    alert(`🧭 Legközelebbi: ${best.name} (${best.id})\n📏 ${bestD.toFixed(2)} km`);
 }
 
-// ---------------- ROUTE ENGINE (SIMPLE A→B) ----------------
-function routeTest(){
+// ---------------- ROUTE DEMO ----------------
+function routeDemo(){
 
-    let from=STOPS[0];
-    let to=STOPS[3];
-
-    log("🚦 ROUTE ENGINE:");
-    log("FROM: "+from.name);
-    log("TO: "+to.name);
+    let from=STOPS[3];
+    let to=STOPS[0];
 
     let d=dist(from.lat,from.lon,to.lat,to.lon);
 
-    log("📏 TÁVOLSÁG: "+d.toFixed(2)+" km");
-
-    if(d<5){
-        log("🟢 WALK / LOCAL ROUTE");
-    }else if(d<30){
-        log("🟡 BUS / REGIONAL");
-    }else{
-        log("🔴 LONG DISTANCE ROUTE");
-    }
+    alert(`🚦 ROUTE\n${from.name} → ${to.name}\n📏 ${d.toFixed(2)} km`);
 }
-
-log("🚀 V12 CONTROL ROOM CORE LOADED");
 
 </script>
 
