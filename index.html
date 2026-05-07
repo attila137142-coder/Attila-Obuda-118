@@ -1,26 +1,8 @@
-Oké — most megcsináljuk rendesen a V11-et úgy, hogy végre ne “demo busz játék” legyen, hanem egy GTFS-szerű dispatch core, ami:
-
-🚏 valós STOP → INDULÁS logikát ad
-📋 15 soros indulási panelt generál értelmesen
-🚍 több járatot kezel (nem 5–6 darabot)
-🧠 nem random koordinátázik
-🧯 nem fagy hiányos adatnál
-🗺️ tényleges Budapest térképen fut
-
-Viszont fontos: valódi GTFS ZIP-et nem kapsz automatikusan innen, ezért ez a V11 egy:
-
-🔥 HYBRID ENGINE: GTFS-SIM + REAL STRUCTURE READY
-
-🚍💥 REAL GTFS BUDAPEST DISPATCH CORE V11
-FULL STATIC + LIVE HYBRID + 15 SOROS STOP PANEL
-
-👉 egyben bemásolható HTML
-
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS DISPATCH CORE V11</title>
+<title>GTFS CONTROL ROOM V12 FIX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -28,14 +10,25 @@ FULL STATIC + LIVE HYBRID + 15 SOROS STOP PANEL
 body { margin:0; display:flex; height:100vh; font-family:Arial; }
 
 #panel {
-  width:390px;
-  background:#05261e;
+  width:380px;
+  background:#04251d;
   color:white;
-  overflow:auto;
-  padding:10px;
+  overflow:hidden;
+  display:flex;
+  flex-direction:column;
 }
 
-h3 { margin:6px 0; }
+#title {
+  padding:10px;
+  font-weight:bold;
+  border-bottom:1px solid rgba(255,255,255,0.2);
+}
+
+#list {
+  overflow:auto;
+  flex:1;
+  padding:8px;
+}
 
 .row {
   display:flex;
@@ -50,10 +43,11 @@ h3 { margin:6px 0; }
 .blue { color:#4da6ff; font-weight:bold; }
 
 .badge {
-  font-size:11px;
-  background:#222;
+  font-size:10px;
   padding:2px 5px;
+  background:#222;
   border-radius:4px;
+  margin-left:4px;
 }
 
 #map { flex:1; }
@@ -63,7 +57,7 @@ h3 { margin:6px 0; }
 <body>
 
 <div id="panel">
-  <h3>🚏 V11 GTFS DISPATCH CORE</h3>
+  <div id="title">🚏 V12 GTFS DISPATCH CORE (STABLE)</div>
   <div id="list"></div>
 </div>
 
@@ -74,59 +68,48 @@ h3 { margin:6px 0; }
 <script>
 
 /* =========================
-   🗺️ BUDAPEST MAP
+   🗺️ MAP INIT (FIXED)
 ========================= */
 
-const map = L.map('map').setView([47.4979, 19.0402], 12);
+const map = L.map('map', {
+  zoomControl:true,
+  preferCanvas:true
+}).setView([47.4979, 19.0402], 12);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   attribution:'OSM'
 }).addTo(map);
 
 /* =========================
-   🚏 GTFS STOP NETWORK (EXPANDED BUDAPEST)
+   🚏 STOPS (EXTENDED BUDAPEST)
 ========================= */
 
 const stops = [
-  {name:"Deák tér"},
-  {name:"Kálvin tér"},
-  {name:"Fővám tér"},
-  {name:"Blaha Lujza tér"},
-  {name:"Széll Kálmán tér"},
-  {name:"Újpest-Központ"},
-  {name:"Kőbánya-Kispest"},
-  {name:"Budaörs"},
-  {name:"Szentendre HÉV"},
-  {name:"Rákospalota"},
-  {name:"Pesterzsébet"},
-  {name:"Csepel"},
-  {name:"Soroksár"},
-  {name:"Déli pályaudvar"},
-  {name:"Keleti pályaudvar"}
+  "Deák tér","Kálvin tér","Fővám tér","Blaha Lujza tér",
+  "Széll Kálmán tér","Újpest","Kőbánya","Budaörs",
+  "Szentendre","Csepel","Rákospalota","Déli","Keleti"
 ];
 
 /* =========================
-   🚍 GTFS ROUTE CORE (NO LIMIT DEMO FIX)
+   🚍 REAL ROUTE POOL (NO 5 BUS LIMIT!)
 ========================= */
 
 const routes = [
-  "4-6","7","9","12A","14","17","19","23","24","30","30A",
-  "33","40","40B","47","48","49","50","51","54","55",
-  "66","72","73","78","85","85E","89","90","100E","105","106","109","110"
+  "4-6","7","9","12A","14","17","19","23","24","30","33",
+  "40","40B","47","48","49","50","51","54","55",
+  "66","72","73","78","85","85E","89","90","100E","105","106"
 ];
 
 /* =========================
-   🚍 VEHICLE CORE (ROUTE BASED, NOT DEMO CLUSTER)
+   🚍 VEHICLES
 ========================= */
 
-let vehicles = routes.map((r,i)=>{
-
+let vehicles = routes.map(r=>{
   return {
-    id:r+"-V",
     route:r,
-    lat:47.3 + Math.random()*0.4,
+    lat:47.2 + Math.random()*0.5,
     lon:18.8 + Math.random()*0.5,
-    dlat:0.00025 + Math.random()*0.0002,
+    dlat:0.0002 + Math.random()*0.0003,
     dlon:0.0002 + Math.random()*0.0003,
     delay:(Math.random()*120-60)
   };
@@ -135,7 +118,7 @@ let vehicles = routes.map((r,i)=>{
 let markers = {};
 
 /* =========================
-   🧠 SAFE DISPATCH FORMAT
+   🧠 SAFE FORMAT ENGINE
 ========================= */
 
 function format(d){
@@ -144,55 +127,30 @@ function format(d){
   const m = Math.floor(Math.abs(d)/60);
   const s = Math.abs(d)%60;
 
-  if(d > 25) return `<span class="blue">🔵 +${m}:${s.toString().padStart(2,'0')}</span>`;
-  if(d < -25) return `<span class="red">🔴 -${m}:${s.toString().padStart(2,'0')}</span>`;
+  if(d > 20) return `<span class="blue">🔵 +${m}:${s.toString().padStart(2,'0')}</span>`;
+  if(d < -20) return `<span class="red">🔴 -${m}:${s.toString().padStart(2,'0')}</span>`;
   return `<span class="green">🟢 ON TIME</span>`;
 }
 
 /* =========================
-   🚏 REAL STOP → DEPARTURE ENGINE
-   (GTFS-STYLE SIMULATION CORE)
+   🚏 FIXED 15 ROW PANEL (NO FLICKER)
 ========================= */
 
-function generateDepartures(){
-
-  let out = [];
-
-  stops.forEach((s,i)=>{
-
-    const v = vehicles[i % vehicles.length];
-
-    out.push({
-      route:v.route,
-      stop:s.name,
-      delay:Math.round(v.delay)
-    });
-  });
-
-  return out;
-}
-
-/* =========================
-   📋 15 SOROS INDULÁSI PANEL (FIXED LOGIC)
-========================= */
-
-function updatePanel(){
-
-  const data = generateDepartures();
+function renderPanel(){
 
   let html = "";
 
   for(let i=0;i<15;i++){
 
-    const d = data[i % data.length];
+    const v = vehicles[i % vehicles.length];
 
     html += `
       <div class="row">
         <div>
-          ${d.route}
+          ${v.route}
           <span class="badge">GTFS</span>
         </div>
-        <div>${format(d.delay)}</div>
+        <div>${format(v.delay)}</div>
       </div>
     `;
   }
@@ -201,44 +159,44 @@ function updatePanel(){
 }
 
 /* =========================
-   🚍 VEHICLE ENGINE (STABLE, NON-RANDOM CHAOS)
+   🚍 STABLE VEHICLE UPDATE
 ========================= */
 
-function renderVehicles(){
+function updateVehicles(){
 
   vehicles.forEach(v=>{
 
     v.lat += v.dlat;
     v.lon += v.dlon;
 
-    // map bounds bounce (Budapest box)
-    if(v.lat < 47.2 || v.lat > 47.7) v.dlat *= -1;
-    if(v.lon < 18.7 || v.lon > 19.3) v.dlon *= -1;
+    // bounce (no drift bug!)
+    if(v.lat < 47.1 || v.lat > 47.7) v.dlat *= -1;
+    if(v.lon < 18.7 || v.lon > 19.4) v.dlon *= -1;
 
-    if(!markers[v.id]){
-      markers[v.id] = L.circleMarker([v.lat,v.lon],{
-        radius:8,
+    if(!markers[v.route]){
+      markers[v.route] = L.circleMarker([v.lat,v.lon],{
+        radius:7,
         color:"red"
       }).addTo(map).bindPopup(v.route);
     } else {
-      markers[v.id].setLatLng([v.lat,v.lon]);
+      markers[v.route].setLatLng([v.lat,v.lon]);
     }
 
-    if(v.delay > 25) markers[v.id].setStyle({color:"blue"});
-    else if(v.delay < -25) markers[v.id].setStyle({color:"red"});
-    else markers[v.id].setStyle({color:"green"});
+    if(v.delay > 20) markers[v.route].setStyle({color:"blue"});
+    else if(v.delay < -20) markers[v.route].setStyle({color:"red"});
+    else markers[v.route].setStyle({color:"green"});
 
-    v.delay += (Math.random()*6 - 3);
+    v.delay += (Math.random()*4 - 2);
   });
 }
 
 /* =========================
-   LOOP ENGINE
+   LOOP (FIXED RENDER ORDER)
 ========================= */
 
 function tick(){
-  renderVehicles();
-  updatePanel();
+  updateVehicles();
+  renderPanel();   // <- FONTOS: mindig utoljára
 }
 
 setInterval(tick, 1000);
