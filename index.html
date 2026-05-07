@@ -2,211 +2,135 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Óbuda–Szentendre GTFS CORE V1</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
-<style>
-body { margin:0; display:flex; height:100vh; font-family:Arial; }
-
-#panel {
-  width:360px;
-  background:#031a17;
-  color:white;
-  display:flex;
-  flex-direction:column;
-}
-
-#header {
-  padding:10px;
-  font-weight:bold;
-  border-bottom:1px solid rgba(255,255,255,0.2);
-}
-
-#upload {
-  margin:8px;
-}
-
-#list {
-  flex:1;
-  overflow:auto;
-  padding:8px;
-}
-
-.row {
-  display:flex;
-  justify-content:space-between;
-  padding:6px;
-  font-size:13px;
-  border-bottom:1px solid rgba(255,255,255,0.08);
-}
-
-.badge {
-  font-size:10px;
-  background:#222;
-  padding:2px 5px;
-  border-radius:4px;
-}
-
-.green { color:#7CFF7C; }
-.red { color:#ff4d4d; }
-.blue { color:#4da6ff; }
-
-#map { flex:1; }
-</style>
+<title>GTFS CORE ENGINE V1</title>
 </head>
 
 <body>
+<input type="file" id="file" accept=".zip">
+<pre id="out">GTFS CORE ENGINE READY</pre>
 
-<div id="panel">
-  <div id="header">🚍 Óbuda–Szentendre GTFS CORE V1</div>
-
-  <input type="file" id="upload" accept=".zip">
-
-  <div id="list"></div>
-</div>
-
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 
-/* 🗺️ MAP */
-const map = L.map('map').setView([47.57,19.05],11);
+/* =========================
+   🧠 CORE STORAGE
+========================= */
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'OSM'
-}).addTo(map);
+let GTFS = {
+  stops: [],
+  trips: [],
+  stop_times: []
+};
 
-/* 💾 CACHE */
-function openDB(){
-  return new Promise(r=>{
-    const req = indexedDB.open("gtfs_core_v1",1);
-    req.onupgradeneeded = e=>{
-      e.target.result.createObjectStore("data");
-    };
-    req.onsuccess = ()=>r(req.result);
+let INDEX = {}; // stop_id → departures
+
+/* =========================
+   📦 CSV PARSER
+========================= */
+
+function parseCSV(text){
+
+  const lines = text.trim().split("\n");
+  const headers = lines[0].split(",");
+
+  return lines.slice(1).map(line=>{
+    const obj = {};
+    const cols = line.split(",");
+
+    headers.forEach((h,i)=>{
+      obj[h] = cols[i];
+    });
+
+    return obj;
   });
 }
 
-async function save(k,v){
-  const db = await openDB();
-  db.transaction("data","readwrite").objectStore("data").put(v,k);
-}
+/* =========================
+   🧠 INDEX BUILDER (CORE LOGIC)
+========================= */
 
-async function load(k){
-  const db = await openDB();
-  return new Promise(r=>{
-    const req = db.transaction("data").objectStore("data").get(k);
-    req.onsuccess = ()=>r(req.result);
+function buildIndex(){
+
+  INDEX = {};
+
+  GTFS.stop_times.forEach(st=>{
+
+    if(!INDEX[st.stop_id]) INDEX[st.stop_id] = [];
+
+    INDEX[st.stop_id].push({
+      trip: st.trip_id,
+      time: st.departure_time
+    });
   });
+
+  console.log("INDEX READY", INDEX);
 }
 
-/* 📦 DATA */
-let STOPS=[], TRIPS=[], STOP_TIMES=[];
+/* =========================
+   ⏱ TIME ENGINE
+========================= */
 
-/* 📥 IMPORT GTFS ZIP */
-document.getElementById("upload").onchange = async e=>{
+function toSec(t){
+
+  if(!t) return 0;
+
+  const p = t.split(":");
+  return (+p[0])*3600 + (+p[1])*60 + (+p[2]||0);
+}
+
+function nowSec(){
+
+  const d = new Date();
+  return d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds();
+}
+
+/* =========================
+   🚏 CORE API (THIS IS THE POINT)
+========================= */
+
+function getDepartures(stop_id){
+
+  const list = INDEX[stop_id] || [];
+  const now = nowSec();
+
+  return list.map(d=>({
+
+    trip: d.trip,
+    time: d.time,
+    diff: toSec(d.time) - now
+
+  })).sort((a,b)=>a.diff-b.diff);
+}
+
+/* =========================
+   📦 GTFS LOADER (ZIP)
+========================= */
+
+document.getElementById("file").addEventListener("change", async e=>{
 
   const zip = await JSZip.loadAsync(e.target.files[0]);
 
-  STOPS = parse(await zip.file("stops.txt").async("string"));
-  TRIPS = parse(await zip.file("trips.txt").async("string"));
-  STOP_TIMES = parse(await zip.file("stop_times.txt").async("string"));
+  const stops = await zip.file("stops.txt").async("string");
+  const trips = await zip.file("trips.txt").async("string");
+  const stop_times = await zip.file("stop_times.txt").async("string");
 
-  await save("stops",STOPS);
-  await save("trips",TRIPS);
-  await save("stop_times",STOP_TIMES);
+  GTFS.stops = parseCSV(stops);
+  GTFS.trips = parseCSV(trips);
+  GTFS.stop_times = parseCSV(stop_times);
 
-  init();
-};
+  buildIndex();
 
-/* CSV PARSE */
-function parse(t){
+  document.getElementById("out").innerText =
+    "GTFS LOADED\nSTOPS: "+GTFS.stops.length+
+    "\nTRIPS: "+GTFS.trips.length+
+    "\nSTOP_TIMES: "+GTFS.stop_times.length;
 
-  const lines = t.trim().split("\n");
-  const h = lines[0].split(",");
+  /* DEMO CALL (NO UI YET) */
+  console.log(getDepartures(GTFS.stop_times[0].stop_id));
 
-  return lines.slice(1).map(l=>{
-    const o={};
-    l.split(",").forEach((v,i)=>o[h[i]]=v);
-    return o;
-  });
-}
-
-/* 🧭 GRAPH */
-function build(){
-
-  const g={};
-
-  STOP_TIMES.forEach(s=>{
-    if(!g[s.stop_id]) g[s.stop_id]=[];
-    g[s.stop_id].push(s);
-  });
-
-  return g;
-}
-
-/* 📋 PANEL */
-function panel(graph){
-
-  let html="";
-
-  Object.keys(graph).slice(0,15).forEach(k=>{
-
-    const d=graph[k][0];
-
-    html+=`
-      <div class="row">
-        <div>${d.trip_id}<span class="badge">GTFS</span></div>
-        <div>${d.stop_id}</div>
-        <div class="green">${d.departure_time}</div>
-      </div>
-    `;
-  });
-
-  document.getElementById("list").innerHTML=html;
-}
-
-/* 🗺️ STOPS */
-let markers={};
-
-function draw(){
-
-  STOPS.forEach(s=>{
-
-    if(!s.stop_lat) return;
-
-    if(!markers[s.stop_id]){
-
-      markers[s.stop_id]=L.circleMarker([s.stop_lat,s.stop_lon],{
-        radius:6,
-        color:"#00ff88"
-      }).addTo(map).bindPopup(s.stop_name);
-    }
-  });
-}
-
-/* INIT */
-async function init(){
-
-  const cached = await load("stops");
-
-  if(cached){
-    STOPS=cached;
-    TRIPS=await load("trips")||[];
-    STOP_TIMES=await load("stop_times")||[];
-  }
-
-  const graph=build();
-
-  draw();
-  panel(graph);
-}
+});
 
 </script>
-
 </body>
 </html>
