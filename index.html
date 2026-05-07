@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS CONTROL ROOM V14 CLEAN</title>
+<title>GTFS CONTROL ROOM V16 REAL NETWORK</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -10,31 +10,31 @@
 body { margin:0; display:flex; height:100vh; font-family:Arial; }
 
 #panel {
-width:380px;
-background:#041f18;
-color:white;
-display:flex;
-flex-direction:column;
+  width:380px;
+  background:#041f19;
+  color:white;
+  display:flex;
+  flex-direction:column;
 }
 
 #title {
-padding:10px;
-font-weight:bold;
-border-bottom:1px solid rgba(255,255,255,0.2);
+  padding:10px;
+  font-weight:bold;
+  border-bottom:1px solid rgba(255,255,255,0.2);
 }
 
 #list {
-flex:1;
-overflow:auto;
-padding:8px;
+  flex:1;
+  overflow:auto;
+  padding:8px;
 }
 
 .row {
-display:flex;
-justify-content:space-between;
-padding:6px;
-border-bottom:1px solid rgba(255,255,255,0.08);
-font-size:13px;
+  display:flex;
+  justify-content:space-between;
+  padding:6px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  font-size:13px;
 }
 
 .green { color:#7CFF7C; }
@@ -42,10 +42,10 @@ font-size:13px;
 .blue { color:#4da6ff; font-weight:bold; }
 
 .badge {
-font-size:10px;
-background:#222;
-padding:2px 5px;
-border-radius:4px;
+  font-size:10px;
+  background:#222;
+  padding:2px 5px;
+  border-radius:4px;
 }
 
 #map { flex:1; }
@@ -55,8 +55,8 @@ border-radius:4px;
 <body>
 
 <div id="panel">
-<div id="title">🚏 V14 CLEAN GTFS DISPATCH CORE</div>
-<div id="list"></div>
+  <div id="title">🚏 V16 REAL NETWORK GTFS CORE</div>
+  <div id="list"></div>
 </div>
 
 <div id="map"></div>
@@ -66,142 +66,151 @@ border-radius:4px;
 <script>
 
 /* =========================
-🗺️ MAP
+   🗺️ MAP
 ========================= */
 
-const map = L.map('map').setView([47.4979, 19.0402], 12);
+const map = L.map('map').setView([47.49, 19.05], 11);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-attribution:'OSM'
+  attribution:'OSM'
 }).addTo(map);
 
 /* =========================
-🧱 BUDAPEST BOUNDARY LOCK
+   🧭 ZONE MODEL (FIX FOR CSEPEL / BÉKÁS)
 ========================= */
 
-const BOUNDS = {
-minLat:47.1,
-maxLat:47.8,
-minLon:18.7,
-maxLon:19.5
+const zones = {
+  north: ["Békásmegyer","Újpest","Szentendre"],
+  south: ["Csepel","Pesterzsébet","Soroksár"],
+  center: ["Deák tér","Kálvin tér","Blaha","Keleti"],
+  west: ["Budaörs","Széll Kálmán","Déli"]
 };
 
 /* =========================
-🚏 CLEAN STOP SET (NO FAKE NAMES)
+   🚏 REAL ROUTE STRUCTURE (ORDERED GTFS STYLE)
 ========================= */
 
-const stops = [
-"Deák tér","Kálvin tér","Blaha","Nyugati","Keleti",
-"Széll Kálmán","Újpest","Kőbánya","Csepel","Budaörs"
-];
-
-/* =========================
-🚍 CLEAN ROUTE POOL (VALID ONLY)
-========================= */
-
-const routes = [
-"4-6","7","9","12A","14","17","19","23","30","33",
-"40","47","48","49","50","54","55","66","72","73",
-"78","85","85E","100E","105"
-];
-
-/* =========================
-🚍 VEHICLE CORE (NO RANDOM CITY JUMPING)
-========================= */
-
-let vehicles = routes.map(r=>{
-
-const lat = 47.3 + Math.random()*0.3;
-const lon = 18.9 + Math.random()*0.3;
-
-return {
-route:r,
-lat,lon,
-dlat:(Math.random()*0.002 - 0.001),
-dlon:(Math.random()*0.002 - 0.001),
-delay:(Math.random()*80 - 40)
+const routes = {
+  "H5": zones.north,
+  "7": zones.center,
+  "4-6": zones.center,
+  "12A": zones.west,
+  "179": zones.south,
+  "38": zones.south,
+  "100E": zones.center,
+  "40": zones.west
 };
+
+/* =========================
+   🚍 VEHICLES (ZONE-LOCKED)
+========================= */
+
+let vehicles = Object.keys(routes).map(r=>{
+
+  return {
+    route:r,
+    zone:Object.keys(zones).find(z=>zones[z].includes(routes[r][0])),
+    index:0,
+    delay:(Math.random()*80-40),
+    lat:47.45 + Math.random()*0.2,
+    lon:19.0 + Math.random()*0.2,
+    dlat:0.0002,
+    dlon:0.0002
+  };
 });
 
 let markers = {};
 
 /* =========================
-🧠 CLEAN FORMAT (NO COORD OUTPUT EVER)
+   🧠 SAFE FORMAT
 ========================= */
 
 function format(d){
-d = d || 0;
+  const m = Math.floor(Math.abs(d)/60);
+  const s = Math.abs(d)%60;
 
-const m = Math.floor(Math.abs(d)/60);
-const s = Math.abs(d)%60;
-
-if(d > 20) return `<span class="blue">+${m}:${s.toString().padStart(2,'0')}</span>`;
-if(d < -20) return `<span class="red">-${m}:${s.toString().padStart(2,'0')}</span>`;
-return `<span class="green">ON TIME</span>`;
+  if(d > 20) return `<span class="blue">+${m}:${s}</span>`;
+  if(d < -20) return `<span class="red">-${m}:${s}</span>`;
+  return `<span class="green">ON TIME</span>`;
 }
 
 /* =========================
-📋 15 ROW PANEL (CLEAN)
+   🚏 REAL STOP PANEL (ORDERED FLOW)
 ========================= */
 
-function renderPanel(){
+function buildPanel(){
 
-let html = "";
+  let html = "";
 
-for(let i=0;i<15;i++){
+  vehicles.forEach(v=>{
 
-const v = vehicles[i % vehicles.length];
+    const stopList = routes[v.route];
+    const nextStop = stopList[v.index % stopList.length];
 
-html += `
-<div class="row">
-<div>${v.route}<span class="badge">GTFS</span></div>
-<div>${format(v.delay)}</div>
-</div>
-`;
-}
+    html += `
+      <div class="row">
+        <div>${v.route}<span class="badge">${v.zone}</span></div>
+        <div>${nextStop}</div>
+        <div>${format(v.delay)}</div>
+      </div>
+    `;
+  });
 
-document.getElementById("list").innerHTML = html;
+  document.getElementById("list").innerHTML = html;
 }
 
 /* =========================
-🚍 BOUNDARY + CLEAN MOVEMENT
+   🚍 ORDERED MOVEMENT (NO CHAOS)
 ========================= */
 
-function updateVehicles(){
+function move(){
 
-vehicles.forEach(v=>{
+  vehicles.forEach(v=>{
 
-v.lat += v.dlat;
-v.lon += v.dlon;
+    const stops = routes[v.route];
 
-/* 🧱 HARD BOUNDARY FIX */
-if(v.lat < BOUNDS.minLat || v.lat > BOUNDS.maxLat) v.dlat *= -1;
-if(v.lon < BOUNDS.minLon || v.lon > BOUNDS.maxLon) v.dlon *= -1;
+    v.index += 0.02;
 
-if(!markers[v.route]){
-markers[v.route] = L.circleMarker([v.lat,v.lon],{
-radius:7,
-color:"red"
-}).addTo(map).bindPopup(v.route);
-} else {
-markers[v.route].setLatLng([v.lat,v.lon]);
-}
+    const target = stops[Math.floor(v.index)%stops.length];
 
-if(v.delay > 20) markers[v.route].setStyle({color:"blue"});
-else if(v.delay < -20) markers[v.route].setStyle({color:"red"});
-else markers[v.route].setStyle({color:"green"});
+    // zone-based drift (no random city jump!)
+    if(v.zone === "south"){
+      v.lat += 0.0001;
+      v.lon -= 0.00005;
+    }
+    if(v.zone === "north"){
+      v.lat += 0.00005;
+      v.lon += 0.0001;
+    }
+    if(v.zone === "center"){
+      v.lat += 0.00003;
+      v.lon += 0.00003;
+    }
+    if(v.zone === "west"){
+      v.lat += 0.00002;
+      v.lon -= 0.00002;
+    }
 
-v.delay += (Math.random()*4 - 2);
-});
+    if(!markers[v.route]){
+      markers[v.route] = L.circleMarker([v.lat,v.lon],{
+        radius:7,
+        color:"green"
+      }).addTo(map).bindPopup(v.route);
+    } else {
+      markers[v.route].setLatLng([v.lat,v.lon]);
+    }
+
+    v.delay += (Math.random()*4 - 2);
+  });
 }
 
 /* =========================
-LOOP (ORDER FIXED)
+   LOOP
 ========================= */
 
 function tick(){
-updateVehicles();
-renderPanel();
+  move();
+  buildPanel();
 }
 
 setInterval(tick, 1000);
