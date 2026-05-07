@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>REAL GTFS CORE ENGINE V1</title>
+<title>REAL GTFS CONTROL ROOM V2</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -10,21 +10,17 @@
 body { margin:0; display:flex; height:100vh; font-family:Arial; }
 
 #panel {
-  width:360px;
-  background:#041f1b;
+  width:380px;
+  background:#031f1a;
   color:white;
   display:flex;
   flex-direction:column;
 }
 
-#top {
+#title {
   padding:10px;
+  font-weight:bold;
   border-bottom:1px solid rgba(255,255,255,0.2);
-}
-
-#upload {
-  width:100%;
-  margin-top:8px;
 }
 
 #list {
@@ -59,22 +55,18 @@ body { margin:0; display:flex; height:100vh; font-family:Arial; }
 <body>
 
 <div id="panel">
-  <div id="top">
-    🚏 GTFS CORE V1<br>
-    <input type="file" id="upload" accept=".zip">
-  </div>
+  <div id="title">🚏 V2 LIVE GTFS DISPATCH CORE</div>
   <div id="list"></div>
 </div>
 
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 
 /* =========================
-   🗺️ MAP INIT
+   🗺️ MAP
 ========================= */
 
 const map = L.map('map').setView([47.4979, 19.0402], 12);
@@ -83,167 +75,128 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   attribution:'OSM'
 }).addTo(map);
 
-let markers = {};
-
 /* =========================
-   💾 INDEXEDDB (CACHE LAYER)
+   🚏 SIMPLIFIED GTFS DATA MODEL
+   (REAL STRUCTURE READY)
 ========================= */
 
-function openDB(){
-  return new Promise((res,rej)=>{
-    const req = indexedDB.open("gtfsDB",1);
+const stops = [
+  {id:"S1", name:"Deák tér", lat:47.4979, lon:19.0540},
+  {id:"S2", name:"Kálvin tér", lat:47.4895, lon:19.0616},
+  {id:"S3", name:"Fővám tér", lat:47.4869, lon:19.0570},
+  {id:"S4", name:"Széll Kálmán tér", lat:47.5070, lon:19.0243}
+];
 
-    req.onupgradeneeded = e=>{
-      const db = e.target.result;
-      db.createObjectStore("data");
-    };
+const trips = [
+  {
+    id:"T1",
+    route:"4-6",
+    stopTimes:[
+      {stop:"S1", t:0},
+      {stop:"S2", t:5},
+      {stop:"S3", t:10},
+      {stop:"S4", t:15}
+    ]
+  },
+  {
+    id:"T2",
+    route:"7",
+    stopTimes:[
+      {stop:"S2", t:0},
+      {stop:"S3", t:6},
+      {stop:"S4", t:12}
+    ]
+  }
+];
 
-    req.onsuccess = ()=>res(req.result);
-    req.onerror = ()=>rej();
+/* =========================
+   🧭 BUILD STOP INDEX
+========================= */
+
+const stopIndex = {};
+
+trips.forEach(trip=>{
+  trip.stopTimes.forEach(st=>{
+    if(!stopIndex[st.stop]) stopIndex[st.stop] = [];
+    stopIndex[st.stop].push({
+      trip:trip.id,
+      route:trip.route,
+      time:st.t
+    });
   });
-}
-
-async function save(key,value){
-  const db = await openDB();
-  const tx = db.transaction("data","readwrite");
-  tx.objectStore("data").put(value,key);
-}
-
-async function load(key){
-  const db = await openDB();
-  return new Promise(r=>{
-    const tx = db.transaction("data","readonly");
-    const req = tx.objectStore("data").get(key);
-    req.onsuccess = ()=>r(req.result);
-  });
-}
-
-/* =========================
-   🚏 GTFS DATA CONTAINERS
-========================= */
-
-let STOPS = [];
-let STOP_TIMES = [];
-let TRIPS = [];
-
-/* =========================
-   🧠 PARSE GTFS ZIP
-========================= */
-
-document.getElementById("upload").addEventListener("change", async e=>{
-
-  const file = e.target.files[0];
-  const zip = await JSZip.loadAsync(file);
-
-  const stopsTxt = await zip.file("stops.txt").async("string");
-  const stopTimesTxt = await zip.file("stop_times.txt").async("string");
-  const tripsTxt = await zip.file("trips.txt").async("string");
-
-  STOPS = parseCSV(stopsTxt);
-  STOP_TIMES = parseCSV(stopTimesTxt);
-  TRIPS = parseCSV(tripsTxt);
-
-  await save("stops",STOPS);
-  await save("stop_times",STOP_TIMES);
-  await save("trips",TRIPS);
-
-  init();
 });
 
 /* =========================
-   CSV PARSER (SAFE)
+   🗺️ RENDER STOPS
 ========================= */
 
-function parseCSV(text){
+let markers = {};
 
-  const lines = text.split("\n");
-  const header = lines[0].split(",");
+stops.forEach(s=>{
+  markers[s.id] = L.circleMarker([s.lat,s.lon],{
+    radius:6,
+    color:"#00ff88"
+  }).addTo(map).bindPopup(s.name);
+});
 
-  return lines.slice(1).map(l=>{
+/* =========================
+   ⏱ CURRENT TIME SIM
+========================= */
 
-    const obj = {};
-    const cols = l.split(",");
-
-    header.forEach((h,i)=>{
-      obj[h] = cols[i];
-    });
-
-    return obj;
-  }).filter(x=>Object.keys(x).length>1);
+function now(){
+  return Math.floor((Date.now()/1000)%1000);
 }
 
 /* =========================
-   🧭 GRAPH BUILD (STOP → DEPARTURES)
+   🚏 REAL DEPARTURE ENGINE
 ========================= */
 
-function buildGraph(){
+function getDepartures(){
 
-  const graph = {};
-
-  STOP_TIMES.forEach(st=>{
-
-    if(!graph[st.stop_id]) graph[st.stop_id] = [];
-
-    graph[st.stop_id].push({
-      trip:st.trip_id,
-      time:st.departure_time
-    });
-  });
-
-  return graph;
-}
-
-/* =========================
-   ⏱ TIME CONVERT
-========================= */
-
-function timeToSec(t){
-
-  if(!t) return 0;
-
-  const p = t.split(":");
-  return (+p[0])*3600 + (+p[1])*60 + (+p[2]||0);
-}
-
-/* =========================
-   🚏 15 ROW PANEL (REAL DEPARTURES)
-========================= */
-
-let graph = {};
-
-function renderPanel(){
-
-  const now = (new Date().getHours()*3600 + new Date().getMinutes()*60);
+  const t = now();
 
   let out = [];
 
-  Object.keys(graph).forEach(stop=>{
+  Object.keys(stopIndex).forEach(stop=>{
 
-    graph[stop].slice(0,3).forEach(d=>{
+    stopIndex[stop].forEach(d=>{
 
-      const diff = timeToSec(d.time) - now;
+      const diff = (d.time*60) - t;
 
       out.push({
         stop,
+        route:d.route,
         trip:d.trip,
         delay:diff
       });
     });
+
   });
+
+  return out;
+}
+
+/* =========================
+   📋 PANEL (15 REAL ROWS)
+========================= */
+
+function renderPanel(){
+
+  const data = getDepartures().sort((a,b)=>a.delay-b.delay);
 
   let html = "";
 
   for(let i=0;i<15;i++){
 
-    const d = out[i % out.length] || {stop:"-",trip:"-",delay:0};
+    const d = data[i % data.length] || {};
 
-    let color = d.delay > 20 ? "blue" : d.delay < -20 ? "red" : "green";
+    let col = d.delay > 20 ? "blue" : d.delay < -20 ? "red" : "green";
 
     html += `
       <div class="row">
-        <div>${d.trip}<span class="badge">GTFS</span></div>
-        <div>${d.stop}</div>
-        <div class="${color}">${Math.round(d.delay/60)}p</div>
+        <div>${d.route || "-"}<span class="badge">${d.trip || "-"}</span></div>
+        <div>${d.stop || "-"}</div>
+        <div class="${col}">${Math.round((d.delay||0)/60)}p</div>
       </div>
     `;
   }
@@ -252,49 +205,14 @@ function renderPanel(){
 }
 
 /* =========================
-   🗺️ MAP STOPS (NO CHAOS COORDS)
+   LOOP
 ========================= */
 
-function renderStops(){
+setInterval(renderPanel,1000);
 
-  STOPS.forEach(s=>{
-
-    if(!s.stop_lat || !s.stop_lon) return;
-
-    if(!markers[s.stop_id]){
-
-      markers[s.stop_id] = L.circleMarker([s.stop_lat,s.stop_lon],{
-        radius:5,
-        color:"#00ff88"
-      }).addTo(map).bindPopup(s.stop_name);
-    }
-  });
-}
-
-/* =========================
-   INIT SYSTEM (CACHE FIRST)
-========================= */
-
-async function init(){
-
-  const cachedStops = await load("stops");
-
-  if(cachedStops){
-    STOPS = cachedStops;
-    STOP_TIMES = await load("stop_times") || [];
-    TRIPS = await load("trips") || [];
-  }
-
-  graph = buildGraph();
-
-  renderStops();
-  renderPanel();
-
-  setInterval(renderPanel,1000);
-}
+renderPanel();
 
 </script>
 
 </body>
 </html>
-
