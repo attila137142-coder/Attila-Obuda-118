@@ -1,182 +1,204 @@
+REAL MATRIX ENGINE V2 + HYBRID CORE
+
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
+<title>ATTILA DISPATCHER V2 – MATRIX</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ATTILA ULTRA SMART SEARCH + AUTO GTFS LOADER</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body { font-family: Arial; background:#0b1220; color:white; padding:15px }
-h1 { margin-bottom:10px }
-button { padding:10px; border:none; border-radius:8px; margin:5px; background:#22c55e; color:white; font-weight:bold }
-input { padding:10px; border-radius:8px; width:80% }
-.card { background:#1e293b; padding:10px; border-radius:10px; margin-top:10px }
-.small { font-size:12px; opacity:0.7 }
-.warn { color:#f87171 }
-.ok { color:#22c55e }
-</style>
+body { margin:0; font-family:Arial; display:flex; }
 
+#sidebar{
+  width:360px;
+  border-right:1px solid #ddd;
+  overflow:auto;
+}
+
+#map{ flex:1; height:100vh; }
+
+.stop{
+  padding:8px;
+  border-bottom:1px solid #eee;
+  cursor:pointer;
+}
+.stop:hover{ background:#f0f0f0; }
+
+#panel{
+  padding:0;
+}
+
+/* ===== MATRIX ===== */
+.matrix{
+  width:100%;
+  background:black;
+  color:#00ff66;
+  font-family: "Courier New", monospace;
+  padding:10px;
+  box-sizing:border-box;
+}
+
+.row{
+  display:flex;
+  justify-content:space-between;
+  border-bottom:1px solid #003300;
+  padding:8px 0;
+  font-size:18px;
+}
+
+.line{ width:80px; font-weight:bold; }
+.dest{ flex:1; }
+.time{ width:80px; text-align:right; }
+.delay{ width:80px; text-align:right; }
+
+.blink{
+  animation:blink 1s infinite;
+}
+@keyframes blink{
+  50%{opacity:0.2;}
+}
+</style>
 </head>
+
 <body>
 
-<h1>🧠 ULTRA SMART SEARCH + AUTO GTFS LOADER</h1>
+<div id="sidebar">
+<h3>🟢 MATRIX DISPATCH</h3>
+<input id="search" placeholder="Keresés...">
+<div id="list"></div>
+<div id="panel">Válassz megállót</div>
+</div>
 
-<input type="file" id="zipInput" accept=".zip">
-<button onclick="loadZIP()">📦 GTFS ZIP betöltés</button>
-<button onclick="getLocation()">📍 Saját helyzet</button>
+<div id="map"></div>
 
-<br><br>
-<input id="q" placeholder="Keresés (pl: nad utca, hidfo)" />
-<button onclick="search()">🔍 KERESÉS</button>
-
-<div id="me"></div>
-<div id="out"></div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script>
 
-let STOPS=[];
-let MY={lat:null,lon:null};
+// ===== MAP =====
+const map = L.map('map').setView([47.6,19.05],10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-// 📍 HELYZET + CÍM
-async function getLocation(){
+// ===== ADATOK (RÖVIDÍTETT – IDE TELJES LISTA) =====
+const STOPS = [
+{name:"Nád utca", gtfs:"BKK-F00457", lat:47.594072, lon:19.048469},
+{name:"Bojtár utca (kifelé)", gtfs:"BKK-F00520", lat:47.560099, lon:19.024711},
+{name:"Szentendre, Autóbusz-állomás", gtfs:"VOLÁN-778806-99", lat:47.660403, lon:19.075408},
 
-  navigator.geolocation.getCurrentPosition(async pos=>{
+// Gyermekvasút
+{line:"Gyermekvasút", name:"Széchenyi-hegy", lat:47.5007, lon:18.9653, mav_id:"005546912"},
+{line:"Gyermekvasút", name:"Hűvösvölgy", lat:47.5412, lon:18.9640, mav_id:"005546847"}
+];
 
-    let lat=pos.coords.latitude;
-    let lon=pos.coords.longitude;
-    let acc=pos.coords.accuracy;
+// ===== TYPE =====
+function getType(s){
+  if(s.gtfs?.includes("BKK")) return "bkk";
+  if(s.gtfs?.includes("VOLÁN")||s.gtfs?.includes("VOLAN")) return "volan";
+  if(s.line==="Gyermekvasút") return "child";
+  return "other";
+}
 
-    let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-    let data=await res.json();
+// ===== MATRIX ENGINE =====
+function showMatrix(stop){
 
-    let a=data.address||{};
+  const now = new Date();
+  const baseMin = now.getMinutes();
 
-    document.getElementById("me").innerHTML=`
-      <div class='card'>
-      📍 ${lat.toFixed(6)}, ${lon.toFixed(6)}<br>
-      🌍 ${a.country||"-"}<br>
-      🏙 ${a.city||a.town||a.village||"-"}<br>
-      🏠 ${a.road||"-"} ${a.house_number||""}<br>
-      🎯 ±${Math.round(acc)} m
-      </div>`;
+  // DEMO → később GTFS
+  const data = [
+    {line:"34", dest:"Békásmegyer", min:2, delay:-1},
+    {line:"134", dest:"Szentendre", min:5, delay:+2},
+    {line:"H5", dest:"Batthyány tér", min:8, delay:0}
+  ];
 
-    MY.lat=lat; MY.lon=lon;
+  let html = `<div class="matrix">`;
+  html += `<h3>🚏 ${stop.name}</h3>`;
 
+  data.forEach(d=>{
+
+    let delayTxt="";
+    if(d.delay>0) delayTxt=`+${d.delay}p`;
+    if(d.delay<0) delayTxt=`-${Math.abs(d.delay)}p`;
+
+    html += `
+      <div class="row">
+        <div class="line">${d.line}</div>
+        <div class="dest">${d.dest}</div>
+        <div class="time ${d.min<=2?"blink":""}">
+          ${d.min} p
+        </div>
+        <div class="delay">${delayTxt}</div>
+      </div>
+    `;
+  });
+
+  html += `</div>`;
+
+  // opcionális: BKK embed gomb
+  if(getType(stop)==="bkk"){
+    const id = stop.gtfs.match(/F\d+/)?.[0];
+    if(id){
+      html += `
+        <button onclick="showEmbed('${id}')">
+        🔵 Hivatalos kijelző
+        </button>
+      `;
+    }
+  }
+
+  document.getElementById("panel").innerHTML = html;
+}
+
+// ===== EMBED =====
+function showEmbed(id){
+  document.getElementById("panel").innerHTML = `
+    <iframe 
+      src="https://realtimenext.hu/embed/bkv/stops/${id}/schedule"
+      width="100%" height="500" style="border:none;">
+    </iframe>
+  `;
+}
+
+// ===== LISTA =====
+function render(list){
+
+  const c=document.getElementById("list");
+  c.innerHTML="";
+
+  list.forEach(s=>{
+    const d=document.createElement("div");
+    d.className="stop";
+
+    let icon="📍";
+    if(getType(s)==="bkk") icon="🚍";
+    if(getType(s)==="volan") icon="🚌";
+    if(getType(s)==="child") icon="🚂";
+
+    d.innerHTML=`${icon} ${s.name}`;
+    d.onclick=()=>showMatrix(s);
+
+    c.appendChild(d);
   });
 }
 
-// 📦 ZIP → JSON AUTO
-async function loadZIP(){
+// ===== SEARCH =====
+search.oninput=e=>{
+  const q=e.target.value.toLowerCase();
+  render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
+};
 
-  let file=document.getElementById("zipInput").files[0];
-  if(!file) return alert("Nincs ZIP kiválasztva!");
-
-  try{
-
-    let zip=await JSZip.loadAsync(file);
-
-    let stopsFile=Object.keys(zip.files).find(f=>f.includes("stops.txt"));
-
-    if(!stopsFile) throw "Nincs stops.txt!";
-
-    let txt=await zip.file(stopsFile).async("string");
-
-    let lines=txt.split("\n");
-    let headers=lines[0].split(",");
-
-    let iId=headers.indexOf("stop_id");
-    let iName=headers.indexOf("stop_name");
-    let iLat=headers.indexOf("stop_lat");
-    let iLon=headers.indexOf("stop_lon");
-
-    STOPS=[];
-
-    for(let i=1;i<lines.length;i++){
-      let row=lines[i].split(",");
-      if(row.length<4) continue;
-
-      STOPS.push({
-        id:row[iId],
-        name:row[iName],
-        lat:parseFloat(row[iLat]),
-        lon:parseFloat(row[iLon])
-      });
-    }
-
-    // 💾 mentés
-    localStorage.setItem("STOPS",JSON.stringify(STOPS));
-
-    alert("✔ Betöltve: "+STOPS.length+" megálló");
-
-  }catch(e){
-    alert("❌ Hiba: "+e);
+// ===== MAP =====
+STOPS.forEach(s=>{
+  if(s.lat){
+    L.marker([s.lat,s.lon])
+      .addTo(map)
+      .on("click",()=>showMatrix(s));
   }
-}
+});
 
-// 📥 AUTO LOAD
-(function(){
-  let s=localStorage.getItem("STOPS");
-  if(s){
-    STOPS=JSON.parse(s);
-    console.log("Auto betöltve:",STOPS.length);
-  }
-})();
-
-// 🧠 NORMALIZÁLÁS
-function norm(t){
-  return (t||"")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g,"")
-    .replace(/[^a-z0-9 ]/g,"");
-}
-
-// 📏 TÁVOLSÁG
-function dist(a,b,c,d){
-  const R=6371000;
-  const toRad=x=>x*Math.PI/180;
-  let dLat=toRad(c-a);
-  let dLon=toRad(d-b);
-  let A=Math.sin(dLat/2)**2+
-    Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
-}
-
-// 🔍 SEARCH
-function search(){
-
-  if(!STOPS.length) return alert("Nincs adat!");
-
-  let q=norm(document.getElementById("q").value);
-
-  let res=STOPS.map(s=>{
-
-    let n=norm(s.name);
-    let score=0;
-
-    if(n.includes(q)) score+=2;
-    if(n.startsWith(q)) score+=3;
-
-    let d=MY.lat?dist(MY.lat,MY.lon,s.lat,s.lon):null;
-
-    return {...s,score,dist:d};
-
-  })
-  .filter(x=>x.score>0)
-  .sort((a,b)=>b.score-a.score)
-  .slice(0,20);
-
-  document.getElementById("out").innerHTML=
-    res.map(s=>`
-      <div class='card'>
-        <b>${s.name}</b><br>
-        🆔 ${s.id}<br>
-        📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}<br>
-        📏 ${s.dist?Math.round(s.dist)+" m":"n/a"}
-      </div>
-    `).join("") || "<div class='card'>Nincs találat</div>";
-}
+render(STOPS);
 
 </script>
 
