@@ -5,11 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>V5 GTFS CORE DISPATCHER</title>
 
-<!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<!-- JSZip (GTFS ZIP olvasás) -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
@@ -17,13 +14,13 @@ body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
 #map { height: 420px; width: 100%; margin-top: 10px; border: 1px solid #ccc; }
 .box { margin-bottom: 10px; }
 input, button { padding: 8px; margin: 5px 0; }
-#results div { padding: 4px; border-bottom: 1px solid #eee; cursor: pointer; }
+#results div { padding: 6px; border-bottom: 1px solid #eee; cursor: pointer; }
 #results div:hover { background: #f2f2f2; }
 </style>
 </head>
 <body>
 
-<h2>🚉 V5 GTFS CORE DISPATCHER ENGINE</h2>
+<h2>🚉 V5 GTFS CORE DISPATCHER ENGINE (FIXED SEARCH)</h2>
 
 <div class="box">
 <h3>📦 GTFS ZIP betöltés</h3>
@@ -42,16 +39,10 @@ input, button { padding: 8px; margin: 5px 0; }
 
 <script>
 
-// ==============================
-// 🧠 GTFS CORE STORAGE
-// ==============================
 let STOPS = [];
 let map;
 let markers = [];
 
-// ==============================
-// 📍 DISTANCE (Haversine)
-// ==============================
 function distanceKm(lat1, lon1, lat2, lon2) {
     const R = 6371;
     const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -64,9 +55,6 @@ function distanceKm(lat1, lon1, lat2, lon2) {
     return Math.round((2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))) * 100) / 100;
 }
 
-// ==============================
-// 🗺️ MAP INIT
-// ==============================
 function initMap() {
     map = L.map('map').setView([47.4979, 19.0402], 12);
 
@@ -78,68 +66,71 @@ function initMap() {
 initMap();
 
 // ==============================
-// 📦 GTFS ZIP LOADER
+// 🔧 FIXED CSV PARSER (handles quotes)
 // ==============================
-async function loadGTFSZip() {
-    const file = document.getElementById("zipFile").files[0];
-    if (!file) return alert("Nincs kiválasztva ZIP!");
+function parseCSV(text) {
+    const lines = text.trim().split(/\r?\n/);
+    const headers = lines[0].split(',').map(h => h.replace(/\uFEFF/g,'').trim());
 
-    const zip = await JSZip.loadAsync(file);
-
-    let stopsFile = null;
-
-    zip.forEach((path, entry) => {
-        if (path.includes("stops.txt")) {
-            stopsFile = entry;
-        }
-    });
-
-    if (!stopsFile) {
-        alert("Nincs stops.txt a ZIP-ben!");
-        return;
-    }
-
-    const text = await stopsFile.async("string");
-    parseStops(text);
-
-    document.getElementById("status").innerText = 
-        "GTFS betöltve: " + STOPS.length + " megálló";
-
-    renderAllStops();
-}
-
-// ==============================
-// 📦 PARSE GTFS STOPS
-// ==============================
-function parseStops(text) {
-    const lines = text.trim().split("\n");
-    const headers = lines[0].split(",");
-
-    STOPS = lines.slice(1).map(line => {
-        const cols = line.split(",");
+    return lines.slice(1).map(line => {
+        // remove simple quotes (GTFS safe enough for most files)
+        const cols = line.split(',').map(c => c.replace(/"/g,'').trim());
         let obj = {};
 
-        headers.forEach((h, i) => obj[h.trim()] = cols[i]);
+        headers.forEach((h, i) => {
+            obj[h] = cols[i];
+        });
 
-        return {
-            id: obj.stop_id,
-            name: obj.stop_name,
-            lat: parseFloat(obj.stop_lat),
-            lon: parseFloat(obj.stop_lon)
-        };
+        return obj;
     });
 }
 
-// ==============================
-// 🔎 SEARCH
-// ==============================
-function searchStops() {
-    const q = document.getElementById("search").value.toLowerCase();
+function loadGTFSZip() {
+    const file = document.getElementById("zipFile").files[0];
+    if (!file) return alert("Nincs ZIP!");
 
-    const res = STOPS.filter(s => s.name.toLowerCase().includes(q));
+    JSZip.loadAsync(file).then(zip => {
+        let stopsFile;
+
+        zip.forEach((path, entry) => {
+            if (path.includes("stops.txt")) stopsFile = entry;
+        });
+
+        if (!stopsFile) return alert("Nincs stops.txt");
+
+        stopsFile.async("string").then(text => {
+            parseStops(text);
+            document.getElementById("status").innerText = "GTFS betöltve: " + STOPS.length + " megálló";
+            renderAllStops();
+        });
+    });
+}
+
+function parseStops(text) {
+    const data = parseCSV(text);
+
+    STOPS = data.map(s => ({
+        id: s.stop_id,
+        name: (s.stop_name || "").trim(),
+        lat: parseFloat(s.stop_lat),
+        lon: parseFloat(s.stop_lon)
+    })).filter(s => s.name && !isNaN(s.lat) && !isNaN(s.lon));
+}
+
+function searchStops() {
+    const q = (document.getElementById("search").value || "").toLowerCase();
+
+    const res = STOPS.filter(s =>
+        (s.name || "").toLowerCase().includes(q)
+    );
 
     const box = document.getElementById("results");
     box.innerHTML = "";
+
+    if (res.length === 0) {
+        box.innerHTML = "<div>Nincs találat</div>";
+        return;
+    }
 
     res.slice(0, 20).forEach(s => {
         const div = document.createElement("div");
@@ -147,45 +138,31 @@ function searchStops() {
 
         div.onclick = () => {
             map.setView([s.lat, s.lon], 15);
+            L.popup().setLatLng([s.lat, s.lon]).setContent(s.name).openOn(map);
         };
 
         box.appendChild(div);
     });
 }
 
-// ==============================
-// 🗺️ RENDER STOPS
-// ==============================
 function renderAllStops() {
     markers.forEach(m => map.removeLayer(m));
     markers = [];
 
     STOPS.forEach(s => {
-        if (!s.lat || !s.lon) return;
-
-        let marker = L.marker([s.lat, s.lon])
-            .addTo(map)
-            .bindPopup(`${s.name}<br>ID: ${s.id}`);
-
-        markers.push(marker);
+        let m = L.marker([s.lat, s.lon]).addTo(map).bindPopup(`${s.name}<br>${s.id}`);
+        markers.push(m);
     });
 }
 
-// ==============================
-// 🚉 NEAREST STOPS (dispatcher core)
-// ==============================
-function findNearestStops(userLat, userLon, limit = 10) {
-    return STOPS
-        .map(s => ({
-            ...s,
-            dist: distanceKm(userLat, userLon, s.lat, s.lon)
-        }))
-        .sort((a, b) => a.dist - b.dist)
-        .slice(0, limit);
+function findNearestStops(lat, lon, limit=10) {
+    return STOPS.map(s => ({
+        ...s,
+        dist: distanceKm(lat, lon, s.lat, s.lon)
+    })).sort((a,b)=>a.dist-b.dist).slice(0,limit);
 }
 
 </script>
-
 </body>
 </html>
 
