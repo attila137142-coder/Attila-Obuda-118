@@ -1,6 +1,6 @@
-# 🚍 Budapest Control Room – V1 CLEAN CORE PANEL + MAP
+# 🚍 Budapest Control Room – V2 GTFS CORE CONNECTOR
 
-## (STABIL ALAP: MAP + 15 SOROS DISPATCH PANEL)
+## (STABIL ALAP + VALÓS GTFS BEKÖTÉS + INDEX MOTOR)
 
 ```html
 <!DOCTYPE html>
@@ -8,138 +8,132 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Control Room V1 CLEAN CORE</title>
+<title>Control Room V2 GTFS CORE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body{
- margin:0;
- font-family:Arial;
- background:#061b17;
- color:#dff;
- overflow:hidden;
-}
-
-#topbar{
- height:50px;
- background:#0a2a24;
- display:flex;
- align-items:center;
- gap:10px;
- padding:0 10px;
- border-bottom:2px solid #00ffb3;
- font-weight:bold;
-}
-
-#layout{
- display:flex;
- height:calc(100vh - 50px);
-}
-
-#panel{
- width:420px;
- background:#081f1b;
- border-right:2px solid #00ffb3;
- overflow:auto;
- padding:10px;
- font-family:monospace;
-}
-
-#map{
- flex:1;
-}
-
-.stopBox{
- padding:8px;
- border:1px solid #0d3b33;
- margin-bottom:10px;
- border-radius:6px;
-}
-
-.row{
- display:grid;
- grid-template-columns:70px 1fr 80px;
- font-size:12px;
- padding:2px 0;
- border-bottom:1px solid #0d3b33;
-}
-
+body{margin:0;font-family:Arial;background:#061b17;color:#dff;overflow:hidden;}
+#topbar{height:50px;background:#0a2a24;display:flex;align-items:center;gap:10px;padding:0 10px;border-bottom:2px solid #00ffb3;font-weight:bold;}
+#layout{display:flex;height:calc(100vh - 50px);}
+#panel{width:440px;background:#081f1b;border-right:2px solid #00ffb3;overflow:auto;padding:10px;font-family:monospace;}
+#map{flex:1;}
+.stopBox{padding:8px;border:1px solid #0d3b33;margin-bottom:10px;border-radius:6px;}
+.row{display:grid;grid-template-columns:70px 1fr 90px;font-size:12px;padding:2px 0;border-bottom:1px solid #0d3b33;}
 .green{color:#65ff8f;}
 .blue{color:#4db7ff;}
-red{color:#ff5b5b;}
-
-.small{
- font-size:11px;
- opacity:0.8;
-}
+.red{color:#ff5b5b;}
+.small{font-size:11px;opacity:0.8;}
 </style>
 </head>
-
 <body>
 
 <div id="topbar">
-🚍 V1 CLEAN CORE MAP + PANEL
-<button onclick="loadDemo()">DEMO STOP</button>
+🚍 V2 GTFS CORE CONNECTOR
+<input type="file" id="zip">
+<button onclick="renderAll()">RENDER</button>
 </div>
 
 <div id="layout">
-<div id="panel">READY</div>
+<div id="panel">GTFS CORE: WAITING FILE...</div>
 <div id="map"></div>
 </div>
 
 <script>
 
 /* =========================
-🗺 MAP INIT
+🧠 CORE STATE
 ========================= */
-const map = L.map('map').setView([47.55,19.05],11);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
- maxZoom:19
-}).addTo(map);
+let GTFS = {
+ stops: [],
+ stop_times: []
+};
 
-const layer = L.layerGroup().addTo(map);
+let INDEX = {
+ stop: {}
+};
+
+let map = L.map('map').setView([47.55,19.05],11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let layer = L.layerGroup().addTo(map);
 
 /* =========================
-🧠 SAFE DATA
+🧠 SAFE HELPERS
 ========================= */
 
-let stops = [];
+function safe(val){
+ return val ? String(val) : "";
+}
 
 /* =========================
-📍 DEMO DATA (SAFE)
+⏱ TIME
 ========================= */
 
-function loadDemo(){
+function nowSec(){
+ const d=new Date();
+ return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
+}
 
- stops = [
-  {
-   id:"1001",
-   name:"Óbuda, Fő tér",
-   lat:47.5412,
-   lon:19.0395,
-   arrivals:[
-    {t:"12:01:00",trip:"34A",status:"on"},
-    {t:"12:06:00",trip:"34A",status:"late"},
-    {t:"12:10:00",trip:"134",status:"early"}
-   ]
-  },
-  {
-   id:"1002",
-   name:"Szentendre HÉV",
-   lat:47.6696,
-   lon:19.0759,
-   arrivals:[
-    {t:"12:02:00",trip:"H5",status:"on"},
-    {t:"12:07:00",trip:"H5",status:"late"}
-   ]
-  }
- ];
+function toSec(t){
+ if(!t) return 0;
+ const p=t.split(':');
+ return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
+}
 
+/* =========================
+📦 GTFS LOADER (CORE)
+========================= */
+
+async function loadGTFS(file){
+ const zip = await JSZip.loadAsync(file);
+
+ // ---- STOPS ----
+ const stopsTxt = await zip.file('stops.txt').async('string');
+ const sLines = stopsTxt.split(/\r?\n/);
+ const sHeader = sLines[0].split(',');
+
+ GTFS.stops = [];
+
+ for(let i=1;i<Math.min(sLines.length,10000);i++){
+  let obj={};
+  sLines[i].split(',').forEach((v,j)=>obj[sHeader[j]]=v);
+  GTFS.stops.push(obj);
+ }
+
+ // ---- STOP TIMES ----
+ const stTxt = await zip.file('stop_times.txt').async('string');
+ const stLines = stTxt.split(/\r?\n/);
+ const stHeader = stLines[0].split(',');
+
+ GTFS.stop_times = [];
+
+ for(let i=1;i<Math.min(stLines.length,200000);i++){
+  let obj={};
+  stLines[i].split(',').forEach((v,j)=>obj[stHeader[j]]=v);
+  GTFS.stop_times.push(obj);
+ }
+
+ buildIndex();
  renderMap();
  renderPanel();
+}
+
+/* =========================
+📦 INDEX ENGINE (STOP → TIMES)
+========================= */
+
+function buildIndex(){
+ INDEX.stop = {};
+
+ GTFS.stop_times.forEach(st=>{
+  if(!st.stop_id) return;
+  if(!INDEX.stop[st.stop_id]) INDEX.stop[st.stop_id]=[];
+  INDEX.stop[st.stop_id].push(st);
+ });
 }
 
 /* =========================
@@ -147,104 +141,82 @@ function loadDemo(){
 ========================= */
 
 function renderMap(){
-
  layer.clearLayers();
 
- stops.forEach(s=>{
+ GTFS.stops.forEach(s=>{
 
-  L.circleMarker([s.lat,s.lon],{
-   radius:6,
+  const lat=parseFloat(s.stop_lat);
+  const lon=parseFloat(s.stop_lon);
+
+  if(!lat||!lon) return;
+
+  L.circleMarker([lat,lon],{
+   radius:4,
    color:'#ffee00',
    fillColor:'#00ff88',
    fillOpacity:0.7
   }).addTo(layer)
-  .bindPopup(s.name);
+  .bindPopup(s.stop_name || "STOP");
 
  });
 }
 
 /* =========================
-📋 PANEL RENDER (SAFE)
+📋 PANEL (15 SOROS DISPATCH VIEW)
 ========================= */
 
-function renderPanel(){
+function renderPanel(stop_id){
+
+ const list = INDEX.stop[stop_id] || [];
+ const meta = GTFS.stops.find(s=>s.stop_id==stop_id) || {};
+ const now = nowSec();
 
  let html="";
 
- stops.forEach(s=>{
+ html += "<div class='stopBox'>";
+ html += "<b>" + safe(meta.stop_name) + "</b><br>";
+ html += "GTFS ID: " + stop_id + "<br>";
+ html += "<div class='small'>"+safe(meta.stop_lat)+" , "+safe(meta.stop_lon)+"</div>";
 
-  html += "<div class='stopBox'>";
-  html += "<b>" + s.name + "</b><br>";
-  html += "ID: " + s.id + "<br>";
-  html += "<div class='small'>Lat: " + s.lat + " Lon: " + s.lon + "</div>";
+ for(let i=0;i<Math.min(list.length,15);i++){
 
-  let list = s.arrivals || [];
+  const d=list[i];
+  const diff = toSec(d.departure_time) - now;
 
-  for(let i=0;i<Math.min(list.length,15);i++){
+  let cls="green";
+  if(diff>30) cls="blue";
+  if(diff<-30) cls="red";
 
-   let a = list[i];
+  html += "<div class='row'>"+
+   "<div>"+safe(d.trip_id).slice(0,6)+"</div>"+
+   "<div>"+safe(d.departure_time)+"</div>"+
+   "<div class='"+cls+"'>"+(diff>0?"+":"")+Math.floor(diff/60)+"m</div>"+
+  "</div>";
+ }
 
-   let cls="green";
-   if(a.status=="late") cls="blue";
-   if(a.status=="early") cls="red";
-
-   html += "<div class='row'>" +
-    "<div>"+a.trip+"</div>" +
-    "<div>"+a.t+"</div>" +
-    "<div class='"+cls+"'>"+a.status+"</div>" +
-   "</div>";
-  }
-
-  html += "</div>";
-
- });
+ html += "</div>";
 
  document.getElementById("panel").innerHTML = html;
 }
 
-</script>
+/* =========================
+🚀 MASTER RENDER
+========================= */
 
+function renderAll(){
+ renderMap();
+ document.getElementById("panel").innerHTML = "CLICK A STOP";
+}
+
+/* =========================
+📂 INPUT
+========================= */
+
+document.getElementById('zip').addEventListener('change',e=>{
+ loadGTFS(e.target.files[0]);
+});
+
+</script>
 </body>
 </html>
 ```
-
----
-
-# 🚍 V1 CLEAN CORE – MIT KAPTÁL?
-
-## 🗺 MAP
-
-* stabil Leaflet térkép
-* stop marker layer
-* popup support
-
-## 📋 PANEL
-
-* 15 soros indulási lista
-* színkódolt státusz
-* safe HTML render (nincs crash)
-
-## 🧠 LOGIKA
-
-* nincs GTFS parsing még
-* nincs vehicle layer
-* nincs overload
-
----
-
-# 💡 EZ A HELYES ALAP
-
-👉 stabil UI
-👉 nincs szétesés
-👉 könnyen bővíthető V2-re
-
----
-
-# 🚀 KÖVETKEZŐ LÉPÉS
-
-Ha ezt stabilnak látod:
-
-* GTFS bekötés (index layer)
-* valós stop_times integráció
-* késés számítás
-* jármű réteg hozzáadás
