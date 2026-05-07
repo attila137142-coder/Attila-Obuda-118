@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>🟦 REAL GTFS CONTROL ROOM V13</title>
+<title>🟦 V14 LOCAL GTFS CORE</title>
 
 <link rel="stylesheet"
 href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -20,16 +20,16 @@ body{
 
 header{
     background:#111827;
-    padding:12px;
-    text-align:center;
     color:#38bdf8;
-    font-size:20px;
+    text-align:center;
+    padding:12px;
+    font-size:22px;
     font-weight:bold;
 }
 
 .container{
     display:flex;
-    height:calc(100vh - 52px);
+    height:calc(100vh - 56px);
 }
 
 /* LEFT */
@@ -78,8 +78,6 @@ button:hover{
     padding:10px;
 }
 
-/* CARD */
-
 .card{
     background:#111827;
     border:1px solid #1f2937;
@@ -94,9 +92,13 @@ button:hover{
     color:#38bdf8;
 }
 
-.small{
+.badge{
+    display:inline-block;
+    background:#1e293b;
+    padding:3px 7px;
+    border-radius:6px;
     font-size:12px;
-    color:#94a3b8;
+    margin-top:4px;
 }
 
 /* RIGHT */
@@ -110,12 +112,9 @@ button:hover{
     height:100%;
 }
 
-.badge{
-    display:inline-block;
-    padding:3px 7px;
-    border-radius:6px;
-    background:#1e293b;
-    font-size:11px;
+.small{
+    font-size:12px;
+    color:#94a3b8;
 }
 
 </style>
@@ -124,7 +123,7 @@ button:hover{
 <body>
 
 <header>
-🟦 REAL GTFS CONTROL ROOM V13
+🟦 V14 LOCAL GTFS CORE
 </header>
 
 <div class="container">
@@ -135,6 +134,10 @@ button:hover{
 
 <div class="panel">
 
+<input type="file"
+id="gtfsZip"
+accept=".zip">
+
 <input
 id="search"
 placeholder="Megálló / GTFS ID">
@@ -143,21 +146,31 @@ placeholder="Megálló / GTFS ID">
 🔎 KERESÉS
 </button>
 
+<button onclick="showAllStops()">
+🚏 ÖSSZES STOP
+</button>
+
 <button onclick="startGPS()">
 📍 GPS START
 </button>
 
 <button onclick="findNearest()">
-🧭 LEGKÖZELEBBI MEGÁLLÓ
-</button>
-
-<button onclick="showAllStops()">
-🚏 ÖSSZES MEGÁLLÓ
+🧭 LEGKÖZELEBBI
 </button>
 
 </div>
 
-<div id="results"></div>
+<div id="results">
+
+<div class="card">
+
+<h3>🚀 V14 READY</h3>
+
+Tölts be egy GTFS ZIP-et.
+
+</div>
+
+</div>
 
 </div>
 
@@ -169,7 +182,13 @@ placeholder="Megálló / GTFS ID">
 
 </div>
 
+<!-- LIBS -->
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
 
 <script>
 
@@ -192,37 +211,11 @@ let USER = {
     marker:null
 };
 
-// ================= STOPS =================
+// ================= GTFS =================
 
-let STOPS = [
+let STOPS = [];
 
-{name:"Nád utca",gtfs:"BKK-F00457",lat:47.594072,lon:19.048469},
-
-{name:"Békásmegyer HÉV-állomás",gtfs:"H5-09183",lat:47.598091,lon:19.054599},
-
-{name:"Gulácsy Lajos utca",gtfs:"BKK-00438",lat:47.602562,lon:19.048229},
-
-{name:"Szentendre, Skanzen (1)",gtfs:"VOLÁN-778840-1",lat:47.691135,lon:19.046955},
-
-{name:"Szentendre, Skanzen (2)",gtfs:"VOLÁN-778840-2",lat:47.691273,lon:19.045667},
-
-{name:"Tahitótfalu, hídfő 1",gtfs:"VOLÁN-779053-1",lat:47.751712,lon:19.078215},
-
-{name:"Tahitótfalu, hídfő 2",gtfs:"VOLÁN-779053-2",lat:47.751648,lon:19.078091},
-
-{name:"Kóspallag, templom",gtfs:"VOLÁN-778190",lat:47.877850,lon:18.932580},
-
-{name:"Királyrét",gtfs:"VOLAN-779017",lat:47.895040,lon:18.977687},
-
-{name:"Pomáz, HÉV állomás",gtfs:"HEV5-09134",lat:47.642749,lon:19.032657},
-
-{name:"Dobogókő, hegytető",gtfs:"VOLAN-778561",lat:47.719118,lon:18.897577},
-
-{name:"Vác, Autóbusz-állomás",gtfs:"VOLÁN-779365_99",lat:47.781930,lon:19.129643},
-
-{name:"Lakás (Dino lak)",gtfs:"HOME",lat:47.594304,lon:19.048770}
-
-];
+let markers = [];
 
 // ================= DIST =================
 
@@ -239,29 +232,16 @@ function dist(lat1,lon1,lat2,lon2){
         Math.cos(lat2*Math.PI/180) *
         Math.sin(dLon/2)**2;
 
-    return R * 2 *
-    Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// ================= GPRS =================
+// ================= DRAW =================
 
-function gprs(){
-
-    return {
-        min:Math.floor(5 + Math.random()*20),
-        max:Math.floor(50 + Math.random()*250)
-    };
-}
-
-// ================= MARKERS =================
-
-let markers = [];
-
-function drawMarkers(){
+function drawStops(){
 
     markers.forEach(m=>map.removeLayer(m));
 
-    markers = [];
+    markers=[];
 
     STOPS.forEach(s=>{
 
@@ -272,7 +252,7 @@ function drawMarkers(){
 
 <b>${s.name}</b><br>
 
-🆔 ${s.gtfs}<br>
+🆔 ${s.id}<br>
 
 📍 ${s.lat}, ${s.lon}
 
@@ -284,126 +264,55 @@ function drawMarkers(){
 
 }
 
-drawMarkers();
+// ================= RENDER =================
 
-// ================= REVERSE GEO =================
+function renderStops(arr){
 
-async function reverseGeocode(lat, lon){
+    let html="";
 
-    try{
+    arr.forEach(s=>{
 
-        let url =
-`https://nominatim.openstreetmap.org/reverse?format=jsonv2&addressdetails=1&zoom=18&lat=${lat}&lon=${lon}`;
+        let d = "N/A";
 
-        let res =
-        await fetch(url,{
-            headers:{
-                "Accept":"application/json"
-            }
-        });
+        if(USER.lat){
 
-        let data = await res.json();
-
-        return {
-
-            city:
-                data.address.city ||
-                data.address.town ||
-                data.address.village ||
-                "N/A",
-
-            road:
-                data.address.road ||
-                data.address.pedestrian ||
-                "N/A",
-
-            house:
-                data.address.house_number ||
-                "N/A"
-
-        };
-
-    }catch(e){
-
-        return {
-            city:"N/A",
-            road:"N/A",
-            house:"N/A"
-        };
-    }
-}
-
-// ================= GPS =================
-
-function startGPS(){
-
-    if(!navigator.geolocation){
-
-        alert("GPS nem támogatott");
-
-        return;
-    }
-
-    navigator.geolocation.watchPosition(
-
-    async pos=>{
-
-        USER.lat = pos.coords.latitude;
-        USER.lon = pos.coords.longitude;
-
-        let addr =
-        await reverseGeocode(USER.lat,USER.lon);
-
-        if(USER.marker){
-
-            map.removeLayer(USER.marker);
+            d =
+            dist(
+                USER.lat,
+                USER.lon,
+                s.lat,
+                s.lon
+            ).toFixed(2)+" km";
         }
 
-        USER.marker =
-        L.marker([USER.lat,USER.lon])
-        .addTo(map)
-        .bindPopup("📍 SAJÁT HELYZET");
-
-        map.setView([USER.lat,USER.lon],13);
-
-        document.getElementById("results").innerHTML = `
+        html += `
 
 <div class="card">
 
-<h3>📍 HELYADAT</h3>
+<h3>🚏 ${s.name}</h3>
 
-🏙️ Város:
-<b>${addr.city}</b><br>
+<div class="badge">
+🆔 ${s.id}
+</div>
 
-🛣️ Utca:
-<b>${addr.road}</b><br>
-
-🏠 Házszám:
-<b>${addr.house}</b><br><br>
+<br><br>
 
 📍 LAT:
-${USER.lat}<br>
+${s.lat}<br>
 
 📍 LON:
-${USER.lon}
+${s.lon}<br><br>
+
+📏 Távolság:
+<b>${d}</b>
 
 </div>
 
 `;
 
-    },
-
-    err=>{
-
-        alert("GPS hiba");
-
-    },
-
-    {
-        enableHighAccuracy:true,
-        maximumAge:1000
     });
 
+    document.getElementById("results").innerHTML = html;
 }
 
 // ================= SEARCH =================
@@ -421,70 +330,43 @@ function searchStops(){
 
         s.name.toLowerCase().includes(q) ||
 
-        s.gtfs.toLowerCase().includes(q)
+        s.id.toLowerCase().includes(q)
 
     );
 
     renderStops(res);
 }
 
-// ================= RENDER =================
+// ================= SHOW ALL =================
 
-function renderStops(arr){
+function showAllStops(){
 
-    let html = "";
+    renderStops(STOPS);
+}
 
-    arr.forEach(s=>{
+// ================= GPS =================
 
-        let distance = "N/A";
+function startGPS(){
 
-        if(USER.lat){
+    navigator.geolocation.watchPosition(pos=>{
 
-            distance =
-            dist(
-                USER.lat,
-                USER.lon,
-                s.lat,
-                s.lon
-            ).toFixed(2) + " km";
+        USER.lat = pos.coords.latitude;
+        USER.lon = pos.coords.longitude;
+
+        if(USER.marker){
+
+            map.removeLayer(USER.marker);
         }
 
-        let signal = gprs();
+        USER.marker =
+        L.marker([USER.lat,USER.lon])
+        .addTo(map)
+        .bindPopup("📍 SAJÁT HELYZET");
 
-        html += `
-
-<div class="card">
-
-<h3>🚏 ${s.name}</h3>
-
-<span class="badge">
-🆔 ${s.gtfs}
-</span>
-
-<br><br>
-
-📍 LAT:
-${s.lat}<br>
-
-📍 LON:
-${s.lon}<br><br>
-
-📏 Légvonal:
-<b>${distance}</b><br><br>
-
-📡 GPRS MIN:
-<b>${signal.min} m</b><br>
-
-📡 GPRS MAX:
-<b>${signal.max} m</b>
-
-</div>
-
-`;
+        map.setView([USER.lat,USER.lon],13);
 
     });
 
-    document.getElementById("results").innerHTML = html;
 }
 
 // ================= NEAREST =================
@@ -493,13 +375,13 @@ function findNearest(){
 
     if(!USER.lat){
 
-        alert("Előbb indítsd el a GPS-t");
+        alert("Nincs GPS");
 
         return;
     }
 
-    let best = null;
-    let bestD = 999999;
+    let best=null;
+    let bestD=999999;
 
     STOPS.forEach(s=>{
 
@@ -513,8 +395,8 @@ function findNearest(){
 
         if(d < bestD){
 
-            best = s;
-            bestD = d;
+            best=s;
+            bestD=d;
         }
 
     });
@@ -522,14 +404,98 @@ function findNearest(){
     renderStops([best]);
 }
 
-// ================= SHOW ALL =================
+// ================= GTFS IMPORT =================
 
-function showAllStops(){
+document
+.getElementById("gtfsZip")
+.addEventListener("change", async e=>{
 
-    renderStops(STOPS);
-}
+    let file = e.target.files[0];
 
-showAllStops();
+    if(!file){
+
+        return;
+    }
+
+    document.getElementById("results").innerHTML = `
+
+<div class="card">
+
+<h3>⏳ GTFS IMPORT...</h3>
+
+ZIP feldolgozás...
+
+</div>
+
+`;
+
+    let zip = await JSZip.loadAsync(file);
+
+    // ================= stops.txt =================
+
+    let stopsFile = zip.file("stops.txt");
+
+    if(!stopsFile){
+
+        alert("Nincs stops.txt");
+
+        return;
+    }
+
+    let stopsText =
+    await stopsFile.async("string");
+
+    let parsed =
+    Papa.parse(stopsText,{
+        header:true
+    });
+
+    STOPS = parsed.data
+    .filter(s=>
+
+        s.stop_lat &&
+        s.stop_lon &&
+        s.stop_name
+
+    )
+    .map(s=>({
+
+        id:
+            s.stop_id || "N/A",
+
+        name:
+            s.stop_name || "N/A",
+
+        lat:
+            parseFloat(s.stop_lat),
+
+        lon:
+            parseFloat(s.stop_lon)
+
+    }));
+
+    drawStops();
+
+    renderStops(STOPS.slice(0,50));
+
+    document.getElementById("results").innerHTML = `
+
+<div class="card">
+
+<h3>✅ GTFS IMPORT KÉSZ</h3>
+
+🚏 Stopok:
+<b>${STOPS.length}</b>
+
+<br><br>
+
+🔎 Keresés már működik.
+
+</div>
+
+`;
+
+});
 
 </script>
 
