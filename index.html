@@ -3,25 +3,34 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>V4.1 CLEAN RUN MAP APP</title>
+<title>V5 GTFS CORE DISPATCHER</title>
 
 <!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
+<!-- JSZip (GTFS ZIP olvasás) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
 body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
 #map { height: 420px; width: 100%; margin-top: 10px; border: 1px solid #ccc; }
 .box { margin-bottom: 10px; }
-input { padding: 8px; width: 260px; }
-button { padding: 8px 12px; cursor: pointer; }
-#results div { padding: 4px 0; border-bottom: 1px solid #eee; cursor: pointer; }
+input, button { padding: 8px; margin: 5px 0; }
+#results div { padding: 4px; border-bottom: 1px solid #eee; cursor: pointer; }
 #results div:hover { background: #f2f2f2; }
 </style>
 </head>
 <body>
 
-<h2>🚦 V4.1 CLEAN RUN MAP APP</h2>
+<h2>🚉 V5 GTFS CORE DISPATCHER ENGINE</h2>
+
+<div class="box">
+<h3>📦 GTFS ZIP betöltés</h3>
+<input type="file" id="zipFile" accept=".zip" />
+<button onclick="loadGTFSZip()">GTFS betöltés</button>
+<p id="status">Nincs betöltve GTFS</p>
+</div>
 
 <div class="box">
 <input id="search" placeholder="Megálló keresés..." />
@@ -34,45 +43,90 @@ button { padding: 8px 12px; cursor: pointer; }
 <script>
 
 // ==============================
-// 📦 DEMO GTFS STOPS
+// 🧠 GTFS CORE STORAGE
 // ==============================
-let STOPS = [
-    {id:"1", name:"Kossuth Lajos tér", lat:47.5069, lon:19.0467},
-    {id:"2", name:"Deák Ferenc tér", lat:47.4979, lon:19.0540},
-    {id:"3", name:"Nyugati pályaudvar", lat:47.5102, lon:19.0569},
-    {id:"4", name:"Keleti pályaudvar", lat:47.5009, lon:19.0822},
-    {id:"5", name:"Blaha Lujza tér", lat:47.4963, lon:19.0705}
-];
-
+let STOPS = [];
 let map;
 let markers = [];
+
+// ==============================
+// 📍 DISTANCE (Haversine)
+// ==============================
+function distanceKm(lat1, lon1, lat2, lon2) {
+    const R = 6371;
+    const dLat = (lat2 - lat1) * Math.PI / 180;
+    const dLon = (lon2 - lon1) * Math.PI / 180;
+
+    const a = Math.sin(dLat/2)**2 +
+        Math.cos(lat1*Math.PI/180) * Math.cos(lat2*Math.PI/180) *
+        Math.sin(dLon/2)**2;
+
+    return Math.round((2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a))) * 100) / 100;
+}
 
 // ==============================
 // 🗺️ MAP INIT
 // ==============================
 function initMap() {
-    map = L.map('map').setView([47.4979, 19.0402], 13);
+    map = L.map('map').setView([47.4979, 19.0402], 12);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: 'OpenStreetMap'
     }).addTo(map);
+}
+
+initMap();
+
+// ==============================
+// 📦 GTFS ZIP LOADER
+// ==============================
+async function loadGTFSZip() {
+    const file = document.getElementById("zipFile").files[0];
+    if (!file) return alert("Nincs kiválasztva ZIP!");
+
+    const zip = await JSZip.loadAsync(file);
+
+    let stopsFile = null;
+
+    zip.forEach((path, entry) => {
+        if (path.includes("stops.txt")) {
+            stopsFile = entry;
+        }
+    });
+
+    if (!stopsFile) {
+        alert("Nincs stops.txt a ZIP-ben!");
+        return;
+    }
+
+    const text = await stopsFile.async("string");
+    parseStops(text);
+
+    document.getElementById("status").innerText = 
+        "GTFS betöltve: " + STOPS.length + " megálló";
 
     renderAllStops();
 }
 
 // ==============================
-// 📍 RENDER ALL STOPS
+// 📦 PARSE GTFS STOPS
 // ==============================
-function renderAllStops() {
-    markers.forEach(m => map.removeLayer(m));
-    markers = [];
+function parseStops(text) {
+    const lines = text.trim().split("\n");
+    const headers = lines[0].split(",");
 
-    STOPS.forEach(s => {
-        let marker = L.marker([s.lat, s.lon])
-            .addTo(map)
-            .bindPopup(s.name);
+    STOPS = lines.slice(1).map(line => {
+        const cols = line.split(",");
+        let obj = {};
 
-        markers.push(marker);
+        headers.forEach((h, i) => obj[h.trim()] = cols[i]);
+
+        return {
+            id: obj.stop_id,
+            name: obj.stop_name,
+            lat: parseFloat(obj.stop_lat),
+            lon: parseFloat(obj.stop_lon)
+        };
     });
 }
 
@@ -87,16 +141,12 @@ function searchStops() {
     const box = document.getElementById("results");
     box.innerHTML = "";
 
-    res.forEach(s => {
+    res.slice(0, 20).forEach(s => {
         const div = document.createElement("div");
-        div.innerHTML = "🚏 " + s.name;
+        div.innerHTML = `🚏 ${s.name}`;
 
         div.onclick = () => {
             map.setView([s.lat, s.lon], 15);
-            L.popup()
-                .setLatLng([s.lat, s.lon])
-                .setContent(s.name)
-                .openOn(map);
         };
 
         box.appendChild(div);
@@ -104,11 +154,38 @@ function searchStops() {
 }
 
 // ==============================
-// 🚀 INIT
+// 🗺️ RENDER STOPS
 // ==============================
-initMap();
+function renderAllStops() {
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
+
+    STOPS.forEach(s => {
+        if (!s.lat || !s.lon) return;
+
+        let marker = L.marker([s.lat, s.lon])
+            .addTo(map)
+            .bindPopup(`${s.name}<br>ID: ${s.id}`);
+
+        markers.push(marker);
+    });
+}
+
+// ==============================
+// 🚉 NEAREST STOPS (dispatcher core)
+// ==============================
+function findNearestStops(userLat, userLon, limit = 10) {
+    return STOPS
+        .map(s => ({
+            ...s,
+            dist: distanceKm(userLat, userLon, s.lat, s.lon)
+        }))
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, limit);
+}
 
 </script>
 
 </body>
 </html>
+
