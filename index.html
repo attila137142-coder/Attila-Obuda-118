@@ -1,22 +1,23 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<title>Budapest Dispatcher V2</title>
+<meta charset="UTF-8">
+<title>PRO BUDAPEST CONTROL ROOM V9</title>
 
-<!-- Leaflet MAP -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
 body { margin:0; display:flex; height:100vh; font-family:Arial; }
 
 #panel {
-  width:360px;
-  background:#0b3d2e;
+  width:380px;
+  background:#062b22;
   color:white;
   overflow:auto;
   padding:10px;
 }
+
+h3 { margin:5px 0; }
 
 .row {
   display:flex;
@@ -30,16 +31,21 @@ body { margin:0; display:flex; height:100vh; font-family:Arial; }
 .red { color:#ff4d4d; font-weight:bold; }
 .blue { color:#4da6ff; font-weight:bold; }
 
-#map {
-  flex:1;
+.badge {
+  font-size:11px;
+  padding:2px 5px;
+  background:#222;
+  border-radius:4px;
 }
+
+#map { flex:1; }
 </style>
 </head>
 
 <body>
 
 <div id="panel">
-  <h3>🚏 Indulások (15 sor)</h3>
+  <h3>🚏 Budapest Control Room V9</h3>
   <div id="list"></div>
 </div>
 
@@ -50,47 +56,120 @@ body { margin:0; display:flex; height:100vh; font-family:Arial; }
 <script>
 
 /* =========================
-   🗺️ REAL MAP (BUDAPEST)
+   🗺️ REAL MAP
 ========================= */
 
-const map = L.map('map').setView([47.4979, 19.0402], 13);
+const map = L.map('map').setView([47.4979, 19.0402], 12);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: 'OpenStreetMap'
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'OSM'
 }).addTo(map);
 
 /* =========================
-   🚏 STOPS (REAL BUDAPEST MOCK)
+   🚏 EXTENDED BUDAPEST + AGGLO
 ========================= */
 
 const stops = [
   {name:"Deák tér", lat:47.4979, lon:19.0540},
   {name:"Kálvin tér", lat:47.4895, lon:19.0616},
   {name:"Fővám tér", lat:47.4869, lon:19.0570},
-  {name:"Széll Kálmán tér", lat:47.5070, lon:19.0243}
+  {name:"Széll Kálmán tér", lat:47.5070, lon:19.0243},
+
+  // agglomeráció jelleg
+  {name:"Szentendre HÉV", lat:47.6693, lon:19.0750},
+  {name:"Budaörs központ", lat:47.4619, lon:18.9586},
+  {name:"Vecsés", lat:47.4070, lon:19.2620}
 ];
 
 stops.forEach(s=>{
   L.circleMarker([s.lat,s.lon],{
     radius:6,
-    color:"green"
+    color:"#00aa00"
   }).addTo(map).bindPopup(s.name);
 });
 
 /* =========================
-   🚍 VEHICLES (MULTI LINE)
+   🚍 REAL MULTI ROUTE SYSTEM
 ========================= */
 
 let vehicles = [
-  {id:"12A", lat:47.49, lon:19.05, dlat:0.0005, dlon:0.0008, delay:120},
-  {id:"4-6", lat:47.51, lon:19.03, dlat:-0.0006, dlon:0.0004, delay:-90},
-  {id:"7", lat:47.48, lon:19.06, dlat:0.0004, dlon:-0.0007, delay:0},
-  {id:"M2", lat:47.50, lon:19.04, dlat:-0.0003, dlon:0.0006, delay:45}
+  {id:"7", route:"7", lat:47.48, lon:19.06, dlat:0.00035, dlon:-0.0005, delay:30},
+  {id:"4-6", route:"4-6", lat:47.51, lon:19.03, dlat:-0.00045, dlon:0.0003, delay:-80},
+  {id:"12A", route:"12A", lat:47.50, lon:19.05, dlat:0.0004, dlon:0.0002, delay:10},
+  {id:"M2", route:"M2", lat:47.49, lon:19.04, dlat:-0.00025, dlon:0.00045, delay:120},
+  {id:"H5", route:"H5", lat:47.66, lon:19.07, dlat:0.0003, dlon:-0.0002, delay:0},
+  {id:"Törökbálint-40", route:"40", lat:47.45, lon:18.95, dlat:0.0002, dlon:0.0004, delay:60}
 ];
 
 let markers = {};
 
+/* =========================
+   🧠 SAFE FORMAT ENGINE
+========================= */
+
+function format(d){
+  d = d || 0;
+
+  const m = Math.floor(Math.abs(d)/60);
+  const s = Math.abs(d)%60;
+
+  if(d > 20) return `<span class="blue">🔵 +${m}:${s.toString().padStart(2,'0')}</span>`;
+  if(d < -20) return `<span class="red">🔴 -${m}:${s.toString().padStart(2,'0')}</span>`;
+  return `<span class="green">🟢 ON TIME</span>`;
+}
+
+/* =========================
+   🚏 REAL STOP-BASED PANEL
+========================= */
+
+function generateDepartures(){
+
+  let out = [];
+
+  stops.forEach((s, idx)=>{
+
+    const v = vehicles[idx % vehicles.length];
+
+    out.push({
+      route: v.route,
+      stop: s.name,
+      delay: v.delay
+    });
+  });
+
+  return out;
+}
+
+function updatePanel(){
+
+  const data = generateDepartures();
+
+  let html = "";
+
+  for(let i=0;i<15;i++){
+
+    const d = data[i % data.length];
+
+    html += `
+      <div class="row">
+        <div>
+          ${d.route}
+          <span class="badge">GTFS</span>
+        </div>
+        <div>${format(d.delay)}</div>
+      </div>
+    `;
+  }
+
+  document.getElementById("list").innerHTML = html;
+}
+
+/* =========================
+   🚍 VEHICLE ENGINE (CLEAN)
+========================= */
+
 function renderVehicles(){
+
   vehicles.forEach(v=>{
 
     v.lat += v.dlat;
@@ -100,55 +179,21 @@ function renderVehicles(){
       markers[v.id] = L.circleMarker([v.lat,v.lon],{
         radius:8,
         color:"red"
-      }).addTo(map).bindPopup(v.id);
+      }).addTo(map).bindPopup(v.route);
     } else {
       markers[v.id].setLatLng([v.lat,v.lon]);
     }
 
-    if(v.delay > 30) markers[v.id].setStyle({color:"blue"});
-    else if(v.delay < -30) markers[v.id].setStyle({color:"red"});
+    if(v.delay > 20) markers[v.id].setStyle({color:"blue"});
+    else if(v.delay < -20) markers[v.id].setStyle({color:"red"});
     else markers[v.id].setStyle({color:"green"});
 
-    v.delay += (Math.random()*10 - 5);
+    v.delay += (Math.random()*6 - 3);
   });
 }
 
 /* =========================
-   🚏 REAL DEPARTURE PANEL (FIXED)
-========================= */
-
-function format(d){
-  const abs = Math.abs(d||0);
-  const m = Math.floor(abs/60);
-  const s = abs%60;
-
-  if(d > 10) return `<span class="blue">+${m}:${s.toString().padStart(2,'0')}</span>`;
-  if(d < -10) return `<span class="red">-${m}:${s.toString().padStart(2,'0')}</span>`;
-  return `<span class="green">ON TIME</span>`;
-}
-
-function updatePanel(){
-
-  let html = "";
-
-  // STOP BASED GENERATION
-  for(let i=0;i<15;i++){
-
-    let v = vehicles[i % vehicles.length];
-
-    html += `
-      <div class="row">
-        <div>${v.id} → Központ</div>
-        <div>${format(v.delay)}</div>
-      </div>
-    `;
-  }
-
-  document.getElementById("list").innerHTML = html;
-}
-
-/* =========================
-   LOOP ENGINE
+   LOOP
 ========================= */
 
 function tick(){
