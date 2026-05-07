@@ -1,6 +1,6 @@
-# 🚍 Budapest Control Room – V2 GTFS CORE CONNECTOR
+# 🚍 Budapest Control Room – V2 FIXED (CLICK + GTFS SAFE CORE)
 
-## (STABIL ALAP + VALÓS GTFS BEKÖTÉS + INDEX MOTOR)
+## (STABIL MAP + WORKING STOP CLICK + SAFE INDEX)
 
 ```html
 <!DOCTYPE html>
@@ -8,7 +8,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Control Room V2 GTFS CORE</title>
+<title>Control Room V2 FIXED</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -28,107 +28,96 @@ body{margin:0;font-family:Arial;background:#061b17;color:#dff;overflow:hidden;}
 .small{font-size:11px;opacity:0.8;}
 </style>
 </head>
+
 <body>
 
 <div id="topbar">
-🚍 V2 GTFS CORE CONNECTOR
+🚍 V2 FIXED GTFS CORE (CLICK FIX)
 <input type="file" id="zip">
-<button onclick="renderAll()">RENDER</button>
+<button onclick="renderAll()">RESET</button>
 </div>
 
 <div id="layout">
-<div id="panel">GTFS CORE: WAITING FILE...</div>
+<div id="panel">GTFS: WAITING FILE...</div>
 <div id="map"></div>
 </div>
 
 <script>
 
 /* =========================
-🧠 CORE STATE
+🧠 STATE
 ========================= */
+let GTFS={stops:[],stop_times:[]};
+let INDEX={stop:{}};
 
-let GTFS = {
- stops: [],
- stop_times: []
-};
-
-let INDEX = {
- stop: {}
-};
-
-let map = L.map('map').setView([47.55,19.05],11);
+let map=L.map('map').setView([47.55,19.05],11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let layer = L.layerGroup().addTo(map);
+let layer=L.layerGroup().addTo(map);
 
 /* =========================
-🧠 SAFE HELPERS
+🧠 SAFE CSV PARSER (FIXED)
 ========================= */
-
-function safe(val){
- return val ? String(val) : "";
+function parseCSVLine(line){
+ let res=[],cur="",q=false;
+ for(let c of line){
+  if(c=='"') q=!q;
+  else if(c==','&&!q){res.push(cur);cur="";}
+  else cur+=c;
+ }
+ res.push(cur);
+ return res;
 }
+
+function safe(v){return v?v:"";}
+
+function nowSec(){let d=new Date();return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();}
+function toSec(t){if(!t)return 0;let p=t.split(':');return (+p[0])*3600+(+p[1])*60+(+p[2]||0);}
 
 /* =========================
-⏱ TIME
+📦 LOAD GTFS
 ========================= */
-
-function nowSec(){
- const d=new Date();
- return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
-}
-
-function toSec(t){
- if(!t) return 0;
- const p=t.split(':');
- return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
-}
-
-/* =========================
-📦 GTFS LOADER (CORE)
-========================= */
-
 async function loadGTFS(file){
- const zip = await JSZip.loadAsync(file);
+ const zip=await JSZip.loadAsync(file);
 
- // ---- STOPS ----
- const stopsTxt = await zip.file('stops.txt').async('string');
- const sLines = stopsTxt.split(/\r?\n/);
- const sHeader = sLines[0].split(',');
+ const stopsTxt=await zip.file('stops.txt').async('string');
+ const sLines=stopsTxt.split(/\r?\n/);
+ const sH=parseCSVLine(sLines[0]);
 
- GTFS.stops = [];
+ GTFS.stops=[];
 
- for(let i=1;i<Math.min(sLines.length,10000);i++){
+ for(let i=1;i<sLines.length;i++){
+  if(!sLines[i]) continue;
+  let row=parseCSVLine(sLines[i]);
   let obj={};
-  sLines[i].split(',').forEach((v,j)=>obj[sHeader[j]]=v);
+  sH.forEach((h,j)=>obj[h]=row[j]||"");
   GTFS.stops.push(obj);
  }
 
- // ---- STOP TIMES ----
- const stTxt = await zip.file('stop_times.txt').async('string');
- const stLines = stTxt.split(/\r?\n/);
- const stHeader = stLines[0].split(',');
+ const stTxt=await zip.file('stop_times.txt').async('string');
+ const stLines=stTxt.split(/\r?\n/);
+ const stH=parseCSVLine(stLines[0]);
 
- GTFS.stop_times = [];
+ GTFS.stop_times=[];
 
- for(let i=1;i<Math.min(stLines.length,200000);i++){
+ for(let i=1;i<stLines.length;i++){
+  if(!stLines[i]) continue;
+  let row=parseCSVLine(stLines[i]);
   let obj={};
-  stLines[i].split(',').forEach((v,j)=>obj[stHeader[j]]=v);
+  stH.forEach((h,j)=>obj[h]=row[j]||"");
   GTFS.stop_times.push(obj);
  }
 
  buildIndex();
  renderMap();
- renderPanel();
+ document.getElementById('panel').innerHTML="CLICK A STOP";
 }
 
 /* =========================
-📦 INDEX ENGINE (STOP → TIMES)
+🧩 INDEX
 ========================= */
-
 function buildIndex(){
- INDEX.stop = {};
-
+ INDEX.stop={};
  GTFS.stop_times.forEach(st=>{
   if(!st.stop_id) return;
   if(!INDEX.stop[st.stop_id]) INDEX.stop[st.stop_id]=[];
@@ -137,81 +126,74 @@ function buildIndex(){
 }
 
 /* =========================
-🗺 MAP RENDER
+🗺 MAP + CLICK FIX
 ========================= */
-
 function renderMap(){
  layer.clearLayers();
 
  GTFS.stops.forEach(s=>{
 
-  const lat=parseFloat(s.stop_lat);
-  const lon=parseFloat(s.stop_lon);
-
+  let lat=parseFloat(s.stop_lat);
+  let lon=parseFloat(s.stop_lon);
   if(!lat||!lon) return;
 
-  L.circleMarker([lat,lon],{
-   radius:4,
+  let marker=L.circleMarker([lat,lon],{
+   radius:5,
    color:'#ffee00',
    fillColor:'#00ff88',
-   fillOpacity:0.7
-  }).addTo(layer)
-  .bindPopup(s.stop_name || "STOP");
+   fillOpacity:0.8
+  }).addTo(layer);
+
+  marker.on('click',()=>{
+   console.log("CLICK STOP:",s.stop_id);
+   renderPanel(s.stop_id);
+  });
+
+  marker.bindPopup(s.stop_name||"STOP");
 
  });
 }
 
 /* =========================
-📋 PANEL (15 SOROS DISPATCH VIEW)
+📋 PANEL
 ========================= */
-
 function renderPanel(stop_id){
 
- const list = INDEX.stop[stop_id] || [];
- const meta = GTFS.stops.find(s=>s.stop_id==stop_id) || {};
- const now = nowSec();
+ let list=INDEX.stop[stop_id]||[];
+ let meta=GTFS.stops.find(s=>s.stop_id==stop_id)||{};
+ let now=nowSec();
 
- let html="";
-
- html += "<div class='stopBox'>";
- html += "<b>" + safe(meta.stop_name) + "</b><br>";
- html += "GTFS ID: " + stop_id + "<br>";
- html += "<div class='small'>"+safe(meta.stop_lat)+" , "+safe(meta.stop_lon)+"</div>";
+ let html="<div class='stopBox'>";
+ html+="<b>"+safe(meta.stop_name)+"</b><br>";
+ html+="GTFS ID: "+safe(stop_id)+"<br>";
+ html+="<div class='small'>"+safe(meta.stop_lat)+" , "+safe(meta.stop_lon)+"</div>";
 
  for(let i=0;i<Math.min(list.length,15);i++){
-
-  const d=list[i];
-  const diff = toSec(d.departure_time) - now;
+  let d=list[i];
+  let diff=toSec(d.departure_time)-now;
 
   let cls="green";
   if(diff>30) cls="blue";
   if(diff<-30) cls="red";
 
-  html += "<div class='row'>"+
+  html+="<div class='row'>"+
    "<div>"+safe(d.trip_id).slice(0,6)+"</div>"+
    "<div>"+safe(d.departure_time)+"</div>"+
    "<div class='"+cls+"'>"+(diff>0?"+":"")+Math.floor(diff/60)+"m</div>"+
   "</div>";
  }
 
- html += "</div>";
-
- document.getElementById("panel").innerHTML = html;
+ html+="</div>";
+ document.getElementById('panel').innerHTML=html;
 }
 
-/* =========================
-🚀 MASTER RENDER
-========================= */
-
 function renderAll(){
- renderMap();
- document.getElementById("panel").innerHTML = "CLICK A STOP";
+ document.getElementById('panel').innerHTML="CLICK A STOP";
 }
 
 /* =========================
 📂 INPUT
 ========================= */
-
 document.getElementById('zip').addEventListener('change',e=>{
  loadGTFS(e.target.files[0]);
 });
@@ -220,3 +202,4 @@ document.getElementById('zip').addEventListener('change',e=>{
 </body>
 </html>
 ```
+
