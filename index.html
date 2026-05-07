@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>V6 Balanced Ops</title>
+<title>Óbuda–Szentendre GTFS CORE V1</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -10,8 +10,8 @@
 body { margin:0; display:flex; height:100vh; font-family:Arial; }
 
 #panel {
-  width:380px;
-  background:#031c18;
+  width:360px;
+  background:#031a17;
   color:white;
   display:flex;
   flex-direction:column;
@@ -21,6 +21,10 @@ body { margin:0; display:flex; height:100vh; font-family:Arial; }
   padding:10px;
   font-weight:bold;
   border-bottom:1px solid rgba(255,255,255,0.2);
+}
+
+#upload {
+  margin:8px;
 }
 
 #list {
@@ -55,120 +59,152 @@ body { margin:0; display:flex; height:100vh; font-family:Arial; }
 <body>
 
 <div id="panel">
-  <div id="header">🚍 V6 BALANCED LIVE OPS</div>
+  <div id="header">🚍 Óbuda–Szentendre GTFS CORE V1</div>
+
+  <input type="file" id="upload" accept=".zip">
+
   <div id="list"></div>
 </div>
 
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 
 /* 🗺️ MAP */
-const map = L.map('map').setView([47.52, 19.05], 12);
+const map = L.map('map').setView([47.57,19.05],11);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   attribution:'OSM'
 }).addTo(map);
 
-/* 🚏 EXPANDED DEMO NETWORK (BÉKÁS + NÁD + CORRIDOR) */
+/* 💾 CACHE */
+function openDB(){
+  return new Promise(r=>{
+    const req = indexedDB.open("gtfs_core_v1",1);
+    req.onupgradeneeded = e=>{
+      e.target.result.createObjectStore("data");
+    };
+    req.onsuccess = ()=>r(req.result);
+  });
+}
 
-const stops = [
-  {id:"BKS", name:"Békásmegyer HÉV", lat:47.541, lon:19.045},
-  {id:"OBU", name:"Óbuda", lat:47.53, lon:19.035},
-  {id:"KAS", name:"Kaszásdűlő", lat:47.535, lon:19.06},
-  {id:"NUT", name:"Nád utca", lat:47.41, lon:19.08},
-  {id:"SOR", name:"Soroksár", lat:47.37, lon:19.12}
-];
+async function save(k,v){
+  const db = await openDB();
+  db.transaction("data","readwrite").objectStore("data").put(v,k);
+}
 
-/* 🚍 MULTI-INSTANCE ROUTES (NO EMPTY MAP) */
+async function load(k){
+  const db = await openDB();
+  return new Promise(r=>{
+    const req = db.transaction("data").objectStore("data").get(k);
+    req.onsuccess = ()=>r(req.result);
+  });
+}
 
-const routes = [
-  {id:"243", path:["NUT","SOR"], count:4},
-  {id:"H5", path:["BKS","OBU","KAS"], count:3}
-];
+/* 📦 DATA */
+let STOPS=[], TRIPS=[], STOP_TIMES=[];
 
-/* 🚍 VEHICLE INSTANCES (IMPORTANT FIX) */
+/* 📥 IMPORT GTFS ZIP */
+document.getElementById("upload").onchange = async e=>{
 
-let vehicles = [];
+  const zip = await JSZip.loadAsync(e.target.files[0]);
 
-routes.forEach(r=>{
-  for(let i=0;i<r.count;i++){
-    vehicles.push({
-      route:r.id,
-      path:r.path,
-      index:Math.random()*r.path.length,
-      delay:(Math.random()*40-20)
-    });
-  }
-});
+  STOPS = parse(await zip.file("stops.txt").async("string"));
+  TRIPS = parse(await zip.file("trips.txt").async("string"));
+  STOP_TIMES = parse(await zip.file("stop_times.txt").async("string"));
 
-let markers = {};
+  await save("stops",STOPS);
+  await save("trips",TRIPS);
+  await save("stop_times",STOP_TIMES);
 
-/* 🧠 FORMAT */
+  init();
+};
 
-function format(d){
-  if(d > 10) return `<span class="blue">+${Math.round(d)}p</span>`;
-  if(d < -10) return `<span class="red">${Math.round(d)}p</span>`;
-  return `<span class="green">OK</span>`;
+/* CSV PARSE */
+function parse(t){
+
+  const lines = t.trim().split("\n");
+  const h = lines[0].split(",");
+
+  return lines.slice(1).map(l=>{
+    const o={};
+    l.split(",").forEach((v,i)=>o[h[i]]=v);
+    return o;
+  });
+}
+
+/* 🧭 GRAPH */
+function build(){
+
+  const g={};
+
+  STOP_TIMES.forEach(s=>{
+    if(!g[s.stop_id]) g[s.stop_id]=[];
+    g[s.stop_id].push(s);
+  });
+
+  return g;
 }
 
 /* 📋 PANEL */
+function panel(graph){
 
-function panel(){
+  let html="";
 
-  let html = "";
+  Object.keys(graph).slice(0,15).forEach(k=>{
 
-  vehicles.forEach(v=>{
+    const d=graph[k][0];
 
-    const stop = v.path[Math.floor(v.index)%v.path.length];
-
-    html += `
+    html+=`
       <div class="row">
-        <div>${v.route}<span class="badge">DEMO</span></div>
-        <div>${stop}</div>
-        <div>${format(v.delay)}</div>
+        <div>${d.trip_id}<span class="badge">GTFS</span></div>
+        <div>${d.stop_id}</div>
+        <div class="green">${d.departure_time}</div>
       </div>
     `;
   });
 
-  document.getElementById("list").innerHTML = html;
+  document.getElementById("list").innerHTML=html;
 }
 
-/* 🗺️ MAP UPDATE */
+/* 🗺️ STOPS */
+let markers={};
 
-function update(){
+function draw(){
 
-  vehicles.forEach(v=>{
+  STOPS.forEach(s=>{
 
-    const stopId = v.path[Math.floor(v.index)%v.path.length];
-    const stop = stops.find(s=>s.id===stopId);
+    if(!s.stop_lat) return;
 
-    if(!stop) return;
+    if(!markers[s.stop_id]){
 
-    v.index += 0.03;
-
-    if(!markers[v.route+v.index]){
-      markers[v.route+v.index] = L.circleMarker([stop.lat,stop.lon],{
+      markers[s.stop_id]=L.circleMarker([s.stop_lat,s.stop_lon],{
         radius:6,
-        color:"#ff5555"
-      }).addTo(map);
+        color:"#00ff88"
+      }).addTo(map).bindPopup(s.stop_name);
     }
-
-    v.delay += (Math.random()*2 - 1);
   });
 }
 
-/* LOOP */
+/* INIT */
+async function init(){
 
-function tick(){
-  update();
-  panel();
+  const cached = await load("stops");
+
+  if(cached){
+    STOPS=cached;
+    TRIPS=await load("trips")||[];
+    STOP_TIMES=await load("stop_times")||[];
+  }
+
+  const graph=build();
+
+  draw();
+  panel(graph);
 }
-
-setInterval(tick,1000);
-tick();
 
 </script>
 
