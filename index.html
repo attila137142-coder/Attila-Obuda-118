@@ -1,88 +1,111 @@
 <!DOCTYPE html>
-            lat: parseFloat(obj.stop_lat),
-            lon: parseFloat(obj.stop_lon)
-        };
-    });
+<html lang="hu">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>V4.1 CLEAN RUN MAP APP</title>
 
-    console.log("GTFS loaded stops:", GTFS_STOPS.length);
-}
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<style>
+body { font-family: Arial, sans-serif; margin: 0; padding: 10px; }
+#map { height: 420px; width: 100%; margin-top: 10px; border: 1px solid #ccc; }
+.box { margin-bottom: 10px; }
+input { padding: 8px; width: 260px; }
+button { padding: 8px 12px; cursor: pointer; }
+#results div { padding: 4px 0; border-bottom: 1px solid #eee; cursor: pointer; }
+#results div:hover { background: #f2f2f2; }
+</style>
+</head>
+<body>
+
+<h2>🚦 V4.1 CLEAN RUN MAP APP</h2>
+
+<div class="box">
+<input id="search" placeholder="Megálló keresés..." />
+<button onclick="searchStops()">Keresés</button>
+<div id="results"></div>
+</div>
+
+<div id="map"></div>
+
+<script>
 
 // ==============================
-// 🔎 SEARCH
+// 📦 DEMO GTFS STOPS
 // ==============================
-function searchStops(query) {
-    return GTFS_STOPS.filter(s =>
-        s.name.toLowerCase().includes(query.toLowerCase())
-    );
-}
+let STOPS = [
+    {id:"1", name:"Kossuth Lajos tér", lat:47.5069, lon:19.0467},
+    {id:"2", name:"Deák Ferenc tér", lat:47.4979, lon:19.0540},
+    {id:"3", name:"Nyugati pályaudvar", lat:47.5102, lon:19.0569},
+    {id:"4", name:"Keleti pályaudvar", lat:47.5009, lon:19.0822},
+    {id:"5", name:"Blaha Lujza tér", lat:47.4963, lon:19.0705}
+];
 
-function doSearch() {
-    const q = document.getElementById("search").value;
-    const res = searchStops(q);
-
-    document.getElementById("results").innerHTML =
-        res.slice(0, 10).map(s =>
-            `<div>${s.name} (${s.lat}, ${s.lon})</div>`
-        ).join("");
-}
+let map;
+let markers = [];
 
 // ==============================
 // 🗺️ MAP INIT
 // ==============================
-function initMap(lat = 47.4979, lon = 19.0402) {
-    if (typeof L === "undefined") {
-        console.warn("Leaflet nincs betöltve");
-        return;
-    }
-
-    map = L.map('map').setView([lat, lon], 12);
+function initMap() {
+    map = L.map('map').setView([47.4979, 19.0402], 13);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: 'OpenStreetMap'
     }).addTo(map);
 
-    console.log("Map ready");
+    renderAllStops();
 }
 
 // ==============================
-// 📍 RENDER STOPS
+// 📍 RENDER ALL STOPS
 // ==============================
-function renderStopsOnMap(stops) {
-    if (!map) return;
+function renderAllStops() {
+    markers.forEach(m => map.removeLayer(m));
+    markers = [];
 
-    stops.forEach(s => {
-        L.marker([s.lat, s.lon])
+    STOPS.forEach(s => {
+        let marker = L.marker([s.lat, s.lon])
             .addTo(map)
             .bindPopup(s.name);
+
+        markers.push(marker);
     });
 }
 
 // ==============================
-// 🚉 NEAREST STOPS
+// 🔎 SEARCH
 // ==============================
-function findNearestStops(userLat, userLon, limit = 10) {
-    return GTFS_STOPS
-        .map(s => ({
-            ...s,
-            dist: distanceKm(userLat, userLon, s.lat, s.lon)
-        }))
-        .sort((a, b) => a.dist - b.dist)
-        .slice(0, limit);
+function searchStops() {
+    const q = document.getElementById("search").value.toLowerCase();
+
+    const res = STOPS.filter(s => s.name.toLowerCase().includes(q));
+
+    const box = document.getElementById("results");
+    box.innerHTML = "";
+
+    res.forEach(s => {
+        const div = document.createElement("div");
+        div.innerHTML = "🚏 " + s.name;
+
+        div.onclick = () => {
+            map.setView([s.lat, s.lon], 15);
+            L.popup()
+                .setLatLng([s.lat, s.lon])
+                .setContent(s.name)
+                .openOn(map);
+        };
+
+        box.appendChild(div);
+    });
 }
 
 // ==============================
-// 🚀 ROUTE (DEMO)
+// 🚀 INIT
 // ==============================
-function planRoute(fromStop, toStop) {
-    return {
-        from: fromStop.name,
-        to: toStop.name,
-        distance: distanceKm(fromStop.lat, fromStop.lon, toStop.lat, toStop.lon),
-        status: "demo"
-    };
-}
-
-// INIT MAP
 initMap();
 
 </script>
