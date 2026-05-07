@@ -2,12 +2,19 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS INDEX ENGINE V1</title>
+<title>PRO OPS LIVE SYSTEM – REAL ENGINE V1</title>
+
+<style>
+body { margin:0; font-family:Arial; background:#061a16; color:white; }
+#panel { padding:10px; white-space:pre; font-family:monospace; }
+</style>
 </head>
 
 <body>
+
+<h3 style="padding:10px;">🚍 REAL ENGINE V1 – CONTROL CORE</h3>
 <input type="file" id="file">
-<pre id="log">INDEX ENGINE READY</pre>
+<div id="panel">GTFS ENGINE READY</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -18,130 +25,115 @@
 ========================= */
 
 let GTFS = {
-  stops: [],
-  trips: [],
-  stop_times: [],
-  routes: []
+  stops:[],
+  trips:[],
+  stop_times:[]
 };
 
 let INDEX = {
-  stop: {},
-  trip: {},
-  route: {}
+  stop:{},
+  trip:{}
 };
 
 /* =========================
-   📦 CSV PARSER
+   📦 PARSER
 ========================= */
 
 function parse(text){
-
-  const lines = text.trim().split("\n");
-  const h = lines[0].split(",");
+  const lines=text.trim().split("\n");
+  const h=lines[0].split(",");
 
   return lines.slice(1).map(l=>{
-    const o = {};
+    const o={};
     l.split(",").forEach((v,i)=>o[h[i]]=v);
     return o;
   });
 }
 
 /* =========================
-   🧠 BUILD STOP INDEX
+   🧠 INDEX BUILD
 ========================= */
 
-function buildStopIndex(){
+function buildIndex(){
 
-  INDEX.stop = {};
+  INDEX.stop={};
+  INDEX.trip={};
 
   GTFS.stop_times.forEach(st=>{
 
     if(!INDEX.stop[st.stop_id])
-      INDEX.stop[st.stop_id] = [];
+      INDEX.stop[st.stop_id]=[];
 
     INDEX.stop[st.stop_id].push({
-      trip_id: st.trip_id,
-      time: st.departure_time
+      trip:st.trip_id,
+      time:st.departure_time
     });
-  });
-
-}
-
-/* =========================
-   🧠 BUILD TRIP INDEX
-========================= */
-
-function buildTripIndex(){
-
-  INDEX.trip = {};
-
-  GTFS.stop_times.forEach(st=>{
 
     if(!INDEX.trip[st.trip_id])
-      INDEX.trip[st.trip_id] = [];
+      INDEX.trip[st.trip_id]=[];
 
     INDEX.trip[st.trip_id].push({
-      stop_id: st.stop_id,
-      time: st.departure_time
+      stop:st.stop_id,
+      time:st.departure_time
     });
+
   });
 
 }
 
 /* =========================
-   🧠 TIME ENGINE
+   ⏱ TIME ENGINE
 ========================= */
 
-function toSec(t){
-  const p = t.split(":");
-  return (+p[0])*3600 + (+p[1])*60 + (+p[2]||0);
-}
-
 function nowSec(){
-  const d = new Date();
+  const d=new Date();
   return d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds();
 }
 
+function toSec(t){
+  const p=t.split(":");
+  return (+p[0])*3600 + (+p[1])*60 + (+p[2]||0);
+}
+
 /* =========================
-   🚏 QUERY ENGINE
+   🚏 CORE API
 ========================= */
 
 function getDepartures(stop_id){
 
-  const list = INDEX.stop[stop_id] || [];
-  const now = nowSec();
+  const list=INDEX.stop[stop_id]||[];
+  const now=nowSec();
 
-  return list
-    .map(d=>({
-      trip:d.trip_id,
-      time:d.time,
-      diff:toSec(d.time)-now
-    }))
-    .sort((a,b)=>a.diff-b.diff)
-    .slice(0,10);
+  return list.map(d=>({
+    trip:d.trip,
+    time:d.time,
+    diff:toSec(d.time)-now
+  }))
+  .sort((a,b)=>a.diff-b.diff)
+  .slice(0,8);
 }
 
 /* =========================
    🧭 VIEW FILTER (ÓBUDA–SZENTENDRE)
 ========================= */
 
-function applyFilter(){
+const VIEW_STOPS = ["BKS","KAS","OBU","AQI","RUF","SZT"];
 
-  const allowedStops = ["BKS","KAS","OBU","AQI","RUF","SZT"];
+function render(){
 
-  let out = "";
+  let out="";
 
-  allowedStops.forEach(s=>{
+  VIEW_STOPS.forEach(s=>{
 
-    const dep = getDepartures(s);
+    const dep=getDepartures(s);
 
     dep.forEach(d=>{
-      out += `${s} | ${d.trip} | ${d.time} | ${d.diff}\n`;
+      out+=`${s} | ${d.trip} | ${d.time} | ${d.diff}\n`;
     });
 
   });
 
-  document.getElementById("log").innerText = out;
+  document.getElementById("panel").innerText=out;
 
 }
 
@@ -149,21 +141,22 @@ function applyFilter(){
    📦 LOAD GTFS
 ========================= */
 
-document.getElementById("file").addEventListener("change", async e=>{
+document.getElementById("file").onchange=async e=>{
 
-  const zip = await JSZip.loadAsync(e.target.files[0]);
+  const zip=await JSZip.loadAsync(e.target.files[0]);
 
-  GTFS.stops = parse(await zip.file("stops.txt").async("string"));
-  GTFS.trips = parse(await zip.file("trips.txt").async("string"));
-  GTFS.stop_times = parse(await zip.file("stop_times.txt").async("string"));
+  GTFS.stops=parse(await zip.file("stops.txt").async("string"));
+  GTFS.trips=parse(await zip.file("trips.txt").async("string"));
+  GTFS.stop_times=parse(await zip.file("stop_times.txt").async("string"));
 
-  buildStopIndex();
-  buildTripIndex();
+  buildIndex();
+  render();
 
-  applyFilter();
+};
 
-});
+setInterval(render,1000);
 
 </script>
+
 </body>
 </html>
