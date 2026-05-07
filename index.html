@@ -3,499 +3,180 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>🟦 V14 LOCAL GTFS CORE</title>
-
-<link rel="stylesheet"
-href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<title>ATTILA ULTRA SMART SEARCH + AUTO GTFS LOADER</title>
 
 <style>
-
-body{
-    margin:0;
-    font-family:Arial;
-    background:#0b1220;
-    color:white;
-}
-
-header{
-    background:#111827;
-    color:#38bdf8;
-    text-align:center;
-    padding:12px;
-    font-size:22px;
-    font-weight:bold;
-}
-
-.container{
-    display:flex;
-    height:calc(100vh - 56px);
-}
-
-/* LEFT */
-
-.left{
-    width:36%;
-    background:#0f172a;
-    border-right:1px solid #1f2937;
-    display:flex;
-    flex-direction:column;
-}
-
-.panel{
-    padding:10px;
-    border-bottom:1px solid #1f2937;
-}
-
-input,button{
-    width:100%;
-    padding:10px;
-    margin-top:6px;
-    border:none;
-    border-radius:8px;
-    box-sizing:border-box;
-}
-
-input{
-    background:#1f2937;
-    color:white;
-}
-
-button{
-    background:#38bdf8;
-    color:black;
-    font-weight:bold;
-    cursor:pointer;
-}
-
-button:hover{
-    background:#0ea5e9;
-}
-
-#results{
-    flex:1;
-    overflow:auto;
-    padding:10px;
-}
-
-.card{
-    background:#111827;
-    border:1px solid #1f2937;
-    border-radius:10px;
-    padding:12px;
-    margin-bottom:10px;
-    line-height:1.5;
-}
-
-.card h3{
-    margin-top:0;
-    color:#38bdf8;
-}
-
-.badge{
-    display:inline-block;
-    background:#1e293b;
-    padding:3px 7px;
-    border-radius:6px;
-    font-size:12px;
-    margin-top:4px;
-}
-
-/* RIGHT */
-
-.right{
-    width:64%;
-}
-
-#map{
-    width:100%;
-    height:100%;
-}
-
-.small{
-    font-size:12px;
-    color:#94a3b8;
-}
-
+body { font-family: Arial; background:#0b1220; color:white; padding:15px }
+h1 { margin-bottom:10px }
+button { padding:10px; border:none; border-radius:8px; margin:5px; background:#22c55e; color:white; font-weight:bold }
+input { padding:10px; border-radius:8px; width:80% }
+.card { background:#1e293b; padding:10px; border-radius:10px; margin-top:10px }
+.small { font-size:12px; opacity:0.7 }
+.warn { color:#f87171 }
+.ok { color:#22c55e }
 </style>
-</head>
 
+</head>
 <body>
 
-<header>
-🟦 V14 LOCAL GTFS CORE
-</header>
+<h1>🧠 ULTRA SMART SEARCH + AUTO GTFS LOADER</h1>
 
-<div class="container">
+<input type="file" id="zipInput" accept=".zip">
+<button onclick="loadZIP()">📦 GTFS ZIP betöltés</button>
+<button onclick="getLocation()">📍 Saját helyzet</button>
 
-<!-- LEFT -->
+<br><br>
+<input id="q" placeholder="Keresés (pl: nad utca, hidfo)" />
+<button onclick="search()">🔍 KERESÉS</button>
 
-<div class="left">
-
-<div class="panel">
-
-<input type="file"
-id="gtfsZip"
-accept=".zip">
-
-<input
-id="search"
-placeholder="Megálló / GTFS ID">
-
-<button onclick="searchStops()">
-🔎 KERESÉS
-</button>
-
-<button onclick="showAllStops()">
-🚏 ÖSSZES STOP
-</button>
-
-<button onclick="startGPS()">
-📍 GPS START
-</button>
-
-<button onclick="findNearest()">
-🧭 LEGKÖZELEBBI
-</button>
-
-</div>
-
-<div id="results">
-
-<div class="card">
-
-<h3>🚀 V14 READY</h3>
-
-Tölts be egy GTFS ZIP-et.
-
-</div>
-
-</div>
-
-</div>
-
-<!-- RIGHT -->
-
-<div class="right">
-<div id="map"></div>
-</div>
-
-</div>
-
-<!-- LIBS -->
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<div id="me"></div>
+<div id="out"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-
 <script>
 
-// ================= MAP =================
+let STOPS=[];
+let MY={lat:null,lon:null};
 
-let map =
-L.map('map').setView([47.4979,19.0402],11);
+// 📍 HELYZET + CÍM
+async function getLocation(){
 
-L.tileLayer(
-'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-{
-    maxZoom:19
-}).addTo(map);
+  navigator.geolocation.getCurrentPosition(async pos=>{
 
-// ================= USER =================
+    let lat=pos.coords.latitude;
+    let lon=pos.coords.longitude;
+    let acc=pos.coords.accuracy;
 
-let USER = {
-    lat:null,
-    lon:null,
-    marker:null
-};
+    let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+    let data=await res.json();
 
-// ================= GTFS =================
+    let a=data.address||{};
 
-let STOPS = [];
+    document.getElementById("me").innerHTML=`
+      <div class='card'>
+      📍 ${lat.toFixed(6)}, ${lon.toFixed(6)}<br>
+      🌍 ${a.country||"-"}<br>
+      🏙 ${a.city||a.town||a.village||"-"}<br>
+      🏠 ${a.road||"-"} ${a.house_number||""}<br>
+      🎯 ±${Math.round(acc)} m
+      </div>`;
 
-let markers = [];
+    MY.lat=lat; MY.lon=lon;
 
-// ================= DIST =================
-
-function dist(lat1,lon1,lat2,lon2){
-
-    const R = 6371;
-
-    let dLat = (lat2-lat1)*Math.PI/180;
-    let dLon = (lon2-lon1)*Math.PI/180;
-
-    let a =
-        Math.sin(dLat/2)**2 +
-        Math.cos(lat1*Math.PI/180) *
-        Math.cos(lat2*Math.PI/180) *
-        Math.sin(dLon/2)**2;
-
-    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+  });
 }
 
-// ================= DRAW =================
+// 📦 ZIP → JSON AUTO
+async function loadZIP(){
 
-function drawStops(){
+  let file=document.getElementById("zipInput").files[0];
+  if(!file) return alert("Nincs ZIP kiválasztva!");
 
-    markers.forEach(m=>map.removeLayer(m));
+  try{
 
-    markers=[];
+    let zip=await JSZip.loadAsync(file);
 
-    STOPS.forEach(s=>{
+    let stopsFile=Object.keys(zip.files).find(f=>f.includes("stops.txt"));
 
-        let m =
-        L.marker([s.lat,s.lon])
-        .addTo(map)
-        .bindPopup(`
+    if(!stopsFile) throw "Nincs stops.txt!";
 
-<b>${s.name}</b><br>
+    let txt=await zip.file(stopsFile).async("string");
 
-🆔 ${s.id}<br>
+    let lines=txt.split("\n");
+    let headers=lines[0].split(",");
 
-📍 ${s.lat}, ${s.lon}
+    let iId=headers.indexOf("stop_id");
+    let iName=headers.indexOf("stop_name");
+    let iLat=headers.indexOf("stop_lat");
+    let iLon=headers.indexOf("stop_lon");
 
-`);
+    STOPS=[];
 
-        markers.push(m);
+    for(let i=1;i<lines.length;i++){
+      let row=lines[i].split(",");
+      if(row.length<4) continue;
 
-    });
+      STOPS.push({
+        id:row[iId],
+        name:row[iName],
+        lat:parseFloat(row[iLat]),
+        lon:parseFloat(row[iLon])
+      });
+    }
 
+    // 💾 mentés
+    localStorage.setItem("STOPS",JSON.stringify(STOPS));
+
+    alert("✔ Betöltve: "+STOPS.length+" megálló");
+
+  }catch(e){
+    alert("❌ Hiba: "+e);
+  }
 }
 
-// ================= RENDER =================
+// 📥 AUTO LOAD
+(function(){
+  let s=localStorage.getItem("STOPS");
+  if(s){
+    STOPS=JSON.parse(s);
+    console.log("Auto betöltve:",STOPS.length);
+  }
+})();
 
-function renderStops(arr){
-
-    let html="";
-
-    arr.forEach(s=>{
-
-        let d = "N/A";
-
-        if(USER.lat){
-
-            d =
-            dist(
-                USER.lat,
-                USER.lon,
-                s.lat,
-                s.lon
-            ).toFixed(2)+" km";
-        }
-
-        html += `
-
-<div class="card">
-
-<h3>🚏 ${s.name}</h3>
-
-<div class="badge">
-🆔 ${s.id}
-</div>
-
-<br><br>
-
-📍 LAT:
-${s.lat}<br>
-
-📍 LON:
-${s.lon}<br><br>
-
-📏 Távolság:
-<b>${d}</b>
-
-</div>
-
-`;
-
-    });
-
-    document.getElementById("results").innerHTML = html;
-}
-
-// ================= SEARCH =================
-
-function searchStops(){
-
-    let q =
-    document.getElementById("search")
-    .value
+// 🧠 NORMALIZÁLÁS
+function norm(t){
+  return (t||"")
     .toLowerCase()
-    .trim();
-
-    let res =
-    STOPS.filter(s=>
-
-        s.name.toLowerCase().includes(q) ||
-
-        s.id.toLowerCase().includes(q)
-
-    );
-
-    renderStops(res);
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g,"")
+    .replace(/[^a-z0-9 ]/g,"");
 }
 
-// ================= SHOW ALL =================
-
-function showAllStops(){
-
-    renderStops(STOPS);
+// 📏 TÁVOLSÁG
+function dist(a,b,c,d){
+  const R=6371000;
+  const toRad=x=>x*Math.PI/180;
+  let dLat=toRad(c-a);
+  let dLon=toRad(d-b);
+  let A=Math.sin(dLat/2)**2+
+    Math.cos(toRad(a))*Math.cos(toRad(c))*Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(A),Math.sqrt(1-A));
 }
 
-// ================= GPS =================
+// 🔍 SEARCH
+function search(){
 
-function startGPS(){
+  if(!STOPS.length) return alert("Nincs adat!");
 
-    navigator.geolocation.watchPosition(pos=>{
+  let q=norm(document.getElementById("q").value);
 
-        USER.lat = pos.coords.latitude;
-        USER.lon = pos.coords.longitude;
+  let res=STOPS.map(s=>{
 
-        if(USER.marker){
+    let n=norm(s.name);
+    let score=0;
 
-            map.removeLayer(USER.marker);
-        }
+    if(n.includes(q)) score+=2;
+    if(n.startsWith(q)) score+=3;
 
-        USER.marker =
-        L.marker([USER.lat,USER.lon])
-        .addTo(map)
-        .bindPopup("📍 SAJÁT HELYZET");
+    let d=MY.lat?dist(MY.lat,MY.lon,s.lat,s.lon):null;
 
-        map.setView([USER.lat,USER.lon],13);
+    return {...s,score,dist:d};
 
-    });
+  })
+  .filter(x=>x.score>0)
+  .sort((a,b)=>b.score-a.score)
+  .slice(0,20);
 
+  document.getElementById("out").innerHTML=
+    res.map(s=>`
+      <div class='card'>
+        <b>${s.name}</b><br>
+        🆔 ${s.id}<br>
+        📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}<br>
+        📏 ${s.dist?Math.round(s.dist)+" m":"n/a"}
+      </div>
+    `).join("") || "<div class='card'>Nincs találat</div>";
 }
-
-// ================= NEAREST =================
-
-function findNearest(){
-
-    if(!USER.lat){
-
-        alert("Nincs GPS");
-
-        return;
-    }
-
-    let best=null;
-    let bestD=999999;
-
-    STOPS.forEach(s=>{
-
-        let d =
-        dist(
-            USER.lat,
-            USER.lon,
-            s.lat,
-            s.lon
-        );
-
-        if(d < bestD){
-
-            best=s;
-            bestD=d;
-        }
-
-    });
-
-    renderStops([best]);
-}
-
-// ================= GTFS IMPORT =================
-
-document
-.getElementById("gtfsZip")
-.addEventListener("change", async e=>{
-
-    let file = e.target.files[0];
-
-    if(!file){
-
-        return;
-    }
-
-    document.getElementById("results").innerHTML = `
-
-<div class="card">
-
-<h3>⏳ GTFS IMPORT...</h3>
-
-ZIP feldolgozás...
-
-</div>
-
-`;
-
-    let zip = await JSZip.loadAsync(file);
-
-    // ================= stops.txt =================
-
-    let stopsFile = zip.file("stops.txt");
-
-    if(!stopsFile){
-
-        alert("Nincs stops.txt");
-
-        return;
-    }
-
-    let stopsText =
-    await stopsFile.async("string");
-
-    let parsed =
-    Papa.parse(stopsText,{
-        header:true
-    });
-
-    STOPS = parsed.data
-    .filter(s=>
-
-        s.stop_lat &&
-        s.stop_lon &&
-        s.stop_name
-
-    )
-    .map(s=>({
-
-        id:
-            s.stop_id || "N/A",
-
-        name:
-            s.stop_name || "N/A",
-
-        lat:
-            parseFloat(s.stop_lat),
-
-        lon:
-            parseFloat(s.stop_lon)
-
-    }));
-
-    drawStops();
-
-    renderStops(STOPS.slice(0,50));
-
-    document.getElementById("results").innerHTML = `
-
-<div class="card">
-
-<h3>✅ GTFS IMPORT KÉSZ</h3>
-
-🚏 Stopok:
-<b>${STOPS.length}</b>
-
-<br><br>
-
-🔎 Keresés már működik.
-
-</div>
-
-`;
-
-});
 
 </script>
 
