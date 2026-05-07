@@ -2,133 +2,173 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>V6 GTFS MAP CLUSTER CORE</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<title>V5 Dispatcher Core</title>
 
 <style>
-body { font-family: Arial; margin: 0; padding: 10px; }
-#map { height: 500px; width: 100%; margin-top: 10px; border: 1px solid #ccc; }
-.box { margin-bottom: 10px; }
-input, button { padding: 8px; }
-#results div { padding: 6px; border-bottom: 1px solid #eee; cursor: pointer; }
-#results div:hover { background: #f2f2f2; }
+body {
+  margin:0;
+  font-family: Arial;
+  display:flex;
+  height:100vh;
+}
+
+/* LEFT PANEL */
+#panel {
+  width:350px;
+  background:#0b3d2e;
+  color:white;
+  padding:10px;
+  overflow:hidden;
+}
+
+.row {
+  display:flex;
+  justify-content:space-between;
+  padding:6px;
+  border-bottom:1px solid rgba(255,255,255,0.1);
+  font-size:14px;
+}
+
+.green { color:#7CFF7C; }
+.red { color:#ff4d4d; font-weight:bold; }
+.blue { color:#4da6ff; font-weight:bold; }
+
+/* MAP */
+#map {
+  flex:1;
+  background:#e6e6e6;
+  position:relative;
+}
+
+/* STOP */
+.stop {
+  position:absolute;
+  width:10px;
+  height:10px;
+  background:green;
+  border-radius:50%;
+}
+
+/* VEHICLE */
+.vehicle {
+  position:absolute;
+  width:14px;
+  height:14px;
+  background:red;
+  border-radius:50%;
+}
 </style>
 </head>
+
 <body>
 
-<h2>🚉 V6 GTFS MAP CLUSTER CORE (ALL STOPS)</h2>
-
-<div class="box">
-<input type="file" id="zipFile" accept=".zip" />
-<button onclick="loadGTFSZip()">GTFS betöltés</button>
-<p id="status">Nincs GTFS</p>
+<!-- LEFT PANEL -->
+<div id="panel">
+  <h3>🚏 Megálló indulások</h3>
+  <div id="list"></div>
 </div>
 
-<div class="box">
-<input id="search" placeholder="Megálló keresés..." />
-<button onclick="searchStops()">Keresés</button>
-<div id="results"></div>
-</div>
-
+<!-- MAP -->
 <div id="map"></div>
 
 <script>
 
-let STOPS = [];
-let map;
-let cluster;
+/* =========================
+   MOCK ADATOK (GTFS + RT)
+========================= */
 
-function distanceKm(lat1, lon1, lat2, lon2) {
-    const R = 6371;
-    const dLat = (lat2-lat1)*Math.PI/180;
-    const dLon = (lon2-lon1)*Math.PI/180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
-    return Math.round((2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)))*100)/100;
+let stops = [
+  {name:"Deák tér", x:200, y:200},
+  {name:"Kálvin tér", x:300, y:260}
+];
+
+let vehicles = [
+  {id:"B1", x:100, y:100, dx:1, dy:0.5, delay:120},
+  {id:"B2", x:250, y:150, dx:-0.3, dy:1, delay:-90}
+];
+
+/* =========================
+   PANEL LOGIKA
+========================= */
+
+function format(delaySec){
+  const abs = Math.abs(delaySec || 0);
+  const m = Math.floor(abs/60);
+  const s = abs%60;
+
+  if(delaySec < 0) return `<span class="red">🔴 -${m}:${s.toString().padStart(2,'0')}</span>`;
+  if(delaySec > 0) return `<span class="blue">🔵 +${m}:${s.toString().padStart(2,'0')}</span>`;
+  return `<span class="green">🟢 ON TIME</span>`;
 }
 
-function initMap(){
-    map = L.map('map').setView([47.4979,19.0402],11);
+function updateList(){
+  let html = "";
 
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'OSM'}).addTo(map);
+  for(let i=0;i<15;i++){
+    let v = vehicles[i % vehicles.length];
 
-    cluster = L.markerClusterGroup();
-    map.addLayer(cluster);
+    html += `
+      <div class="row">
+        <div>12A → Rákospalota</div>
+        <div>${format(v.delay)}</div>
+      </div>
+    `;
+  }
+
+  document.getElementById("list").innerHTML = html;
 }
 
-initMap();
+/* =========================
+   MAP RENDER (SIMPLIFIED)
+========================= */
 
-function parseCSV(text){
-    const lines = text.trim().split(/\r?\n/);
-    const h = lines[0].split(',');
+function draw(){
+  const map = document.getElementById("map");
+  map.innerHTML = "";
 
-    return lines.slice(1).map(l=>{
-        const c = l.split(',');
-        let o={};
-        h.forEach((x,i)=>o[x]=c[i]);
-        return o;
-    });
+  /* stops */
+  stops.forEach(s=>{
+    let d = document.createElement("div");
+    d.className = "stop";
+    d.style.left = s.x+"px";
+    d.style.top = s.y+"px";
+    map.appendChild(d);
+  });
+
+  /* vehicles */
+  vehicles.forEach(v=>{
+    let d = document.createElement("div");
+    d.className = "vehicle";
+    d.style.left = v.x+"px";
+    d.style.top = v.y+"px";
+    map.appendChild(d);
+  });
 }
 
-function loadGTFSZip(){
-    const file=document.getElementById('zipFile').files[0];
-    if(!file) return alert('Nincs ZIP');
+/* =========================
+   ANIMÁCIÓ (LIVE MOVE)
+========================= */
 
-    JSZip.loadAsync(file).then(zip=>{
-        let stopsFile;
-        zip.forEach((p,e)=>{if(p.includes('stops.txt'))stopsFile=e;});
+function tick(){
+  vehicles.forEach(v=>{
+    v.x += v.dx;
+    v.y += v.dy;
 
-        if(!stopsFile) return alert('Nincs stops.txt');
+    if(v.x < 0 || v.x > 500) v.dx *= -1;
+    if(v.y < 0 || v.y > 500) v.dy *= -1;
 
-        stopsFile.async('string').then(text=>{
-            const data=parseCSV(text);
+    // delay random simulation
+    v.delay += (Math.random()*10 - 5);
+  });
 
-            STOPS=data.map(s=>({
-                id:s.stop_id,
-                name:s.stop_name,
-                lat:parseFloat(s.stop_lat),
-                lon:parseFloat(s.stop_lon)
-            })).filter(s=>s.lat&&s.lon);
-
-            document.getElementById('status').innerText='GTFS: '+STOPS.length+' megálló';
-
-            renderStops();
-        });
-    });
+  updateList();
+  draw();
 }
 
-function renderStops(){
-    cluster.clearLayers();
+setInterval(tick, 1000);
 
-    STOPS.forEach(s=>{
-        const m=L.marker([s.lat,s.lon]);
-        m.bindPopup(`<b>${s.name}</b><br>ID: ${s.id}`);
-        cluster.addLayer(m);
-    });
-}
-
-function searchStops(){
-    const q=document.getElementById('search').value.toLowerCase();
-
-    const res=STOPS.filter(s=>(s.name||'').toLowerCase().includes(q));
-
-    const box=document.getElementById('results');
-    box.innerHTML='';
-
-    res.slice(0,20).forEach(s=>{
-        const d=document.createElement('div');
-        d.innerHTML=`🚏 ${s.name} <small>(${s.id})</small>`;
-        d.onclick=()=>map.setView([s.lat,s.lon],15);
-        box.appendChild(d);
-    });
-}
+updateList();
+draw();
 
 </script>
 
