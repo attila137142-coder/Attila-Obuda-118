@@ -2,132 +2,165 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS CORE ENGINE V1</title>
+<title>GTFS INDEX ENGINE V1</title>
 </head>
 
 <body>
-<input type="file" id="file" accept=".zip">
-<pre id="out">GTFS CORE ENGINE READY</pre>
+<input type="file" id="file">
+<pre id="log">INDEX ENGINE READY</pre>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 
 /* =========================
-   🧠 CORE STORAGE
+   🧠 STORAGE
 ========================= */
 
 let GTFS = {
   stops: [],
   trips: [],
-  stop_times: []
+  stop_times: [],
+  routes: []
 };
 
-let INDEX = {}; // stop_id → departures
+let INDEX = {
+  stop: {},
+  trip: {},
+  route: {}
+};
 
 /* =========================
    📦 CSV PARSER
 ========================= */
 
-function parseCSV(text){
+function parse(text){
 
   const lines = text.trim().split("\n");
-  const headers = lines[0].split(",");
+  const h = lines[0].split(",");
 
-  return lines.slice(1).map(line=>{
-    const obj = {};
-    const cols = line.split(",");
-
-    headers.forEach((h,i)=>{
-      obj[h] = cols[i];
-    });
-
-    return obj;
+  return lines.slice(1).map(l=>{
+    const o = {};
+    l.split(",").forEach((v,i)=>o[h[i]]=v);
+    return o;
   });
 }
 
 /* =========================
-   🧠 INDEX BUILDER (CORE LOGIC)
+   🧠 BUILD STOP INDEX
 ========================= */
 
-function buildIndex(){
+function buildStopIndex(){
 
-  INDEX = {};
+  INDEX.stop = {};
 
   GTFS.stop_times.forEach(st=>{
 
-    if(!INDEX[st.stop_id]) INDEX[st.stop_id] = [];
+    if(!INDEX.stop[st.stop_id])
+      INDEX.stop[st.stop_id] = [];
 
-    INDEX[st.stop_id].push({
-      trip: st.trip_id,
+    INDEX.stop[st.stop_id].push({
+      trip_id: st.trip_id,
       time: st.departure_time
     });
   });
 
-  console.log("INDEX READY", INDEX);
 }
 
 /* =========================
-   ⏱ TIME ENGINE
+   🧠 BUILD TRIP INDEX
+========================= */
+
+function buildTripIndex(){
+
+  INDEX.trip = {};
+
+  GTFS.stop_times.forEach(st=>{
+
+    if(!INDEX.trip[st.trip_id])
+      INDEX.trip[st.trip_id] = [];
+
+    INDEX.trip[st.trip_id].push({
+      stop_id: st.stop_id,
+      time: st.departure_time
+    });
+  });
+
+}
+
+/* =========================
+   🧠 TIME ENGINE
 ========================= */
 
 function toSec(t){
-
-  if(!t) return 0;
-
   const p = t.split(":");
   return (+p[0])*3600 + (+p[1])*60 + (+p[2]||0);
 }
 
 function nowSec(){
-
   const d = new Date();
   return d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds();
 }
 
 /* =========================
-   🚏 CORE API (THIS IS THE POINT)
+   🚏 QUERY ENGINE
 ========================= */
 
 function getDepartures(stop_id){
 
-  const list = INDEX[stop_id] || [];
+  const list = INDEX.stop[stop_id] || [];
   const now = nowSec();
 
-  return list.map(d=>({
-
-    trip: d.trip,
-    time: d.time,
-    diff: toSec(d.time) - now
-
-  })).sort((a,b)=>a.diff-b.diff);
+  return list
+    .map(d=>({
+      trip:d.trip_id,
+      time:d.time,
+      diff:toSec(d.time)-now
+    }))
+    .sort((a,b)=>a.diff-b.diff)
+    .slice(0,10);
 }
 
 /* =========================
-   📦 GTFS LOADER (ZIP)
+   🧭 VIEW FILTER (ÓBUDA–SZENTENDRE)
+========================= */
+
+function applyFilter(){
+
+  const allowedStops = ["BKS","KAS","OBU","AQI","RUF","SZT"];
+
+  let out = "";
+
+  allowedStops.forEach(s=>{
+
+    const dep = getDepartures(s);
+
+    dep.forEach(d=>{
+      out += `${s} | ${d.trip} | ${d.time} | ${d.diff}\n`;
+    });
+
+  });
+
+  document.getElementById("log").innerText = out;
+
+}
+
+/* =========================
+   📦 LOAD GTFS
 ========================= */
 
 document.getElementById("file").addEventListener("change", async e=>{
 
   const zip = await JSZip.loadAsync(e.target.files[0]);
 
-  const stops = await zip.file("stops.txt").async("string");
-  const trips = await zip.file("trips.txt").async("string");
-  const stop_times = await zip.file("stop_times.txt").async("string");
+  GTFS.stops = parse(await zip.file("stops.txt").async("string"));
+  GTFS.trips = parse(await zip.file("trips.txt").async("string"));
+  GTFS.stop_times = parse(await zip.file("stop_times.txt").async("string"));
 
-  GTFS.stops = parseCSV(stops);
-  GTFS.trips = parseCSV(trips);
-  GTFS.stop_times = parseCSV(stop_times);
+  buildStopIndex();
+  buildTripIndex();
 
-  buildIndex();
-
-  document.getElementById("out").innerText =
-    "GTFS LOADED\nSTOPS: "+GTFS.stops.length+
-    "\nTRIPS: "+GTFS.trips.length+
-    "\nSTOP_TIMES: "+GTFS.stop_times.length;
-
-  /* DEMO CALL (NO UI YET) */
-  console.log(getDepartures(GTFS.stop_times[0].stop_id));
+  applyFilter();
 
 });
 
