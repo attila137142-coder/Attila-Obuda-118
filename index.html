@@ -1,6 +1,6 @@
-# 🚍 Budapest Control Room – V2 FIXED (CLICK + GTFS SAFE CORE)
+# 🚍 Budapest Control Room – V2.2 TIME ENGINE FIXED + REAL DELAY LOGIC
 
-## (STABIL MAP + WORKING STOP CLICK + SAFE INDEX)
+## (STABIL GTFS CORE + HELYES IDŐKEZELÉS + VALÓS “DISPATCH” LOGIKA)
 
 ```html
 <!DOCTYPE html>
@@ -8,7 +8,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Control Room V2 FIXED</title>
+<title>Control Room V2.2 TIME ENGINE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -32,13 +32,13 @@ body{margin:0;font-family:Arial;background:#061b17;color:#dff;overflow:hidden;}
 <body>
 
 <div id="topbar">
-🚍 V2 FIXED GTFS CORE (CLICK FIX)
+🚍 V2.2 TIME ENGINE FIXED
 <input type="file" id="zip">
-<button onclick="renderAll()">RESET</button>
+<button onclick="resetPanel()">RESET</button>
 </div>
 
 <div id="layout">
-<div id="panel">GTFS: WAITING FILE...</div>
+<div id="panel">GTFS CORE: WAITING FILE...</div>
 <div id="map"></div>
 </div>
 
@@ -52,11 +52,10 @@ let INDEX={stop:{}};
 
 let map=L.map('map').setView([47.55,19.05],11);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
 let layer=L.layerGroup().addTo(map);
 
 /* =========================
-🧠 SAFE CSV PARSER (FIXED)
+🧠 SAFE CSV PARSER
 ========================= */
 function parseCSVLine(line){
  let res=[],cur="",q=false;
@@ -71,8 +70,25 @@ function parseCSVLine(line){
 
 function safe(v){return v?v:"";}
 
-function nowSec(){let d=new Date();return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();}
-function toSec(t){if(!t)return 0;let p=t.split(':');return (+p[0])*3600+(+p[1])*60+(+p[2]||0);}
+/* =========================
+⏱ TIME ENGINE FIXED
+========================= */
+
+function nowSec(){
+ const d=new Date();
+ return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
+}
+
+function toSec(t){
+ if(!t) return 0;
+ let p=t.split(':');
+ let h=parseInt(p[0],10);
+ let m=parseInt(p[1],10);
+ let s=parseInt(p[2]||0,10);
+
+ // IMPORTANT: GTFS CAN BE >24h, DO NOT MODULO
+ return h*3600 + m*60 + s;
+}
 
 /* =========================
 📦 LOAD GTFS
@@ -114,7 +130,7 @@ async function loadGTFS(file){
 }
 
 /* =========================
-🧩 INDEX
+🧩 INDEX ENGINE
 ========================= */
 function buildIndex(){
  INDEX.stop={};
@@ -126,7 +142,7 @@ function buildIndex(){
 }
 
 /* =========================
-🗺 MAP + CLICK FIX
+🗺 MAP + CLICK
 ========================= */
 function renderMap(){
  layer.clearLayers();
@@ -145,7 +161,6 @@ function renderMap(){
   }).addTo(layer);
 
   marker.on('click',()=>{
-   console.log("CLICK STOP:",s.stop_id);
    renderPanel(s.stop_id);
   });
 
@@ -155,7 +170,7 @@ function renderMap(){
 }
 
 /* =========================
-📋 PANEL
+📋 PANEL + REAL TIME LOGIC
 ========================= */
 function renderPanel(stop_id){
 
@@ -169,17 +184,30 @@ function renderPanel(stop_id){
  html+="<div class='small'>"+safe(meta.stop_lat)+" , "+safe(meta.stop_lon)+"</div>";
 
  for(let i=0;i<Math.min(list.length,15);i++){
+
   let d=list[i];
-  let diff=toSec(d.departure_time)-now;
+  let dep=toSec(d.departure_time);
+
+  let diffMin=(dep-now)/60;
 
   let cls="green";
-  if(diff>30) cls="blue";
-  if(diff<-30) cls="red";
+  let label="on time";
+
+  if(diffMin < -1){
+   cls="red";
+   label="departed";
+  } else if(diffMin > 1){
+   cls="blue";
+   label="in " + Math.floor(diffMin)+"m";
+  } else {
+   cls="green";
+   label="now";
+  }
 
   html+="<div class='row'>"+
    "<div>"+safe(d.trip_id).slice(0,6)+"</div>"+
    "<div>"+safe(d.departure_time)+"</div>"+
-   "<div class='"+cls+"'>"+(diff>0?"+":"")+Math.floor(diff/60)+"m</div>"+
+   "<div class='"+cls+"'>"+label+"</div>"+
   "</div>";
  }
 
@@ -187,13 +215,14 @@ function renderPanel(stop_id){
  document.getElementById('panel').innerHTML=html;
 }
 
-function renderAll(){
+function resetPanel(){
  document.getElementById('panel').innerHTML="CLICK A STOP";
 }
 
 /* =========================
 📂 INPUT
 ========================= */
+
 document.getElementById('zip').addEventListener('change',e=>{
  loadGTFS(e.target.files[0]);
 });
@@ -201,5 +230,4 @@ document.getElementById('zip').addEventListener('change',e=>{
 </script>
 </body>
 </html>
-```
-
+``
