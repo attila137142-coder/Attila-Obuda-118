@@ -1,6 +1,6 @@
-# 🚍 Budapest Control Room – V3 GTFS ROUTE ENGINE (STABLE CORE + TRIP + ROUTE + HEADSIGN)
+# 🚍 Budapest Control Room – V3.1 DISPATCH CORE (STRUCTURED JOURNEY VIEW)
 
-## (STOP + JÁRAT + CÉLIRÁNY + 15 SOROS DISPATCH PANEL)
+## (BKK/Volán-SZINTŰ PANEL LOGIKA: STOP → TRIP → CLEAN DEPARTURE VIEW)
 
 ```html
 <!DOCTYPE html>
@@ -8,7 +8,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Control Room V3 ROUTE ENGINE</title>
+<title>Control Room V3.1 DISPATCH CORE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -18,22 +18,22 @@
 body{margin:0;font-family:Arial;background:#061b17;color:#dff;overflow:hidden;}
 #topbar{height:50px;background:#0a2a24;display:flex;align-items:center;gap:10px;padding:0 10px;border-bottom:2px solid #00ffb3;font-weight:bold;}
 #layout{display:flex;height:calc(100vh - 50px);}
-#panel{width:460px;background:#081f1b;border-right:2px solid #00ffb3;overflow:auto;padding:10px;font-family:monospace;}
+#panel{width:480px;background:#081f1b;border-right:2px solid #00ffb3;overflow:auto;padding:10px;font-family:monospace;}
 #map{flex:1;}
 .stopBox{padding:8px;border:1px solid #0d3b33;margin-bottom:10px;border-radius:6px;}
-.row{display:grid;grid-template-columns:90px 1fr 80px;font-size:12px;padding:2px 0;border-bottom:1px solid #0d3b33;}
+.row{display:grid;grid-template-columns:70px 1fr 90px;font-size:12px;padding:4px 0;border-bottom:1px solid #0d3b33;}
+.badge{color:#ffe66d;font-weight:bold;}
 .green{color:#65ff8f;}
 .blue{color:#4db7ff;}
-red{color:#ff5b5b;}
+.red{color:#ff5b5b;}
 .small{font-size:11px;opacity:0.8;}
-.badge{color:#ffe66d;}
 </style>
 </head>
 
 <body>
 
 <div id="topbar">
-🚍 V3 ROUTE ENGINE (STOP + TRIP + HEADSIGN)
+🚍 V3.1 DISPATCH CORE (STRUCTURED VIEW)
 <input type="file" id="zip">
 <button onclick="resetPanel()">RESET</button>
 </div>
@@ -56,7 +56,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 let layer=L.layerGroup().addTo(map);
 
 /* =========================
-🧠 SAFE CSV
+🧠 CSV SAFE
 ========================= */
 function parseCSVLine(line){
  let res=[],cur="",q=false;
@@ -72,7 +72,7 @@ function parseCSVLine(line){
 function safe(v){return v?v:"";}
 
 function nowSec(){let d=new Date();return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();}
-function toSec(t){if(!t)return 0;let p=t.split(':');let h=parseInt(p[0]);let m=parseInt(p[1]);let s=parseInt(p[2]||0);return h*3600+m*60+s;}
+function toSec(t){if(!t)return 0;let p=t.split(':');return (+p[0])*3600+(+p[1])*60+(+p[2]||0);}
 
 /* =========================
 📦 LOAD GTFS
@@ -80,29 +80,14 @@ function toSec(t){if(!t)return 0;let p=t.split(':');let h=parseInt(p[0]);let m=p
 async function loadGTFS(file){
  const zip=await JSZip.loadAsync(file);
 
- async function loadTxt(name){
-  if(!zip.file(name)) return null;
-  return await zip.file(name).async('string');
- }
+ async function get(name){if(!zip.file(name))return null;return await zip.file(name).async('string');}
+ function table(txt){let l=txt.split(/\r?\n/);let h=parseCSVLine(l[0]);let o=[];
+ for(let i=1;i<l.length;i++){if(!l[i])continue;let r=parseCSVLine(l[i]);let obj={};h.forEach((x,j)=>obj[x]=r[j]||"");o.push(obj);}return o;}
 
- function parseTable(txt){
-  let lines=txt.split(/\r?\n/);
-  let h=parseCSVLine(lines[0]);
-  let out=[];
-  for(let i=1;i<lines.length;i++){
-   if(!lines[i]) continue;
-   let r=parseCSVLine(lines[i]);
-   let obj={};
-   h.forEach((x,j)=>obj[x]=r[j]||"");
-   out.push(obj);
-  }
-  return out;
- }
-
- GTFS.stops=parseTable(await loadTxt('stops.txt'))||[];
- GTFS.stop_times=parseTable(await loadTxt('stop_times.txt'))||[];
- GTFS.trips=parseTable(await loadTxt('trips.txt'))||[];
- GTFS.routes=parseTable(await loadTxt('routes.txt'))||[];
+ GTFS.stops=table(await get('stops.txt'))||[];
+ GTFS.stop_times=table(await get('stop_times.txt'))||[];
+ GTFS.trips=table(await get('trips.txt'))||[];
+ GTFS.routes=table(await get('routes.txt'))||[];
 
  buildIndex();
  renderMap();
@@ -110,7 +95,7 @@ async function loadGTFS(file){
 }
 
 /* =========================
-🧩 INDEX ENGINE
+🧩 INDEX
 ========================= */
 function buildIndex(){
  INDEX.stop={};
@@ -132,27 +117,21 @@ function buildIndex(){
 ========================= */
 function renderMap(){
  layer.clearLayers();
-
  GTFS.stops.forEach(s=>{
-
   let lat=parseFloat(s.stop_lat);
   let lon=parseFloat(s.stop_lon);
   if(!lat||!lon) return;
 
   let m=L.circleMarker([lat,lon],{
-   radius:5,
-   color:'#ffee00',
-   fillColor:'#00ff88',
-   fillOpacity:0.8
+   radius:5,color:'#ffee00',fillColor:'#00ff88',fillOpacity:0.8
   }).addTo(layer);
 
   m.on('click',()=>renderPanel(s.stop_id));
-  m.bindPopup(s.stop_name||"STOP");
  });
 }
 
 /* =========================
-📋 PANEL (STOP + TRIP + ROUTE)
+📋 STRUCTURED DISPATCH PANEL (FIXED)
 ========================= */
 function renderPanel(stop_id){
 
@@ -160,23 +139,31 @@ function renderPanel(stop_id){
  let meta=GTFS.stops.find(s=>s.stop_id==stop_id)||{};
  let now=nowSec();
 
- // sort + dedupe
- let seen=new Set();
- list=list.filter(x=>{
-  let k=x.trip_id+"_"+x.departure_time;
-  if(seen.has(k)) return false;
-  seen.add(k);
-  return true;
- }).sort((a,b)=>toSec(a.departure_time)-toSec(b.departure_time));
+ // STEP 1: SORT
+ list.sort((a,b)=>toSec(a.departure_time)-toSec(b.departure_time));
+
+ // STEP 2: GROUP BY TRIP (CRITICAL FIX)
+ let tripMap={};
+
+ for(let d of list){
+  if(!tripMap[d.trip_id]){
+   tripMap[d.trip_id]=d; // only FIRST occurrence per trip
+  }
+ }
+
+ let trips=Object.values(tripMap);
+
+ // STEP 3: SORT GROUPED TRIPS
+ trips.sort((a,b)=>toSec(a.departure_time)-toSec(b.departure_time));
 
  let html="<div class='stopBox'>";
  html+="<b>"+safe(meta.stop_name)+"</b><br>";
- html+="GTFS ID: "+stop_id+"<br>";
+ html+="GTFS: "+stop_id+"<br>";
  html+="<div class='small'>"+safe(meta.stop_lat)+" , "+safe(meta.stop_lon)+"</div>";
 
- for(let i=0;i<Math.min(list.length,15);i++){
+ for(let i=0;i<Math.min(trips.length,15);i++){
 
-  let d=list[i];
+  let d=trips[i];
   let trip=INDEX.trip[d.trip_id]||{};
   let route=INDEX.route[trip.route_id]||{};
 
@@ -204,15 +191,13 @@ function resetPanel(){
  document.getElementById('panel').innerHTML="CLICK A STOP";
 }
 
-/* =========================
-📂 INPUT
-========================= */
-
 document.getElementById('zip').addEventListener('change',e=>loadGTFS(e.target.files[0]));
 
 </script>
 </body>
 </html>
 ```
+
+---
 
 
