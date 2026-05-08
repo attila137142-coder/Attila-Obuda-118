@@ -1,135 +1,85 @@
-{
-  "meta": {
-    "project": "Attila Hiking & Transit Map Core",
-    "version": "1.0",
-    "description": "POI + multi-route + elevation + segment-based hiking/road/air routing model"
-  },
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Retro Tour Map Demo</title>
 
-  "pois": [
-    {
-      "id": "poi_csucs_hegy_01",
-      "name": "Csúcs-hegy turistapont",
-      "type": "former_turistahaz",
-      "status": "disused",
-      "location": {
-        "lat": 47.57321,
-        "lon": 18.94611,
-        "elevation_m": 375
-      },
-      "tags": [
-        "budai-hegység",
-        "eltűnt turistaház",
-        "retro",
-        "erdei pont"
-      ],
-      "description": "Egykori turistaház helye, ma már csak emlékpont és turistaút-kereszteződés."
-    },
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
-    {
-      "id": "poi_boroka_bufe_01",
-      "name": "Boróka büfé (referencia)",
-      "type": "forest_buffet",
-      "status": "active_or_historic",
-      "location": {
-        "lat": 47.52211,
-        "lon": 18.88921,
-        "elevation_m": 420
-      },
-      "tags": [
-        "büfé",
-        "túrahely",
-        "ikonikus",
-        "pilis/buda határ"
-      ],
-      "description": "Erdei büfé jellegű pihenőhely, a retro túrakultúra mintája."
-    }
-  ],
+  <style>
+    #map { height: 100vh; width: 100%; }
+  </style>
+</head>
 
-  "routes": [
-    {
-      "id": "route_buda_loop_01",
-      "name": "Budai Retro Turista Kör",
-      "type": "hiking",
-      "difficulty": "medium",
-      "start_poi": "poi_huvosvolgy",
-      "end_poi": "poi_huvosvolgy",
+<body>
+<div id="map"></div>
 
-      "metrics": {
-        "air_distance_m": 6200,
-        "road_distance_m": 8400,
-        "hiking_distance_m": 9100,
-        "total_ascent_m": 420,
-        "total_descent_m": 420,
-        "estimated_time_min": 180
-      },
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-      "segments": [
-        {
-          "index": 1,
-          "from": {
-            "lat": 47.54012,
-            "lon": 18.95821
-          },
-          "to": {
-            "lat": 47.55211,
-            "lon": 18.94211
-          },
-          "distance_m": 1200,
-          "ascent_m": 30,
-          "grade_percent": 2.5,
-          "surface": "forest_path"
-        },
+<script>
+// 🗺️ TÉRKÉP ALAP
+const map = L.map('map').setView([47.55, 18.95], 12);
 
-        {
-          "index": 2,
-          "from": {
-            "lat": 47.55211,
-            "lon": 18.94211
-          },
-          "to": {
-            "lat": 47.56510,
-            "lon": 18.93802
-          },
-          "distance_m": 1800,
-          "ascent_m": 210,
-          "grade_percent": 11.6,
-          "surface": "steep_trail"
-        },
+// 🧭 OpenStreetMap layer
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  maxZoom: 18
+}).addTo(map);
 
-        {
-          "index": 3,
-          "from": {
-            "lat": 47.56510,
-            "lon": 18.93802
-          },
-          "to": {
-            "lat": 47.54012,
-            "lon": 18.95821
-          },
-          "distance_m": 6100,
-          "descent_m": 210,
-          "grade_percent": -3.4,
-          "surface": "mixed_trail"
-        }
-      ],
+// 📍 POI
+const poi = {
+  name: "Csúcs-hegy",
+  lat: 47.57321,
+  lon: 18.94611
+};
 
-      "linked_pois": [
-        "poi_csucs_hegy_01",
-        "poi_boroka_bufe_01"
-      ]
-    }
-  ],
+// 📍 Boróka
+const poi2 = {
+  name: "Boróka büfé",
+  lat: 47.52211,
+  lon: 18.88921
+};
 
-  "gps_live_state": {
-    "enabled": true,
-    "current_position": {
-      "lat": 47.55100,
-      "lon": 18.94400
-    },
-    "snap_to_route": true,
-    "remaining": {
-      "distance_m": 3200,
-      "ascent_m": 120,
-      "time_min": 65
-    }
-  }
+// 🔵 MARKEREK
+L.marker([poi.lat, poi.lon]).addTo(map)
+  .bindPopup(poi.name);
+
+L.marker([poi2.lat, poi2.lon]).addTo(map)
+  .bindPopup(poi2.name);
+
+// 🟢 ÚTVONAL (egyenes demo vonal)
+const route = [
+  [poi.lat, poi.lon],
+  [poi2.lat, poi2.lon]
+];
+
+const line = L.polyline(route, {
+  color: 'blue'
+}).addTo(map);
+
+// 📏 távolság (egyszerű)
+function distance(lat1, lon1, lat2, lon2) {
+  const R = 6371e3;
+  const φ1 = lat1 * Math.PI/180;
+  const φ2 = lat2 * Math.PI/180;
+  const Δφ = (lat2-lat1)*Math.PI/180;
+  const Δλ = (lon2-lon1)*Math.PI/180;
+
+  const a = Math.sin(Δφ/2)**2 +
+    Math.cos(φ1)*Math.cos(φ2) *
+    Math.sin(Δλ/2)**2;
+
+  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+  return R * c;
+}
+
+const dist = distance(poi.lat, poi.lon, poi2.lat, poi2.lon);
+
+L.popup()
+  .setLatLng([47.55, 18.93])
+  .setContent("Távolság: " + (dist/1000).toFixed(2) + " km légvonal")
+  .openOn(map);
+
+</script>
+</body>
+</html>
