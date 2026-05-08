@@ -1,85 +1,155 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>Retro Tour Map Demo</title>
+<meta charset="utf-8"/>
+<title>V1 PRO TOUR ENGINE</title>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
-  <style>
-    #map { height: 100vh; width: 100%; }
-  </style>
+<style>
+  body { margin:0; font-family: Arial; }
+  #map { height: 100vh; width: 100%; }
+  #panel {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 9999;
+    background: white;
+    padding: 10px;
+    border-radius: 10px;
+    width: 260px;
+    box-shadow: 0 0 10px rgba(0,0,0,0.3);
+  }
+  button { margin: 3px 0; width: 100%; }
+</style>
 </head>
 
 <body>
+
+<div id="panel">
+  <b>V1 PRO TOUR ENGINE</b><br><br>
+
+  <button onclick="setMode('air')">✈️ Légvonal</button>
+  <button onclick="setMode('road')">🛣️ Út (szimulált)</button>
+  <button onclick="setMode('hike')">🥾 Turistaút (szimulált)</button>
+
+  <hr>
+
+  <div id="info">Klikkelj 2 pontra a térképen</div>
+</div>
+
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-// 🗺️ TÉRKÉP ALAP
 const map = L.map('map').setView([47.55, 18.95], 12);
 
-// 🧭 OpenStreetMap layer
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
   maxZoom: 18
 }).addTo(map);
 
-// 📍 POI
-const poi = {
-  name: "Csúcs-hegy",
-  lat: 47.57321,
-  lon: 18.94611
-};
+// -------------------- STATE --------------------
+let mode = "air";
+let points = [];
+let markers = [];
+let routeLine = null;
 
-// 📍 Boróka
-const poi2 = {
-  name: "Boróka büfé",
-  lat: 47.52211,
-  lon: 18.88921
-};
-
-// 🔵 MARKEREK
-L.marker([poi.lat, poi.lon]).addTo(map)
-  .bindPopup(poi.name);
-
-L.marker([poi2.lat, poi2.lon]).addTo(map)
-  .bindPopup(poi2.name);
-
-// 🟢 ÚTVONAL (egyenes demo vonal)
-const route = [
-  [poi.lat, poi.lon],
-  [poi2.lat, poi2.lon]
+// -------------------- POI (demo) --------------------
+const pois = [
+  { name: "Csúcs-hegy", lat: 47.57321, lon: 18.94611, elev: 375 },
+  { name: "Boróka büfé", lat: 47.52211, lon: 18.88921, elev: 420 },
+  { name: "Hármashatár-hegy", lat: 47.5398, lon: 18.9652, elev: 495 }
 ];
 
-const line = L.polyline(route, {
-  color: 'blue'
-}).addTo(map);
+// -------------------- MARKEREK --------------------
+pois.forEach(p => {
+  L.marker([p.lat, p.lon]).addTo(map)
+    .bindPopup(p.name)
+    .on('click', () => selectPoint(p));
+});
 
-// 📏 távolság (egyszerű)
-function distance(lat1, lon1, lat2, lon2) {
-  const R = 6371e3;
-  const φ1 = lat1 * Math.PI/180;
-  const φ2 = lat2 * Math.PI/180;
-  const Δφ = (lat2-lat1)*Math.PI/180;
-  const Δλ = (lon2-lon1)*Math.PI/180;
-
-  const a = Math.sin(Δφ/2)**2 +
-    Math.cos(φ1)*Math.cos(φ2) *
-    Math.sin(Δλ/2)**2;
-
-  const c = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-  return R * c;
+// -------------------- MODE --------------------
+function setMode(m) {
+  mode = m;
+  updateInfo("Mód: " + m.toUpperCase());
 }
 
-const dist = distance(poi.lat, poi.lon, poi2.lat, poi2.lon);
+// -------------------- POINT SELECT --------------------
+function selectPoint(p) {
+  points.push(p);
 
-L.popup()
-  .setLatLng([47.55, 18.93])
-  .setContent("Távolság: " + (dist/1000).toFixed(2) + " km légvonal")
-  .openOn(map);
+  const m = L.marker([p.lat, p.lon]).addTo(map);
+  markers.push(m);
+
+  if (points.length === 2) {
+    buildRoute();
+  }
+}
+
+// -------------------- DISTANCE --------------------
+function dist(a,b){
+  const R=6371000;
+  const dLat=(b.lat-a.lat)*Math.PI/180;
+  const dLon=(b.lon-a.lon)*Math.PI/180;
+  const lat1=a.lat*Math.PI/180;
+  const lat2=b.lat*Math.PI/180;
+
+  const x = Math.sin(dLat/2)**2 +
+    Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+
+  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// -------------------- ROUTE BUILDER --------------------
+function buildRoute() {
+
+  if(routeLine) map.removeLayer(routeLine);
+
+  const a = points[0];
+  const b = points[1];
+
+  let route = [];
+  let ascent = 0;
+
+  if(mode === "air") {
+    route = [[a.lat,a.lon],[b.lat,b.lon]];
+    ascent = Math.abs(b.elev - a.elev);
+  }
+
+  if(mode === "road") {
+    // szimulált "út": 3 pont töréssel
+    const mid = [(a.lat+b.lat)/2 + 0.01, (a.lon+b.lon)/2 - 0.01];
+    route = [[a.lat,a.lon], mid, [b.lat,b.lon]];
+    ascent = Math.abs(b.elev - a.elev) * 1.2;
+  }
+
+  if(mode === "hike") {
+    // "hegyi kerülő" szimuláció
+    const mid = [(a.lat+b.lat)/2 + 0.02, (a.lon+b.lon)/2];
+    route = [[a.lat,a.lon], mid, [b.lat,b.lon]];
+    ascent = Math.abs(b.elev - a.elev) * 2.0;
+  }
+
+  routeLine = L.polyline(route, {color:"blue"}).addTo(map);
+
+  const distance = dist(a,b);
+
+  updateInfo(
+    "📏 Távolság: " + (distance/1000).toFixed(2) + " km<br>" +
+    "⛰️ Emelkedés: ~" + ascent.toFixed(0) + " m<br>" +
+    "⚙️ Mód: " + mode
+  );
+
+  points = [];
+}
+
+// -------------------- UI --------------------
+function updateInfo(t){
+  document.getElementById("info").innerHTML = t;
+}
 
 </script>
+
 </body>
 </html>
