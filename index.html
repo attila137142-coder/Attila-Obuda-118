@@ -1,41 +1,133 @@
-# 🚍
+# 🚍 Budapest Control Room – V5 MODULAR OPS PANEL
+
+## (5 GOMBOS MODULÁRIS CONTROL ROOM ALAP)
+
+```html
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Control Room V4 MOBILE CORE</title>
+<title>Budapest Control Room V5</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body{margin:0;font-family:Arial;background:#061b17;color:#dff;overflow:hidden;}
-#topbar{height:50px;background:#0a2a24;display:flex;align-items:center;gap:10px;padding:0 10px;border-bottom:2px solid #00ffb3;font-weight:bold;}
-#layout{display:flex;height:calc(100vh - 50px);}
-#panel{width:480px;background:#081f1b;border-right:2px solid #00ffb3;overflow:auto;padding:10px;font-family:monospace;}
-#map{flex:1;}
-.row{display:grid;grid-template-columns:70px 1fr 90px;font-size:12px;padding:4px 0;border-bottom:1px solid #0d3b33;}
-.badge{color:#ffe66d;font-weight:bold;}
+body{
+ margin:0;
+ font-family:Arial;
+ background:#061b17;
+ color:#dff;
+ overflow:hidden;
+}
+
+#topbar{
+ height:60px;
+ background:#0a2a24;
+ display:flex;
+ align-items:center;
+ gap:8px;
+ padding:0 10px;
+ border-bottom:2px solid #00ffb3;
+ flex-wrap:wrap;
+}
+
+.btn{
+ background:#08392f;
+ color:#dff;
+ border:1px solid #00ffb3;
+ padding:8px 12px;
+ border-radius:6px;
+ cursor:pointer;
+ font-weight:bold;
+}
+
+.btn:hover{
+ background:#0d5445;
+}
+
+#layout{
+ display:flex;
+ height:calc(100vh - 60px);
+}
+
+#panel{
+ width:420px;
+ background:#081f1b;
+ border-right:2px solid #00ffb3;
+ overflow:auto;
+ padding:10px;
+ font-family:monospace;
+}
+
+#map{
+ flex:1;
+}
+
+.row{
+ display:grid;
+ grid-template-columns:70px 1fr 90px;
+ gap:6px;
+ font-size:12px;
+ padding:4px 0;
+ border-bottom:1px solid #10352d;
+}
+
+.badge{
+ color:#ffe66d;
+ font-weight:bold;
+}
+
+.card{
+ border:1px solid #13443a;
+ border-radius:6px;
+ margin-bottom:10px;
+ padding:8px;
+}
+
+.small{
+ font-size:11px;
+ opacity:0.8;
+}
+
 .green{color:#65ff8f;}
 .blue{color:#4db7ff;}
-.red{color:#ff5b5b;}
-.small{font-size:11px;opacity:0.8;}
+.red{color:#ff6b6b;}
+
+input{
+ background:#08211c;
+ color:#dff;
+ border:1px solid #00ffb3;
+ padding:6px;
+ border-radius:5px;
+}
+
 </style>
 </head>
 
 <body>
 
 <div id="topbar">
-🚍 V4 MOBILE CORE (PERSISTENT GTFS)
+
+🚍 V5 MODULAR OPS
+
 <input type="file" id="zip">
-<button onclick="resetPanel()">RESET</button>
+
+<input id="search" placeholder="Megálló / GTFS / járat keresés">
+
+<button class="btn" onclick="openModule('stops')">1️⃣ MEGÁLLÓS</button>
+<button class="btn" onclick="openModule('vehicles')">2️⃣ JÁRMŰVEK</button>
+<button class="btn" onclick="openModule('forda')">3️⃣ FORDÁK</button>
+<button class="btn" onclick="openModule('map')">4️⃣ TÉRKÉP</button>
+<button class="btn" onclick="openModule('forest')">5️⃣ KISVASUTAK</button>
+
 </div>
 
 <div id="layout">
-<div id="panel">BOOTING...</div>
-<div id="map"></div>
+ <div id="panel">BOOTING...</div>
+ <div id="map"></div>
 </div>
 
 <script>
@@ -43,189 +135,503 @@ body{margin:0;font-family:Arial;background:#061b17;color:#dff;overflow:hidden;}
 /* =========================
 🧠 STATE
 ========================= */
-let GTFS={stops:[],stop_times:[],trips:[],routes:[]};
-let INDEX={stop:{},trip:{},route:{}};
+
+let GTFS={
+ stops:[],
+ stop_times:[],
+ trips:[],
+ routes:[]
+};
+
+let INDEX={
+ stop:{},
+ trip:{},
+ route:{}
+};
+
+let CURRENT_MODULE='stops';
+
+/* =========================
+🗺 MAP
+========================= */
 
 let map=L.map('map').setView([47.55,19.05],11);
+
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
 let layer=L.layerGroup().addTo(map);
 
 /* =========================
-💾 INDEXEDDB (MOBILE MEMORY)
+💾 CACHE
 ========================= */
-const DB_NAME="GTFS_DB";
-const STORE="gtfs_store";
+
+const DB_NAME='GTFS_DB';
+const STORE='gtfs_store';
 
 function openDB(){
  return new Promise(res=>{
   let req=indexedDB.open(DB_NAME,1);
-  req.onupgradeneeded=e=>e.target.result.createObjectStore(STORE);
+
+  req.onupgradeneeded=e=>{
+   e.target.result.createObjectStore(STORE);
+  };
+
   req.onsuccess=e=>res(e.target.result);
  });
 }
 
 async function saveGTFS(zip){
- const db=await openDB();
- let tx=db.transaction(STORE,"readwrite");
- let store=tx.objectStore(STORE);
- let data={};
+ try{
+  const db=await openDB();
+  let tx=db.transaction(STORE,'readwrite');
+  let store=tx.objectStore(STORE);
 
- for(let f of Object.keys(zip.files)){
-  if(!f.includes(".txt")) continue;
-  data[f]=await zip.file(f).async("string");
+  let data={};
+
+  for(let f of Object.keys(zip.files)){
+   if(!f.includes('.txt')) continue;
+   data[f]=await zip.file(f).async('string');
+  }
+
+  store.put(data,'gtfs');
+ }catch(e){
+  console.log('CACHE SAVE ERROR',e);
  }
-
- store.put(data,"gtfs");
 }
 
 async function loadCachedGTFS(){
- const db=await openDB();
- return new Promise(res=>{
-  let tx=db.transaction(STORE,"readonly");
-  let store=tx.objectStore(STORE);
-  let req=store.get("gtfs");
-  req.onsuccess=()=>res(req.result||null);
- });
+ try{
+  const db=await openDB();
+
+  return new Promise(res=>{
+   let tx=db.transaction(STORE,'readonly');
+   let store=tx.objectStore(STORE);
+   let req=store.get('gtfs');
+
+   req.onsuccess=()=>res(req.result||null);
+  });
+ }catch(e){
+  console.log('CACHE LOAD ERROR',e);
+  return null;
+ }
 }
 
 /* =========================
-🧠 CSV
+🧠 UTILS
 ========================= */
+
+function safe(v){return v?v:'';}
+
 function parseCSVLine(line){
- let r=[],c="",q=false;
+ let r=[],c='',q=false;
+
  for(let x of line){
   if(x=='"') q=!q;
-  else if(x==','&&!q){r.push(c);c="";}
+  else if(x==','&&!q){
+   r.push(c);
+   c='';
+  }
   else c+=x;
  }
+
  r.push(c);
  return r;
 }
 
-function safe(v){return v?v:"";}
-function nowSec(){let d=new Date();return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();}
-function toSec(t){if(!t)return 0;let p=t.split(':');return (+p[0])*3600+(+p[1])*60+(+p[2]||0);}
+function table(txt){
+ if(!txt) return [];
+
+ let l=txt.split(/\r?\n/);
+ let h=parseCSVLine(l[0]);
+ let o=[];
+
+ for(let i=1;i<l.length;i++){
+  if(!l[i]) continue;
+
+  let r=parseCSVLine(l[i]);
+  let obj={};
+
+  h.forEach((x,j)=>obj[x]=r[j]||'');
+  o.push(obj);
+ }
+
+ return o;
+}
+
+function nowSec(){
+ let d=new Date();
+ return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
+}
+
+function toSec(t){
+ if(!t) return 0;
+ let p=t.split(':');
+ return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
+}
 
 /* =========================
 📦 LOAD GTFS
 ========================= */
+
 async function loadGTFS(file){
- const zip=await JSZip.loadAsync(file);
- await saveGTFS(zip);
- parseZip(zip);
-}
+ try{
 
-async function parseZip(zip){
- function table(txt){let l=txt.split(/\r?\n/);let h=parseCSVLine(l[0]);let o=[];
- for(let i=1;i<l.length;i++){if(!l[i])continue;let r=parseCSVLine(l[i]);let obj={};h.forEach((x,j)=>obj[x]=r[j]||"");o.push(obj);}return o;}
+  document.getElementById('panel').innerHTML='LOADING GTFS...';
 
- GTFS.stops=table(await zip.file('stops.txt').async('string'))||[];
- GTFS.stop_times=table(await zip.file('stop_times.txt').async('string'))||[];
- GTFS.trips=table(await zip.file('trips.txt').async('string'))||[];
- GTFS.routes=table(await zip.file('routes.txt').async('string'))||[];
+  const zip=await JSZip.loadAsync(file);
 
- buildIndex();
- renderMap();
- document.getElementById('panel').innerHTML="CLICK A STOP";
+  await saveGTFS(zip);
+
+  GTFS.stops=table(await zip.file('stops.txt')?.async('string'));
+  GTFS.stop_times=table(await zip.file('stop_times.txt')?.async('string'));
+  GTFS.trips=table(await zip.file('trips.txt')?.async('string'));
+  GTFS.routes=table(await zip.file('routes.txt')?.async('string'));
+
+  buildIndex();
+  renderMap();
+
+  document.getElementById('panel').innerHTML='GTFS READY';
+
+ }catch(e){
+  console.log('GTFS LOAD ERROR',e);
+  document.getElementById('panel').innerHTML='GTFS LOAD FAILED';
+ }
 }
 
 /* =========================
 🧩 INDEX
 ========================= */
+
 function buildIndex(){
- INDEX.stop={}; INDEX.trip={}; INDEX.route={};
- GTFS.trips.forEach(t=>INDEX.trip[t.trip_id]=t);
- GTFS.routes.forEach(r=>INDEX.route[r.route_id]=r);
- GTFS.stop_times.forEach(st=>{
-  if(!st.stop_id) return;
-  if(!INDEX.stop[st.stop_id]) INDEX.stop[st.stop_id]=[];
-  INDEX.stop[st.stop_id].push(st);
- });
-}
 
-/* =========================
-🗺 MAP
-========================= */
-function renderMap(){
- layer.clearLayers();
- GTFS.stops.forEach(s=>{
-  let lat=parseFloat(s.stop_lat);
-  let lon=parseFloat(s.stop_lon);
-  if(!lat||!lon) return;
+ try{
 
-  let m=L.circleMarker([lat,lon],{radius:5,color:'#ffee00',fillColor:'#00ff88',fillOpacity:0.8}).addTo(layer);
-  m.on('click',()=>renderPanel(s.stop_id));
- });
-}
+  INDEX.stop={};
+  INDEX.trip={};
+  INDEX.route={};
 
-/* =========================
-📋 PANEL (STRUCTURED)
-========================= */
-function renderPanel(stop_id){
- let list=INDEX.stop[stop_id]||[];
- let meta=GTFS.stops.find(s=>s.stop_id==stop_id)||{};
- let now=nowSec();
+  GTFS.trips.forEach(t=>INDEX.trip[t.trip_id]=t);
+  GTFS.routes.forEach(r=>INDEX.route[r.route_id]=r);
 
- list.sort((a,b)=>toSec(a.departure_time)-toSec(b.departure_time));
+  GTFS.stop_times.forEach(st=>{
 
- let seen=new Set();
- list=list.filter(x=>{
-  if(seen.has(x.trip_id)) return false;
-  seen.add(x.trip_id);
-  return true;
- });
+   if(!st.stop_id) return;
 
- let html="<div class='stopBox'>";
- html+="<b>"+safe(meta.stop_name)+"</b><br>";
- html+="GTFS: "+stop_id+"<br>";
- html+="</div>";
+   if(!INDEX.stop[st.stop_id]){
+    INDEX.stop[st.stop_id]=[];
+   }
 
- for(let i=0;i<Math.min(list.length,15);i++){
+   INDEX.stop[st.stop_id].push(st);
 
-  let d=list[i];
-  let trip=INDEX.trip[d.trip_id]||{};
-  let route=INDEX.route[trip.route_id]||{};
+  });
 
-  let dep=toSec(d.departure_time);
-  let diff=(dep-now)/60;
-
-  let cls="green";
-  if(diff>1) cls="blue";
-  if(diff<-1) cls="red";
-
-  html+="<div class='row'>"+
-   "<div class='badge'>"+(route.route_short_name||"-")+"</div>"+
-   "<div>→ "+safe(trip.trip_headsign||route.route_long_name||"?")+"</div>"+
-   "<div class='"+cls+"'>"+safe(d.departure_time)+"</div>"+
-  "</div>";
+ }catch(e){
+  console.log('INDEX ERROR',e);
  }
-
- document.getElementById('panel').innerHTML=html;
 }
 
-function resetPanel(){document.getElementById('panel').innerHTML="CLICK A STOP";}
+/* =========================
+🗺 MAP RENDER
+========================= */
+
+function renderMap(){
+
+ try{
+
+  layer.clearLayers();
+
+  GTFS.stops.forEach(s=>{
+
+   let lat=parseFloat(s.stop_lat);
+   let lon=parseFloat(s.stop_lon);
+
+   if(!lat||!lon) return;
+
+   let m=L.circleMarker([lat,lon],{
+    radius:5,
+    color:'#ffee00',
+    fillColor:'#00ff88',
+    fillOpacity:0.8
+   }).addTo(layer);
+
+   m.on('click',()=>renderStopPanel(s.stop_id));
+
+  });
+
+ }catch(e){
+  console.log('MAP ERROR',e);
+ }
+}
 
 /* =========================
-🚀 BOOT (MOBILE FIX)
+🚏 MODULE 1 – STOP PANEL
 ========================= */
+
+function renderStopPanel(stop_id){
+
+ try{
+
+  CURRENT_MODULE='stops';
+
+  let list=INDEX.stop[stop_id]||[];
+  let meta=GTFS.stops.find(s=>s.stop_id==stop_id)||{};
+
+  list.sort((a,b)=>toSec(a.departure_time)-toSec(b.departure_time));
+
+  let seen=new Set();
+
+  list=list.filter(x=>{
+   if(seen.has(x.trip_id)) return false;
+   seen.add(x.trip_id);
+   return true;
+  });
+
+  let html='';
+
+  html+="<div class='card'>";
+  html+='<b>'+safe(meta.stop_name)+'</b><br>';
+  html+='GTFS: '+stop_id+'<br>';
+  html+="<div class='small'>"+safe(meta.stop_lat)+' , '+safe(meta.stop_lon)+"</div>";
+  html+='</div>';
+
+  for(let i=0;i<Math.min(list.length,15);i++){
+
+   let d=list[i];
+   let trip=INDEX.trip[d.trip_id]||{};
+   let route=INDEX.route[trip.route_id]||{};
+
+   html+="<div class='row'>"+
+    "<div class='badge'>"+(route.route_short_name||'-')+"</div>"+
+    "<div>→ "+safe(trip.trip_headsign||route.route_long_name||'?')+"</div>"+
+    "<div class='blue'>"+safe(d.departure_time)+"</div>"+
+   "</div>";
+  }
+
+  document.getElementById('panel').innerHTML=html;
+
+ }catch(e){
+  console.log('STOP PANEL ERROR',e);
+ }
+}
+
+/* =========================
+🚌 MODULE 2 – VEHICLES
+========================= */
+
+function renderVehicleModule(){
+
+ try{
+
+  let html='';
+
+  html+="<div class='card'>";
+  html+='<b>🚌 JÁRMŰVEK</b><br><br>';
+
+  html+='Rendszám: ---<br>';
+  html+='Típus: ---<br>';
+  html+='Belső szám: ---<br>';
+  html+='Státusz: FUTURE LIVE MODULE<br>';
+
+  html+='</div>';
+
+  document.getElementById('panel').innerHTML=html;
+
+ }catch(e){
+  console.log('VEHICLE ERROR',e);
+ }
+}
+
+/* =========================
+🔄 MODULE 3 – FORDA
+========================= */
+
+function renderFordaModule(){
+
+ try{
+
+  let html='';
+
+  html+="<div class='card'>";
+  html+='<b>🔄 FORDÁK / BELSŐK</b><br><br>';
+
+  html+='BKV: ---<br>';
+  html+='VOLÁN: ---<br>';
+  html+='MÁV: ---<br>';
+  html+='Forda: ---<br>';
+
+  html+='</div>';
+
+  document.getElementById('panel').innerHTML=html;
+
+ }catch(e){
+  console.log('FORDA ERROR',e);
+ }
+}
+
+/* =========================
+🗺 MODULE 4 – MAP
+========================= */
+
+function renderMapModule(){
+
+ try{
+
+  let html='';
+
+  html+="<div class='card'>";
+  html+='<b>🗺 TÉRKÉP RÉTEGEK</b><br><br>';
+
+  html+='✔ Megállók aktívak<br>';
+  html+='✔ GTFS render aktív<br>';
+  html+='✔ Mobil cache aktív<br>';
+
+  html+='</div>';
+
+  document.getElementById('panel').innerHTML=html;
+
+ }catch(e){
+  console.log('MAP MODULE ERROR',e);
+ }
+}
+
+/* =========================
+🌲 MODULE 5 – KISVASUTAK
+========================= */
+
+function renderForestModule(){
+
+ try{
+
+  let html='';
+
+  html+="<div class='card'>";
+  html+='<b>🌲 KISVASÚT OPS</b><br><br>';
+
+  html+='🚂 Gyermekvasút<br>';
+  html+='🚂 Királyréti<br>';
+  html+='🚂 Szobi<br>';
+  html+='🚂 Nagybörzsöny<br>';
+  html+='🚂 Kemencei<br>';
+  html+='🚂 Balatonfenyvesi ÁEV<br>';
+  html+='🚂 39B vonal<br>';
+
+  html+='</div>';
+
+  document.getElementById('panel').innerHTML=html;
+
+ }catch(e){
+  console.log('FOREST ERROR',e);
+ }
+}
+
+/* =========================
+🧭 MODULE SWITCHER
+========================= */
+
+function openModule(name){
+
+ try{
+
+  CURRENT_MODULE=name;
+
+  if(name==='vehicles') renderVehicleModule();
+  if(name==='forda') renderFordaModule();
+  if(name==='map') renderMapModule();
+  if(name==='forest') renderForestModule();
+
+ }catch(e){
+  console.log('MODULE ERROR',e);
+ }
+}
+
+/* =========================
+🔎 SEARCH
+========================= */
+
+document.getElementById('search').addEventListener('input',e=>{
+
+ try{
+
+  let q=e.target.value.toLowerCase();
+
+  if(q.length<2) return;
+
+  let found=GTFS.stops.find(s=>
+   (s.stop_name||'').toLowerCase().includes(q)||
+   (s.stop_id||'').toLowerCase().includes(q)
+  );
+
+  if(found){
+   renderStopPanel(found.stop_id);
+
+   let lat=parseFloat(found.stop_lat);
+   let lon=parseFloat(found.stop_lon);
+
+   if(lat&&lon){
+    map.setView([lat,lon],15);
+   }
+  }
+
+ }catch(err){
+  console.log('SEARCH ERROR',err);
+ }
+});
+
+/* =========================
+🚀 BOOT
+========================= */
+
 async function boot(){
- let cached=await loadCachedGTFS();
- if(cached){
-  document.getElementById('panel').innerHTML="GTFS LOADED FROM CACHE";
-  let blob={file:(n)=>({async:async()=>cached[n]})};
-  parseZip(blob);
- } else {
-  document.getElementById('panel').innerHTML="WAITING FILE...";
+
+ try{
+
+  let cached=await loadCachedGTFS();
+
+  if(cached){
+
+   GTFS.stops=table(cached['stops.txt']);
+   GTFS.stop_times=table(cached['stop_times.txt']);
+   GTFS.trips=table(cached['trips.txt']);
+   GTFS.routes=table(cached['routes.txt']);
+
+   buildIndex();
+   renderMap();
+
+   document.getElementById('panel').innerHTML='GTFS LOADED FROM CACHE';
+
+  }else{
+
+   document.getElementById('panel').innerHTML='WAITING GTFS FILE...';
+
+  }
+
+ }catch(e){
+  console.log('BOOT ERROR',e);
+  document.getElementById('panel').innerHTML='BOOT FAILED';
  }
 }
 
 boot();
 
-document.getElementById('zip').addEventListener('change',e=>loadGTFS(e.target.files[0]));
+/* =========================
+📦 FILE LOAD
+========================= */
+
+document.getElementById('zip').addEventListener('change',e=>{
+
+ try{
+
+  loadGTFS(e.target.files[0]);
+
+ }catch(err){
+  console.log('FILE ERROR',err);
+ }
+
+});
 
 </script>
 </body>
 </html>
 ```
 
----
+
