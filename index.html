@@ -1,599 +1,136 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Budapest Control Room V5</title>
+{
+  "meta": {
+    "project": "Attila Hiking & Transit Map Core",
+    "version": "1.0",
+    "description": "POI + multi-route + elevation + segment-based hiking/road/air routing model"
+  },
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+  "pois": [
+    {
+      "id": "poi_csucs_hegy_01",
+      "name": "Csúcs-hegy turistapont",
+      "type": "former_turistahaz",
+      "status": "disused",
+      "location": {
+        "lat": 47.57321,
+        "lon": 18.94611,
+        "elevation_m": 375
+      },
+      "tags": [
+        "budai-hegység",
+        "eltűnt turistaház",
+        "retro",
+        "erdei pont"
+      ],
+      "description": "Egykori turistaház helye, ma már csak emlékpont és turistaút-kereszteződés."
+    },
 
-<style>
-body{
- margin:0;
- font-family:Arial;
- background:#061b17;
- color:#dff;
- overflow:hidden;
-}
+    {
+      "id": "poi_boroka_bufe_01",
+      "name": "Boróka büfé (referencia)",
+      "type": "forest_buffet",
+      "status": "active_or_historic",
+      "location": {
+        "lat": 47.52211,
+        "lon": 18.88921,
+        "elevation_m": 420
+      },
+      "tags": [
+        "büfé",
+        "túrahely",
+        "ikonikus",
+        "pilis/buda határ"
+      ],
+      "description": "Erdei büfé jellegű pihenőhely, a retro túrakultúra mintája."
+    }
+  ],
 
-#topbar{
- height:60px;
- background:#0a2a24;
- display:flex;
- align-items:center;
- gap:8px;
- padding:0 10px;
- border-bottom:2px solid #00ffb3;
- flex-wrap:wrap;
-}
+  "routes": [
+    {
+      "id": "route_buda_loop_01",
+      "name": "Budai Retro Turista Kör",
+      "type": "hiking",
+      "difficulty": "medium",
+      "start_poi": "poi_huvosvolgy",
+      "end_poi": "poi_huvosvolgy",
 
-.btn{
- background:#08392f;
- color:#dff;
- border:1px solid #00ffb3;
- padding:8px 12px;
- border-radius:6px;
- cursor:pointer;
- font-weight:bold;
-}
+      "metrics": {
+        "air_distance_m": 6200,
+        "road_distance_m": 8400,
+        "hiking_distance_m": 9100,
+        "total_ascent_m": 420,
+        "total_descent_m": 420,
+        "estimated_time_min": 180
+      },
 
-.btn:hover{
- background:#0d5445;
-}
+      "segments": [
+        {
+          "index": 1,
+          "from": {
+            "lat": 47.54012,
+            "lon": 18.95821
+          },
+          "to": {
+            "lat": 47.55211,
+            "lon": 18.94211
+          },
+          "distance_m": 1200,
+          "ascent_m": 30,
+          "grade_percent": 2.5,
+          "surface": "forest_path"
+        },
 
-#layout{
- display:flex;
- height:calc(100vh - 60px);
-}
+        {
+          "index": 2,
+          "from": {
+            "lat": 47.55211,
+            "lon": 18.94211
+          },
+          "to": {
+            "lat": 47.56510,
+            "lon": 18.93802
+          },
+          "distance_m": 1800,
+          "ascent_m": 210,
+          "grade_percent": 11.6,
+          "surface": "steep_trail"
+        },
 
-#panel{
- width:420px;
- background:#081f1b;
- border-right:2px solid #00ffb3;
- overflow:auto;
- padding:10px;
- font-family:monospace;
-}
+        {
+          "index": 3,
+          "from": {
+            "lat": 47.56510,
+            "lon": 18.93802
+          },
+          "to": {
+            "lat": 47.54012,
+            "lon": 18.95821
+          },
+          "distance_m": 6100,
+          "descent_m": 210,
+          "grade_percent": -3.4,
+          "surface": "mixed_trail"
+        }
+      ],
 
-#map{
- flex:1;
-}
+      "linked_pois": [
+        "poi_csucs_hegy_01",
+        "poi_boroka_bufe_01"
+      ]
+    }
+  ],
 
-.row{
- display:grid;
- grid-template-columns:70px 1fr 90px;
- gap:6px;
- font-size:12px;
- padding:4px 0;
- border-bottom:1px solid #10352d;
-}
-
-.badge{
- color:#ffe66d;
- font-weight:bold;
-}
-
-.card{
- border:1px solid #13443a;
- border-radius:6px;
- margin-bottom:10px;
- padding:8px;
-}
-
-.small{
- font-size:11px;
- opacity:0.8;
-}
-
-.green{color:#65ff8f;}
-.blue{color:#4db7ff;}
-.red{color:#ff6b6b;}
-
-input{
- background:#08211c;
- color:#dff;
- border:1px solid #00ffb3;
- padding:6px;
- border-radius:5px;
-}
-
-</style>
-</head>
-
-<body>
-
-<div id="topbar">
-
-🚍 V5 MODULAR OPS
-
-<input type="file" id="zip">
-
-<input id="search" placeholder="Megálló / GTFS / járat keresés">
-
-<button class="btn" onclick="openModule('stops')">1️⃣ MEGÁLLÓS</button>
-<button class="btn" onclick="openModule('vehicles')">2️⃣ JÁRMŰVEK</button>
-<button class="btn" onclick="openModule('forda')">3️⃣ FORDÁK</button>
-<button class="btn" onclick="openModule('map')">4️⃣ TÉRKÉP</button>
-<button class="btn" onclick="openModule('forest')">5️⃣ KISVASUTAK</button>
-
-</div>
-
-<div id="layout">
- <div id="panel">BOOTING...</div>
- <div id="map"></div>
-</div>
-
-<script>
-
-/* =========================
-🧠 STATE
-========================= */
-
-let GTFS={
- stops:[],
- stop_times:[],
- trips:[],
- routes:[]
-};
-
-let INDEX={
- stop:{},
- trip:{},
- route:{}
-};
-
-let CURRENT_MODULE='stops';
-
-/* =========================
-🗺 MAP
-========================= */
-
-let map=L.map('map').setView([47.55,19.05],11);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-let layer=L.layerGroup().addTo(map);
-
-/* =========================
-💾 CACHE
-========================= */
-
-const DB_NAME='GTFS_DB';
-const STORE='gtfs_store';
-
-function openDB(){
- return new Promise(res=>{
-  let req=indexedDB.open(DB_NAME,1);
-
-  req.onupgradeneeded=e=>{
-   e.target.result.createObjectStore(STORE);
-  };
-
-  req.onsuccess=e=>res(e.target.result);
- });
-}
-
-async function saveGTFS(zip){
- try{
-  const db=await openDB();
-  let tx=db.transaction(STORE,'readwrite');
-  let store=tx.objectStore(STORE);
-
-  let data={};
-
-  for(let f of Object.keys(zip.files)){
-   if(!f.includes('.txt')) continue;
-   data[f]=await zip.file(f).async('string');
+  "gps_live_state": {
+    "enabled": true,
+    "current_position": {
+      "lat": 47.55100,
+      "lon": 18.94400
+    },
+    "snap_to_route": true,
+    "remaining": {
+      "distance_m": 3200,
+      "ascent_m": 120,
+      "time_min": 65
+    }
   }
-
-  store.put(data,'gtfs');
- }catch(e){
-  console.log('CACHE SAVE ERROR',e);
- }
 }
-
-async function loadCachedGTFS(){
- try{
-  const db=await openDB();
-
-  return new Promise(res=>{
-   let tx=db.transaction(STORE,'readonly');
-   let store=tx.objectStore(STORE);
-   let req=store.get('gtfs');
-
-   req.onsuccess=()=>res(req.result||null);
-  });
- }catch(e){
-  console.log('CACHE LOAD ERROR',e);
-  return null;
- }
-}
-
-/* =========================
-🧠 UTILS
-========================= */
-
-function safe(v){return v?v:'';}
-
-function parseCSVLine(line){
- let r=[],c='',q=false;
-
- for(let x of line){
-  if(x=='"') q=!q;
-  else if(x==','&&!q){
-   r.push(c);
-   c='';
-  }
-  else c+=x;
- }
-
- r.push(c);
- return r;
-}
-
-function table(txt){
- if(!txt) return [];
-
- let l=txt.split(/\r?\n/);
- let h=parseCSVLine(l[0]);
- let o=[];
-
- for(let i=1;i<l.length;i++){
-  if(!l[i]) continue;
-
-  let r=parseCSVLine(l[i]);
-  let obj={};
-
-  h.forEach((x,j)=>obj[x]=r[j]||'');
-  o.push(obj);
- }
-
- return o;
-}
-
-function nowSec(){
- let d=new Date();
- return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
-}
-
-function toSec(t){
- if(!t) return 0;
- let p=t.split(':');
- return (+p[0])*3600+(+p[1])*60+(+p[2]||0);
-}
-
-/* =========================
-📦 LOAD GTFS
-========================= */
-
-async function loadGTFS(file){
- try{
-
-  document.getElementById('panel').innerHTML='LOADING GTFS...';
-
-  const zip=await JSZip.loadAsync(file);
-
-  await saveGTFS(zip);
-
-  GTFS.stops=table(await zip.file('stops.txt')?.async('string'));
-  GTFS.stop_times=table(await zip.file('stop_times.txt')?.async('string'));
-  GTFS.trips=table(await zip.file('trips.txt')?.async('string'));
-  GTFS.routes=table(await zip.file('routes.txt')?.async('string'));
-
-  buildIndex();
-  renderMap();
-
-  document.getElementById('panel').innerHTML='GTFS READY';
-
- }catch(e){
-  console.log('GTFS LOAD ERROR',e);
-  document.getElementById('panel').innerHTML='GTFS LOAD FAILED';
- }
-}
-
-/* =========================
-🧩 INDEX
-========================= */
-
-function buildIndex(){
-
- try{
-
-  INDEX.stop={};
-  INDEX.trip={};
-  INDEX.route={};
-
-  GTFS.trips.forEach(t=>INDEX.trip[t.trip_id]=t);
-  GTFS.routes.forEach(r=>INDEX.route[r.route_id]=r);
-
-  GTFS.stop_times.forEach(st=>{
-
-   if(!st.stop_id) return;
-
-   if(!INDEX.stop[st.stop_id]){
-    INDEX.stop[st.stop_id]=[];
-   }
-
-   INDEX.stop[st.stop_id].push(st);
-
-  });
-
- }catch(e){
-  console.log('INDEX ERROR',e);
- }
-}
-
-/* =========================
-🗺 MAP RENDER
-========================= */
-
-function renderMap(){
-
- try{
-
-  layer.clearLayers();
-
-  GTFS.stops.forEach(s=>{
-
-   let lat=parseFloat(s.stop_lat);
-   let lon=parseFloat(s.stop_lon);
-
-   if(!lat||!lon) return;
-
-   let m=L.circleMarker([lat,lon],{
-    radius:5,
-    color:'#ffee00',
-    fillColor:'#00ff88',
-    fillOpacity:0.8
-   }).addTo(layer);
-
-   m.on('click',()=>renderStopPanel(s.stop_id));
-
-  });
-
- }catch(e){
-  console.log('MAP ERROR',e);
- }
-}
-
-/* =========================
-🚏 MODULE 1 – STOP PANEL
-========================= */
-
-function renderStopPanel(stop_id){
-
- try{
-
-  CURRENT_MODULE='stops';
-
-  let list=INDEX.stop[stop_id]||[];
-  let meta=GTFS.stops.find(s=>s.stop_id==stop_id)||{};
-
-  list.sort((a,b)=>toSec(a.departure_time)-toSec(b.departure_time));
-
-  let seen=new Set();
-
-  list=list.filter(x=>{
-   if(seen.has(x.trip_id)) return false;
-   seen.add(x.trip_id);
-   return true;
-  });
-
-  let html='';
-
-  html+="<div class='card'>";
-  html+='<b>'+safe(meta.stop_name)+'</b><br>';
-  html+='GTFS: '+stop_id+'<br>';
-  html+="<div class='small'>"+safe(meta.stop_lat)+' , '+safe(meta.stop_lon)+"</div>";
-  html+='</div>';
-
-  for(let i=0;i<Math.min(list.length,15);i++){
-
-   let d=list[i];
-   let trip=INDEX.trip[d.trip_id]||{};
-   let route=INDEX.route[trip.route_id]||{};
-
-   html+="<div class='row'>"+
-    "<div class='badge'>"+(route.route_short_name||'-')+"</div>"+
-    "<div>→ "+safe(trip.trip_headsign||route.route_long_name||'?')+"</div>"+
-    "<div class='blue'>"+safe(d.departure_time)+"</div>"+
-   "</div>";
-  }
-
-  document.getElementById('panel').innerHTML=html;
-
- }catch(e){
-  console.log('STOP PANEL ERROR',e);
- }
-}
-
-/* =========================
-🚌 MODULE 2 – VEHICLES
-========================= */
-
-function renderVehicleModule(){
-
- try{
-
-  let html='';
-
-  html+="<div class='card'>";
-  html+='<b>🚌 JÁRMŰVEK</b><br><br>';
-
-  html+='Rendszám: ---<br>';
-  html+='Típus: ---<br>';
-  html+='Belső szám: ---<br>';
-  html+='Státusz: FUTURE LIVE MODULE<br>';
-
-  html+='</div>';
-
-  document.getElementById('panel').innerHTML=html;
-
- }catch(e){
-  console.log('VEHICLE ERROR',e);
- }
-}
-
-/* =========================
-🔄 MODULE 3 – FORDA
-========================= */
-
-function renderFordaModule(){
-
- try{
-
-  let html='';
-
-  html+="<div class='card'>";
-  html+='<b>🔄 FORDÁK / BELSŐK</b><br><br>';
-
-  html+='BKV: ---<br>';
-  html+='VOLÁN: ---<br>';
-  html+='MÁV: ---<br>';
-  html+='Forda: ---<br>';
-
-  html+='</div>';
-
-  document.getElementById('panel').innerHTML=html;
-
- }catch(e){
-  console.log('FORDA ERROR',e);
- }
-}
-
-/* =========================
-🗺 MODULE 4 – MAP
-========================= */
-
-function renderMapModule(){
-
- try{
-
-  let html='';
-
-  html+="<div class='card'>";
-  html+='<b>🗺 TÉRKÉP RÉTEGEK</b><br><br>';
-
-  html+='✔ Megállók aktívak<br>';
-  html+='✔ GTFS render aktív<br>';
-  html+='✔ Mobil cache aktív<br>';
-
-  html+='</div>';
-
-  document.getElementById('panel').innerHTML=html;
-
- }catch(e){
-  console.log('MAP MODULE ERROR',e);
- }
-}
-
-/* =========================
-🌲 MODULE 5 – KISVASUTAK
-========================= */
-
-function renderForestModule(){
-
- try{
-
-  let html='';
-
-  html+="<div class='card'>";
-  html+='<b>🌲 KISVASÚT OPS</b><br><br>';
-
-  html+='🚂 Gyermekvasút<br>';
-  html+='🚂 Királyréti<br>';
-  html+='🚂 Szobi<br>';
-  html+='🚂 Nagybörzsöny<br>';
-  html+='🚂 Kemencei<br>';
-  html+='🚂 Balatonfenyvesi ÁEV<br>';
-  html+='🚂 39B vonal<br>';
-
-  html+='</div>';
-
-  document.getElementById('panel').innerHTML=html;
-
- }catch(e){
-  console.log('FOREST ERROR',e);
- }
-}
-
-/* =========================
-🧭 MODULE SWITCHER
-========================= */
-
-function openModule(name){
-
- try{
-
-  CURRENT_MODULE=name;
-
-  if(name==='vehicles') renderVehicleModule();
-  if(name==='forda') renderFordaModule();
-  if(name==='map') renderMapModule();
-  if(name==='forest') renderForestModule();
-
- }catch(e){
-  console.log('MODULE ERROR',e);
- }
-}
-
-/* =========================
-🔎 SEARCH
-========================= */
-
-document.getElementById('search').addEventListener('input',e=>{
-
- try{
-
-  let q=e.target.value.toLowerCase();
-
-  if(q.length<2) return;
-
-  let found=GTFS.stops.find(s=>
-   (s.stop_name||'').toLowerCase().includes(q)||
-   (s.stop_id||'').toLowerCase().includes(q)
-  );
-
-  if(found){
-   renderStopPanel(found.stop_id);
-
-   let lat=parseFloat(found.stop_lat);
-   let lon=parseFloat(found.stop_lon);
-
-   if(lat&&lon){
-    map.setView([lat,lon],15);
-   }
-  }
-
- }catch(err){
-  console.log('SEARCH ERROR',err);
- }
-});
-
-/* =========================
-🚀 BOOT
-========================= */
-
-async function boot(){
-
- try{
-
-  let cached=await loadCachedGTFS();
-
-  if(cached){
-
-   GTFS.stops=table(cached['stops.txt']);
-   GTFS.stop_times=table(cached['stop_times.txt']);
-   GTFS.trips=table(cached['trips.txt']);
-   GTFS.routes=table(cached['routes.txt']);
-
-   buildIndex();
-   renderMap();
-
-   document.getElementById('panel').innerHTML='GTFS LOADED FROM CACHE';
-
-  }else{
-
-   document.get
