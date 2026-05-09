@@ -2,21 +2,14 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Budai Gyermekvasút PRO GRID</title>
+<title>Budai PRO TRAIL GRAPH v3</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
   body { margin:0; font-family: Arial; }
-  #map { height: 100vh; width: 100%; }
-  .label {
-    background: white;
-    padding: 2px 5px;
-    font-size: 11px;
-    border-radius: 4px;
-    border: 1px solid #ccc;
-  }
+  #map { height:100vh; width:100%; }
 </style>
 </head>
 
@@ -25,73 +18,114 @@
 
 <script>
 
-// 🗺️ MAP INIT (Budai-hegység központ)
-var map = L.map('map').setView([47.52, 18.96], 13);
+var map = L.map('map').setView([47.52, 18.98], 13);
 
-// 🌍 OpenStreetMap base layer
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  maxZoom: 18
+  maxZoom:18
 }).addTo(map);
 
-function addLine(coords, name, dist, slope) {
-  var line = L.polyline(coords, {color:'green'}).addTo(map);
+/* =========================
+   🧠 NODE RENDSZER
+   ========================= */
 
-  line.bindPopup(
-    "<b>" + name + "</b><br>" +
-    "Távolság: " + dist + "<br>" +
-    "Meredekség: " + slope + "%"
-  );
+const nodes = {
+  "Széchenyi-hegy": [47.4938, 19.0097],
+  "Normafa": [47.5005, 18.9990],
+  "Anna-rét": [47.5045, 18.9902],
+  "Csillebérc": [47.5098, 18.9795],
+  "Szépjuhászné": [47.5192, 18.9690],
+  "Hárs-hegy": [47.5250, 18.9610],
+  "Hűvösvölgy": [47.5338, 18.9535],
+  "János-hegy": [47.5050, 18.9650]
+};
 
-  // label középre
-  var mid = coords[Math.floor(coords.length/2)];
-  L.marker(mid, {
-    icon: L.divIcon({className:'label', html:name})
-  }).addTo(map);
+/* =========================
+   📊 EDGE RENDSZER (GRÁF)
+   ========================= */
+
+const edges = [
+  {
+    from:"Széchenyi-hegy",
+    to:"Normafa",
+    distance:"920 m",
+    slope:"4.1%"
+  },
+  {
+    from:"Normafa",
+    to:"Anna-rét",
+    distance:"640 m",
+    slope:"1.9%"
+  },
+  {
+    from:"Anna-rét",
+    to:"Csillebérc",
+    distance:"1180 m",
+    slope:"4.7%"
+  },
+  {
+    from:"Csillebérc",
+    to:"Szépjuhászné",
+    distance:"1450 m",
+    slope:"4.3%"
+  },
+  {
+    from:"Szépjuhászné",
+    to:"Hárs-hegy",
+    distance:"820 m",
+    slope:"5.0%"
+  },
+  {
+    from:"Hárs-hegy",
+    to:"Hűvösvölgy",
+    distance:"1200 m",
+    slope:"7.9%"
+  },
+
+  /* 🌲 ELÁGAZÁS – EZ A LÉNYEG */
+
+  {
+    from:"Normafa",
+    to:"János-hegy",
+    distance:"1750 m",
+    slope:"12.0%"
+  },
+  {
+    from:"János-hegy",
+    to:"Szépjuhászné",
+    distance:"2100 m",
+    slope:"-10.5%"
+  }
+];
+
+/* =========================
+   🗺️ RENDER
+   ========================= */
+
+// NODE-ok kirajzolása
+for (let name in nodes) {
+  let p = nodes[name];
+
+  L.circleMarker(p, {
+    radius:6,
+    color:"blue"
+  }).addTo(map)
+  .bindPopup("📍 NODE: " + name);
 }
 
-// 🚋 GYERMEKVASÚT GERINC (egyszerűsített geometria)
+// EDGE-ek kirajzolása
+edges.forEach(e => {
 
-// Széchenyi-hegy
-addLine([
-  [47.4938, 19.0097],
-  [47.5005, 18.9990]
-], "Széchenyi-hegy → Normafa", "0.92 km", "4.1");
+  let a = nodes[e.from];
+  let b = nodes[e.to];
 
-// Normafa → Anna-rét
-addLine([
-  [47.5005, 18.9990],
-  [47.5045, 18.9902]
-], "Normafa → Anna-rét", "0.64 km", "1.9");
+  let line = L.polyline([a,b], {color:"green"}).addTo(map);
 
-// Anna-rét → Csillebérc
-addLine([
-  [47.5045, 18.9902],
-  [47.5098, 18.9795]
-], "Anna-rét → Csillebérc", "1.18 km", "4.7");
-
-// Csillebérc → Szépjuhászné
-addLine([
-  [47.5098, 18.9795],
-  [47.5192, 18.9690]
-], "Csillebérc → Szépjuhászné", "1.45 km", "4.3");
-
-// Szépjuhászné → Hárs-hegy
-addLine([
-  [47.5192, 18.9690],
-  [47.5250, 18.9610]
-], "Szépjuhászné → Hárs-hegy", "0.82 km", "5.0");
-
-// Hárs-hegy → Hűvösvölgy
-addLine([
-  [47.5250, 18.9610],
-  [47.5338, 18.9535]
-], "Hárs-hegy → Hűvösvölgy", "1.20 km", "7.9");
-
-// 🌲 EXTRA NODE (János-hegy kitérő)
-addLine([
-  [47.5050, 18.9650],
-  [47.5180, 18.9580]
-], "Normafa → János-hegy", "1.75 km", "12.0");
+  line.bindPopup(
+    "<b>" + e.from + " → " + e.to + "</b><br><br>" +
+    "📏 Távolság: " + e.distance + "<br>" +
+    "⛰️ Meredekség: " + e.slope
+  );
+});
 
 </script>
 </body>
