@@ -1,132 +1,159 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>STABLE DISPATCHER CORE V2</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+body { margin:0; font-family:Arial; }
+#map { height:100vh; width:100%; }
+
+#panel{
+  position:absolute;
+  top:10px;
+  left:10px;
+  z-index:9999;
+  background:white;
+  padding:10px;
+  border-radius:10px;
+  width:260px;
+  box-shadow:0 0 10px rgba(0,0,0,0.3);
+}
+.stop { cursor:pointer; padding:4px; }
+.stop:hover { background:#eee; }
+</style>
+</head>
+
+<body>
+
+<div id="panel">
+  <b>🟢 STABLE CORE V2</b><br><br>
+  <input id="search" placeholder="keresés..." style="width:100%"><br><br>
+  <div id="list">loading...</div>
+  <hr>
+  <div id="info">init...</div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
 <script>
 
-const ORS_API_KEY = "IDE_JÖN_A_KULCSOD";
+let map;
+let STOPS = [];
+let markers = [];
 
-let mode = "foot-hiking";
-let map, routeLine;
+function initMap(){
+  try {
+    map = L.map('map').setView([47.55,18.95],12);
 
-let points = [];
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+      maxZoom:18
+    }).addTo(map);
 
-function initMap() {
-  map = L.map('map').setView([47.55, 18.95], 12);
-
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 18
-  }).addTo(map);
-
-  map.on("click", (e) => {
-    addPoint(e.latlng.lat, e.latlng.lng);
-  });
-}
-
-function setMode(m) {
-  if (m === "air") mode = "air";
-  if (m === "road") mode = "driving-car";
-  if (m === "hike") mode = "foot-hiking";
-
-  updateInfo("⚙️ Mód: " + m.toUpperCase());
-}
-
-function addPoint(lat, lon) {
-  points.push([lon, lat]);
-
-  L.marker([lat, lon]).addTo(map);
-
-  if (points.length === 2) {
-    buildRealRoute();
+    updateInfo("🟢 Map ready");
+  } catch(e){
+    console.error(e);
+    document.body.innerHTML = "MAP ERROR";
   }
 }
 
-// ---------------- REAL ROUTING ----------------
-async function buildRealRoute() {
+// ---------------- SAFE GTFS LOAD ----------------
+async function loadGTFS(){
+  try {
+    updateInfo("⏳ GTFS loading...");
 
-  const a = points[0];
-  const b = points[1];
+    const res = await fetch("gtfs.json");
+    if(!res.ok) throw new Error("GTFS fetch failed");
 
-  if (routeLine) map.removeLayer(routeLine);
+    const data = await res.json();
 
-  if (mode === "air") {
-    drawAirRoute(a, b);
-    points = [];
+    STOPS = data.stops || [];
+
+    render(STOPS);
+    drawMarkers(STOPS);
+
+    updateInfo("🟢 GTFS loaded: " + STOPS.length);
+
+  } catch(e){
+    console.error(e);
+    STOPS = [];
+
+    updateInfo("❌ GTFS load failed (fallback mode)");
+    render([]);
+  }
+}
+
+// ---------------- RENDER LIST ----------------
+function render(list=[]){
+  const el = document.getElementById("list");
+  el.innerHTML = "";
+
+  if(list.length === 0){
+    el.innerHTML = "no data";
     return;
   }
 
-  const url = `https://api.openrouteservice.org/v2/directions/${mode}/geojson`;
+  list.forEach(s=>{
+    const d = document.createElement("div");
+    d.className = "stop";
+    d.innerHTML = "📍 " + (s.name || "unknown");
 
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Authorization": ORS_API_KEY,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      coordinates: [a, b],
-      elevation: true
-    })
+    d.onclick = () => {
+      if(s.lat && s.lon){
+        map.setView([s.lat,s.lon],15);
+      }
+    };
+
+    el.appendChild(d);
   });
+}
 
-  const data = await res.json();
+// ---------------- MAP MARKERS ----------------
+function drawMarkers(list=[]){
 
-  const coords = data.features[0].geometry.coordinates;
+  markers.forEach(m=>map.removeLayer(m));
+  markers = [];
 
-  const latlngs = coords.map(c => [c[1], c[0]]);
+  list.forEach(s=>{
+    if(!s.lat || !s.lon) return;
 
-  routeLine = L.polyline(latlngs, { color: "blue" }).addTo(map);
+    const m = L.marker([s.lat,s.lon]).addTo(map)
+      .on("click", ()=>showStop(s));
 
-  const summary = data.features[0].properties.summary;
+    markers.push(m);
+  });
+}
 
-  const distanceKm = (summary.distance / 1000).toFixed(2);
-  const ascent = summary.ascent || 0;
+// ---------------- STOP INFO ----------------
+function showStop(s){
+  updateInfo("📍 " + s.name);
+}
 
-  updateInfo(
-    `📏 Távolság: ${distanceKm} km<br>` +
-    `⛰️ Emelkedés: ~${ascent.toFixed(0)} m<br>` +
-    `⚙️ Mód: ${mode}`
+// ---------------- SEARCH SAFE ----------------
+document.getElementById("search").oninput = (e)=>{
+  const q = e.target.value.toLowerCase();
+
+  const filtered = STOPS.filter(s =>
+    (s.name || "").toLowerCase().includes(q)
   );
 
-  points = [];
-}
-
-// ---------------- AIR MODE ----------------
-function drawAirRoute(a, b) {
-  const latlngs = [
-    [a[1], a[0]],
-    [b[1], b[0]]
-  ];
-
-  routeLine = L.polyline(latlngs, { color: "red" }).addTo(map);
-
-  const dist = haversine(a, b);
-
-  updateInfo(
-    `✈️ Légvonal<br>` +
-    `📏 Távolság: ${(dist/1000).toFixed(2)} km`
-  );
-}
-
-// ---------------- DISTANCE ----------------
-function haversine(a, b) {
-  const R = 6371000;
-
-  const dLat = (b[1]-a[1]) * Math.PI/180;
-  const dLon = (b[0]-a[0]) * Math.PI/180;
-
-  const lat1 = a[1]*Math.PI/180;
-  const lat2 = b[1]*Math.PI/180;
-
-  const x =
-    Math.sin(dLat/2)**2 +
-    Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
-
-  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
-}
+  render(filtered);
+};
 
 // ---------------- UI ----------------
 function updateInfo(t){
   document.getElementById("info").innerHTML = t;
 }
 
-// INIT
+// ---------------- INIT ----------------
 initMap();
+loadGTFS();
 
 </script>
+
+</body>
+</html>
