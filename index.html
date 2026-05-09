@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
-<title>Budai GeoJSON Trail Engine</title>
+<title>Budai Trail Engine v2</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -21,8 +21,16 @@ body { margin:0; font-family: Arial; }
   padding:10px;
   border-radius:10px;
   box-shadow:0 0 10px rgba(0,0,0,0.3);
-  max-width:280px;
+  max-width:300px;
   font-size:13px;
+}
+
+.seg{
+  background:#f5f5f5;
+  padding:5px;
+  margin-top:5px;
+  border-radius:5px;
+  border-left:4px solid green;
 }
 </style>
 </head>
@@ -30,15 +38,9 @@ body { margin:0; font-family: Arial; }
 <body>
 
 <div class="panel">
-<b>🌲 Budai GeoJSON Engine</b><br><br>
-
-✔ OSM turistaút háló<br>
-✔ GeoJSON betöltés<br>
-✔ kattintható szakaszok<br>
-✔ iPhone kompatibilis<br><br>
-
-📦 Tedd mellé: <br>
-<b>budai.geojson</b>
+<b>🌲 Budai Trail Engine v2</b><br><br>
+📏 szakasz + ⛰️ meredekség + 🧭 logika<br><br>
+<div id="info">Kattints egy szakaszra</div>
 </div>
 
 <div id="map"></div>
@@ -58,37 +60,70 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 }).addTo(map);
 
 // =====================
+// SEGMENT ANALYTICS
+// =====================
+
+function distance(latlngs){
+  let d = 0;
+  for(let i=1;i<latlngs.length;i++){
+    d += map.distance(latlngs[i-1], latlngs[i]);
+  }
+  return d;
+}
+
+// 🔥 egyszerűsített „hegy modell”
+function fakeElevation(latlng){
+  return Math.sin(latlng[0]*10) * 50 + 200;
+}
+
+function slope(latlngs){
+  let h1 = fakeElevation(latlngs[0]);
+  let h2 = fakeElevation(latlngs[latlngs.length-1]);
+  let d = distance(latlngs);
+
+  return ((h2 - h1) / d * 100).toFixed(2);
+}
+
+// =====================
 // GEOJSON BETÖLTÉS
 // =====================
 
-// 👉 ide jön az Overpass export fájl
 fetch("budai.geojson")
-.then(res => res.json())
+.then(r => r.json())
 .then(data => {
 
   const layer = L.geoJSON(data, {
 
-    style: function(feature){
-      return {
-        color: "green",
-        weight: 4,
-        opacity: 0.9
-      };
+    style:{
+      color:"green",
+      weight:4
     },
 
-    onEachFeature: function(feature, layer){
+    onEachFeature:function(feature, layer){
 
-      let props = feature.properties || {};
+      let coords = feature.geometry.coordinates[0]
+        .map(c => [c[1], c[0]]);
 
-      let name = props.name || "Turistaút";
-      let ref = props.ref || "";
-      let route = props.route || "";
+      let d = (distance(coords)/1000).toFixed(2);
+      let s = slope(coords);
 
       layer.bindPopup(
-        "<b>🌲 " + name + "</b><br>" +
-        "🔖 " + ref + "<br>" +
-        "🚶 " + route
+        "🌲 Turistaút<br><br>" +
+        "📏 Távolság: " + d + " km<br>" +
+        "⛰️ Meredekség: " + s + "%"
       );
+
+      layer.on("click", function(){
+
+        document.getElementById("info").innerHTML =
+        "<div class='seg'>" +
+        "📏 " + d + " km<br>" +
+        "⛰️ " + s + "%<br>" +
+        "🧭 szakasz elemzés kész" +
+        "</div>";
+
+      });
+
     }
 
   }).addTo(map);
