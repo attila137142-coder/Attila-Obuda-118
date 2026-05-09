@@ -2,33 +2,37 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Atlasz – Börzsöny Forrás Index Rendszer</title>
+<title>Atlasz V5 – GPS + Routing + Water + Search</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body { margin:0; font-family:Arial; }
 #map { height: 80vh; }
+
 .panel {
   padding:10px;
-  background:#f5f5f5;
+  background:#f0f0f0;
 }
-input { padding:6px; width:60%; }
+
+input { padding:6px; width:55%; }
 button { padding:6px; }
+.small { font-size:12px; color:#555; }
 </style>
 </head>
 
 <body>
 
 <div class="panel">
-  🔍 <input id="search" placeholder="keresés: forrás, Csóványos, Kettős-kút...">
-  <button onclick="runSearch()">Keresés</button>
 
-  <label style="margin-left:10px;">
-    <input type="checkbox" id="safeOnly"> 💧 csak S1–S2
-  </label>
+🔍 <input id="search" placeholder="keresés (pl. Kettős-kút, Budapest, Csóványos)">
+<button onclick="searchPlace()">Keresés</button>
 
-  <div id="info" style="margin-top:8px;"></div>
+<button onclick="getGPS()">📍 Hol vagyok</button>
+<button onclick="routeToWater()">💧 Legközelebbi víz</button>
+
+<div class="small" id="info"></div>
+
 </div>
 
 <div id="map"></div>
@@ -40,38 +44,25 @@ button { padding:6px; }
 /////////////////////////////////////////////////////
 // 🗺️ MAP
 /////////////////////////////////////////////////////
-const map = L.map('map').setView([47.95, 18.90], 12);
+
+const map = L.map('map').setView([47.95,18.90],12);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   attribution:'© OSM'
 }).addTo(map);
 
-let markers = [];
+let userMarker=null;
+let routeLine=null;
 
 /////////////////////////////////////////////////////
-// 📦 MOCK OSM DATA (helyettesíthető valódival)
+// 💧 WATER DATABASE (Atlasz V5 alap)
 /////////////////////////////////////////////////////
 
-let pois = [
-  {id:1,name:"Természetbarát-forrás",lat:47.9394,lon:18.9321,osm:"2255466515",tags:{natural:"spring"}},
-  {id:2,name:"Ismeretlen forrás",lat:47.945,lon:18.91,osm:"x1",tags:{natural:"spring"}},
-  {id:3,name:"Kéktúra közkút",lat:47.96,lon:18.88,osm:"x2",tags:{amenity:"drinking_water"}}
+const waterPoints=[
+  {name:"Kettős-kút",lat:47.9394,lon:18.9321,osm:"2255466515"},
+  {name:"Börzsöny forrás",lat:47.96,lon:18.88},
+  {name:"Patak forrás",lat:47.94,lon:18.91}
 ];
-
-/////////////////////////////////////////////////////
-// 🧠 S1–S5 BESOROLÁS MOTOR
-/////////////////////////////////////////////////////
-
-function classify(poi){
-
-  if(poi.tags.amenity === "drinking_water") return "S1";
-
-  if(poi.tags.man_made === "water_tap") return "S2";
-
-  if(poi.tags.natural === "spring") return "S3";
-
-  return "S4";
-}
 
 /////////////////////////////////////////////////////
 // 📏 DISTANCE
@@ -82,89 +73,143 @@ function dist(a,b,c,d){
   const dLat=(c-a)*Math.PI/180;
   const dLon=(d-b)*Math.PI/180;
 
-  const x=Math.sin(dLat/2)**2 +
-    Math.cos(a*Math.PI/180) *
-    Math.cos(c*Math.PI/180) *
+  const x=Math.sin(dLat/2)**2+
+    Math.cos(a*Math.PI/180)*
+    Math.cos(c*Math.PI/180)*
     Math.sin(dLon/2)**2;
 
   return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
 /////////////////////////////////////////////////////
-// 🧹 MAP CLEAR
+// 📍 GPS
 /////////////////////////////////////////////////////
 
-function clearMarkers(){
-  markers.forEach(m=>map.removeLayer(m));
-  markers=[];
-}
+function getGPS(){
 
-/////////////////////////////////////////////////////
-// 🗺️ RENDER
-/////////////////////////////////////////////////////
+  navigator.geolocation.getCurrentPosition(pos=>{
 
-function render(list){
+    const lat=pos.coords.latitude;
+    const lon=pos.coords.longitude;
+    const acc=pos.coords.accuracy;
 
-  clearMarkers();
+    if(userMarker) map.removeLayer(userMarker);
 
-  list.forEach(p=>{
+    userMarker=L.marker([lat,lon])
+      .addTo(map)
+      .bindPopup(`📍 Te itt vagy<br>±${Math.round(acc)} m`)
+      .openPopup();
 
-    const s = classify(p);
+    map.setView([lat,lon],14);
 
-    const color =
-      s==="S1"?"green":
-      s==="S2"?"blue":
-      s==="S3"?"orange":"red";
+    document.getElementById("info").innerHTML=
+      `GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)} | pontosság: ±${Math.round(acc)} m`;
 
-    const m = L.circleMarker([p.lat,p.lon],{
-      radius:8,
-      color:color
-    }).addTo(map);
-
-    m.bindPopup(`
-      💧 ${p.name}<br>
-      🆔 ${p.osm}<br>
-      ⚠️ ${s}
-    `);
-
-    markers.push(m);
   });
 
 }
 
 /////////////////////////////////////////////////////
-// 🔍 SEARCH ENGINE
+// 🔍 SEARCH (OSM Nominatim)
 /////////////////////////////////////////////////////
 
-function runSearch(){
+async function searchPlace(){
 
-  const q=document.getElementById("search").value.toLowerCase();
-  const safeOnly=document.getElementById("safeOnly").checked;
+  const q=document.getElementById("search").value;
 
-  let res=pois.filter(p=>
-    p.name.toLowerCase().includes(q)
-  );
+  const url=`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(q)}`;
 
-  res=res.map(p=>({
-    ...p,
-    s:classify(p)
-  }));
+  const res=await fetch(url);
+  const data=await res.json();
 
-  if(safeOnly){
-    res=res.filter(p=>p.s==="S1"||p.s==="S2");
-  }
+  if(!data.length) return;
 
-  document.getElementById("info").innerHTML=
-    `Találatok: ${res.length}`;
+  const p=data[0];
 
-  render(res);
+  map.setView([p.lat,p.lon],14);
+
+  L.marker([p.lat,p.lon])
+    .addTo(map)
+    .bindPopup(p.display_name)
+    .openPopup();
+
 }
 
 /////////////////////////////////////////////////////
-// INIT
+// 💧 LEGKÖZELEBBI VÍZ
 /////////////////////////////////////////////////////
 
-render(pois);
+function nearestWater(){
+
+  if(!userMarker){
+    alert("Előbb GPS!");
+    return;
+  }
+
+  const u=userMarker.getLatLng();
+
+  let best=null;
+  let bestD=9999;
+
+  waterPoints.forEach(w=>{
+    const d=dist(u.lat,u.lng,w.lat,w.lon);
+    if(d<bestD){
+      bestD=d;
+      best=w;
+    }
+  });
+
+  return {best,bestD};
+}
+
+/////////////////////////////////////////////////////
+// 🧭 ROUTE (OSRM foot)
+/////////////////////////////////////////////////////
+
+async function drawRoute(from,to){
+
+  const url=`https://router.project-osrm.org/route/v1/foot/
+${from.lng},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson`;
+
+  const res=await fetch(url);
+  const data=await res.json();
+
+  const coords=data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+
+  if(routeLine) map.removeLayer(routeLine);
+
+  routeLine=L.polyline(coords,{color:"blue"}).addTo(map);
+
+  map.fitBounds(routeLine.getBounds());
+}
+
+/////////////////////////////////////////////////////
+// 💧 ROUTE TO WATER
+/////////////////////////////////////////////////////
+
+async function routeToWater(){
+
+  const nw=nearestWater();
+
+  if(!nw.best) return;
+
+  alert(`Legközelebbi víz: ${nw.best.name} (${nw.bestD.toFixed(2)} km)`);
+
+  await drawRoute(userMarker.getLatLng(),nw.best);
+
+}
+
+/////////////////////////////////////////////////////
+// INIT WATER MARKERS
+/////////////////////////////////////////////////////
+
+waterPoints.forEach(w=>{
+  L.circleMarker([w.lat,w.lon],{
+    radius:7,
+    color:"green"
+  }).addTo(map)
+  .bindPopup("💧 "+w.name);
+});
 
 </script>
 
