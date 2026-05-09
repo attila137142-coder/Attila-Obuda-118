@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
   <meta charset="UTF-8" />
-  <title>V5 – REAL GTFS + POI + ROUTING ENGINE</title>
+  <title>V6 CORE – DISPATCHER ENGINE (ARCHITECTURE)</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
@@ -18,7 +18,7 @@
       top:10px;
       left:10px;
       z-index:9999;
-      width:360px;
+      width:380px;
       background:white;
       padding:12px;
       border-radius:12px;
@@ -29,37 +29,41 @@
       width:100%;
       padding:8px;
       margin:5px 0;
-      font-size:14px;
     }
 
     .box { font-size:12px; padding:6px; border-bottom:1px solid #eee; cursor:pointer; }
+    .section { font-weight:bold; font-size:12px; margin-top:8px; }
 
-    .sectionTitle { font-size:12px; font-weight:bold; margin-top:8px; }
+    .tag { font-size:11px; color:#666; }
   </style>
 </head>
 <body>
 
 <div class="panel">
-  <h3>🟢 V5 GTFS + POI + ROUTING</h3>
+  <h3>🟢 V6 CORE DISPATCHER ENGINE</h3>
 
   <div id="gps">📍 GPS...</div>
   <div id="speed">🚀 Sebesség...</div>
 
-  <input id="query" placeholder="POI / megálló / útvonal cél" oninput="autoSuggest()" />
-  <div id="suggest"></div>
+  <input id="query" placeholder="Cél (POI / BKK / turista)" />
 
-  <button onclick="searchPOI()">🔎 POI keresés</button>
-  <button onclick="nearbyPOI()">📍 Környék POI</button>
-  <button onclick="gtfsStops()">🚌 GTFS megállók (DEMO)</button>
-  <button onclick="routePlan()">🟣 Útvonal tervezés</button>
+  <button onclick="dispatch()">🧠 DISPATCH (AI LOGIKA)</button>
+  <button onclick="scanNearby()">📍 POI SCAN</button>
 
-  <div class="sectionTitle">Eredmények</div>
+  <div class="section">DISPATCH OUTPUT</div>
   <div id="out"></div>
+
+  <div class="section">DEBUG LAYER</div>
+  <div id="debug"></div>
 </div>
 
 <div id="map"></div>
 
 <script>
+
+// =========================
+// MAP CORE
+// =========================
 
 let map = L.map('map').setView([47.4979,19.0402],13);
 
@@ -70,7 +74,10 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 let userMarker;
 let lastPos;
 
-// GPS
+// =========================
+// GPS CORE
+// =========================
+
 navigator.geolocation.watchPosition(p=>{
   const lat=p.coords.latitude;
   const lon=p.coords.longitude;
@@ -80,109 +87,116 @@ navigator.geolocation.watchPosition(p=>{
   document.getElementById("speed").innerHTML=`🚀 ${(sp*3.6).toFixed(2)} km/h`;
 
   if(!userMarker){
-    userMarker=L.marker([lat,lon]).addTo(map).bindPopup("TE");
+    userMarker=L.marker([lat,lon]).addTo(map).bindPopup("YOU");
   } else userMarker.setLatLng([lat,lon]);
 
   lastPos={lat,lon};
 });
 
-// DIST
-function dist(a,b){
-  const R=6371000;
-  const t=x=>x*Math.PI/180;
-  const dLat=t(b.lat-a.lat);
-  const dLon=t(b.lon-a.lon);
-  const x=Math.sin(dLat/2)**2+
-    Math.cos(t(a.lat))*Math.cos(t(b.lat))*Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+// =========================
+// AI DISPATCHER CORE
+// =========================
+
+function analyzeQuery(q){
+  q=q.toLowerCase();
+
+  if(q.includes("vár")||q.includes("castle")) return "HERITAGE";
+  if(q.includes("büfé")||q.includes("étterem")) return "AMENITY";
+  if(q.includes("bkk")||q.includes("busz")||q.includes("járat")) return "TRANSIT";
+  if(q.includes("kút")||q.includes("forrás")) return "NATURAL";
+
+  return "GENERAL";
 }
 
-// POI SEARCH
-async function searchPOI(){
+// =========================
+// POI SCORING ENGINE
+// =========================
+
+function scorePOI(type, dist){
+  let score=50;
+
+  if(type=="HERITAGE") score+=40;
+  if(type=="AMENITY") score+=20;
+  if(type=="TRANSIT") score+=30;
+  if(type=="NATURAL") score+=25;
+
+  score -= dist/1000;
+
+  return Math.max(0,score);
+}
+
+// =========================
+// DISPATCHER MAIN
+// =========================
+
+async function dispatch(){
+
   const q=document.getElementById("query").value;
-  const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=10`);
-  const d=await r.json();
-  render(d);
-}
+  if(!q||!lastPos) return;
 
-// NEARBY POI
-async function nearbyPOI(){
-  if(!lastPos) return;
+  const type=analyzeQuery(q);
 
-  const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=15&viewbox=${lastPos.lon-0.02},${lastPos.lat+0.02},${lastPos.lon+0.02},${lastPos.lat-0.02}&bounded=1`);
-  const d=await r.json();
-  render(d);
-}
+  document.getElementById("debug").innerHTML=
+    `TYPE: ${type}`;
 
-// GTFS DEMO (BKK MOCK)
-function gtfsStops(){
-  const stops=[
-    {name:"Deák Ferenc tér",lat:47.4972,lon:19.0540},
-    {name:"Kálvin tér",lat:47.4891,lon:19.0614},
-    {name:"Széll Kálmán tér",lat:47.5079,lon:19.0242}
-  ];
+  // MOCK POI FETCH
+  const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=8`);
+  const data=await res.json();
 
-  render(stops);
-}
+  let best=null;
+  let bestScore=0;
 
-// ROUTING (OSRM DEMO)
-async function routePlan(){
-  if(!lastPos) return;
-
-  const target=prompt("Cél koordináta (lat,lon)");
-  if(!target) return;
-
-  const [lat,lon]=target.split(",").map(Number);
-
-  const url=`https://router.project-osrm.org/route/v1/walking/${lastPos.lon},${lastPos.lat};${lon},${lat}?overview=false`;
-
-  const r=await fetch(url);
-  const d=await r.json();
-
-  const dist=d.routes[0].distance;
-  const dur=d.routes[0].duration;
-
-  document.getElementById("out").innerHTML=`
-    🟣 Útvonal kész<br>
-    📏 ${dist.toFixed(0)} m<br>
-    ⏱ ${Math.round(dur/60)} perc (gyalog)
-  `;
-}
-
-// RENDER
-function render(list){
   let html="";
 
-  list.forEach(p=>{
+  data.forEach(p=>{
     const lat=+p.lat;
     const lon=+p.lon;
 
-    const d=lastPos?dist(lastPos,{lat,lon}):0;
+    const d=distance(lastPos,{lat,lon});
+    const sc=scorePOI(type,d);
 
-    html+=`<div class='box'>📍 ${p.name||p.display_name}<br>📏 ${d.toFixed(0)} m</div>`;
+    if(sc>bestScore){bestScore=sc;best=p;}
+
+    html+=`<div class='box'>📍 ${p.display_name}<br><span class='tag'>score: ${sc.toFixed(1)} | ${d.toFixed(0)} m</span></div>`;
 
     L.circleMarker([lat,lon]).addTo(map);
   });
 
-  document.getElementById("out").innerHTML=html;
+  document.getElementById("out").innerHTML=
+    `<b>BEST MATCH:</b><br>${best?best.display_name:"NONE"}<br><span class='tag'>score ${bestScore.toFixed(1)}</span>`;
 }
 
-// AUTOSUGGEST
-async function autoSuggest(){
-  const q=document.getElementById("query").value;
-  if(q.length<2) return;
+// =========================
+// DISTANCE
+// =========================
 
-  const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=5`);
-  const d=await r.json();
+function distance(a,b){
+  const R=6371000;
+  const t=x=>x*Math.PI/180;
 
-  document.getElementById("suggest").innerHTML=
-    d.map(x=>`<div class='box' onclick="pick('${x.display_name}')">📍 ${x.display_name}</div>`).join("");
+  const dLat=t(b.lat-a.lat);
+  const dLon=t(b.lon-a.lon);
+
+  const x=Math.sin(dLat/2)**2+
+    Math.cos(t(a.lat))*Math.cos(t(b.lat))*Math.sin(dLon/2)**2;
+
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-function pick(v){
-  document.getElementById("query").value=v;
-  document.getElementById("suggest").innerHTML="";
-  searchPOI();
+// =========================
+// POI SCAN
+// =========================
+
+async function scanNearby(){
+
+  if(!lastPos) return;
+
+  const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=10&viewbox=${lastPos.lon-0.02},${lastPos.lat+0.02},${lastPos.lon+0.02},${lastPos.lat-0.02}&bounded=1`);
+
+  const data=await res.json();
+
+  document.getElementById("out").innerHTML=
+    data.map(p=>`<div class='box'>📍 ${p.display_name}</div>`).join("");
 }
 
 </script>
