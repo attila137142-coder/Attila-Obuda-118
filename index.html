@@ -1,1 +1,98 @@
-# =========================================================# 🟢 FULL GTFS EXPORT ENGINE V1# BKK / GTFS → PDF + XLSX EXPORTER# ---------------------------------------------------------# FUNKCIÓK:# ✔ GTFS ZIP letöltés# ✔ stops.txt feldolgozás# ✔ Budapest szűrés# ✔ Pest megye szűrés# ✔ ABC sorrend# ✔ koordináták 6 tizedesig# ✔ XLSX export# ✔ PDF export# =========================================================import osimport zipfileimport requestsimport pandas as pdfrom io import BytesIOfrom reportlab.platypus import (    SimpleDocTemplate,    Table,    TableStyle,    Paragraph,    Spacer,    PageBreak)from reportlab.lib import colorsfrom reportlab.lib.styles import getSampleStyleSheetfrom reportlab.lib.pagesizes import landscape, A4# =========================================================# CONFIG# =========================================================GTFS_URL = "https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip"OUTPUT_XLSX = "GTFS_EXPORT.xlsx"OUTPUT_PDF = "GTFS_EXPORT.pdf"# =========================================================# DOWNLOAD GTFS# =========================================================print("🟢 GTFS letöltés...")r = requests.get(GTFS_URL)if r.status_code != 200:    raise Exception("❌ GTFS letöltés sikertelen!")print("🟢 ZIP megnyitás...")z = zipfile.ZipFile(BytesIO(r.content))# =========================================================# STOPS.TXT BETÖLTÉS# =========================================================print("🟢 stops.txt feldolgozás...")with z.open("stops.txt") as f:    stops = pd.read_csv(f)# =========================================================# BIZTONSÁGI CHECK# =========================================================required = [    "stop_id",    "stop_name",    "stop_lat",    "stop_lon"]for col in required:    if col not in stops.columns:        raise Exception(f"❌ Hiányzó oszlop: {col}")# =========================================================# KOORDINÁTA FORMÁZÁS# =========================================================stops["stop_lat"] = stops["stop_lat"].round(6)stops["stop_lon"] = stops["stop_lon"].round(6)# =========================================================# BUDAPEST SZŰRÉS# =========================================================print("🟢 Budapest szűrés...")budapest = stops[    stops["stop_name"]    .astype(str)    .str.contains("Budapest|M |tér|utca|út|krt", case=False, na=False)].copy()# fallbackif len(budapest) < 1000:    budapest = stops.copy()# =========================================================# PEST MEGYE SZŰRÉS (egyszerű közelítés)# =========================================================print("🟢 Pest megye szűrés...")pest_keywords = [    "Szentendre",    "Vác",    "Dunakeszi",    "Göd",    "Érd",    "Budaörs",    "Pomáz",    "Veresegyház",    "Fót",    "Monor",    "Cegléd",    "Nagykőrös",    "Aszód",    "Gödöllő",    "Pilis",    "Vecsés",]pattern = "|".join(pest_keywords)pest = stops[    stops["stop_name"]    .astype(str)    .str.contains(pattern, case=False, na=False)].copy()# =========================================================# ABC SORREND# =========================================================budapest = budapest.sort_values("stop_name")pest = pest.sort_values("stop_name")# =========================================================# OSZLOPOK# =========================================================columns = [    "stop_name",    "stop_id",    "stop_lat",    "stop_lon"]budapest = budapest[columns]pest = pest[columns]# =========================================================# XLSX EXPORT# =========================================================print("🟢 XLSX generálás...")with pd.ExcelWriter(OUTPUT_XLSX, engine="openpyxl") as writer:    budapest.to_excel(        writer,        sheet_name="Budapest_BKK",        index=False    )    pest.to_excel(        writer,        sheet_name="Pest_Megye",        index=False    )print(f"✅ XLSX kész: {OUTPUT_XLSX}")# =========================================================# PDF EXPORT# =========================================================print("🟢 PDF generálás...")doc = SimpleDocTemplate(    OUTPUT_PDF,    pagesize=landscape(A4))styles = getSampleStyleSheet()elements = []# ---------------------------------------------------------# TITLE# ---------------------------------------------------------elements.append(    Paragraph("GTFS EXPORT ENGINE", styles["Title"]))elements.append(Spacer(1, 12))# =========================================================# PDF TABLE FUNCTION# =========================================================def add_table(title, df):    elements.append(        Paragraph(title, styles["Heading2"])    )    data = [list(df.columns)]    for _, row in df.iterrows():        data.append([            str(row["stop_name"]),            str(row["stop_id"]),            str(row["stop_lat"]),            str(row["stop_lon"])        ])    t = Table(data)    t.setStyle(TableStyle([        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),        ("FONTSIZE", (0, 0), (-1, -1), 7),        ("BOTTOMPADDING", (0, 0), (-1, 0), 8),    ]))    elements.append(t)    elements.append(PageBreak())# =========================================================# TABLES# =========================================================add_table("Budapest BKK Megállók", budapest.head(1000))add_table("Pest Megye Megállók", pest.head(1000))# =========================================================# BUILD PDF# =========================================================doc.build(elements)print(f"✅ PDF kész: {OUTPUT_PDF}")# =========================================================# DONE# =========================================================print()print("🚀 GTFS EXPORT ENGINE KÉSZ")print("📄 PDF:", OUTPUT_PDF)print("📊 XLSX:", OUTPUT_XLSX)print("🟢 Feldolgozás befejezve")
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>Budai Gyermekvasút PRO GRID</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<style>
+  body { margin:0; font-family: Arial; }
+  #map { height: 100vh; width: 100%; }
+  .label {
+    background: white;
+    padding: 2px 5px;
+    font-size: 11px;
+    border-radius: 4px;
+    border: 1px solid #ccc;
+  }
+</style>
+</head>
+
+<body>
+<div id="map"></div>
+
+<script>
+
+// 🗺️ MAP INIT (Budai-hegység központ)
+var map = L.map('map').setView([47.52, 18.96], 13);
+
+// 🌍 OpenStreetMap base layer
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  maxZoom: 18
+}).addTo(map);
+
+function addLine(coords, name, dist, slope) {
+  var line = L.polyline(coords, {color:'green'}).addTo(map);
+
+  line.bindPopup(
+    "<b>" + name + "</b><br>" +
+    "Távolság: " + dist + "<br>" +
+    "Meredekség: " + slope + "%"
+  );
+
+  // label középre
+  var mid = coords[Math.floor(coords.length/2)];
+  L.marker(mid, {
+    icon: L.divIcon({className:'label', html:name})
+  }).addTo(map);
+}
+
+// 🚋 GYERMEKVASÚT GERINC (egyszerűsített geometria)
+
+// Széchenyi-hegy
+addLine([
+  [47.4938, 19.0097],
+  [47.5005, 18.9990]
+], "Széchenyi-hegy → Normafa", "0.92 km", "4.1");
+
+// Normafa → Anna-rét
+addLine([
+  [47.5005, 18.9990],
+  [47.5045, 18.9902]
+], "Normafa → Anna-rét", "0.64 km", "1.9");
+
+// Anna-rét → Csillebérc
+addLine([
+  [47.5045, 18.9902],
+  [47.5098, 18.9795]
+], "Anna-rét → Csillebérc", "1.18 km", "4.7");
+
+// Csillebérc → Szépjuhászné
+addLine([
+  [47.5098, 18.9795],
+  [47.5192, 18.9690]
+], "Csillebérc → Szépjuhászné", "1.45 km", "4.3");
+
+// Szépjuhászné → Hárs-hegy
+addLine([
+  [47.5192, 18.9690],
+  [47.5250, 18.9610]
+], "Szépjuhászné → Hárs-hegy", "0.82 km", "5.0");
+
+// Hárs-hegy → Hűvösvölgy
+addLine([
+  [47.5250, 18.9610],
+  [47.5338, 18.9535]
+], "Hárs-hegy → Hűvösvölgy", "1.20 km", "7.9");
+
+// 🌲 EXTRA NODE (János-hegy kitérő)
+addLine([
+  [47.5050, 18.9650],
+  [47.5180, 18.9580]
+], "Normafa → János-hegy", "1.75 km", "12.0");
+
+</script>
+</body>
+</html>
