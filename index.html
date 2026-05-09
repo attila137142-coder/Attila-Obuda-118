@@ -1,105 +1,170 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <meta charset="utf-8" />
-  <title>Börzsöny Atlasz – Water + Wildlife Heatmap</title>
+<meta charset="utf-8" />
+<title>Atlasz – Börzsöny Forrás Index Rendszer</title>
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
-  <style>
-    body { margin:0; font-family: Arial; }
-    #map { height: 100vh; }
-    .legend {
-      position: absolute;
-      bottom: 20px;
-      left: 20px;
-      background: white;
-      padding: 10px;
-      border-radius: 8px;
-      font-size: 12px;
-      z-index: 999;
-    }
-  </style>
+<style>
+body { margin:0; font-family:Arial; }
+#map { height: 80vh; }
+.panel {
+  padding:10px;
+  background:#f5f5f5;
+}
+input { padding:6px; width:60%; }
+button { padding:6px; }
+</style>
 </head>
 
 <body>
 
-<div id="map"></div>
+<div class="panel">
+  🔍 <input id="search" placeholder="keresés: forrás, Csóványos, Kettős-kút...">
+  <button onclick="runSearch()">Keresés</button>
 
-<div class="legend">
-  💧 Water Risk / 🐾 Wildlife Heatmap<br>
-  🟢 Safe → 🔴 Dangerous<br>
+  <label style="margin-left:10px;">
+    <input type="checkbox" id="safeOnly"> 💧 csak S1–S2
+  </label>
+
+  <div id="info" style="margin-top:8px;"></div>
 </div>
 
+<div id="map"></div>
+
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
 
 <script>
 
-// 🗺️ Alap térkép (Börzsöny központ)
+/////////////////////////////////////////////////////
+// 🗺️ MAP
+/////////////////////////////////////////////////////
 const map = L.map('map').setView([47.95, 18.90], 12);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap'
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'© OSM'
 }).addTo(map);
 
+let markers = [];
+
 /////////////////////////////////////////////////////
-// 💧 WATER RISK DATA (S1–S5 egyszerűsítve 0–1)
+// 📦 MOCK OSM DATA (helyettesíthető valódival)
 /////////////////////////////////////////////////////
 
-const waterPoints = [
-  [47.9394, 18.9321, 0.4], // Természetbarát-forrás (S3 környék)
-  [47.9500, 18.9000, 0.2],
-  [47.9600, 18.8800, 0.7],
-  [47.9400, 18.9100, 0.5]
+let pois = [
+  {id:1,name:"Természetbarát-forrás",lat:47.9394,lon:18.9321,osm:"2255466515",tags:{natural:"spring"}},
+  {id:2,name:"Ismeretlen forrás",lat:47.945,lon:18.91,osm:"x1",tags:{natural:"spring"}},
+  {id:3,name:"Kéktúra közkút",lat:47.96,lon:18.88,osm:"x2",tags:{amenity:"drinking_water"}}
 ];
 
 /////////////////////////////////////////////////////
-// 🐾 WILDLIFE INTENSITY
+// 🧠 S1–S5 BESOROLÁS MOTOR
 /////////////////////////////////////////////////////
 
-const wildlifePoints = [
-  [47.9394, 18.9321, 0.8],
-  [47.9500, 18.9000, 0.6],
-  [47.9600, 18.8800, 0.9],
-  [47.9450, 18.9150, 0.7]
-];
+function classify(poi){
+
+  if(poi.tags.amenity === "drinking_water") return "S1";
+
+  if(poi.tags.man_made === "water_tap") return "S2";
+
+  if(poi.tags.natural === "spring") return "S3";
+
+  return "S4";
+}
 
 /////////////////////////////////////////////////////
-// 🔥 HEATMAP LAYERS
+// 📏 DISTANCE
 /////////////////////////////////////////////////////
 
-const waterHeat = L.heatLayer(waterPoints, {
-  radius: 25,
-  blur: 18,
-  maxZoom: 17
-});
+function dist(a,b,c,d){
+  const R=6371;
+  const dLat=(c-a)*Math.PI/180;
+  const dLon=(d-b)*Math.PI/180;
 
-const wildlifeHeat = L.heatLayer(wildlifePoints, {
-  radius: 30,
-  blur: 20,
-  maxZoom: 17
-});
+  const x=Math.sin(dLat/2)**2 +
+    Math.cos(a*Math.PI/180) *
+    Math.cos(c*Math.PI/180) *
+    Math.sin(dLon/2)**2;
 
-waterHeat.addTo(map);
-wildlifeHeat.addTo(map);
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
 
 /////////////////////////////////////////////////////
-// 🧭 LAYER CONTROL
+// 🧹 MAP CLEAR
 /////////////////////////////////////////////////////
 
-L.control.layers(null, {
-  "💧 Water Risk": waterHeat,
-  "🐾 Wildlife Heat": wildlifeHeat
-}).addTo(map);
+function clearMarkers(){
+  markers.forEach(m=>map.removeLayer(m));
+  markers=[];
+}
 
 /////////////////////////////////////////////////////
-// 📍 EXTRA MARKER (példa forrás)
+// 🗺️ RENDER
 /////////////////////////////////////////////////////
 
-L.marker([47.9394, 18.9321])
-  .addTo(map)
-  .bindPopup("💧 Természetbarát-forrás (Kettős-kút)<br>OSM ID: 2255466515");
+function render(list){
+
+  clearMarkers();
+
+  list.forEach(p=>{
+
+    const s = classify(p);
+
+    const color =
+      s==="S1"?"green":
+      s==="S2"?"blue":
+      s==="S3"?"orange":"red";
+
+    const m = L.circleMarker([p.lat,p.lon],{
+      radius:8,
+      color:color
+    }).addTo(map);
+
+    m.bindPopup(`
+      💧 ${p.name}<br>
+      🆔 ${p.osm}<br>
+      ⚠️ ${s}
+    `);
+
+    markers.push(m);
+  });
+
+}
+
+/////////////////////////////////////////////////////
+// 🔍 SEARCH ENGINE
+/////////////////////////////////////////////////////
+
+function runSearch(){
+
+  const q=document.getElementById("search").value.toLowerCase();
+  const safeOnly=document.getElementById("safeOnly").checked;
+
+  let res=pois.filter(p=>
+    p.name.toLowerCase().includes(q)
+  );
+
+  res=res.map(p=>({
+    ...p,
+    s:classify(p)
+  }));
+
+  if(safeOnly){
+    res=res.filter(p=>p.s==="S1"||p.s==="S2");
+  }
+
+  document.getElementById("info").innerHTML=
+    `Találatok: ${res.length}`;
+
+  render(res);
+}
+
+/////////////////////////////////////////////////////
+// INIT
+/////////////////////////////////////////////////////
+
+render(pois);
 
 </script>
 
