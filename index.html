@@ -1,127 +1,80 @@
 <!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="utf-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+    <div id="list"></div>
+  </div>
 
-<title>Budai OSM Layer v1</title>
+  <div class="content">
+    <h2 id="title">Válassz egy helyet</h2>
+    <p id="desc">Bal oldalon kereshetsz az offline adatbázisban.</p>
+    <pre id="json"></pre>
+  </div>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
-<style>
-body { margin:0; font-family: Arial; }
-#map { height:100vh; width:100%; }
-
-.panel{
-  position:absolute;
-  top:10px;
-  left:10px;
-  z-index:9999;
-  background:white;
-  padding:10px;
-  border-radius:10px;
-  box-shadow:0 0 10px rgba(0,0,0,0.3);
-  font-size:13px;
-  max-width:280px;
-}
-
-.item{
-  margin-top:6px;
-  padding:5px;
-  background:#f4f4f4;
-  border-left:4px solid green;
-}
-</style>
-</head>
-
-<body>
-
-<div class="panel">
-<b>🌲 Budai OSM Layer v1</b><br><br>
-
-✔ turistaút háló<br>
-✔ kattintható szakaszok<br>
-✔ stabil render<br><br>
-
-📦 kell: <b>budai.geojson</b><br><br>
-
-<div id="info">Betöltés…</div>
 </div>
 
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script>
+// 🌲 OFFLINE BÖRZSÖNY DB (bővíthető)
+const DB = [
+  {
+    id: "borzsony_001",
+    name: "Viláti pihenő",
+    type: "rom / pihenő",
+    location: "Börzsöny",
+    status: "eltűnt",
+    story: "Régi erdei pihenőhely, amely egy tűzeset után megszűnt.",
+    tags: ["rom", "tűzeset", "erdő"]
+  },
+  {
+    id: "borzsony_002",
+    name: "Diósjenő erdei kulcsosház",
+    type: "kulcsosház",
+    location: "Diósjenő",
+    status: "ismeretlen / részben romos",
+    story: "Helyi túrázók által használt régi kulcsosház a Börzsöny kapujában.",
+    tags: ["kulcsosház", "Diósjenő"]
+  },
+  {
+    id: "borzsony_003",
+    name: "Királyrét térség",
+    type: "turista központ",
+    location: "Börzsöny",
+    status: "aktív",
+    story: "A Börzsöny egyik legfontosabb túraközpontja, kiindulópont több útvonalhoz.",
+    tags: ["túra", "központ"]
+  }
+];
 
-// =========================
-// STABIL MAP CORE
-// =========================
+const listEl = document.getElementById("list");
+const searchEl = document.getElementById("search");
+const titleEl = document.getElementById("title");
+const descEl = document.getElementById("desc");
+const jsonEl = document.getElementById("json");
 
-const map = L.map('map').setView([47.52, 18.97], 13);
+function render(list) {
+  listEl.innerHTML = "";
+  list.forEach(item => {
+    const div = document.createElement("div");
+    div.className = "item";
+    div.innerHTML = `<b>${item.name}</b><div class='tag'>${item.type} | ${item.status}</div>`;
+    div.onclick = () => showItem(item);
+    listEl.appendChild(div);
+  });
+}
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  maxZoom:19
-}).addTo(map);
+function showItem(item) {
+  titleEl.textContent = item.name;
+  descEl.textContent = item.story;
+  jsonEl.textContent = JSON.stringify(item, null, 2);
+}
 
-// =========================
-// SIMPLE INFO
-// =========================
-
-let totalSegments = 0;
-
-// =========================
-// LOAD GEOJSON (OSM EXPORT)
-// =========================
-
-fetch("budai.geojson")
-.then(r => r.json())
-.then(data => {
-
-  const layer = L.geoJSON(data, {
-
-    style: function(){
-      return {
-        color: "green",
-        weight: 4,
-        opacity: 0.85
-      };
-    },
-
-    onEachFeature: function(feature, layer){
-
-      totalSegments++;
-
-      let name =
-        feature.properties?.name ||
-        feature.properties?.ref ||
-        "Turistaút";
-
-      layer.bindPopup(
-        "🌲 " + name
-      );
-
-      layer.on("click", function(e){
-        L.popup()
-        .setLatLng(e.latlng)
-        .setContent(
-          "🌲 Szakasz<br>" +
-          "🧭 " + name
-        )
-        .openOn(map);
-      });
-
-    }
-
-  }).addTo(map);
-
-  map.fitBounds(layer.getBounds());
-
-  document.getElementById("info").innerHTML =
-    "✔ Betöltve<br>📊 szakaszok: " + totalSegments;
-
+searchEl.addEventListener("input", (e) => {
+  const q = e.target.value.toLowerCase();
+  render(DB.filter(x =>
+    x.name.toLowerCase().includes(q) ||
+    x.location.toLowerCase().includes(q) ||
+    x.tags.some(t => t.includes(q))
+  ));
 });
 
+render(DB);
 </script>
 
 </body>
