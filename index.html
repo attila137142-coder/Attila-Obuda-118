@@ -1,94 +1,106 @@
 <!DOCTYPE html>
-    <div id="list"></div>
-  </div>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Börzsöny Atlasz – Water + Wildlife Heatmap</title>
 
-  <div class="content">
-    <h2 id="title">Válassz egy helyet</h2>
-    <p id="desc">Bal oldalon kereshetsz az offline adatbázisban.</p>
-    <pre id="json"></pre>
-  </div>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
 
+  <style>
+    body { margin:0; font-family: Arial; }
+    #map { height: 100vh; }
+    .legend {
+      position: absolute;
+      bottom: 20px;
+      left: 20px;
+      background: white;
+      padding: 10px;
+      border-radius: 8px;
+      font-size: 12px;
+      z-index: 999;
+    }
+  </style>
+</head>
+
+<body>
+
+<div id="map"></div>
+
+<div class="legend">
+  💧 Water Risk / 🐾 Wildlife Heatmap<br>
+  🟢 Safe → 🔴 Dangerous<br>
 </div>
 
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat/dist/leaflet-heat.js"></script>
+
 <script>
-window.addEventListener("DOMContentLoaded", () => {
 
-  console.log("Börzsöny Atlasz v5.1 indul...");
+// 🗺️ Alap térkép (Börzsöny központ)
+const map = L.map('map').setView([47.95, 18.90], 12);
 
-  const DB = [
-    {
-      id: "borzsony_001",
-      name: "Viláti pihenő",
-      type: "rom / pihenő",
-      location: "Börzsöny",
-      status: "eltűnt",
-      story: "Régi erdei pihenőhely, amely egy tűzeset után megszűnt.",
-      tags: ["rom", "tűzeset", "erdő"]
-    },
-    {
-      id: "borzsony_002",
-      name: "Diósjenő erdei kulcsosház",
-      type: "kulcsosház",
-      location: "Diósjenő",
-      status: "ismeretlen / részben romos",
-      story: "Helyi túrázók által használt régi kulcsosház a Börzsöny kapujában.",
-      tags: ["kulcsosház", "Diósjenő"]
-    },
-    {
-      id: "borzsony_003",
-      name: "Királyrét",
-      type: "turista központ",
-      location: "Börzsöny",
-      status: "aktív",
-      story: "A Börzsöny egyik legfontosabb túraközpontja.",
-      tags: ["túra", "központ"]
-    }
-  ];
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '© OpenStreetMap'
+}).addTo(map);
 
-  const listEl = document.getElementById("list");
-  const searchEl = document.getElementById("search");
-  const titleEl = document.getElementById("title");
-  const descEl = document.getElementById("desc");
-  const jsonEl = document.getElementById("json");
+/////////////////////////////////////////////////////
+// 💧 WATER RISK DATA (S1–S5 egyszerűsítve 0–1)
+/////////////////////////////////////////////////////
 
-  function render(list) {
-    listEl.innerHTML = "";
+const waterPoints = [
+  [47.9394, 18.9321, 0.4], // Természetbarát-forrás (S3 környék)
+  [47.9500, 18.9000, 0.2],
+  [47.9600, 18.8800, 0.7],
+  [47.9400, 18.9100, 0.5]
+];
 
-    if (!list || list.length === 0) {
-      listEl.innerHTML = `<div class='empty'>Nincs találat 😕</div>`;
-      return;
-    }
+/////////////////////////////////////////////////////
+// 🐾 WILDLIFE INTENSITY
+/////////////////////////////////////////////////////
 
-    list.forEach(item => {
-      const div = document.createElement("div");
-      div.className = "item";
-      div.innerHTML = `<b>${item.name}</b><div class='tag'>${item.type} | ${item.status}</div>`;
-      div.onclick = () => showItem(item);
-      listEl.appendChild(div);
-    });
-  }
+const wildlifePoints = [
+  [47.9394, 18.9321, 0.8],
+  [47.9500, 18.9000, 0.6],
+  [47.9600, 18.8800, 0.9],
+  [47.9450, 18.9150, 0.7]
+];
 
-  function showItem(item) {
-    titleEl.textContent = item.name;
-    descEl.textContent = item.story;
-    jsonEl.textContent = JSON.stringify(item, null, 2);
-  }
+/////////////////////////////////////////////////////
+// 🔥 HEATMAP LAYERS
+/////////////////////////////////////////////////////
 
-  searchEl.addEventListener("input", (e) => {
-    const q = e.target.value.toLowerCase();
-
-    const filtered = DB.filter(x =>
-      x.name.toLowerCase().includes(q) ||
-      x.location.toLowerCase().includes(q) ||
-      x.tags.some(t => t.includes(q))
-    );
-
-    render(filtered);
-  });
-
-  render(DB);
-
+const waterHeat = L.heatLayer(waterPoints, {
+  radius: 25,
+  blur: 18,
+  maxZoom: 17
 });
+
+const wildlifeHeat = L.heatLayer(wildlifePoints, {
+  radius: 30,
+  blur: 20,
+  maxZoom: 17
+});
+
+waterHeat.addTo(map);
+wildlifeHeat.addTo(map);
+
+/////////////////////////////////////////////////////
+// 🧭 LAYER CONTROL
+/////////////////////////////////////////////////////
+
+L.control.layers(null, {
+  "💧 Water Risk": waterHeat,
+  "🐾 Wildlife Heat": wildlifeHeat
+}).addTo(map);
+
+/////////////////////////////////////////////////////
+// 📍 EXTRA MARKER (példa forrás)
+/////////////////////////////////////////////////////
+
+L.marker([47.9394, 18.9321])
+  .addTo(map)
+  .bindPopup("💧 Természetbarát-forrás (Kettős-kút)<br>OSM ID: 2255466515");
+
 </script>
 
 </body>
