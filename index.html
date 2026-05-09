@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
-<title>Budai Trail Engine v4</title>
+<title>Budai Trail Navigator v5</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -25,10 +25,20 @@ body { margin:0; font-family: Arial; }
   max-width:300px;
 }
 
-.seg{
-  background:#f4f4f4;
-  margin-top:5px;
+.btn{
+  background:#1976d2;
+  color:white;
   padding:5px;
+  margin-top:5px;
+  border-radius:5px;
+  cursor:pointer;
+  text-align:center;
+}
+
+.route{
+  margin-top:6px;
+  padding:5px;
+  background:#f4f4f4;
   border-left:4px solid green;
 }
 </style>
@@ -37,15 +47,13 @@ body { margin:0; font-family: Arial; }
 <body>
 
 <div class="panel">
-<b>🌲 Budai Trail Engine v4</b><br><br>
+<b>🌲 Budai Navigator v5</b><br><br>
 
-✔ OSM turistautak<br>
-✔ analitika (táv + gráf)<br>
-✔ útvonal keresés<br><br>
+📍 1. katt: START<br>
+📍 2. katt: CÉL<br><br>
 
-📦 kell: <b>budai.geojson</b><br><br>
-
-<div id="info">Várakozás…</div>
+<div id="info">Nincs kiválasztva</div>
+<div class="btn" onclick="reset()">Reset</div>
 </div>
 
 <div id="map"></div>
@@ -65,6 +73,16 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 }).addTo(map);
 
 // =====================
+// GRAPH
+// =====================
+
+let graph = {};
+let nodes = {};
+let selected = [];
+
+let routeLayer;
+
+// =====================
 // DISTANCE
 // =====================
 
@@ -73,11 +91,43 @@ function dist(a,b){
 }
 
 // =====================
-// GRAPH BUILD
+// BFS PATHFIND
 // =====================
 
-let graph = {};
-let allLines = [];
+function findPath(start, end){
+
+  let queue = [[start]];
+  let visited = new Set();
+
+  while(queue.length){
+
+    let path = queue.shift();
+    let node = path[path.length-1];
+
+    if(node === end) return path;
+
+    if(visited.has(node)) continue;
+    visited.add(node);
+
+    let neighbors = graph[node] || [];
+
+    for(let n of neighbors){
+      queue.push([...path, n]);
+    }
+  }
+
+  return null;
+}
+
+// =====================
+// RESET
+// =====================
+
+function reset(){
+  selected = [];
+  document.getElementById("info").innerHTML = "Nincs kiválasztva";
+  if(routeLayer) map.removeLayer(routeLayer);
+}
 
 // =====================
 // LOAD OSM GEOJSON
@@ -111,7 +161,7 @@ fetch("budai.geojson")
       }
 
       // =====================
-      // GRAPH BUILDING
+      // GRAPH BUILD
       // =====================
 
       for(let i=1;i<coords.length;i++){
@@ -119,35 +169,72 @@ fetch("budai.geojson")
         let a = coords[i-1].toString();
         let b = coords[i].toString();
 
-        let d = dist(coords[i-1],coords[i]);
-
         if(!graph[a]) graph[a]=[];
         if(!graph[b]) graph[b]=[];
 
-        graph[a].push({node:b, dist:d});
-        graph[b].push({node:a, dist:d});
+        graph[a].push(b);
+        graph[b].push(a);
       }
 
-      allLines.push(layer);
+      // =====================
+      // CLICK SELECT
+      // =====================
 
-      // popup
       layer.on("click", e => {
-        L.popup()
-        .setLatLng(e.latlng)
-        .setContent("🌲 Turistaút szakasz")
-        .openOn(map);
+
+        let key = e.latlng.lat.toFixed(5)+","+e.latlng.lng.toFixed(5);
+
+        nodes[key] = e.latlng;
+
+        selected.push(key);
+
+        document.getElementById("info").innerHTML =
+          "📍 " + selected.length + "/2 kiválasztva";
+
+        if(selected.length === 2){
+          drawRoute(selected[0], selected[1]);
+          selected = [];
+        }
+
       });
 
     }
 
   }).addTo(map);
 
-  map.fitBounds(allLines[0].getBounds());
+});
+
+// =====================
+// DRAW ROUTE
+// =====================
+
+function drawRoute(a,b){
+
+  let path = findPath(a,b);
+
+  if(!path){
+    alert("Nincs útvonal!");
+    return;
+  }
+
+  let latlngs = path.map(p => {
+    let [lat,lng] = p.split(",");
+    return [parseFloat(lat), parseFloat(lng)];
+  });
+
+  if(routeLayer) map.removeLayer(routeLayer);
+
+  routeLayer = L.polyline(latlngs,{
+    color:"red",
+    weight:6
+  }).addTo(map);
+
+  map.fitBounds(routeLayer.getBounds());
 
   document.getElementById("info").innerHTML =
-    "✔ OSM betöltve<br>✔ gráf építve";
-
-});
+    "<div class='route'>🧭 Útvonal kész<br>" +
+    "📏 pontok: " + path.length + "</div>";
+}
 
 </script>
 
