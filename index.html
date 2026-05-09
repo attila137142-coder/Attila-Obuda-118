@@ -1,117 +1,58 @@
 <!DOCTYPE html>
-<html lang="hu">
-<head>
-  <meta charset="UTF-8" />
-  <title>DISPATCHER CORE V4 – POI + BKK + TURISTA RADAR</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  render(d);
+}
 
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+// GTFS DEMO (BKK MOCK)
+function gtfsStops(){
+  const stops=[
+    {name:"Deák Ferenc tér",lat:47.4972,lon:19.0540},
+    {name:"Kálvin tér",lat:47.4891,lon:19.0614},
+    {name:"Széll Kálmán tér",lat:47.5079,lon:19.0242}
+  ];
 
-  <style>
-    body { margin:0; font-family: Arial; overflow:hidden; }
+  render(stops);
+}
 
-    #map {
-      height: 100vh;
-      width: 100%;
-      position:absolute;
-      z-index:0;
-    }
+// ROUTING (OSRM DEMO)
+async function routePlan(){
+  if(!lastPos) return;
 
-    .panel {
-      position:absolute;
-      top:10px;
-      left:10px;
-      z-index:9999;
-      width:360px;
-      background:white;
-      padding:12px;
-      border-radius:12px;
-      box-shadow:0 2px 14px rgba(0,0,0,0.25);
-    }
+  const target=prompt("Cél koordináta (lat,lon)");
+  if(!target) return;
 
-    input, button {
-      width:100%;
-      padding:8px;
-      margin:5px 0;
-      font-size:14px;
-    }
+  const [lat,lon]=target.split(",").map(Number);
 
-    .small { font-size:11px; color:#666; }
+  const url=`https://router.project-osrm.org/route/v1/walking/${lastPos.lon},${lastPos.lat};${lon},${lat}?overview=false`;
 
-    .poiBox {
-      font-size:12px;
-      padding:6px;
-      border-bottom:1px solid #eee;
-      cursor:pointer;
-    }
+  const r=await fetch(url);
+  const d=await r.json();
 
-    .routeBox {
-      font-size:12px;
-      background:#f5f5f5;
-      padding:6px;
-      margin-top:6px;
-    }
-  </style>
-</head>
-<body>
+  const dist=d.routes[0].distance;
+  const dur=d.routes[0].duration;
 
-<div class="panel">
-  <h3>🟢 DISPATCHER CORE V4</h3>
+  document.getElementById("out").innerHTML=`
+    🟣 Útvonal kész<br>
+    📏 ${dist.toFixed(0)} m<br>
+    ⏱ ${Math.round(dur/60)} perc (gyalog)
+  `;
+}
 
-  <div id="gps">📍 GPS...</div>
-  <div id="speed">🚀 Sebesség...</div>
+// RENDER
+function render(list){
+  let html="";
 
-  <input id="query" placeholder="POI / hely / BKK cél (pl. Drégelyvár)" oninput="autoSuggest()" />
-  <div id="suggestions"></div>
+  list.forEach(p=>{
+    const lat=+p.lat;
+    const lon=+p.lon;
 
-  <button onclick="searchPOI()">🔎 POI keresés</button>
-  <button onclick="scanNearbyPOI()">📍 Környék</button>
-  <button onclick="planRoute()">🟣 Útvonal (DEMO BKK)</button>
+    const d=lastPos?dist(lastPos,{lat,lon}):0;
 
-  <div class="small">POI + GPS + TURISTA + DISPATCHER MODE</div>
+    html+=`<div class='box'>📍 ${p.name||p.display_name}<br>📏 ${d.toFixed(0)} m</div>`;
 
-  <div id="poiList"></div>
-  <div id="route"></div>
-</div>
+    L.circleMarker([lat,lon]).addTo(map);
+  });
 
-<div id="map"></div>
-
-<script>
-
-let map = L.map('map').setView([47.4979,19.0402],13);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OSM'}).addTo(map);
-
-let userMarker;
-let lastPos=null;
-
-// GPS
-navigator.geolocation.watchPosition(pos=>{
-  const lat=pos.coords.latitude;
-  const lon=pos.coords.longitude;
-
-  const sp=pos.coords.speed||0;
-
-  document.getElementById("gps").innerHTML=`📍 ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-  document.getElementById("speed").innerHTML=`🚀 ${(sp*3.6).toFixed(2)} km/h (${sp.toFixed(2)} m/s)`;
-
-  if(!userMarker){
-    userMarker=L.marker([lat,lon]).addTo(map).bindPopup("Te itt vagy");
-  } else userMarker.setLatLng([lat,lon]);
-
-  lastPos={lat,lon};
-});
-
-// DIST
-function dist(a,b){
-  const R=6371000;
-  const t=x=>x*Math.PI/180;
-  const dLat=t(b.lat-a.lat);
-  const dLon=t(b.lon-a.lon);
-  const x=Math.sin(dLat/2)**2+
-    Math.cos(t(a.lat))*Math.cos(t(b.lat))*Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+  document.getElementById("out").innerHTML=html;
 }
 
 // AUTOSUGGEST
@@ -119,67 +60,17 @@ async function autoSuggest(){
   const q=document.getElementById("query").value;
   if(q.length<2) return;
 
-  const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=5`);
-  const data=await res.json();
+  const r=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=5`);
+  const d=await r.json();
 
-  document.getElementById("suggestions").innerHTML=
-    data.map(p=>`<div class='poiBox' onclick='select("${p.display_name}")'>📍 ${p.display_name}</div>`).join("");
+  document.getElementById("suggest").innerHTML=
+    d.map(x=>`<div class='box' onclick="pick('${x.display_name}')">📍 ${x.display_name}</div>`).join("");
 }
 
-function select(t){
-  document.getElementById("query").value=t;
-  document.getElementById("suggestions").innerHTML="";
-  searchPOI(t);
-}
-
-// SEARCH
-async function searchPOI(qOverride){
-  const q=qOverride||document.getElementById("query").value;
-  if(!q) return;
-
-  const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}&limit=10`);
-  const data=await res.json();
-
-  renderPOI(data);
-}
-
-// NEARBY
-async function scanNearbyPOI(){
-  if(!lastPos) return;
-
-  const res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&limit=15&viewbox=${lastPos.lon-0.02},${lastPos.lat+0.02},${lastPos.lon+0.02},${lastPos.lat-0.02}&bounded=1`);
-  const data=await res.json();
-
-  renderPOI(data);
-}
-
-// RENDER POI
-function renderPOI(data){
-  let html="";
-
-  data.forEach(p=>{
-    const lat=+p.lat;
-    const lon=+p.lon;
-    const d=lastPos?dist(lastPos,{lat,lon}):0;
-
-    html+=`<div class='poiBox'>📍 ${p.display_name}<br>📏 ${d.toFixed(0)} m (${(d/1000).toFixed(2)} km)</div>`;
-
-    L.circleMarker([lat,lon]).addTo(map);
-  });
-
-  document.getElementById("poiList").innerHTML=html;
-}
-
-// 🟣 DEMO BKK ROUTE ENGINE
-function planRoute(){
-  document.getElementById("route").innerHTML=`
-  <div class='routeBox'>
-    🟣 DISPATCHER MODE (DEMO)
-    <br>➡ indulás: Saját pozíció
-    <br>➡ cél: kiválasztott POI
-    <br>🚌 BKK / GTFS integráció (következő verzió)
-    <br>📍 útvonal számítás előkészítve
-  </div>`;
+function pick(v){
+  document.getElementById("query").value=v;
+  document.getElementById("suggest").innerHTML="";
+  searchPOI();
 }
 
 </script>
