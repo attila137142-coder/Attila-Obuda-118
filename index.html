@@ -37,7 +37,6 @@
       padding: 8px;
       font-size: 14px;
       pointer-events: auto;
-      user-select: text;
     }
 
     .info { font-size: 12px; margin-top: 6px; }
@@ -47,11 +46,15 @@
       padding: 6px;
       border-bottom: 1px solid #eee;
       font-size: 12px;
+      cursor: pointer;
     }
 
-    .small {
-      font-size: 11px;
-      color: #666;
+    .suggestBox {
+      background:#f7f7f7;
+      border:1px solid #ddd;
+      max-height:120px;
+      overflow:auto;
+      font-size:12px;
     }
   </style>
 </head>
@@ -63,11 +66,11 @@
   <div id="gps">📍 GPS: betöltés...</div>
   <div id="speed">🚀 Sebesség: 0 km/h (0 m/s)</div>
 
-  <input id="query" placeholder="POI keresés (pl. Drégelyvár, büfé, kilátó)" />
+  <input id="query" placeholder="Írd be: Drégelyvár, büfé, kút..." oninput="autoSuggest()" />
+  <div id="suggestions" class="suggestBox"></div>
 
-  <button onclick="scanNearbyPOI()">🔎 Környék POI keresés</button>
-
-  <div class="small">📏 Minden POI távolság: m + km (0.01 km pontosság)</div>
+  <button onclick="searchPOI()">🔎 Keresés</button>
+  <button onclick="scanNearbyPOI()">📍 Környék POI</button>
 
   <div id="poiList" class="info"></div>
 </div>
@@ -84,11 +87,38 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 
 let userMarker;
 let lastPos = null;
-let lastUpdateTime = null;
-let watchFollow = true;
 
-// --- GPS STABLE WATCH (throttled) ---
-function haversine(a, b) {
+// GPS
+navigator.geolocation.watchPosition(pos => {
+
+  const lat = pos.coords.latitude;
+  const lon = pos.coords.longitude;
+
+  const speedMS = pos.coords.speed || 0;
+  const speedKMH = speedMS * 3.6;
+
+  document.getElementById("gps").innerHTML =
+    `📍 GPS: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+
+  document.getElementById("speed").innerHTML =
+    `🚀 Sebesség: ${speedKMH.toFixed(2)} km/h (${speedMS.toFixed(2)} m/s)`;
+
+  if (!userMarker) {
+    userMarker = L.marker([lat, lon]).addTo(map).bindPopup("📍 Te itt vagy");
+  } else {
+    userMarker.setLatLng([lat, lon]);
+  }
+
+  map.setView([lat, lon], map.getZoom());
+
+  lastPos = {lat, lon};
+
+});
+
+// --------------------
+// DISTANCE
+// --------------------
+function dist(a, b) {
   const R = 6371000;
   const toRad = x => x * Math.PI / 180;
 
@@ -102,66 +132,98 @@ function haversine(a, b) {
   return R * 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
 }
 
-navigator.geolocation.watchPosition(pos => {
+// --------------------
+// MAIN SEARCH
+// --------------------
+async function searchPOI(qOverride=null) {
 
-  const lat = pos.coords.latitude;
-  const lon = pos.coords.longitude;
+  const q = qOverride || document.getElementById("query").value;
+  if (!q) return;
 
-  const now = Date.now();
-
-  // SPEED
-  let speedMS = pos.coords.speed || 0;
-  let speedKMH = speedMS * 3.6;
-
-  document.getElementById("gps").innerHTML =
-    `📍 GPS: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-
-  document.getElementById("speed").innerHTML =
-    `🚀 Sebesség: ${speedKMH.toFixed(2)} km/h (${speedMS.toFixed(2)} m/s)`;
-
-  // marker
-  if (!userMarker) {
-    userMarker = L.marker([lat, lon]).addTo(map).bindPopup("📍 Te itt vagy");
-  } else {
-    userMarker.setLatLng([lat, lon]);
-  }
-
-  // IMPORTANT: NO forced setView spam
-  if (watchFollow) {
-    map.setView([lat, lon], map.getZoom());
-  }
-
-  lastPos = {lat, lon};
-  lastUpdateTime = now;
-
-}, err => console.log(err), { enableHighAccuracy: true });
-
-// --- POI SCAN ---
-async function scanNearbyPOI() {
-  if (!lastPos) return;
-
-  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=20&extratags=1&addressdetails=1&viewbox=${lastPos.lon-0.02},${lastPos.lat+0.02},${lastPos.lon+0.02},${lastPos.lat-0.02}&bounded=1`;
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=10&q=${encodeURIComponent(q)}&addressdetails=1`;
 
   const res = await fetch(url);
   const data = await res.json();
 
+  renderPOI(data);
+}
+
+// --------------------
+// AUTOSUGGEST
+// --------------------
+let suggestTimer;
+function autoSuggest() {
+
+  clearTimeout(suggestTimer);
+
+  suggestTimer = setTimeout(async () => {
+
+    const q = document.getElementById("query").value;
+    if (q.length < 2) {
+      document.getElementById("suggestions").innerHTML = "";
+      return;
+    }
+
+    const url = `https://nominatim.openstreetmap.org/search?format=json&limit=5&q=${encodeURIComponent(q)}`;
+
+    const res = await fetch(url);
+    const data = await res.json();
+
+    let html = "";
+
+    data.forEach(p => {
+      html += `<div class='poiBox' onclick=selectSuggestion(\"${p.display_name.replace(/"/g,'')}\")>📍 ${p.display_name}</div>`;
+    });
+
+    document.getElementById("suggestions").innerHTML = html;
+
+  }, 300);
+}
+
+function selectSuggestion(text) {
+  document.getElementById("query").value = text;
+  document.getElementById("suggestions").innerHTML = "";
+  searchPOI(text);
+}
+
+// --------------------
+// NEARBY POI
+// --------------------
+async function scanNearbyPOI() {
+  if (!lastPos) return;
+
+  const url = `https://nominatim.openstreetmap.org/search?format=json&limit=15&viewbox=${lastPos.lon-0.02},${lastPos.lat+0.02},${lastPos.lon+0.02},${lastPos.lat-0.02}&bounded=1`;
+
+  const res = await fetch(url);
+  const data = await res.json();
+
+  renderPOI(data);
+}
+
+// --------------------
+// RENDER
+// --------------------
+function renderPOI(data) {
+
   let html = "";
 
   data.forEach(poi => {
+
     const lat = parseFloat(poi.lat);
     const lon = parseFloat(poi.lon);
 
-    const distM = haversine(lastPos, {lat, lon});
-    const distKM = distM / 1000;
+    let d = lastPos ? dist(lastPos, {lat, lon}) : 0;
+    let km = d / 1000;
 
     html += `
       <div class="poiBox">
         📍 ${poi.display_name}<br>
-        📏 ${distM.toFixed(0)} m (${distKM.toFixed(2)} km)
+        📏 ${d.toFixed(0)} m (${km.toFixed(2)} km)
       </div>
     `;
 
     L.circleMarker([lat, lon]).addTo(map);
+
   });
 
   document.getElementById("poiList").innerHTML = html;
