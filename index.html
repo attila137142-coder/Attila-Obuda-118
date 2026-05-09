@@ -2,40 +2,39 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Börzsöny Water Network Loader</title>
+<title>Atlasz V5.2 – GPS + Water + S1-S5 + Route</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body { margin:0; font-family:Arial; }
-#map { height: 85vh; }
+#map { height: 80vh; }
 
 .panel {
   padding:10px;
-  background:#f4f4f4;
+  background:#f2f2f2;
 }
 
-button { padding:6px; }
+button { padding:6px; margin-right:5px; }
+.small { font-size:12px; color:#555; }
 </style>
 </head>
 
 <body>
 
 <div class="panel">
-💧 <button onclick="loadWater()">OSM VÍZ BETÖLTÉS</button>
-🔍 <input id="q" placeholder="keresés forrásokra">
-<button onclick="search()">Keres</button>
-<div id="info"></div>
+
+<button onclick="getGPS()">📍 GPS</button>
+<button onclick="loadOSM()">💧 Víz betöltés (OSM)</button>
+<button onclick="nearestWater()">🧭 Legközelebbi víz</button>
+
+<div class="small" id="info">Atlasz V5.2 ready</div>
+
 </div>
 
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<!-- cluster -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css"/>
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css"/>
-<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
 
 <script>
 
@@ -49,20 +48,48 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   attribution:'© OSM'
 }).addTo(map);
 
-let clusterGroup = L.markerClusterGroup();
-map.addLayer(clusterGroup);
-
-let waterData = [];
+let userMarker=null;
+let waterMarkers=[];
+let routeLine=null;
+let waterData=[];
 
 /////////////////////////////////////////////////////
-// 🌍 OSM LIVE FETCH (VALÓS ADAT)
+// 📍 GPS
 /////////////////////////////////////////////////////
 
-async function loadWater(){
+function getGPS(){
+
+  navigator.geolocation.getCurrentPosition(pos=>{
+
+    const lat=pos.coords.latitude;
+    const lon=pos.coords.longitude;
+    const acc=pos.coords.accuracy;
+
+    if(userMarker) map.removeLayer(userMarker);
+
+    userMarker=L.marker([lat,lon])
+      .addTo(map)
+      .bindPopup(`📍 Te itt vagy<br>±${Math.round(acc)} m`)
+      .openPopup();
+
+    map.setView([lat,lon],14);
+
+    document.getElementById("info").innerText=
+      `GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)} | ±${Math.round(acc)} m`;
+
+  });
+
+}
+
+/////////////////////////////////////////////////////
+// 🌍 OSM WATER LOAD
+/////////////////////////////////////////////////////
+
+async function loadOSM(){
 
   document.getElementById("info").innerText="⏳ OSM betöltés...";
 
-  const query = `
+  const query=`
   [out:json][timeout:25];
   area["name"="Börzsöny"]->.a;
   (
@@ -74,12 +101,12 @@ async function loadWater(){
 
   const url="https://overpass-api.de/api/interpreter?data="+encodeURIComponent(query);
 
-  const res = await fetch(url);
-  const data = await res.json();
+  const res=await fetch(url);
+  const data=await res.json();
 
-  waterData = data.elements;
+  waterData=data.elements;
 
-  render();
+  renderWater();
 
   document.getElementById("info").innerText=
     `💧 Betöltve: ${waterData.length} forrás`;
@@ -87,63 +114,126 @@ async function loadWater(){
 }
 
 /////////////////////////////////////////////////////
-// 🧠 SIMPLE CLUSTER RENDER
+// 🧠 S1–S5 CLASSIFY
 /////////////////////////////////////////////////////
 
-function render(){
+function classify(p){
 
-  clusterGroup.clearLayers();
+  if(p.tags?.amenity==="drinking_water") return "S1";
+  if(p.tags?.man_made==="water_tap") return "S2";
+  if(p.tags?.natural==="spring") return "S3";
+
+  return "S4";
+}
+
+/////////////////////////////////////////////////////
+// 🗺️ RENDER WATER
+/////////////////////////////////////////////////////
+
+function renderWater(){
+
+  waterMarkers.forEach(m=>map.removeLayer(m));
+  waterMarkers=[];
 
   waterData.forEach(p=>{
 
-    const marker = L.circleMarker([p.lat,p.lon],{
-      radius:6,
-      color:"blue"
-    });
+    const s=classify(p);
 
-    marker.bindPopup(`
-      💧 <b>${p.tags?.name || "Ismeretlen forrás"}</b><br>
-      🆔 OSM: ${p.id}<br>
-      🌿 ${p.tags?.natural || p.tags?.amenity || ""}
+    const color=
+      s==="S1"?"green":
+      s==="S2"?"blue":
+      s==="S3"?"orange":"red";
+
+    const m=L.circleMarker([p.lat,p.lon],{
+      radius:6,
+      color:color
+    }).addTo(map);
+
+    m.bindPopup(`
+      💧 ${p.tags?.name || "Forrás"}<br>
+      ⚠️ ${s}
     `);
 
-    clusterGroup.addLayer(marker);
+    waterMarkers.push(m);
   });
 
 }
 
 /////////////////////////////////////////////////////
-// 🔍 SEARCH (LOCAL FILTER)
+// 📏 DISTANCE
 /////////////////////////////////////////////////////
 
-function search(){
+function dist(a,b,c,d){
+  const R=6371;
+  const dLat=(c-a)*Math.PI/180;
+  const dLon=(d-b)*Math.PI/180;
 
-  const q=document.getElementById("q").value.toLowerCase();
+  const x=Math.sin(dLat/2)**2+
+    Math.cos(a*Math.PI/180)*
+    Math.cos(c*Math.PI/180)*
+    Math.sin(dLon/2)**2;
 
-  const filtered = waterData.filter(p=>{
-    const name=(p.tags?.name || "").toLowerCase();
-    return name.includes(q);
-  });
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
 
-  clusterGroup.clearLayers();
+/////////////////////////////////////////////////////
+// 🧭 NEAREST WATER
+/////////////////////////////////////////////////////
 
-  filtered.forEach(p=>{
+function nearestWater(){
 
-    const marker=L.circleMarker([p.lat,p.lon],{
-      radius:7,
-      color:"green"
-    });
+  if(!userMarker){
+    alert("Előbb GPS!");
+    return;
+  }
 
-    marker.bindPopup(p.tags?.name || "forrás");
+  const u=userMarker.getLatLng();
 
-    clusterGroup.addLayer(marker);
+  let best=null;
+  let bestD=9999;
+
+  waterData.forEach(p=>{
+
+    const d=dist(u.lat,u.lng,p.lat,p.lon);
+
+    if(d<bestD){
+      bestD=d;
+      best=p;
+    }
+
   });
 
   document.getElementById("info").innerText=
-    `🔍 találat: ${filtered.length}`;
+    `💧 Legközelebbi: ${best.tags?.name || "forrás"} (${bestD.toFixed(2)} km)`;
+
+  drawRoute(u,best);
+
 }
 
 /////////////////////////////////////////////////////
+// 🛣️ ROUTE (OSRM FOOT)
+/////////////////////////////////////////////////////
+
+async function drawRoute(from,to){
+
+  const url=`https://router.project-osrm.org/route/v1/foot/
+${from.lng},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson`;
+
+  const res=await fetch(url);
+  const data=await res.json();
+
+  const coords=data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
+
+  if(routeLine) map.removeLayer(routeLine);
+
+  routeLine=L.polyline(coords,{
+    color:"blue",
+    weight:4
+  }).addTo(map);
+
+  map.fitBounds(routeLine.getBounds());
+
+}
 
 </script>
 
