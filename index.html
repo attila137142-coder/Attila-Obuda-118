@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
-<title>Stable Core Engine v1</title>
+<title>Budai OSM Layer v1</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -22,22 +22,14 @@ body { margin:0; font-family: Arial; }
   border-radius:10px;
   box-shadow:0 0 10px rgba(0,0,0,0.3);
   font-size:13px;
-  width:260px;
+  max-width:280px;
 }
 
-.btn{
-  background:#1976d2;
-  color:white;
-  padding:6px;
+.item{
   margin-top:6px;
-  text-align:center;
-  border-radius:6px;
-  cursor:pointer;
-}
-
-.small{
-  font-size:12px;
-  color:#333;
+  padding:5px;
+  background:#f4f4f4;
+  border-left:4px solid green;
 }
 </style>
 </head>
@@ -45,20 +37,15 @@ body { margin:0; font-family: Arial; }
 <body>
 
 <div class="panel">
-<b>🌲 STABIL CORE ENGINE v1</b><br><br>
+<b>🌲 Budai OSM Layer v1</b><br><br>
 
-<div class="small">
-✔ térkép alap<br>
-✔ kattintható pontok<br>
-✔ egyszerű számítások<br>
-✔ stabil render<br>
-</div>
+✔ turistaút háló<br>
+✔ kattintható szakaszok<br>
+✔ stabil render<br><br>
 
-<br>
+📦 kell: <b>budai.geojson</b><br><br>
 
-<div id="info">Kattints egy pontra</div>
-
-<div class="btn" onclick="reset()">RESET</div>
+<div id="info">Betöltés…</div>
 </div>
 
 <div id="map"></div>
@@ -68,7 +55,7 @@ body { margin:0; font-family: Arial; }
 <script>
 
 // =========================
-// 1. MAP (MINIMÁL STABIL)
+// STABIL MAP CORE
 // =========================
 
 const map = L.map('map').setView([47.52, 18.97], 13);
@@ -78,100 +65,62 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 }).addTo(map);
 
 // =========================
-// 2. FIX PONTOK (NINCS GTFS, NINCS OSM KÁOSZ)
+// SIMPLE INFO
 // =========================
 
-const points = [
-  {name:"Normafa", lat:47.5005, lng:18.9990},
-  {name:"Anna-rét", lat:47.5045, lng:18.9902},
-  {name:"Csillebérc", lat:47.5098, lng:18.9795},
-  {name:"Szépjuhászné", lat:47.5192, lng:18.9690}
-];
+let totalSegments = 0;
 
 // =========================
-// 3. STATE
+// LOAD GEOJSON (OSM EXPORT)
 // =========================
 
-let selected = [];
-let lineLayer = null;
+fetch("budai.geojson")
+.then(r => r.json())
+.then(data => {
 
-// =========================
-// 4. DISTANCE (STABIL MATH)
-// =========================
+  const layer = L.geoJSON(data, {
 
-function distance(a,b){
-  return map.distance([a.lat,a.lng],[b.lat,b.lng]);
-}
+    style: function(){
+      return {
+        color: "green",
+        weight: 4,
+        opacity: 0.85
+      };
+    },
 
-// =========================
-// 5. RESET
-// =========================
+    onEachFeature: function(feature, layer){
 
-function reset(){
-  selected = [];
-  document.getElementById("info").innerHTML = "Kattints egy pontra";
-  if(lineLayer) map.removeLayer(lineLayer);
-}
+      totalSegments++;
 
-// =========================
-// 6. RENDER POINTS
-// =========================
+      let name =
+        feature.properties?.name ||
+        feature.properties?.ref ||
+        "Turistaút";
 
-points.forEach(p => {
+      layer.bindPopup(
+        "🌲 " + name
+      );
 
-  let marker = L.circleMarker([p.lat,p.lng],{
-    radius:7,
-    color:"#0d47a1",
-    fillColor:"#2196f3",
-    fillOpacity:1
-  }).addTo(map);
+      layer.on("click", function(e){
+        L.popup()
+        .setLatLng(e.latlng)
+        .setContent(
+          "🌲 Szakasz<br>" +
+          "🧭 " + name
+        )
+        .openOn(map);
+      });
 
-  marker.bindPopup("📍 " + p.name);
-
-  marker.on("click", () => {
-
-    selected.push(p);
-
-    if(selected.length === 1){
-      document.getElementById("info").innerHTML =
-        "📍 Start: " + p.name;
     }
 
-    if(selected.length === 2){
-      drawLine(selected[0], selected[1]);
-      selected = [];
-    }
-
-  });
-
-});
-
-// =========================
-// 7. DRAW SIMPLE ROUTE
-// =========================
-
-function drawLine(a,b){
-
-  if(lineLayer) map.removeLayer(lineLayer);
-
-  let dist = (distance(a,b)/1000).toFixed(2);
-
-  lineLayer = L.polyline([
-    [a.lat,a.lng],
-    [b.lat,b.lng]
-  ],{
-    color:"red",
-    weight:5
   }).addTo(map);
 
-  map.fitBounds(lineLayer.getBounds());
+  map.fitBounds(layer.getBounds());
 
   document.getElementById("info").innerHTML =
-    "🧭 Útvonal:<br>" +
-    a.name + " → " + b.name + "<br>" +
-    "📏 " + dist + " km";
+    "✔ Betöltve<br>📊 szakaszok: " + totalSegments;
 
-}
+});
 
 </script>
 
