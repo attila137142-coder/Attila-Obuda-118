@@ -1,155 +1,132 @@
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8"/>
-<title>V1 PRO TOUR ENGINE</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
-<style>
-  body { margin:0; font-family: Arial; }
-  #map { height: 100vh; width: 100%; }
-  #panel {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    z-index: 9999;
-    background: white;
-    padding: 10px;
-    border-radius: 10px;
-    width: 260px;
-    box-shadow: 0 0 10px rgba(0,0,0,0.3);
-  }
-  button { margin: 3px 0; width: 100%; }
-</style>
-</head>
-
-<body>
-
-<div id="panel">
-  <b>V1 PRO TOUR ENGINE</b><br><br>
-
-  <button onclick="setMode('air')">✈️ Légvonal</button>
-  <button onclick="setMode('road')">🛣️ Út (szimulált)</button>
-  <button onclick="setMode('hike')">🥾 Turistaút (szimulált)</button>
-
-  <hr>
-
-  <div id="info">Klikkelj 2 pontra a térképen</div>
-</div>
-
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script>
-const map = L.map('map').setView([47.55, 18.95], 12);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 18
-}).addTo(map);
+const ORS_API_KEY = "IDE_JÖN_A_KULCSOD";
 
-// -------------------- STATE --------------------
-let mode = "air";
+let mode = "foot-hiking";
+let map, routeLine;
+
 let points = [];
-let markers = [];
-let routeLine = null;
 
-// -------------------- POI (demo) --------------------
-const pois = [
-  { name: "Csúcs-hegy", lat: 47.57321, lon: 18.94611, elev: 375 },
-  { name: "Boróka büfé", lat: 47.52211, lon: 18.88921, elev: 420 },
-  { name: "Hármashatár-hegy", lat: 47.5398, lon: 18.9652, elev: 495 }
-];
+function initMap() {
+  map = L.map('map').setView([47.55, 18.95], 12);
 
-// -------------------- MARKEREK --------------------
-pois.forEach(p => {
-  L.marker([p.lat, p.lon]).addTo(map)
-    .bindPopup(p.name)
-    .on('click', () => selectPoint(p));
-});
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    maxZoom: 18
+  }).addTo(map);
 
-// -------------------- MODE --------------------
-function setMode(m) {
-  mode = m;
-  updateInfo("Mód: " + m.toUpperCase());
+  map.on("click", (e) => {
+    addPoint(e.latlng.lat, e.latlng.lng);
+  });
 }
 
-// -------------------- POINT SELECT --------------------
-function selectPoint(p) {
-  points.push(p);
+function setMode(m) {
+  if (m === "air") mode = "air";
+  if (m === "road") mode = "driving-car";
+  if (m === "hike") mode = "foot-hiking";
 
-  const m = L.marker([p.lat, p.lon]).addTo(map);
-  markers.push(m);
+  updateInfo("⚙️ Mód: " + m.toUpperCase());
+}
+
+function addPoint(lat, lon) {
+  points.push([lon, lat]);
+
+  L.marker([lat, lon]).addTo(map);
 
   if (points.length === 2) {
-    buildRoute();
+    buildRealRoute();
   }
 }
 
-// -------------------- DISTANCE --------------------
-function dist(a,b){
-  const R=6371000;
-  const dLat=(b.lat-a.lat)*Math.PI/180;
-  const dLon=(b.lon-a.lon)*Math.PI/180;
-  const lat1=a.lat*Math.PI/180;
-  const lat2=b.lat*Math.PI/180;
-
-  const x = Math.sin(dLat/2)**2 +
-    Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
-
-  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-// -------------------- ROUTE BUILDER --------------------
-function buildRoute() {
-
-  if(routeLine) map.removeLayer(routeLine);
+// ---------------- REAL ROUTING ----------------
+async function buildRealRoute() {
 
   const a = points[0];
   const b = points[1];
 
-  let route = [];
-  let ascent = 0;
+  if (routeLine) map.removeLayer(routeLine);
 
-  if(mode === "air") {
-    route = [[a.lat,a.lon],[b.lat,b.lon]];
-    ascent = Math.abs(b.elev - a.elev);
+  if (mode === "air") {
+    drawAirRoute(a, b);
+    points = [];
+    return;
   }
 
-  if(mode === "road") {
-    // szimulált "út": 3 pont töréssel
-    const mid = [(a.lat+b.lat)/2 + 0.01, (a.lon+b.lon)/2 - 0.01];
-    route = [[a.lat,a.lon], mid, [b.lat,b.lon]];
-    ascent = Math.abs(b.elev - a.elev) * 1.2;
-  }
+  const url = `https://api.openrouteservice.org/v2/directions/${mode}/geojson`;
 
-  if(mode === "hike") {
-    // "hegyi kerülő" szimuláció
-    const mid = [(a.lat+b.lat)/2 + 0.02, (a.lon+b.lon)/2];
-    route = [[a.lat,a.lon], mid, [b.lat,b.lon]];
-    ascent = Math.abs(b.elev - a.elev) * 2.0;
-  }
+  const res = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Authorization": ORS_API_KEY,
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify({
+      coordinates: [a, b],
+      elevation: true
+    })
+  });
 
-  routeLine = L.polyline(route, {color:"blue"}).addTo(map);
+  const data = await res.json();
 
-  const distance = dist(a,b);
+  const coords = data.features[0].geometry.coordinates;
+
+  const latlngs = coords.map(c => [c[1], c[0]]);
+
+  routeLine = L.polyline(latlngs, { color: "blue" }).addTo(map);
+
+  const summary = data.features[0].properties.summary;
+
+  const distanceKm = (summary.distance / 1000).toFixed(2);
+  const ascent = summary.ascent || 0;
 
   updateInfo(
-    "📏 Távolság: " + (distance/1000).toFixed(2) + " km<br>" +
-    "⛰️ Emelkedés: ~" + ascent.toFixed(0) + " m<br>" +
-    "⚙️ Mód: " + mode
+    `📏 Távolság: ${distanceKm} km<br>` +
+    `⛰️ Emelkedés: ~${ascent.toFixed(0)} m<br>` +
+    `⚙️ Mód: ${mode}`
   );
 
   points = [];
 }
 
-// -------------------- UI --------------------
+// ---------------- AIR MODE ----------------
+function drawAirRoute(a, b) {
+  const latlngs = [
+    [a[1], a[0]],
+    [b[1], b[0]]
+  ];
+
+  routeLine = L.polyline(latlngs, { color: "red" }).addTo(map);
+
+  const dist = haversine(a, b);
+
+  updateInfo(
+    `✈️ Légvonal<br>` +
+    `📏 Távolság: ${(dist/1000).toFixed(2)} km`
+  );
+}
+
+// ---------------- DISTANCE ----------------
+function haversine(a, b) {
+  const R = 6371000;
+
+  const dLat = (b[1]-a[1]) * Math.PI/180;
+  const dLon = (b[0]-a[0]) * Math.PI/180;
+
+  const lat1 = a[1]*Math.PI/180;
+  const lat2 = b[1]*Math.PI/180;
+
+  const x =
+    Math.sin(dLat/2)**2 +
+    Math.cos(lat1)*Math.cos(lat2)*Math.sin(dLon/2)**2;
+
+  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+
+// ---------------- UI ----------------
 function updateInfo(t){
   document.getElementById("info").innerHTML = t;
 }
 
-</script>
+// INIT
+initMap();
 
-</body>
-</html>
+</script>
