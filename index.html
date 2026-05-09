@@ -4,7 +4,7 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 
-<title>Budai PRO Trail Map</title>
+<title>Budai GeoJSON Trail Engine</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -12,7 +12,7 @@
 body { margin:0; font-family: Arial; }
 #map { height:100vh; width:100%; }
 
-.panel {
+.panel{
   position:absolute;
   top:10px;
   left:10px;
@@ -21,16 +21,8 @@ body { margin:0; font-family: Arial; }
   padding:10px;
   border-radius:10px;
   box-shadow:0 0 10px rgba(0,0,0,0.3);
+  max-width:280px;
   font-size:13px;
-  max-width:260px;
-}
-
-.seg-label {
-  background:white;
-  padding:2px 5px;
-  border-radius:5px;
-  font-size:11px;
-  border:1px solid #ccc;
 }
 </style>
 </head>
@@ -38,13 +30,15 @@ body { margin:0; font-family: Arial; }
 <body>
 
 <div class="panel">
-<b>🌲 Budai PRO Trail Map</b><br><br>
+<b>🌲 Budai GeoJSON Engine</b><br><br>
 
-✔ turistaút háló<br>
-✔ elágazások<br>
-✔ távolság + meredekség<br>
+✔ OSM turistaút háló<br>
+✔ GeoJSON betöltés<br>
 ✔ kattintható szakaszok<br>
-✔ iPhone kompatibilis
+✔ iPhone kompatibilis<br><br>
+
+📦 Tedd mellé: <br>
+<b>budai.geojson</b>
 </div>
 
 <div id="map"></div>
@@ -64,142 +58,46 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 }).addTo(map);
 
 // =====================
-// NODE-OK
+// GEOJSON BETÖLTÉS
 // =====================
 
-const nodes = {
-  "Normafa": [47.5005, 18.9990],
-  "Anna-rét": [47.5045, 18.9902],
-  "Csillebérc": [47.5098, 18.9795],
-  "Szépjuhászné": [47.5192, 18.9690],
-  "Hárs-hegy": [47.5250, 18.9610],
-  "Hűvösvölgy": [47.5338, 18.9535],
-  "János-hegy": [47.5050, 18.9650]
-};
+// 👉 ide jön az Overpass export fájl
+fetch("budai.geojson")
+.then(res => res.json())
+.then(data => {
 
-// =====================
-// NODE RENDER
-// =====================
+  const layer = L.geoJSON(data, {
 
-for (let n in nodes) {
-  L.circleMarker(nodes[n], {
-    radius:6,
-    color:"#0d47a1",
-    fillColor:"#2196f3",
-    fillOpacity:1
-  }).addTo(map)
-  .bindPopup("📍 " + n);
+    style: function(feature){
+      return {
+        color: "green",
+        weight: 4,
+        opacity: 0.9
+      };
+    },
 
-  L.marker(nodes[n], {
-    icon: L.divIcon({
-      className:"seg-label",
-      html:n
-    })
-  }).addTo(map);
-}
+    onEachFeature: function(feature, layer){
 
-// =====================
-// SZAKASZOK
-// =====================
+      let props = feature.properties || {};
 
-const trails = [
+      let name = props.name || "Turistaút";
+      let ref = props.ref || "";
+      let route = props.route || "";
 
-{
-name:"Normafa → Anna-rét",
-coords:[
-[47.5005,18.9990],
-[47.5020,18.9965],
-[47.5045,18.9902]
-],
-distance:"640 m",
-slope:"1.9%"
-},
+      layer.bindPopup(
+        "<b>🌲 " + name + "</b><br>" +
+        "🔖 " + ref + "<br>" +
+        "🚶 " + route
+      );
+    }
 
-{
-name:"Anna-rét → Csillebérc",
-coords:[
-[47.5045,18.9902],
-[47.5065,18.9850],
-[47.5098,18.9795]
-],
-distance:"1180 m",
-slope:"4.7%"
-},
-
-{
-name:"Csillebérc → Szépjuhászné",
-coords:[
-[47.5098,18.9795],
-[47.5130,18.9750],
-[47.5192,18.9690]
-],
-distance:"1450 m",
-slope:"4.3%"
-},
-
-{
-name:"Szépjuhászné → Hárs-hegy",
-coords:[
-[47.5192,18.9690],
-[47.5220,18.9650],
-[47.5250,18.9610]
-],
-distance:"820 m",
-slope:"5.0%"
-},
-
-{
-name:"Hárs-hegy → Hűvösvölgy",
-coords:[
-[47.5250,18.9610],
-[47.5290,18.9575],
-[47.5338,18.9535]
-],
-distance:"1200 m",
-slope:"7.9%"
-},
-
-{
-name:"Normafa → János-hegy (kitérő)",
-coords:[
-[47.5005,18.9990],
-[47.5030,18.9880],
-[47.5050,18.9650]
-],
-distance:"1750 m",
-slope:"12.0%"
-}
-
-];
-
-// =====================
-// RENDER TRAILS
-// =====================
-
-trails.forEach(t => {
-
-  let line = L.polyline(t.coords, {
-    color:"green",
-    weight:5
   }).addTo(map);
 
-  line.bindPopup(
-    "<b>🌲 " + t.name + "</b><br><br>" +
-    "📏 Távolság: " + t.distance + "<br>" +
-    "⛰️ Meredekség: " + t.slope
-  );
-
-  let mid = t.coords[Math.floor(t.coords.length/2)];
-
-  L.marker(mid, {
-    icon:L.divIcon({
-      className:"seg-label",
-      html:t.distance + "<br>" + t.slope
-    })
-  }).addTo(map);
+  map.fitBounds(layer.getBounds());
 
 });
 
 </script>
+
 </body>
 </html>
