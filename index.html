@@ -1,4 +1,65 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+<title>Budai Trail Network v3</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+
+<style>
+body { margin:0; font-family: Arial; }
+#map { height:100vh; width:100%; }
+
+.panel{
+  position:absolute;
+  top:10px;
+  left:10px;
+  z-index:9999;
+  background:white;
+  padding:10px;
+  border-radius:10px;
+  box-shadow:0 0 10px rgba(0,0,0,0.3);
+  font-size:13px;
+  max-width:260px;
+}
+
+.node{
+  background:#1976d2;
+  color:white;
+  padding:3px 6px;
+  border-radius:6px;
+  font-size:11px;
+}
+
+.sel{
+  border:3px solid red;
+}
+</style>
+</head>
+
+<body>
+
+<div class="panel">
+<b>🌲 Budai Trail Network v3</b><br><br>
+
+👉 Kattints 2 pontra útvonalhoz<br>
+📍 Node → node routing<br>
+🧭 elágazás logika<br><br>
+
+<div id="info">Nincs kijelölés</div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
+
+// =====================
+// MAP
+// =====================
 
 const map = L.map('map').setView([47.52, 18.97], 13);
 
@@ -6,81 +67,137 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   maxZoom:19
 }).addTo(map);
 
-function distance(latlngs){
-  let d = 0;
-  for(let i=1;i<latlngs.length;i++){
-    d += map.distance(latlngs[i-1], latlngs[i]);
-  }
-  return d;
-}
+// =====================
+// NODE GRAPH (Budai alap)
+// =====================
 
-function fakeElevation(latlng){
-  return Math.sin(latlng[0]*10) * 50 + 200;
-}
+const nodes = {
+  "Normafa": [47.5005, 18.9990],
+  "Anna-rét": [47.5045, 18.9902],
+  "Csillebérc": [47.5098, 18.9795],
+  "Szépjuhászné": [47.5192, 18.9690],
+  "Hárs-hegy": [47.5250, 18.9610],
+  "Hűvösvölgy": [47.5338, 18.9535],
+  "János-hegy": [47.5050, 18.9650]
+};
 
-function slope(latlngs){
-  let h1 = fakeElevation(latlngs[0]);
-  let h2 = fakeElevation(latlngs[latlngs.length-1]);
-  let d = distance(latlngs);
-  return ((h2 - h1) / d * 100).toFixed(2);
-}
+// edges = utak
+const edges = [
+["Normafa","Anna-rét"],
+["Anna-rét","Csillebérc"],
+["Csillebérc","Szépjuhászné"],
+["Szépjuhászné","Hárs-hegy"],
+["Hárs-hegy","Hűvösvölgy"],
+["Normafa","János-hegy"]
+];
 
-fetch("budai.geojson")
-.then(r => r.json())
-.then(data => {
+// =====================
+// STATE
+// =====================
 
-  L.geoJSON(data, {
+let selected = [];
 
-    style: {
-      color: "green",
-      weight: 4
-    },
+// =====================
+// NODE RENDER
+// =====================
 
-    onEachFeature: function(feature, layer) {
+for (let n in nodes){
 
-      // 🔥 KULCS FIX: minden feature-re külön számolunk
-      if (!feature.geometry) return;
-
-      let coordsRaw = feature.geometry.coordinates;
-
-      // MultiLineString fix
-      let coords = [];
-
-      if (feature.geometry.type === "LineString") {
-        coords = coordsRaw.map(c => [c[1], c[0]]);
-      }
-
-      if (feature.geometry.type === "MultiLineString") {
-        coordsRaw.forEach(line => {
-          line.forEach(c => coords.push([c[1], c[0]]));
-        });
-      }
-
-      let d = (distance(coords)/1000).toFixed(2);
-      let s = slope(coords);
-
-      layer.bindPopup(
-        "🌲 Turistaút<br><br>" +
-        "📏 " + d + " km<br>" +
-        "⛰️ " + s + "%"
-      );
-
-      // 🔥 EZ A FONTOS FIX
-      layer.on("click", function(e){
-        L.popup()
-          .setLatLng(e.latlng)
-          .setContent(
-            "🌲 Szakasz<br>" +
-            "📏 " + d + " km<br>" +
-            "⛰️ " + s + "%"
-          )
-          .openOn(map);
-      });
-
-    }
-
+  let marker = L.circleMarker(nodes[n],{
+    radius:7,
+    color:"#0d47a1",
+    fillColor:"#2196f3",
+    fillOpacity:1
   }).addTo(map);
 
-});
+  marker.bindPopup("📍 " + n);
+
+  marker.on("click", () => {
+
+    selected.push(n);
+
+    document.getElementById("info").innerHTML =
+      "📍 " + selected.join(" → ");
+
+    if (selected.length === 2){
+      drawRoute(selected[0], selected[1]);
+      selected = [];
+    }
+
+  });
+
+  L.marker(nodes[n],{
+    icon:L.divIcon({
+      className:"node",
+      html:n
+    })
+  }).addTo(map);
+
+}
+
+// =====================
+// ROUTE LOGIC (simple graph BFS)
+// =====================
+
+function findPath(start, end){
+
+  let queue = [[start]];
+  let visited = new Set();
+
+  while(queue.length){
+
+    let path = queue.shift();
+    let node = path[path.length-1];
+
+    if(node === end) return path;
+
+    if(visited.has(node)) continue;
+    visited.add(node);
+
+    for(let e of edges){
+      if(e[0] === node){
+        queue.push([...path, e[1]]);
+      }
+      if(e[1] === node){
+        queue.push([...path, e[0]]);
+      }
+    }
+  }
+
+  return null;
+}
+
+// =====================
+// DRAW ROUTE
+// =====================
+
+let routeLayer;
+
+function drawRoute(a,b){
+
+  if(routeLayer) map.removeLayer(routeLayer);
+
+  let path = findPath(a,b);
+
+  if(!path){
+    alert("Nincs útvonal!");
+    return;
+  }
+
+  let latlngs = path.map(p => nodes[p]);
+
+  routeLayer = L.polyline(latlngs,{
+    color:"red",
+    weight:6
+  }).addTo(map);
+
+  map.fitBounds(routeLayer.getBounds());
+
+  document.getElementById("info").innerHTML =
+    "🧭 Útvonal:<br>" + path.join(" → ");
+}
 
 </script>
+
+</body>
+</html>
