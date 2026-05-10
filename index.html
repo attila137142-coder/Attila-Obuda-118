@@ -1,296 +1,57 @@
-
 <!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>Atlasz V12 – Survival AI</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+  const c=L.circleMarker([lat,lon],{
+   radius:6,
+   color:color,
+   fillOpacity:0.5
+  }).addTo(map);
 
-<style>
-body {
-  margin:0;
-  font-family:Arial;
-}
-
-#map {
-  height:82vh;
-}
-
-.panel {
-  padding:10px;
-  background:#f0f0f0;
-}
-
-input,button,select {
-  padding:6px;
-  margin:3px;
-}
-
-#results {
-  max-height:180px;
-  overflow:auto;
-  background:white;
-  padding:5px;
-  border:1px solid #ccc;
-}
-</style>
-</head>
-
-<body>
-
-<div class="panel">
-
-🌲 <b>Atlasz V12 – Survival AI</b><br>
-
-<button onclick="getGPS()">📍 GPS</button>
-<button onclick="loadWeather()">🌦️ Időjárás</button>
-<button onclick="nearestPOI()">🧭 Legközelebbi POI</button>
-
-<br>
-
-<input id="search" placeholder="POI keresés...">
-
-<select id="typeFilter">
-<option value="all">Összes</option>
-<option value="water">💧 Forrás</option>
-<option value="shelter">🏕️ Menedék</option>
-<option value="bus">🚌 Busz</option>
-<option value="village">🏘️ Falu</option>
-</select>
-
-<button onclick="searchPOI()">🔍 Keres</button>
-
-<div id="info">V12 ready</div>
-<div id="results"></div>
-
-</div>
-
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
-<script>
-
-/////////////////////////////////////////////////////
-// 🗺️ MAP
-/////////////////////////////////////////////////////
-
-const map = L.map('map').setView([47.95,18.90],12);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
- attribution:'© OSM'
-}).addTo(map);
-
-/////////////////////////////////////////////////////
-// 📍 USER
-/////////////////////////////////////////////////////
-
-let user={lat:47.93,lon:18.88};
-let userMarker=null;
-
-/////////////////////////////////////////////////////
-// 🏕️ POI DATABASE
-/////////////////////////////////////////////////////
-
-const pois=[
- {name:'Kettős-kút',lat:47.9394,lon:18.9321,type:'water'},
- {name:'Esőbeálló',lat:47.948,lon:18.915,type:'shelter'},
- {name:'Buszmegálló',lat:47.925,lon:18.885,type:'bus'},
- {name:'Kóspallag',lat:47.875,lon:18.93,type:'village'},
- {name:'Menedékház',lat:47.955,lon:18.901,type:'shelter'},
- {name:'Forrás A',lat:47.944,lon:18.895,type:'water'}
-];
-
-let poiMarkers=[];
-
-/////////////////////////////////////////////////////
-// 📏 DISTANCE
-/////////////////////////////////////////////////////
-
-function dist(a,b,c,d){
-
- const R=6371;
- const dLat=(c-a)*Math.PI/180;
- const dLon=(d-b)*Math.PI/180;
-
- const x=
-  Math.sin(dLat/2)**2+
-  Math.cos(a*Math.PI/180)*
-  Math.cos(c*Math.PI/180)*
-  Math.sin(dLon/2)**2;
-
- return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-/////////////////////////////////////////////////////
-// 📡 GSM MODEL
-/////////////////////////////////////////////////////
-
-function gsm(lat,lon){
-
- const d=Math.hypot(lat-47.95,lon-18.90);
-
- if(d<0.02) return 95;
- if(d<0.05) return 70;
- if(d<0.08) return 40;
- return 15;
-}
-
-/////////////////////////////////////////////////////
-// 📍 GPS
-/////////////////////////////////////////////////////
-
-function getGPS(){
-
- navigator.geolocation.getCurrentPosition(pos=>{
-
-  user.lat=pos.coords.latitude;
-  user.lon=pos.coords.longitude;
-
-  if(userMarker) map.removeLayer(userMarker);
-
-  userMarker=L.marker([user.lat,user.lon])
-   .addTo(map)
-   .bindPopup('📍 Te itt vagy')
-   .openPopup();
-
-  map.setView([user.lat,user.lon],14);
-
-  const signal=gsm(user.lat,user.lon);
-
-  document.getElementById('info').innerHTML=
-   `📡 GSM: ${signal}%`;
-
- });
-}
-
-/////////////////////////////////////////////////////
-// 🌦️ WEATHER (Open-Meteo példa)
-/////////////////////////////////////////////////////
-
-async function loadWeather(){
-
- const url=`https://api.open-meteo.com/v1/forecast?latitude=${user.lat}&longitude=${user.lon}&current=temperature_2m,wind_speed_10m,precipitation`;
-
- try{
-
-  const res=await fetch(url);
-  const data=await res.json();
-
-  const t=data.current.temperature_2m;
-  const w=data.current.wind_speed_10m;
-  const p=data.current.precipitation;
-
-  document.getElementById('info').innerHTML=
-   `🌦️ ${t}°C | 💨 ${w} km/h | 🌧️ ${p} mm`;
-
- }catch(e){
-
-  document.getElementById('info').innerHTML=
-   '⚠️ Időjárás API hiba';
+  wildlifeLayer.push(c);
  }
 }
 
 /////////////////////////////////////////////////////
-// 🔍 SEARCH
+// 🚨 EMERGENCY ROUTE
 /////////////////////////////////////////////////////
 
-function clearMarkers(){
- poiMarkers.forEach(m=>map.removeLayer(m));
- poiMarkers=[];
-}
+function emergencyRoute(){
 
-function searchPOI(){
+ if(routeLine) map.removeLayer(routeLine);
 
- clearMarkers();
-
- const q=document.getElementById('search').value
-  .toLowerCase()
-  .normalize('NFD')
-  .replace(/\p{Diacritic}/gu, '');
-
- const type=document.getElementById('typeFilter').value;
-
- const results=document.getElementById('results');
- results.innerHTML='';
-
- const filtered=pois.filter(p=>{
-
-  const n=p.name
-   .toLowerCase()
-   .normalize('NFD')
-   .replace(/\p{Diacritic}/gu, '');
-
-  const matchName=n.includes(q);
-  const matchType=type==='all'||p.type===type;
-
-  return matchName && matchType;
- });
-
- filtered.forEach(p=>{
-
-  const d=dist(user.lat,user.lon,p.lat,p.lon);
-
-  const m=L.marker([p.lat,p.lon])
-   .addTo(map)
-   .bindPopup(`${p.name}<br>📏 ${(d*1000).toFixed(0)} m`);
-
-  poiMarkers.push(m);
-
-  results.innerHTML+=`
-   <div>
-   🔹 <b>${p.name}</b>
-   (${p.type})<br>
-   📏 ${(d*1000).toFixed(0)} m / ${d.toFixed(2)} km
-   </div><hr>`;
- });
-
- if(filtered.length>0){
-
-  map.setView([filtered[0].lat,filtered[0].lon],15);
-
-  document.getElementById('info').innerHTML=
-   `🔍 Találat: ${filtered.length}`;
-
- }else{
-
-  document.getElementById('info').innerHTML=
-   '❌ Nincs találat';
- }
-}
-
-/////////////////////////////////////////////////////
-// 🧭 NEAREST POI
-/////////////////////////////////////////////////////
-
-function nearestPOI(){
+ const shelters=pois.filter(p=>p.type==='shelter');
 
  let best=null;
- let bestD=999;
+ let bestScore=-999;
 
- pois.forEach(p=>{
+ shelters.forEach(s=>{
 
-  const d=dist(user.lat,user.lon,p.lat,p.lon);
+  const d=dist(user.lat,user.lon,s.lat,s.lon);
 
-  if(d<bestD){
-   bestD=d;
-   best=p;
+  const signal=gsm(s.lat,s.lon);
+  const risk=wildlife(s.lat,s.lon);
+
+  const score=(signal-risk)-(d*10);
+
+  if(score>bestScore){
+   bestScore=score;
+   best=s;
   }
  });
 
+ routeLine=L.polyline([
+  [user.lat,user.lon],
+  [best.lat,best.lon]
+ ],{color:'blue'}).addTo(map);
+
+ const d=dist(user.lat,user.lon,best.lat,best.lon);
+
  document.getElementById('info').innerHTML=
-  `🧭 Legközelebbi: ${best.name}<br>
-   📏 ${(bestD*1000).toFixed(0)} m / ${bestD.toFixed(2)} km`;
+ `🚨 Evakuációs cél:<br>
+ 🏕️ ${best.name}<br>
+ 📏 ${d.toFixed(2)} km<br>
+ 📡 GSM: ${gsm(best.lat,best.lon)}%`;
 }
 
 </script>
 </body>
 </html>
-```
-
----
-
-
-
-> 🌲 valódi terepi döntéstámogató rendszer alapja.
