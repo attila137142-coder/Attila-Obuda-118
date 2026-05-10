@@ -1,164 +1,214 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>V9 HIKING + BKK COMBO</title>
+<meta charset="UTF-8" />
+<title>GTFS PRO ULTRA + ÚTVONALTERVEZŐ</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body { margin:0; font-family: Arial; background:#0f0f0f; color:#fff; }
-#map { height: 55vh; }
-
-.container { display:flex; }
-.left { width:40%; padding:10px; }
-.right { width:60%; padding:10px; background:#151515; }
-
-.box { background:#1e1e1e; padding:10px; border-radius:8px; max-height:40vh; overflow:auto; }
-
-.item { padding:6px; border-bottom:1px solid #333; cursor:pointer; }
-.item:hover { background:#222; }
-
-input { width:100%; padding:10px; margin-bottom:10px; }
-
-small { opacity:0.7; }
+body { margin:0; font-family: Arial; display:flex; height:100vh; }
+#sidebar { width:400px; padding:10px; border-right:1px solid #ddd; overflow:auto; }
+#map { flex:1; }
+.stop { padding:6px; border-bottom:1px solid #eee; cursor:pointer; }
+input,button { width:100%; padding:8px; margin-bottom:8px; }
 </style>
 </head>
-
 <body>
+
+<div id="sidebar">
+<h3>🚌 GTFS ULTRA + ROUTE</h3>
+<button onclick="clearDB()">🗑 CLEAR</button>
+
+<input id="from" placeholder="Honnan" />
+<input id="to" placeholder="Hová" />
+<button onclick="planRoute()">ÚTVONALTERVEZÉS</button>
+
+<input id="search" placeholder="Megálló keresés" />
+<div id="list"></div>
+</div>
 
 <div id="map"></div>
 
-<div class="container">
-
-<div class="left">
-
-<input id="search" placeholder="🔎 2km környék keresés..." oninput="updateRadiusSearch()"/>
-
-<div id="list" class="box"></div>
-
-</div>
-
-<div class="right box" id="detail">
-📍 GPS inicializálás...
-</div>
-
-</div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script>
-let map = L.map('map').setView([47.5,19.0],11);
+const map = L.map('map').setView([47.4979,19.0402],12);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let user = null;
+let cluster = L.markerClusterGroup();
+map.addLayer(cluster);
 
-/* ================= FULL 45+ GTFS + TÚRA DATABASE (RÉSZLETESEN BŐVÍTHETŐ) ================= */
-let stops = [
+let stopsMap = new Map();
+let stops=[];
+let stopTimes=[];
+let tripsMap={};
+let routesMap={};
+let shapesMap={};
+let shapeLines=[];
 
-{name:"Nád utca", gtfs:"BKK-F00457", lat:47.594072, lng:19.048469},
-{name:"Flórián tér", gtfs:"BKK-F00611", lat:47.542896, lng:19.042252},
-{name:"Batthyány tér", gtfs:"BKK-F00057", lat:47.506002, lng:19.039456},
-{name:"Békásmegyer HÉV", gtfs:"H5-09183", lat:47.598091, lng:19.054599},
-{name:"Szentendre", gtfs:"H5-09142221", lat:47.661038, lng:19.075607},
+// DB
+let db;
+const DB_NAME="GTFS_DB";
 
-{name:"Dobogókő", gtfs:"VOL-778561", lat:47.719118, lng:18.897577},
-{name:"Csóványos", gtfs:"TURA", lat:47.94908, lng:18.9483},
-{name:"Királyrét", gtfs:"ERD", lat:47.9100, lng:18.9730},
+function initDB(){
+  return new Promise(res=>{
+    const req=indexedDB.open(DB_NAME,2);
+    req.onupgradeneeded=e=>{
+      db=e.target.result;
+      if(!db.objectStoreNames.contains("zips")){
+        db.createObjectStore("zips",{keyPath:"hash"});
+      }
+    };
+    req.onsuccess=e=>{db=e.target.result; res();};
+  });
+}
 
-{name:"Hedvig utca", gtfs:"TURA-BUD-01", lat:47.5395, lng:19.0282},
-{name:"Táborhegyi barlang", gtfs:"TURA-BUD-02", lat:47.5462, lng:19.0201},
-{name:"Hármashatárhegy", gtfs:"TURA-BUD-03", lat:47.5549, lng:19.0315}
+async function hashBuffer(buffer){
+  const hash = await crypto.subtle.digest('SHA-256', buffer);
+  return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
 
-];
+async function saveZip(name,data){
+  const hash = await hashBuffer(data);
+  const tx=db.transaction("zips","readwrite");
+  const store=tx.objectStore("zips");
+  const existing=await store.get(hash);
+  if(!existing){
+    store.put({hash,name,data});
+  }
+}
 
-// ---------------- GPS ----------------
-navigator.geolocation.watchPosition(pos=>{
+function getZips(){
+  return new Promise(r=>{
+    const tx=db.transaction("zips","readonly");
+    const req=tx.objectStore("zips").getAll();
+    req.onsuccess=()=>r(req.result);
+  });
+}
 
-user = {
-  lat: pos.coords.latitude,
-  lng: pos.coords.longitude
+function clearDB(){
+  const tx=db.transaction("zips","readwrite");
+  tx.objectStore("zips").clear();
+  location.reload();
+}
+
+function parseCSV(text){
+  const lines=text.split(/\r?\n/);
+  const header=lines[0].split(',');
+  const data=[];
+
+  for(let i=1;i<lines.length;i++){
+    let row=[],cur='',q=false;
+    for(let c of lines[i]){
+      if(c==='"') q=!q;
+      else if(c===','&&!q){row.push(cur);cur='';}
+      else cur+=c;
+    }
+    row.push(cur);
+    if(row.length===header.length) data.push(row);
+  }
+  return {header,data};
+}
+
+async function loadZip(file){
+  const zip=await JSZip.loadAsync(file);
+
+  if(zip.file("stops.txt")){
+    const {header,data}=parseCSV(await zip.file("stops.txt").async("string"));
+    const idI=header.indexOf('stop_id');
+    const nI=header.indexOf('stop_name');
+    const laI=header.indexOf('stop_lat');
+    const loI=header.indexOf('stop_lon');
+
+    data.forEach(r=>{
+      const s={id:r[idI],name:r[nI],lat:+r[laI],lon:+r[loI]};
+      if(!stopsMap.has(s.id)) stopsMap.set(s.id,s);
+    });
+  }
+
+  if(zip.file("stop_times.txt")){
+    const {header,data}=parseCSV(await zip.file("stop_times.txt").async("string"));
+    const sI=header.indexOf('stop_id');
+    const tI=header.indexOf('departure_time');
+    const trI=header.indexOf('trip_id');
+
+    stopTimes=stopTimes.concat(data.map(r=>({stop:r[sI],time:r[tI],trip:r[trI]})));
+  }
+
+  render();
+}
+
+async function loadFromDB(){
+  const files=await getZips();
+  for(const f of files){
+    await loadZip(new File([f.data],f.name));
+  }
+}
+
+function render(){
+  stops=Array.from(stopsMap.values());
+  cluster.clearLayers();
+
+  stops.forEach(s=>{
+    if(!isNaN(s.lat)&&!isNaN(s.lon)){
+      cluster.addLayer(L.marker([s.lat,s.lon]));
+    }
+  });
+
+  const list=document.getElementById('list');
+  list.innerHTML='';
+  stops.slice(0,200).forEach(s=>{
+    const d=document.createElement('div');
+    d.className='stop';
+    d.innerText=s.name;
+    list.appendChild(d);
+  });
+}
+
+function findStopByName(name){
+  return stops.find(s=>s.name.toLowerCase().includes(name.toLowerCase()));
+}
+
+function planRoute(){
+  const a=document.getElementById('from').value;
+  const b=document.getElementById('to').value;
+
+  const s1=findStopByName(a);
+  const s2=findStopByName(b);
+
+  if(!s1||!s2){alert("Nincs találat");return;}
+
+  L.polyline([[s1.lat,s1.lon],[s2.lat,s2.lon]],{color:'red'}).addTo(map);
+}
+
+// FILE INPUT
+const input=document.createElement('input');
+input.type='file';
+input.multiple=true;
+input.accept='.zip';
+document.body.appendChild(input);
+
+input.onchange=e=>{
+  for(const f of e.target.files){
+    const r=new FileReader();
+    r.onload=async ev=>{
+      await saveZip(f.name,ev.target.result);
+      await loadZip(new File([ev.target.result],f.name));
+    };
+    r.readAsArrayBuffer(f);
+  }
 };
 
-map.setView([user.lat,user.lng],13);
-
-updateRadiusSearch();
-
-});
-
-// ---------------- 2KM RADIUS SEARCH ----------------
-function updateRadiusSearch(){
-
-if(!user){
-  document.getElementById("detail").innerHTML="GPS nincs";
-  return;
-}
-
-let list = stops.map(s=>{
-
-let d = hav(user.lat,user.lng,s.lat,s.lng);
-
-return {...s, dist:d};
-
-})
-.filter(s=>s.dist <= 2000)
-.sort((a,b)=>a.dist-b.dist);
-
-render(list);
-
-}
-
-// ---------------- RENDER ----------------
-function render(list){
-
-document.getElementById("list").innerHTML =
-list.map(s=>`
-  <div class="item" onclick="selectStop('${s.gtfs}',${s.dist})">
-    🚏 ${s.name}<br>
-    🆔 ${s.gtfs}<br>
-    📏 ${Math.round(s.dist)} m
-  </div>
-`).join("");
-
-}
-
-// ---------------- SELECT ----------------
-function selectStop(gtfs,dist){
-
-let s = stops.find(x=>x.gtfs===gtfs);
-
-document.getElementById("detail").innerHTML = `
-<h3>🚏 ${s.name}</h3>
-
-🆔 GTFS: ${s.gtfs}<br><br>
-
-📍 Koordináta:<br>
-${s.lat}, ${s.lng}<br><br>
-
-📏 Távolság:<br>
-${Math.round(dist)} m<br><br>
-
-🧭 2KM ZÓNÁBAN VAN
-`;
-
-}
-
-// ---------------- HAVERSINE ----------------
-function hav(lat1,lon1,lat2,lon2){
-
-const R=6371000;
-const dLat=(lat2-lat1)*Math.PI/180;
-const dLon=(lon2-lon1)*Math.PI/180;
-
-const a=
-Math.sin(dLat/2)**2 +
-Math.cos(lat1*Math.PI/180)*
-Math.cos(lat2*Math.PI/180)*
-Math.sin(dLon/2)**2;
-
-return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
+(async()=>{
+  await initDB();
+  await loadFromDB();
+})();
 
 </script>
 
