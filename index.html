@@ -2,45 +2,37 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Atlasz V5.2 – GPS + Water + S1-S5 + Route</title>
+<title>Atlasz V6 – Wildlife Risk Map</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body { margin:0; font-family:Arial; }
-#map { height: 80vh; }
+#map { height:100vh; }
 
-.panel {
+.legend{
+  position:absolute;
+  bottom:20px;
+  left:20px;
+  background:white;
   padding:10px;
-  background:#f2f2f2;
+  font-size:12px;
+  z-index:999;
 }
-
-button { padding:6px; margin-right:5px; }
-.small { font-size:12px; color:#555; }
 </style>
 </head>
 
 <body>
 
-<div class="panel">
-
-<button onclick="getGPS()">📍 GPS</button>
-<button onclick="loadOSM()">💧 Víz betöltés (OSM)</button>
-<button onclick="nearestWater()">🧭 Legközelebbi víz</button>
-
-<div class="small" id="info">Atlasz V5.2 ready</div>
-
-</div>
-
 <div id="map"></div>
+
+<div class="legend">
+🟢 low | 🟡 medium | 🟠 high | 🔴 caution
+</div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-
-/////////////////////////////////////////////////////
-// 🗺️ MAP
-/////////////////////////////////////////////////////
 
 const map = L.map('map').setView([47.95,18.90],12);
 
@@ -48,190 +40,51 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   attribution:'© OSM'
 }).addTo(map);
 
-let userMarker=null;
-let waterMarkers=[];
-let routeLine=null;
-let waterData=[];
-
 /////////////////////////////////////////////////////
-// 📍 GPS
+// 🧠 SIMULÁLT WILDLIFE RISK GRID
 /////////////////////////////////////////////////////
 
-function getGPS(){
+function risk(lat,lon){
 
-  navigator.geolocation.getCurrentPosition(pos=>{
+  // Börzsöny logika (heurisztikus modell)
+  const dx = Math.abs(lat - 47.95);
+  const dy = Math.abs(lon - 18.90);
+  const d = Math.sqrt(dx*dx + dy*dy);
 
-    const lat=pos.coords.latitude;
-    const lon=pos.coords.longitude;
-    const acc=pos.coords.accuracy;
-
-    if(userMarker) map.removeLayer(userMarker);
-
-    userMarker=L.marker([lat,lon])
-      .addTo(map)
-      .bindPopup(`📍 Te itt vagy<br>±${Math.round(acc)} m`)
-      .openPopup();
-
-    map.setView([lat,lon],14);
-
-    document.getElementById("info").innerText=
-      `GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)} | ±${Math.round(acc)} m`;
-
-  });
-
+  if(d < 0.02) return "low";        // lakott / turista zóna
+  if(d < 0.05) return "medium";     // vegyes erdő
+  if(d < 0.08) return "high";       // vadmozgás sáv
+  return "caution";                // mély erdő
 }
 
 /////////////////////////////////////////////////////
-// 🌍 OSM WATER LOAD
+// 🎨 COLOR MAP
 /////////////////////////////////////////////////////
 
-async function loadOSM(){
-
-  document.getElementById("info").innerText="⏳ OSM betöltés...";
-
-  const query=`
-  [out:json][timeout:25];
-  area["name"="Börzsöny"]->.a;
-  (
-    node["natural"="spring"](area.a);
-    node["amenity"="drinking_water"](area.a);
-  );
-  out body;
-  `;
-
-  const url="https://overpass-api.de/api/interpreter?data="+encodeURIComponent(query);
-
-  const res=await fetch(url);
-  const data=await res.json();
-
-  waterData=data.elements;
-
-  renderWater();
-
-  document.getElementById("info").innerText=
-    `💧 Betöltve: ${waterData.length} forrás`;
-
+function color(r){
+  if(r==="low") return "green";
+  if(r==="medium") return "yellow";
+  if(r==="high") return "orange";
+  return "red";
 }
 
 /////////////////////////////////////////////////////
-// 🧠 S1–S5 CLASSIFY
+// 🗺️ GRID GENERATION
 /////////////////////////////////////////////////////
 
-function classify(p){
+for(let i=0;i<250;i++){
 
-  if(p.tags?.amenity==="drinking_water") return "S1";
-  if(p.tags?.man_made==="water_tap") return "S2";
-  if(p.tags?.natural==="spring") return "S3";
+  const lat = 47.85 + Math.random()*0.25;
+  const lon = 18.75 + Math.random()*0.35;
 
-  return "S4";
-}
+  const r = risk(lat,lon);
 
-/////////////////////////////////////////////////////
-// 🗺️ RENDER WATER
-/////////////////////////////////////////////////////
-
-function renderWater(){
-
-  waterMarkers.forEach(m=>map.removeLayer(m));
-  waterMarkers=[];
-
-  waterData.forEach(p=>{
-
-    const s=classify(p);
-
-    const color=
-      s==="S1"?"green":
-      s==="S2"?"blue":
-      s==="S3"?"orange":"red";
-
-    const m=L.circleMarker([p.lat,p.lon],{
-      radius:6,
-      color:color
-    }).addTo(map);
-
-    m.bindPopup(`
-      💧 ${p.tags?.name || "Forrás"}<br>
-      ⚠️ ${s}
-    `);
-
-    waterMarkers.push(m);
-  });
-
-}
-
-/////////////////////////////////////////////////////
-// 📏 DISTANCE
-/////////////////////////////////////////////////////
-
-function dist(a,b,c,d){
-  const R=6371;
-  const dLat=(c-a)*Math.PI/180;
-  const dLon=(d-b)*Math.PI/180;
-
-  const x=Math.sin(dLat/2)**2+
-    Math.cos(a*Math.PI/180)*
-    Math.cos(c*Math.PI/180)*
-    Math.sin(dLon/2)**2;
-
-  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-/////////////////////////////////////////////////////
-// 🧭 NEAREST WATER
-/////////////////////////////////////////////////////
-
-function nearestWater(){
-
-  if(!userMarker){
-    alert("Előbb GPS!");
-    return;
-  }
-
-  const u=userMarker.getLatLng();
-
-  let best=null;
-  let bestD=9999;
-
-  waterData.forEach(p=>{
-
-    const d=dist(u.lat,u.lng,p.lat,p.lon);
-
-    if(d<bestD){
-      bestD=d;
-      best=p;
-    }
-
-  });
-
-  document.getElementById("info").innerText=
-    `💧 Legközelebbi: ${best.tags?.name || "forrás"} (${bestD.toFixed(2)} km)`;
-
-  drawRoute(u,best);
-
-}
-
-/////////////////////////////////////////////////////
-// 🛣️ ROUTE (OSRM FOOT)
-/////////////////////////////////////////////////////
-
-async function drawRoute(from,to){
-
-  const url=`https://router.project-osrm.org/route/v1/foot/
-${from.lng},${from.lat};${to.lon},${to.lat}?overview=full&geometries=geojson`;
-
-  const res=await fetch(url);
-  const data=await res.json();
-
-  const coords=data.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]);
-
-  if(routeLine) map.removeLayer(routeLine);
-
-  routeLine=L.polyline(coords,{
-    color:"blue",
-    weight:4
-  }).addTo(map);
-
-  map.fitBounds(routeLine.getBounds());
+  L.circleMarker([lat,lon],{
+    radius:4,
+    color:color(r),
+    fillOpacity:0.6
+  }).addTo(map)
+  .bindPopup(`🐾 Risk: ${r}`);
 
 }
 
