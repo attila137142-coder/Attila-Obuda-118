@@ -2,184 +2,169 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>ATTILA DISPATCH V4</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🚍 Attila PRO MAX ULTIMATE</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{margin:0;display:flex;font-family:Arial}
-#sidebar{width:380px;border-right:1px solid #ccc;overflow:auto}
-#map{flex:1;height:100vh}
-input{width:100%;padding:10px}
-
-/* MATRIX */
-.matrix{background:black;color:#00ff66;font-family:monospace;padding:10px}
-.row{display:grid;grid-template-columns:80px 1fr 120px 120px;padding:10px;border-bottom:1px solid #003300}
-.line{font-size:22px}
-.dest{font-size:18px}
-.time{font-size:22px;text-align:right}
-.delay{text-align:right}
-.blink{animation:blink 1s infinite}
-@keyframes blink{50%{opacity:0.2}}
+body{margin:0;background:#000;color:#FFD700;font-family:Arial;}
+#map{height:50vh;}
+.panel{padding:10px;}
+.card{background:#111;padding:10px;margin-top:10px;border-radius:10px;}
+button{padding:10px;margin:5px;border-radius:10px;}
+#chart{height:200px;}
+iframe{width:100%;height:400px;border:0;margin-top:10px;}
 </style>
 </head>
 
 <body>
 
-<div id="sidebar">
-<input id="search" placeholder="🔍 Megálló / GTFS ID...">
-<div id="list"></div>
-<div id="panel">Válassz megállót</div>
-</div>
+<h2 style="text-align:center;">🚍 PRO MAX ULTIMATE</h2>
 
 <div id="map"></div>
 
+<div class="panel">
+
+<button onclick="getLocation()">📍 GPS</button>
+<button onclick="exportPDF()">📄 PDF</button>
+
+<br>
+
+<!-- külső rendszerek -->
+<button onclick="openMap('bkk')">🚍 BKK FUTÁR</button>
+<button onclick="openMap('mav')">🚆 Vonattérkép</button>
+<button onclick="openMap('rt')">🌍 RealTime</button>
+<button onclick="openMap('volan')">🚌 Utas.hu</button>
+
+<div id="info" class="card"></div>
+
+<canvas id="chart"></canvas>
+
+<iframe id="extMap"></iframe>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+
 <script>
 
-// ===== MAP =====
-const map=L.map('map').setView([47.5,19.05],11);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+// ===== MAP
+var map = L.map('map').setView([47.4979,19.0402],13);
 
-// ===== GPS =====
-let userPos=null, gpsAccuracy=null;
+var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
 
-navigator.geolocation.watchPosition(p=>{
-  userPos=[p.coords.latitude,p.coords.longitude];
-  gpsAccuracy=p.coords.accuracy;
-});
+var rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/{z}/{x}/{y}.png');
+var tourist = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
+var road = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png');
 
-// ===== ADATOK =====
-let stops=[], stopTimes=[], trips={}, routes={};
+osm.addTo(map);
 
-// ===== GTFS LOAD =====
-async function loadGTFS(){
-  const res=await fetch("stops.txt");
-  const txt=await res.text();
+L.control.layers(
+ {"OSM":osm,"Topo":topo},
+ {"Vasút":rail,"Turista":tourist,"Közút":road}
+).addTo(map);
 
-  txt.split("\n").slice(1).forEach(l=>{
-    const c=l.split(",");
-    stops.push({
-      id:c[0],
-      name:c[2],
-      lat:+c[4],
-      lon:+c[5]
-    });
-  });
+// ===== GPS
+let marker,path=[];
+let minAcc=9999,maxAcc=0;
 
-  render(stops);
-}
+function getLocation(){
+ navigator.geolocation.watchPosition(async pos=>{
+  let lat=pos.coords.latitude;
+  let lon=pos.coords.longitude;
+  let acc=pos.coords.accuracy;
+  let speed=(pos.coords.speed||0)*3.6;
+  let alt=pos.coords.altitude || 0;
 
-// ===== TÁVOLSÁG =====
-function dist(a,b){
-  const R=6371;
-  const dLat=(b[0]-a[0])*Math.PI/180;
-  const dLon=(b[1]-a[1])*Math.PI/180;
-  const x=Math.sin(dLat/2)**2+
-  Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*
-  Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
+  minAcc=Math.min(minAcc,acc);
+  maxAcc=Math.max(maxAcc,acc);
 
-// ===== ROUTE DIST (OSRM) =====
-async function routeDist(a,b){
-  const url=`https://router.project-osrm.org/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=false`;
-  const r=await fetch(url);
-  const j=await r.json();
-  return j.routes[0].distance;
-}
+  if(marker) map.removeLayer(marker);
+  marker=L.circleMarker([lat,lon],{radius:8,color:'red'}).addTo(map);
 
-// ===== REVERSE GEOCODE =====
-async function geo(lat,lon){
-  const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-  return await r.json();
-}
+  map.setView([lat,lon],15);
 
-// ===== MATRIX =====
-function showMatrix(stop){
+  path.push([lat,lon]);
+  if(path.length>1){
+   L.polyline(path,{color:'yellow'}).addTo(map);
+  }
 
-  const now=new Date();
-  const list=stopTimes.filter(t=>t.stop===stop.id).slice(0,5);
+  let addr = await getAddress(lat,lon);
 
-  let html=`<div class="matrix"><h3>${stop.name}</h3>`;
-
-  list.forEach(t=>{
-    const sec=t.sec-now.getHours()*3600;
-    const m=Math.floor(sec/60);
-    const s=sec%60;
-
-    html+=`
-      <div class="row">
-        <div class="line">${t.route}</div>
-        <div class="dest">${t.headsign}</div>
-        <div class="time">${m}p ${s}mp</div>
-        <div class="delay">-</div>
-      </div>
-    `;
-  });
-
-  html+=`</div>`;
-
-  showDetails(stop);
-
-  document.getElementById("panel").innerHTML=html;
-}
-
-// ===== HELYADAT =====
-async function showDetails(stop){
-
-  if(!userPos) return;
-
-  const air=dist(userPos,[stop.lat,stop.lon])*1000;
-  const road=await routeDist(userPos,[stop.lat,stop.lon]);
-
-  const g=await geo(stop.lat,stop.lon);
-
-  const info=`
-  <div>
-  🌍 ${g.address.country}<br>
-  🏙 ${g.address.city||g.address.town}<br>
-  🏠 ${g.address.road||""} ${g.address.house_number||""}<br>
-  📍 ${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}<br>
-  📏 Légvonal: ${Math.round(air)} m<br>
-  🚗 Útvonal: ${Math.round(road)} m<br>
-  📡 GPS pontosság: ${Math.round(gpsAccuracy)} m
-  </div>
+  document.getElementById("info").innerHTML=`
+  📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>
+  🏠 ${addr}<br>
+  ⛰️ Magasság: ${alt.toFixed(1)} m<br>
+  🎯 Pontosság: ±${Math.round(acc)} m<br>
+  📉 Min: ${Math.round(minAcc)} m | 📈 Max: ${Math.round(maxAcc)} m<br>
+  🚶 ${speed.toFixed(1)} km/h (${(speed/3.6).toFixed(2)} m/s)
   `;
 
-  document.getElementById("panel").innerHTML+=info;
+  drawProfile();
+
+ });
 }
 
-// ===== LISTA =====
-function render(arr){
-  const list=document.getElementById("list");
-  list.innerHTML="";
-
-  arr.slice(0,200).forEach(s=>{
-    const d=document.createElement("div");
-    d.innerText=`${s.name} (${s.id})`;
-    d.onclick=()=>showMatrix(s);
-    list.appendChild(d);
-
-    if(s.lat) L.marker([s.lat,s.lon]).addTo(map);
-  });
+// ===== cím
+async function getAddress(lat,lon){
+ try{
+  let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+  let d=await res.json();
+  let a=d.address||{};
+  return `${a.country||""} → ${a.city||a.town||""} → ${a.road||""} ${a.house_number||""}`;
+ }catch{return "Cím hiba";}
 }
 
-// ===== SEARCH =====
-search.oninput=e=>{
-  const q=e.target.value.toLowerCase();
+// ===== profil (demo)
+function drawProfile(){
+ let data=[],labels=[],dist=0;
 
-  const f=stops.filter(s=>
-    s.name.toLowerCase().includes(q) ||
-    s.id.toLowerCase().includes(q)
-  );
+ for(let i=1;i<path.length;i++){
+  let d=map.distance(path[i-1],path[i]);
+  dist+=d;
+  let elev=100+Math.sin(i/3)*50;
+  data.push(elev);
+  labels.push((dist/1000).toFixed(2)+" km");
+ }
 
-  render(f);
-};
+ if(data.length<2)return;
 
-loadGTFS();
+ new Chart(document.getElementById("chart"),{
+  type:"line",
+  data:{labels:labels,datasets:[{label:"Szint (m)",data:data}]}
+ });
+}
+
+// ===== külső térképek
+function openMap(type){
+
+ if(type==="bkk"){
+  extMap.src="https://futar.bkk.hu/";
+ }
+
+ if(type==="mav"){
+  extMap.src="https://vonatterkep.info/";
+ }
+
+ if(type==="rt"){
+  extMap.src="https://map.realtimenext.hu/";
+ }
+
+ if(type==="volan"){
+  extMap.src="https://utas.hu/";
+ }
+
+}
+
+// ===== PDF
+function exportPDF(){
+ html2pdf().from(document.body).save("pro_terkep.pdf");
+}
 
 </script>
+
 </body>
 </html>
