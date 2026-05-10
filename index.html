@@ -2,33 +2,26 @@
 <html>
 <head>
 <meta charset="utf-8" />
-<title>Atlasz V6.3 – GSM Coverage Layer</title>
+<title>Atlasz V10 – Shelter Network</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body { margin:0; }
-#map { height:100vh; }
+body { margin:0; font-family:Arial; }
+#map { height:85vh; }
 
-.legend{
-  position:absolute;
-  bottom:20px;
-  left:20px;
-  background:white;
-  padding:10px;
-  font-size:12px;
-  z-index:999;
-}
+.panel { padding:10px; background:#eee; }
 </style>
 </head>
 
 <body>
 
-<div id="map"></div>
-
-<div class="legend">
-📡 GSM: 🟢 jó | 🟡 közepes | 🟠 gyenge | 🔴 nincs
+<div class="panel">
+🏕️ Menedék hálózat
+<div id="info">V10 ready</div>
 </div>
+
+<div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
@@ -41,52 +34,75 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 }).addTo(map);
 
 /////////////////////////////////////////////////////
-// 📡 GSM MODEL (HEURISZTIKA)
+// 📍 USER
 /////////////////////////////////////////////////////
 
-function gsm(lat,lon){
+const user={lat:47.93,lon:18.88};
 
-  const dx = Math.abs(lat - 47.95);
-  const dy = Math.abs(lon - 18.90);
-  const d = Math.sqrt(dx*dx + dy*dy);
+L.marker([user.lat,user.lon]).addTo(map)
+  .bindPopup("📍 Te itt vagy");
 
-  // központ = jobb jel (települések közel)
-  if(d < 0.02) return 90;   // 🟢
-  if(d < 0.05) return 70;   // 🟡
-  if(d < 0.08) return 40;   // 🟠
-  return 10;               // 🔴
+/////////////////////////////////////////////////////
+// 🏕️ SHELTERS (mock + OSM logika alap)
+/////////////////////////////////////////////////////
+
+const shelters=[
+  {name:"Menedékház A",lat:47.96,lon:18.92,type:"house"},
+  {name:"Esőbeálló",lat:47.94,lon:18.90,type:"shelter"},
+  {name:"Pihenő",lat:47.92,lon:18.89,type:"bench"},
+  {name:"Kilátó",lat:47.95,lon:18.86,type:"view"}
+];
+
+/////////////////////////////////////////////////////
+// 📏 DISTANCE
+/////////////////////////////////////////////////////
+
+function dist(a,b,c,d){
+
+  const R=6371;
+  const dLat=(c-a)*Math.PI/180;
+  const dLon=(d-b)*Math.PI/180;
+
+  const x=Math.sin(dLat/2)**2 +
+    Math.cos(a*Math.PI/180) *
+    Math.cos(c*Math.PI/180) *
+    Math.sin(dLon/2)**2;
+
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
 /////////////////////////////////////////////////////
-// 🎨 COLOR
+// 🧭 FIND NEAREST SHELTER
 /////////////////////////////////////////////////////
 
-function color(v){
-  if(v>=80) return "green";
-  if(v>=50) return "yellow";
-  if(v>=20) return "orange";
-  return "red";
-}
+let best=null;
+let bestD=999;
+
+shelters.forEach(s=>{
+
+  const d=dist(user.lat,user.lon,s.lat,s.lon);
+
+  if(d<bestD){
+    bestD=d;
+    best=s;
+  }
+
+  L.marker([s.lat,s.lon]).addTo(map)
+    .bindPopup(`${s.name}`);
+});
 
 /////////////////////////////////////////////////////
-// 🗺️ GRID RENDER
+// ⏱️ TIME ESTIMATE
 /////////////////////////////////////////////////////
 
-for(let i=0;i<300;i++){
+const hours = bestD / 4;
 
-  const lat = 47.85 + Math.random()*0.25;
-  const lon = 18.75 + Math.random()*0.35;
-
-  const s = gsm(lat,lon);
-
-  L.circleMarker([lat,lon],{
-    radius:4,
-    color:color(s),
-    fillOpacity:0.6
-  }).addTo(map)
-  .bindPopup(`📡 GSM: ${s}%`);
-
-}
+document.getElementById("info").innerHTML=
+`
+🏕️ Legközelebbi: ${best.name}<br>
+📏 Távolság: ${(bestD*1000).toFixed(0)} m / ${bestD.toFixed(2)} km<br>
+⏱️ Idő: ~${hours.toFixed(2)} óra gyalog<br>
+`;
 
 </script>
 
