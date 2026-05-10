@@ -1,4 +1,373 @@
+# 🌲🛰️ ATLASZ V14 – UNIFIED SURVIVAL GIS SYSTEM
+
 <!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Atlasz V14 – Unified Survival GIS</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+
+<style>
+body{
+  margin:0;
+  font-family:Arial,sans-serif;
+  background:#111;
+}
+
+#map{
+  height:100vh;
+  width:100%;
+}
+
+.panel{
+  position:absolute;
+  top:10px;
+  left:10px;
+  width:360px;
+  max-height:95vh;
+  overflow:auto;
+  background:rgba(255,255,255,0.95);
+  z-index:9999;
+  padding:12px;
+  border-radius:10px;
+  box-shadow:0 0 10px rgba(0,0,0,0.3);
+}
+
+button,input,select{
+  padding:6px;
+  margin:3px;
+  width:100%;
+  box-sizing:border-box;
+}
+
+.section{
+  margin-top:10px;
+  border-top:1px solid #ccc;
+  padding-top:8px;
+}
+
+#results{
+  max-height:200px;
+  overflow:auto;
+  background:#fafafa;
+  border:1px solid #ccc;
+  padding:5px;
+}
+
+.good{color:green;font-weight:bold;}
+.warn{color:orange;font-weight:bold;}
+.bad{color:red;font-weight:bold;}
+</style>
+</head>
+
+<body>
+
+<div class="panel">
+
+<h2>🌲 Atlasz V14</h2>
+
+<button onclick="getGPS()">📍 GPS pozíció</button>
+<button onclick="loadWeather()">🌦️ Időjárás</button>
+<button onclick="nearestPOI()">🧭 Legközelebbi POI</button>
+<button onclick="emergencyRoute()">🚨 Evakuáció</button>
+<button onclick="toggleGSM()">📡 GSM Layer</button>
+<button onclick="toggleWildlife()">🐾 Wildlife Layer</button>
+
+<div class="section">
+<b>🔍 POI Kereső</b>
+<input id="search" placeholder="Keresés...">
+<select id="typeFilter">
+<option value="all">Összes</option>
+<option value="water">💧 Forrás</option>
+<option value="shelter">🏕️ Menedék</option>
+<option value="bus">🚌 Busz</option>
+<option value="village">🏘️ Falu</option>
+<option value="road">🛣️ Út</option>
+</select>
+<button onclick="searchPOI()">🔎 Keresés</button>
+</div>
+
+<div class="section">
+<div id="info">V14 rendszer betöltve.</div>
+</div>
+
+<div class="section">
+<div id="results"></div>
+</div>
+
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+
+/////////////////////////////////////////////////////
+// 🗺️ MAP CORE
+/////////////////////////////////////////////////////
+
+const map=L.map('map').setView([47.95,18.90],12);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+ attribution:'© OpenStreetMap'
+}).addTo(map);
+
+/////////////////////////////////////////////////////
+// 📍 USER
+/////////////////////////////////////////////////////
+
+let user={lat:47.93,lon:18.88};
+let userMarker=null;
+let gsmLayer=[];
+let wildlifeLayer=[];
+let routeLine=null;
+
+/////////////////////////////////////////////////////
+// 🏕️ POI DATABASE
+/////////////////////////////////////////////////////
+
+const pois=[
+ {name:'Kettős-kút',lat:47.9394,lon:18.9321,type:'water',safety:'S2'},
+ {name:'Menedékház',lat:47.955,lon:18.901,type:'shelter'},
+ {name:'Buszmegálló',lat:47.925,lon:18.885,type:'bus'},
+ {name:'Kóspallag',lat:47.875,lon:18.93,type:'village'},
+ {name:'Esőbeálló',lat:47.948,lon:18.915,type:'shelter'},
+ {name:'Erdészeti út',lat:47.944,lon:18.895,type:'road'},
+ {name:'Forrás A',lat:47.952,lon:18.882,type:'water',safety:'S1'}
+];
+
+/////////////////////////////////////////////////////
+// 📏 DISTANCE
+/////////////////////////////////////////////////////
+
+function dist(a,b,c,d){
+
+ const R=6371;
+ const dLat=(c-a)*Math.PI/180;
+ const dLon=(d-b)*Math.PI/180;
+
+ const x=Math.sin(dLat/2)**2+
+ Math.cos(a*Math.PI/180)*
+ Math.cos(c*Math.PI/180)*
+ Math.sin(dLon/2)**2;
+
+ return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+/////////////////////////////////////////////////////
+// 📡 GSM MODEL
+/////////////////////////////////////////////////////
+
+function gsm(lat,lon){
+
+ const d=Math.hypot(lat-47.95,lon-18.90);
+
+ if(d<0.02) return 95;
+ if(d<0.05) return 70;
+ if(d<0.08) return 40;
+ return 10;
+}
+
+/////////////////////////////////////////////////////
+// 🐾 WILDLIFE RISK
+/////////////////////////////////////////////////////
+
+function wildlife(lat,lon){
+
+ const d=Math.hypot(lat-47.95,lon-18.90);
+
+ if(d<0.03) return 20;
+ if(d<0.06) return 50;
+ return 80;
+}
+
+/////////////////////////////////////////////////////
+// ⛰️ TERRAIN MODEL
+/////////////////////////////////////////////////////
+
+function terrain(lat,lon){
+ return 200+
+ Math.sin(lat*20)*50+
+ Math.cos(lon*20)*50;
+}
+
+/////////////////////////////////////////////////////
+// 📍 GPS
+/////////////////////////////////////////////////////
+
+function getGPS(){
+
+ navigator.geolocation.getCurrentPosition(pos=>{
+
+  user.lat=pos.coords.latitude;
+  user.lon=pos.coords.longitude;
+
+  if(userMarker) map.removeLayer(userMarker);
+
+  userMarker=L.marker([user.lat,user.lon])
+   .addTo(map)
+   .bindPopup('📍 Te itt vagy')
+   .openPopup();
+
+  map.setView([user.lat,user.lon],14);
+
+  const signal=gsm(user.lat,user.lon);
+
+  document.getElementById('info').innerHTML=
+   `📡 GSM: ${signal}%`;
+
+ });
+}
+
+/////////////////////////////////////////////////////
+// 🌦️ WEATHER
+/////////////////////////////////////////////////////
+
+async function loadWeather(){
+
+ const url=`https://api.open-meteo.com/v1/forecast?latitude=${user.lat}&longitude=${user.lon}&current=temperature_2m,wind_speed_10m,precipitation`;
+
+ try{
+
+  const res=await fetch(url);
+  const data=await res.json();
+
+  const t=data.current.temperature_2m;
+  const w=data.current.wind_speed_10m;
+  const p=data.current.precipitation;
+
+  document.getElementById('info').innerHTML=
+   `🌦️ ${t}°C | 💨 ${w} km/h | 🌧️ ${p} mm`;
+
+ }catch(e){
+
+  document.getElementById('info').innerHTML=
+   '⚠️ Időjárás API hiba';
+ }
+}
+
+/////////////////////////////////////////////////////
+// 🔍 SEARCH ENGINE
+/////////////////////////////////////////////////////
+
+function searchPOI(){
+
+ document.getElementById('results').innerHTML='';
+
+ const q=document.getElementById('search').value
+ .toLowerCase()
+ .normalize('NFD')
+ .replace(/\p{Diacritic}/gu,'');
+
+ const type=document.getElementById('typeFilter').value;
+
+ pois.forEach(p=>{
+
+  const n=p.name
+   .toLowerCase()
+   .normalize('NFD')
+   .replace(/\p{Diacritic}/gu,'');
+
+  const okName=n.includes(q);
+  const okType=type==='all'||p.type===type;
+
+  if(okName&&okType){
+
+   const d=dist(user.lat,user.lon,p.lat,p.lon);
+
+   L.marker([p.lat,p.lon])
+    .addTo(map)
+    .bindPopup(`${p.name}<br>📏 ${(d*1000).toFixed(0)} m`);
+
+   document.getElementById('results').innerHTML+=`
+   <div>
+   <b>${p.name}</b><br>
+   📏 ${(d*1000).toFixed(0)} m / ${d.toFixed(2)} km<br>
+   🧭 Típus: ${p.type}
+   </div><hr>`;
+  }
+
+ });
+}
+
+/////////////////////////////////////////////////////
+// 🧭 NEAREST POI
+/////////////////////////////////////////////////////
+
+function nearestPOI(){
+
+ let best=null;
+ let bestD=999;
+
+ pois.forEach(p=>{
+
+  const d=dist(user.lat,user.lon,p.lat,p.lon);
+
+  if(d<bestD){
+   bestD=d;
+   best=p;
+  }
+
+ });
+
+ document.getElementById('info').innerHTML=
+ `🧭 ${best.name}<br>
+ 📏 ${(bestD*1000).toFixed(0)} m / ${bestD.toFixed(2)} km`;
+}
+
+/////////////////////////////////////////////////////
+// 📡 GSM LAYER
+/////////////////////////////////////////////////////
+
+function toggleGSM(){
+
+ gsmLayer.forEach(x=>map.removeLayer(x));
+ gsmLayer=[];
+
+ for(let i=0;i<200;i++){
+
+  const lat=47.85+Math.random()*0.20;
+  const lon=18.80+Math.random()*0.20;
+
+  const s=gsm(lat,lon);
+
+  const color=
+   s>80?'green':
+   s>50?'yellow':
+   s>20?'orange':'red';
+
+  const c=L.circleMarker([lat,lon],{
+   radius:4,
+   color:color,
+   fillOpacity:0.6
+  }).addTo(map);
+
+  gsmLayer.push(c);
+ }
+}
+
+/////////////////////////////////////////////////////
+// 🐾 WILDLIFE LAYER
+/////////////////////////////////////////////////////
+
+function toggleWildlife(){
+
+ wildlifeLayer.forEach(x=>map.removeLayer(x));
+ wildlifeLayer=[];
+
+ for(let i=0;i<100;i++){
+
+  const lat=47.87+Math.random()*0.18;
+  const lon=18.82+Math.random()*0.18;
+
+  const r=wildlife(lat,lon);
+
+  const color=
+   r<30?'green':
+   r<60?'orange':'red';
 
   const c=L.circleMarker([lat,lon],{
    radius:6,
@@ -55,3 +424,6 @@ function emergencyRoute(){
 </script>
 </body>
 </html>
+```
+
+---
