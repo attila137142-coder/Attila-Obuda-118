@@ -1,214 +1,220 @@
+NAVIGÁCIOS, TÉRKÉPES, LEJTÖS :
+
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<title>GTFS PRO ULTRA + ÚTVONALTERVEZŐ</title>
+<meta charset="UTF-8">
+<title>Attila GPS PRO NAVI</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.css" />
-<link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster/dist/MarkerCluster.Default.css" />
-
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://unpkg.com/leaflet.markercluster/dist/leaflet.markercluster.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body { margin:0; font-family: Arial; display:flex; height:100vh; }
-#sidebar { width:400px; padding:10px; border-right:1px solid #ddd; overflow:auto; }
-#map { flex:1; }
-.stop { padding:6px; border-bottom:1px solid #eee; cursor:pointer; }
-input,button { width:100%; padding:8px; margin-bottom:8px; }
+body { margin:0; font-family: Arial; background:#111; color:#fff; }
+#map { height: 60vh; }
+.panel { padding:10px; }
+button { margin:3px; padding:8px; border:0; border-radius:6px; cursor:pointer; }
+.box { background:#1e1e1e; padding:10px; border-radius:8px; font-size:13px; }
 </style>
 </head>
+
 <body>
 
-<div id="sidebar">
-<h3>🚌 GTFS ULTRA + ROUTE</h3>
-<button onclick="clearDB()">🗑 CLEAR</button>
+<div class="panel">
 
-<input id="from" placeholder="Honnan" />
-<input id="to" placeholder="Hová" />
-<button onclick="planRoute()">ÚTVONALTERVEZÉS</button>
+<button onclick="setMode('gps')">🧭 GPS</button>
+<button onclick="setMode('tura')">🥾 Túra</button>
+<button onclick="toggleElevation()">⛰️ Magasság váltás</button>
+<button onclick="loadPOI()">📌 POI</button>
+<button onclick="loadRail()">🚆 Vasút</button>
+<button onclick="resetTrack()">🔄 Reset</button>
 
-<input id="search" placeholder="Megálló keresés" />
-<div id="list"></div>
+<div id="info" class="box">Indítás...</div>
+
 </div>
 
 <div id="map"></div>
 
 <script>
-const map = L.map('map').setView([47.4979,19.0402],12);
+
+let map = L.map('map').setView([47.4979,19.0402],13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-let cluster = L.markerClusterGroup();
-map.addLayer(cluster);
+let mode="gps";
+let track=[];
+let marker, polyline;
 
-let stopsMap = new Map();
-let stops=[];
-let stopTimes=[];
-let tripsMap={};
-let routesMap={};
-let shapesMap={};
-let shapeLines=[];
+let elevationMode = "gps"; // gps / api
 
-// DB
-let db;
-const DB_NAME="GTFS_DB";
+let poiLayer = L.layerGroup().addTo(map);
 
-function initDB(){
-  return new Promise(res=>{
-    const req=indexedDB.open(DB_NAME,2);
-    req.onupgradeneeded=e=>{
-      db=e.target.result;
-      if(!db.objectStoreNames.contains("zips")){
-        db.createObjectStore("zips",{keyPath:"hash"});
-      }
-    };
-    req.onsuccess=e=>{db=e.target.result; res();};
-  });
+let heading = 0;
+window.addEventListener("deviceorientation", e=>{
+  if(e.alpha) heading = Math.round(e.alpha);
+});
+
+// -------- MODE
+function setMode(m){
+  mode=m;
 }
 
-async function hashBuffer(buffer){
-  const hash = await crypto.subtle.digest('SHA-256', buffer);
-  return Array.from(new Uint8Array(hash)).map(b=>b.toString(16).padStart(2,'0')).join('');
+// -------- ELEV SWITCH
+function toggleElevation(){
+  elevationMode = elevationMode==="gps" ? "api" : "gps";
 }
 
-async function saveZip(name,data){
-  const hash = await hashBuffer(data);
-  const tx=db.transaction("zips","readwrite");
-  const store=tx.objectStore("zips");
-  const existing=await store.get(hash);
-  if(!existing){
-    store.put({hash,name,data});
+// -------- DIST
+function dist(a,b,c,d){
+  let R=6371e3;
+  let φ1=a*Math.PI/180;
+  let φ2=c*Math.PI/180;
+  let Δφ=(c-a)*Math.PI/180;
+  let Δλ=(d-b)*Math.PI/180;
+
+  let x=Math.sin(Δφ/2)**2+
+    Math.cos(φ1)*Math.cos(φ2)*
+    Math.sin(Δλ/2)**2;
+
+  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// -------- SEGMENT
+function calcSeg(a,b){
+  let d = dist(a.lat,a.lng,b.lat,b.lng);
+  let h = (b.ele||0)-(a.ele||0);
+  let slope = d>0 ? (h/d)*100 : 0;
+
+  return {
+    d: Math.round(d),
+    h: Math.round(h),
+    s: slope.toFixed(1)
+  };
+}
+
+// -------- API HEIGHT
+async function getElevation(lat,lng){
+  try{
+    let r = await fetch(`https://api.open-elevation.com/api/v1/lookup?locations=${lat},${lng}`);
+    let d = await r.json();
+    return d.results[0].elevation;
+  }catch(e){
+    return 0;
   }
 }
 
-function getZips(){
-  return new Promise(r=>{
-    const tx=db.transaction("zips","readonly");
-    const req=tx.objectStore("zips").getAll();
-    req.onsuccess=()=>r(req.result);
-  });
-}
+// -------- GPS
+function startGPS(){
+  navigator.geolocation.watchPosition(async pos=>{
 
-function clearDB(){
-  const tx=db.transaction("zips","readwrite");
-  tx.objectStore("zips").clear();
-  location.reload();
-}
+    let lat = pos.coords.latitude;
+    let lng = pos.coords.longitude;
 
-function parseCSV(text){
-  const lines=text.split(/\r?\n/);
-  const header=lines[0].split(',');
-  const data=[];
+    let ele = pos.coords.altitude || 0;
 
-  for(let i=1;i<lines.length;i++){
-    let row=[],cur='',q=false;
-    for(let c of lines[i]){
-      if(c==='"') q=!q;
-      else if(c===','&&!q){row.push(cur);cur='';}
-      else cur+=c;
+    // API felülírás
+    if(elevationMode==="api"){
+      ele = await getElevation(lat,lng);
     }
-    row.push(cur);
-    if(row.length===header.length) data.push(row);
-  }
-  return {header,data};
-}
 
-async function loadZip(file){
-  const zip=await JSZip.loadAsync(file);
+    track.push({lat,lng,ele});
+    if(track.length>100) track.shift();
 
-  if(zip.file("stops.txt")){
-    const {header,data}=parseCSV(await zip.file("stops.txt").async("string"));
-    const idI=header.indexOf('stop_id');
-    const nI=header.indexOf('stop_name');
-    const laI=header.indexOf('stop_lat');
-    const loI=header.indexOf('stop_lon');
-
-    data.forEach(r=>{
-      const s={id:r[idI],name:r[nI],lat:+r[laI],lon:+r[loI]};
-      if(!stopsMap.has(s.id)) stopsMap.set(s.id,s);
-    });
-  }
-
-  if(zip.file("stop_times.txt")){
-    const {header,data}=parseCSV(await zip.file("stop_times.txt").async("string"));
-    const sI=header.indexOf('stop_id');
-    const tI=header.indexOf('departure_time');
-    const trI=header.indexOf('trip_id');
-
-    stopTimes=stopTimes.concat(data.map(r=>({stop:r[sI],time:r[tI],trip:r[trI]})));
-  }
-
-  render();
-}
-
-async function loadFromDB(){
-  const files=await getZips();
-  for(const f of files){
-    await loadZip(new File([f.data],f.name));
-  }
-}
-
-function render(){
-  stops=Array.from(stopsMap.values());
-  cluster.clearLayers();
-
-  stops.forEach(s=>{
-    if(!isNaN(s.lat)&&!isNaN(s.lon)){
-      cluster.addLayer(L.marker([s.lat,s.lon]));
+    if(!marker){
+      marker = L.marker([lat,lng]).addTo(map);
+      map.setView([lat,lng],15);
+    } else {
+      marker.setLatLng([lat,lng]);
+      map.panTo([lat,lng]);
     }
-  });
 
-  const list=document.getElementById('list');
-  list.innerHTML='';
-  stops.slice(0,200).forEach(s=>{
-    const d=document.createElement('div');
-    d.className='stop';
-    d.innerText=s.name;
-    list.appendChild(d);
-  });
+    if(polyline) polyline.setLatLngs(track.map(p=>[p.lat,p.lng]));
+    else polyline = L.polyline(track.map(p=>[p.lat,p.lng]),{color:'red'}).addTo(map);
+
+    renderUI(lat,lng);
+
+  },err=>console.log(err),{enableHighAccuracy:true});
 }
 
-function findStopByName(name){
-  return stops.find(s=>s.name.toLowerCase().includes(name.toLowerCase()));
-}
+// -------- UI
+function renderUI(lat,lng){
 
-function planRoute(){
-  const a=document.getElementById('from').value;
-  const b=document.getElementById('to').value;
+  let seg = "";
 
-  const s1=findStopByName(a);
-  const s2=findStopByName(b);
+  if(track.length>1){
+    let a = track[track.length-2];
+    let b = track[track.length-1];
+    let s = calcSeg(a,b);
 
-  if(!s1||!s2){alert("Nincs találat");return;}
-
-  L.polyline([[s1.lat,s1.lon],[s2.lat,s2.lon]],{color:'red'}).addTo(map);
-}
-
-// FILE INPUT
-const input=document.createElement('input');
-input.type='file';
-input.multiple=true;
-input.accept='.zip';
-document.body.appendChild(input);
-
-input.onchange=e=>{
-  for(const f of e.target.files){
-    const r=new FileReader();
-    r.onload=async ev=>{
-      await saveZip(f.name,ev.target.result);
-      await loadZip(new File([ev.target.result],f.name));
-    };
-    r.readAsArrayBuffer(f);
+    seg = `
+    📏 ${s.d} m<br>
+    ⛰️ ${s.h} m<br>
+    📈 ${s.s} %
+    `;
   }
-};
 
-(async()=>{
-  await initDB();
-  await loadFromDB();
-})();
+  document.getElementById("info").innerHTML = `
+  🧭 ${mode}<br>
+  🧭 irány: ${heading}°<br>
+  📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br><br>
+
+  ${seg}<br>
+
+  🔄 magasság: ${elevationMode.toUpperCase()}
+  `;
+}
+
+// -------- POI
+async function loadPOI(){
+  poiLayer.clearLayers();
+
+  let c = map.getCenter();
+
+  let q = `
+  [out:json];
+  node(around:1200,${c.lat},${c.lng})[amenity];
+  out;
+  `;
+
+  let r = await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q));
+  let d = await r.json();
+
+  d.elements.slice(0,20).forEach(p=>{
+    let m = L.marker([p.lat,p.lon]).addTo(poiLayer);
+    m.bindPopup(p.tags.name || "POI");
+  });
+}
+
+// -------- RAIL
+async function loadRail(){
+  poiLayer.clearLayers();
+
+  let c = map.getCenter();
+
+  let q = `
+  [out:json];
+  node(around:4000,${c.lat},${c.lng})[railway=station];
+  out;
+  `;
+
+  let r = await fetch("https://overpass-api.de/api/interpreter?data="+encodeURIComponent(q));
+  let d = await r.json();
+
+  d.elements.forEach(p=>{
+    let m = L.marker([p.lat,p.lon]).addTo(poiLayer);
+    m.bindPopup("🚆 "+(p.tags.name||"Állomás"));
+  });
+}
+
+// -------- RESET
+function resetTrack(){
+  track=[];
+  if(polyline) map.removeLayer(polyline);
+  polyline=null;
+}
+
+// START
+startGPS();
 
 </script>
 
