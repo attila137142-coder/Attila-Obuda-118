@@ -1,91 +1,146 @@
 <!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>ATILA GPS COCKPIT A1</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+body { margin:0; font-family: Arial; background:#111; color:#fff; }
+#map { height: 60vh; }
+.panel { padding:10px; font-size:13px; }
+button { margin:3px; padding:8px; border:0; border-radius:6px; }
+.box { background:#1e1e1e; padding:8px; margin-top:6px; border-radius:6px; }
+.small { font-size:12px; opacity:0.9; }
+</style>
+</head>
+
+<body>
+
+<div class="panel">
+<button onclick="startGPS()">📍 GPS</button>
+<button onclick="startCompass()">🧭 Iránytű</button>
+<button onclick="loadNearby()">📌 Közeli helyek</button>
+<button onclick="mode='tura'">🥾 Túra</button>
+<button onclick="mode='gps'">🧭 GPS mód</button>
+
+<div id="info" class="box">Indítás...</div>
+</div>
+
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+let map = L.map('map').setView([47.4979,19.0402],13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let userMarker;
+let path=[];
+let polyline;
+
+let minLat=999,maxLat=-999,minLng=999,maxLng=-999;
+
+let mode="gps";
+
+// ---------------- GPS ----------------
+function startGPS(){
+navigator.geolocation.watchPosition(async pos=>{
+let lat=pos.coords.latitude;
+let lng=pos.coords.longitude;
+
+path.push([lat,lng]);
+
+if(!userMarker){
+userMarker=L.marker([lat,lng]).addTo(map);
+map.setView([lat,lng],15);
+} else {
+userMarker.setLatLng([lat,lng]);
 }
 
-function drawRoute(){
- if(trail.length<2) return;
- L.polyline(trail,{color:"lime"}).addTo(map);
- document.getElementById("status").innerText="ROUTE DRAWN";
+if(polyline) polyline.setLatLngs(path);
+else polyline=L.polyline(path,{color:'red'}).addTo(map);
+
+minLat=Math.min(minLat,lat);
+maxLat=Math.max(maxLat,lat);
+minLng=Math.min(minLng,lng);
+maxLng=Math.max(maxLng,lng);
+
+let address=await reverseGeocode(lat,lng);
+
+render(`
+🧭 MODE: ${mode}<br><br>
+
+📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br><br>
+
+📊 MIN–MAX GPS:<br>
+🔻 ${minLat.toFixed(5)} / 🔺 ${maxLat.toFixed(5)}<br>
+🔻 ${minLng.toFixed(5)} / 🔺 ${maxLng.toFixed(5)}<br><br>
+
+🏠 Cím:<br>${address}
+`);
+
+},err=>console.log(err),{enableHighAccuracy:true});
 }
 
-function clearAll(){
- trail=[];
- graphNodes=[];
- map.eachLayer(l=>{
-  if(l instanceof L.Polyline || l instanceof L.CircleMarker){map.removeLayer(l);}
- });
- document.getElementById("status").innerText="CLEARED";
+// ---------------- IRÁNYTŰ ----------------
+function startCompass(){
+window.addEventListener("deviceorientation",e=>{
+render(`🧭 Irány: ${Math.round(e.alpha)}°`);
+});
 }
 
-// ---------------- CENTER ----------------
-function centerBorzsony(){
- map.setView([47.95,18.95],11);
- document.getElementById("status").innerText="BÖRZSÖNY CENTER";
+// ---------------- REVERSE GEOCODE ----------------
+async function reverseGeocode(lat,lng){
+try{
+let r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${lat}&lon=${lng}`);
+let d=await r.json();
+let a=d.address||{};
+return `
+🌍 ${a.country||"-"}<br>
+🏙️ ${a.city||a.town||a.village||"-"}<br>
+📍 ${a.suburb||"-"}<br>
+🛣️ ${a.road||"-"}<br>
+🏠 ${a.house_number||"-"}
+`;
+}catch(e){return "nincs adat";}
 }
 
-// ---------------- RESCUE ----------------
-function rescue(){
- if(trail.length<2) return;
- let a=trail[0];
- let b=trail[trail.length-1];
- L.polyline([b,a],{color:"red"}).addTo(map);
- document.getElementById("status").innerText="RESCUE ACTIVE";
+// ---------------- KÖZELI HELYEK ----------------
+async function loadNearby(){
+let center=map.getCenter();
+
+let url=`https://overpass-api.de/api/interpreter?data=[out:json];node(around:800,${center.lat},${center.lng})[amenity];out;`;
+
+let res=await fetch(url);
+let data=await res.json();
+
+let list="📌 Közeli helyek:<br>";
+
+data.elements.slice(0,10).forEach(p=>{
+let dist=haversine(center.lat,center.lng,p.lat,p.lon);
+list+=`📍 ${p.tags.name||"névtelen"} - ${dist.toFixed(0)} m<br>`;
+});
+
+render(list);
 }
 
-// ---------------- OSM GRAPH LOADER ----------------
-async function loadOSMGraph(){
-
- document.getElementById("status").innerText="LOADING OSM...";
-
- // Overpass API – Börzsöny hiking paths
- let query=`[out:json];(
- way[highway=path](47.75,18.75,48.05,19.15);
- way[highway=footway](47.75,18.75,48.05,19.15);
- way[highway=track](47.75,18.75,48.05,19.15);
-);out geom;`;
-
- try{
-
-  let res=await fetch("https://overpass-api.de/api/interpreter",{
-   method:"POST",
-   body:query
-  });
-
-  let data=await res.json();
-
-  graphNodes=[];
-
-  data.elements.forEach(el=>{
-
-   if(el.geometry){
-
-    let coords=el.geometry.map(p=>[p.lat,p.lon]);
-
-    graphNodes.push(coords);
-
-   }
-
-  });
-
-  document.getElementById("status").innerText="OSM GRAPH LOADED: "+graphNodes.length;
-
- }catch(e){
-  document.getElementById("status").innerText="OSM LOAD ERROR";
- }
+// ---------------- TÁVOLSÁG (légvonal) ----------------
+function haversine(lat1,lon1,lat2,lon2){
+const R=6371000;
+const dLat=(lat2-lat1)*Math.PI/180;
+const dLon=(lon2-lon1)*Math.PI/180;
+const a=Math.sin(dLat/2)**2+
+Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+Math.sin(dLon/2)**2;
+return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// ---------------- DRAW GRAPH ----------------
-function drawGraph(){
-
- if(graphNodes.length==0){
-  document.getElementById("status").innerText="NO GRAPH";
-  return;
- }
-
- graphNodes.forEach(line=>{
-  L.polyline(line,{color:"cyan",weight:2}).addTo(map);
- });
-
- document.getElementById("status").innerText="GRAPH DRAWN";
+// ---------------- UI ----------------
+function render(html){
+document.getElementById("info").innerHTML=html;
 }
 
 </script>
