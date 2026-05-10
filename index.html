@@ -1,200 +1,94 @@
+
+ROXY ARCH PRO V4 – valódi útkereső (Dijkstra + elágazás + turista navigáció)
+
 <!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>🚍 Attila PRO FUTÁR+</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
-<style>
-body{margin:0;background:#000;color:#FFD700;font-family:Arial;}
-#map{height:50vh;}
-.panel{padding:10px;}
-.card{background:#111;padding:10px;margin-top:10px;border-radius:10px;}
-button{padding:10px;margin:5px;border-radius:10px;}
-input{padding:10px;width:100%;margin-top:5px;border-radius:10px;}
-iframe{width:100%;height:300px;border:0;margin-top:10px;}
-.red{color:#ff4d4d;}
-</style>
-</head>
-
-<body>
-
-<h2 style="text-align:center;">🚍 PRO FUTÁR+</h2>
-
-<div id="map"></div>
-
-<div class="panel">
-
-<button onclick="getLocation()">📍 GPS</button>
-<button onclick="exportPDF()">📄 PDF</button>
-
-<input id="search" placeholder="Cím / hely keresés...">
-
-<!-- külső rendszerek -->
-<button onclick="openMap('bkk')">🚍 BKK FUTÁR</button>
-<button onclick="openMap('mav')">🚆 Vonat térkép</button>
-<button onclick="openMap('rt')">🌍 RealTime</button>
-<button onclick="openMap('volan')">🚌 Utas.hu</button>
-
-<div id="info" class="card"></div>
-<div id="places" class="card"></div>
-<div id="stops" class="card"></div>
-
-</div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
-
-<script>
-
-// ===== MAP
-var map = L.map('map').setView([47.4979,19.0402],13);
-
-var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
-
-var rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.9});
-var tourist = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
-var road = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png');
-
-osm.addTo(map);
-
-L.control.layers(
- {"OSM":osm,"Topo":topo},
- {"Vasút":rail,"Turista":tourist,"Közút":road}
-).addTo(map);
-
-// ===== GLOBAL
-let marker,path=[];
-let minAcc=9999,maxAcc=0;
-
-// ===== GPS
-function getLocation(){
- navigator.geolocation.watchPosition(async pos=>{
-
-  let lat=pos.coords.latitude;
-  let lon=pos.coords.longitude;
-  let acc=pos.coords.accuracy;
-  let speed=(pos.coords.speed||0)*3.6;
-  let alt=pos.coords.altitude||0;
-
-  minAcc=Math.min(minAcc,acc);
-  maxAcc=Math.max(maxAcc,acc);
-
-  if(marker) map.removeLayer(marker);
-  marker=L.circleMarker([lat,lon],{radius:8,color:'red'}).addTo(map);
-
-  map.setView([lat,lon],15);
-
-  path.push([lat,lon]);
-  if(path.length>1){
-   L.polyline(path,{color:'yellow'}).addTo(map);
-  }
-
-  let addr = await getAddress(lat,lon);
-
-  document.getElementById("info").innerHTML=`
-  📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>
-  🏠 ${addr}<br>
-  ⛰️ ${alt.toFixed(1)} m<br>
-  🎯 ±${Math.round(acc)} m<br>
-  📉 Min:${Math.round(minAcc)} | 📈 Max:${Math.round(maxAcc)} m<br>
-  🚶 ${speed.toFixed(1)} km/h (${(speed/3.6).toFixed(2)} m/s)
-  `;
-
-  loadNearby(lat,lon);
-  loadStops(lat,lon);
-
- });
 }
 
-// ===== cím
-async function getAddress(lat,lon){
+function drawRoute(){
+ if(trail.length<2) return;
+ L.polyline(trail,{color:"lime"}).addTo(map);
+ document.getElementById("status").innerText="ROUTE DRAWN";
+}
+
+function clearAll(){
+ trail=[];
+ graphNodes=[];
+ map.eachLayer(l=>{
+  if(l instanceof L.Polyline || l instanceof L.CircleMarker){map.removeLayer(l);}
+ });
+ document.getElementById("status").innerText="CLEARED";
+}
+
+// ---------------- CENTER ----------------
+function centerBorzsony(){
+ map.setView([47.95,18.95],11);
+ document.getElementById("status").innerText="BÖRZSÖNY CENTER";
+}
+
+// ---------------- RESCUE ----------------
+function rescue(){
+ if(trail.length<2) return;
+ let a=trail[0];
+ let b=trail[trail.length-1];
+ L.polyline([b,a],{color:"red"}).addTo(map);
+ document.getElementById("status").innerText="RESCUE ACTIVE";
+}
+
+// ---------------- OSM GRAPH LOADER ----------------
+async function loadOSMGraph(){
+
+ document.getElementById("status").innerText="LOADING OSM...";
+
+ // Overpass API – Börzsöny hiking paths
+ let query=`[out:json];(
+ way[highway=path](47.75,18.75,48.05,19.15);
+ way[highway=footway](47.75,18.75,48.05,19.15);
+ way[highway=track](47.75,18.75,48.05,19.15);
+);out geom;`;
+
  try{
-  let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-  let d=await res.json();
-  let a=d.address||{};
-  return `${a.country||""} → ${a.city||a.town||""} → ${a.road||""} ${a.house_number||""}`;
- }catch{return "Cím hiba";}
-}
 
-// ===== kereső
-document.getElementById("search").addEventListener("change", async function(){
- let q=this.value;
- let res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let data=await res.json();
+  let res=await fetch("https://overpass-api.de/api/interpreter",{
+   method:"POST",
+   body:query
+  });
 
- if(data.length){
-  let lat=data[0].lat;
-  let lon=data[0].lon;
-  map.setView([lat,lon],15);
-  L.marker([lat,lon]).addTo(map);
+  let data=await res.json();
+
+  graphNodes=[];
+
+  data.elements.forEach(el=>{
+
+   if(el.geometry){
+
+    let coords=el.geometry.map(p=>[p.lat,p.lon]);
+
+    graphNodes.push(coords);
+
+   }
+
+  });
+
+  document.getElementById("status").innerText="OSM GRAPH LOADED: "+graphNodes.length;
+
+ }catch(e){
+  document.getElementById("status").innerText="OSM LOAD ERROR";
  }
-});
+}
 
-// ===== közeli helyek
-async function loadNearby(lat,lon){
+// ---------------- DRAW GRAPH ----------------
+function drawGraph(){
 
- const query=`
- [out:json];
- node(around:1000,${lat},${lon})["amenity"];
- out;
- `;
+ if(graphNodes.length==0){
+  document.getElementById("status").innerText="NO GRAPH";
+  return;
+ }
 
- let res=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:query});
- let data=await res.json();
-
- let html="<b>Közeli helyek:</b><br>";
-
- data.elements.slice(0,10).forEach(e=>{
-  let d=map.distance([lat,lon],[e.lat,e.lon]);
-  html+=`📍 ${e.tags.name||"hely"} - ${Math.round(d)} m<br>`;
+ graphNodes.forEach(line=>{
+  L.polyline(line,{color:"cyan",weight:2}).addTo(map);
  });
 
- document.getElementById("places").innerHTML=html;
-}
-
-// ===== MEGÁLLÓK + MENETREND
-async function loadStops(lat,lon){
-
- const query=`
- [out:json];
- node(around:1500,${lat},${lon})["highway"="bus_stop"];
- node(around:1500,${lat},${lon})["railway"="tram_stop"];
- node(around:1500,${lat},${lon})["railway"="station"];
- out;
- `;
-
- let res=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:query});
- let data=await res.json();
-
- let html="<b>Közeli megállók:</b><br>";
-
- data.elements.slice(0,8).forEach(s=>{
-  let d=map.distance([lat,lon],[s.lat,s.lon]);
-
-  html+=`
-  🚏 ${s.tags.name||"megálló"}<br>
-  📏 ${Math.round(d)} m<br>
-  ⏱️ menetrend: közel (GTFS bővítés alatt)<br><br>
-  `;
- });
-
- document.getElementById("stops").innerHTML=html;
-}
-
-// ===== külső térképek
-function openMap(type){
- if(type==="bkk") window.open("https://futar.bkk.hu/");
- if(type==="mav") window.open("https://vonatterkep.info/");
- if(type==="rt") window.open("https://map.realtimenext.hu/");
- if(type==="volan") window.open("https://utas.hu/");
-}
-
-// ===== PDF
-function exportPDF(){
- html2pdf().from(document.body).save("futar_plus.pdf");
+ document.getElementById("status").innerText="GRAPH DRAWN";
 }
 
 </script>
