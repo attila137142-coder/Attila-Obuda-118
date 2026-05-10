@@ -1,429 +1,186 @@
-# 🌲🛰️ ATLASZ V14 – UNIFIED SURVIVAL GIS SYSTEM
-
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Atlasz V14 – Unified Survival GIS</title>
+<meta charset="UTF-8">
+<title>ATTILA DISPATCH V4</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body{
-  margin:0;
-  font-family:Arial,sans-serif;
-  background:#111;
-}
+body{margin:0;display:flex;font-family:Arial}
+#sidebar{width:380px;border-right:1px solid #ccc;overflow:auto}
+#map{flex:1;height:100vh}
+input{width:100%;padding:10px}
 
-#map{
-  height:100vh;
-  width:100%;
-}
-
-.panel{
-  position:absolute;
-  top:10px;
-  left:10px;
-  width:360px;
-  max-height:95vh;
-  overflow:auto;
-  background:rgba(255,255,255,0.95);
-  z-index:9999;
-  padding:12px;
-  border-radius:10px;
-  box-shadow:0 0 10px rgba(0,0,0,0.3);
-}
-
-button,input,select{
-  padding:6px;
-  margin:3px;
-  width:100%;
-  box-sizing:border-box;
-}
-
-.section{
-  margin-top:10px;
-  border-top:1px solid #ccc;
-  padding-top:8px;
-}
-
-#results{
-  max-height:200px;
-  overflow:auto;
-  background:#fafafa;
-  border:1px solid #ccc;
-  padding:5px;
-}
-
-.good{color:green;font-weight:bold;}
-.warn{color:orange;font-weight:bold;}
-.bad{color:red;font-weight:bold;}
+/* MATRIX */
+.matrix{background:black;color:#00ff66;font-family:monospace;padding:10px}
+.row{display:grid;grid-template-columns:80px 1fr 120px 120px;padding:10px;border-bottom:1px solid #003300}
+.line{font-size:22px}
+.dest{font-size:18px}
+.time{font-size:22px;text-align:right}
+.delay{text-align:right}
+.blink{animation:blink 1s infinite}
+@keyframes blink{50%{opacity:0.2}}
 </style>
 </head>
 
 <body>
 
-<div class="panel">
-
-<h2>🌲 Atlasz V14</h2>
-
-<button onclick="getGPS()">📍 GPS pozíció</button>
-<button onclick="loadWeather()">🌦️ Időjárás</button>
-<button onclick="nearestPOI()">🧭 Legközelebbi POI</button>
-<button onclick="emergencyRoute()">🚨 Evakuáció</button>
-<button onclick="toggleGSM()">📡 GSM Layer</button>
-<button onclick="toggleWildlife()">🐾 Wildlife Layer</button>
-
-<div class="section">
-<b>🔍 POI Kereső</b>
-<input id="search" placeholder="Keresés...">
-<select id="typeFilter">
-<option value="all">Összes</option>
-<option value="water">💧 Forrás</option>
-<option value="shelter">🏕️ Menedék</option>
-<option value="bus">🚌 Busz</option>
-<option value="village">🏘️ Falu</option>
-<option value="road">🛣️ Út</option>
-</select>
-<button onclick="searchPOI()">🔎 Keresés</button>
-</div>
-
-<div class="section">
-<div id="info">V14 rendszer betöltve.</div>
-</div>
-
-<div class="section">
-<div id="results"></div>
-</div>
-
+<div id="sidebar">
+<input id="search" placeholder="🔍 Megálló / GTFS ID...">
+<div id="list"></div>
+<div id="panel">Válassz megállót</div>
 </div>
 
 <div id="map"></div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script>
 
-/////////////////////////////////////////////////////
-// 🗺️ MAP CORE
-/////////////////////////////////////////////////////
+// ===== MAP =====
+const map=L.map('map').setView([47.5,19.05],11);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-const map=L.map('map').setView([47.95,18.90],12);
+// ===== GPS =====
+let userPos=null, gpsAccuracy=null;
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
- attribution:'© OpenStreetMap'
-}).addTo(map);
+navigator.geolocation.watchPosition(p=>{
+  userPos=[p.coords.latitude,p.coords.longitude];
+  gpsAccuracy=p.coords.accuracy;
+});
 
-/////////////////////////////////////////////////////
-// 📍 USER
-/////////////////////////////////////////////////////
+// ===== ADATOK =====
+let stops=[], stopTimes=[], trips={}, routes={};
 
-let user={lat:47.93,lon:18.88};
-let userMarker=null;
-let gsmLayer=[];
-let wildlifeLayer=[];
-let routeLine=null;
+// ===== GTFS LOAD =====
+async function loadGTFS(){
+  const res=await fetch("stops.txt");
+  const txt=await res.text();
 
-/////////////////////////////////////////////////////
-// 🏕️ POI DATABASE
-/////////////////////////////////////////////////////
+  txt.split("\n").slice(1).forEach(l=>{
+    const c=l.split(",");
+    stops.push({
+      id:c[0],
+      name:c[2],
+      lat:+c[4],
+      lon:+c[5]
+    });
+  });
 
-const pois=[
- {name:'Kettős-kút',lat:47.9394,lon:18.9321,type:'water',safety:'S2'},
- {name:'Menedékház',lat:47.955,lon:18.901,type:'shelter'},
- {name:'Buszmegálló',lat:47.925,lon:18.885,type:'bus'},
- {name:'Kóspallag',lat:47.875,lon:18.93,type:'village'},
- {name:'Esőbeálló',lat:47.948,lon:18.915,type:'shelter'},
- {name:'Erdészeti út',lat:47.944,lon:18.895,type:'road'},
- {name:'Forrás A',lat:47.952,lon:18.882,type:'water',safety:'S1'}
-];
-
-/////////////////////////////////////////////////////
-// 📏 DISTANCE
-/////////////////////////////////////////////////////
-
-function dist(a,b,c,d){
-
- const R=6371;
- const dLat=(c-a)*Math.PI/180;
- const dLon=(d-b)*Math.PI/180;
-
- const x=Math.sin(dLat/2)**2+
- Math.cos(a*Math.PI/180)*
- Math.cos(c*Math.PI/180)*
- Math.sin(dLon/2)**2;
-
- return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+  render(stops);
 }
 
-/////////////////////////////////////////////////////
-// 📡 GSM MODEL
-/////////////////////////////////////////////////////
-
-function gsm(lat,lon){
-
- const d=Math.hypot(lat-47.95,lon-18.90);
-
- if(d<0.02) return 95;
- if(d<0.05) return 70;
- if(d<0.08) return 40;
- return 10;
+// ===== TÁVOLSÁG =====
+function dist(a,b){
+  const R=6371;
+  const dLat=(b[0]-a[0])*Math.PI/180;
+  const dLon=(b[1]-a[1])*Math.PI/180;
+  const x=Math.sin(dLat/2)**2+
+  Math.cos(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*
+  Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-/////////////////////////////////////////////////////
-// 🐾 WILDLIFE RISK
-/////////////////////////////////////////////////////
-
-function wildlife(lat,lon){
-
- const d=Math.hypot(lat-47.95,lon-18.90);
-
- if(d<0.03) return 20;
- if(d<0.06) return 50;
- return 80;
+// ===== ROUTE DIST (OSRM) =====
+async function routeDist(a,b){
+  const url=`https://router.project-osrm.org/route/v1/driving/${a[1]},${a[0]};${b[1]},${b[0]}?overview=false`;
+  const r=await fetch(url);
+  const j=await r.json();
+  return j.routes[0].distance;
 }
 
-/////////////////////////////////////////////////////
-// ⛰️ TERRAIN MODEL
-/////////////////////////////////////////////////////
-
-function terrain(lat,lon){
- return 200+
- Math.sin(lat*20)*50+
- Math.cos(lon*20)*50;
+// ===== REVERSE GEOCODE =====
+async function geo(lat,lon){
+  const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+  return await r.json();
 }
 
-/////////////////////////////////////////////////////
-// 📍 GPS
-/////////////////////////////////////////////////////
+// ===== MATRIX =====
+function showMatrix(stop){
 
-function getGPS(){
+  const now=new Date();
+  const list=stopTimes.filter(t=>t.stop===stop.id).slice(0,5);
 
- navigator.geolocation.getCurrentPosition(pos=>{
+  let html=`<div class="matrix"><h3>${stop.name}</h3>`;
 
-  user.lat=pos.coords.latitude;
-  user.lon=pos.coords.longitude;
+  list.forEach(t=>{
+    const sec=t.sec-now.getHours()*3600;
+    const m=Math.floor(sec/60);
+    const s=sec%60;
 
-  if(userMarker) map.removeLayer(userMarker);
+    html+=`
+      <div class="row">
+        <div class="line">${t.route}</div>
+        <div class="dest">${t.headsign}</div>
+        <div class="time">${m}p ${s}mp</div>
+        <div class="delay">-</div>
+      </div>
+    `;
+  });
 
-  userMarker=L.marker([user.lat,user.lon])
-   .addTo(map)
-   .bindPopup('📍 Te itt vagy')
-   .openPopup();
+  html+=`</div>`;
 
-  map.setView([user.lat,user.lon],14);
+  showDetails(stop);
 
-  const signal=gsm(user.lat,user.lon);
-
-  document.getElementById('info').innerHTML=
-   `📡 GSM: ${signal}%`;
-
- });
+  document.getElementById("panel").innerHTML=html;
 }
 
-/////////////////////////////////////////////////////
-// 🌦️ WEATHER
-/////////////////////////////////////////////////////
+// ===== HELYADAT =====
+async function showDetails(stop){
 
-async function loadWeather(){
+  if(!userPos) return;
 
- const url=`https://api.open-meteo.com/v1/forecast?latitude=${user.lat}&longitude=${user.lon}&current=temperature_2m,wind_speed_10m,precipitation`;
+  const air=dist(userPos,[stop.lat,stop.lon])*1000;
+  const road=await routeDist(userPos,[stop.lat,stop.lon]);
 
- try{
+  const g=await geo(stop.lat,stop.lon);
 
-  const res=await fetch(url);
-  const data=await res.json();
+  const info=`
+  <div>
+  🌍 ${g.address.country}<br>
+  🏙 ${g.address.city||g.address.town}<br>
+  🏠 ${g.address.road||""} ${g.address.house_number||""}<br>
+  📍 ${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}<br>
+  📏 Légvonal: ${Math.round(air)} m<br>
+  🚗 Útvonal: ${Math.round(road)} m<br>
+  📡 GPS pontosság: ${Math.round(gpsAccuracy)} m
+  </div>
+  `;
 
-  const t=data.current.temperature_2m;
-  const w=data.current.wind_speed_10m;
-  const p=data.current.precipitation;
-
-  document.getElementById('info').innerHTML=
-   `🌦️ ${t}°C | 💨 ${w} km/h | 🌧️ ${p} mm`;
-
- }catch(e){
-
-  document.getElementById('info').innerHTML=
-   '⚠️ Időjárás API hiba';
- }
+  document.getElementById("panel").innerHTML+=info;
 }
 
-/////////////////////////////////////////////////////
-// 🔍 SEARCH ENGINE
-/////////////////////////////////////////////////////
+// ===== LISTA =====
+function render(arr){
+  const list=document.getElementById("list");
+  list.innerHTML="";
 
-function searchPOI(){
+  arr.slice(0,200).forEach(s=>{
+    const d=document.createElement("div");
+    d.innerText=`${s.name} (${s.id})`;
+    d.onclick=()=>showMatrix(s);
+    list.appendChild(d);
 
- document.getElementById('results').innerHTML='';
-
- const q=document.getElementById('search').value
- .toLowerCase()
- .normalize('NFD')
- .replace(/\p{Diacritic}/gu,'');
-
- const type=document.getElementById('typeFilter').value;
-
- pois.forEach(p=>{
-
-  const n=p.name
-   .toLowerCase()
-   .normalize('NFD')
-   .replace(/\p{Diacritic}/gu,'');
-
-  const okName=n.includes(q);
-  const okType=type==='all'||p.type===type;
-
-  if(okName&&okType){
-
-   const d=dist(user.lat,user.lon,p.lat,p.lon);
-
-   L.marker([p.lat,p.lon])
-    .addTo(map)
-    .bindPopup(`${p.name}<br>📏 ${(d*1000).toFixed(0)} m`);
-
-   document.getElementById('results').innerHTML+=`
-   <div>
-   <b>${p.name}</b><br>
-   📏 ${(d*1000).toFixed(0)} m / ${d.toFixed(2)} km<br>
-   🧭 Típus: ${p.type}
-   </div><hr>`;
-  }
-
- });
+    if(s.lat) L.marker([s.lat,s.lon]).addTo(map);
+  });
 }
 
-/////////////////////////////////////////////////////
-// 🧭 NEAREST POI
-/////////////////////////////////////////////////////
+// ===== SEARCH =====
+search.oninput=e=>{
+  const q=e.target.value.toLowerCase();
 
-function nearestPOI(){
+  const f=stops.filter(s=>
+    s.name.toLowerCase().includes(q) ||
+    s.id.toLowerCase().includes(q)
+  );
 
- let best=null;
- let bestD=999;
+  render(f);
+};
 
- pois.forEach(p=>{
-
-  const d=dist(user.lat,user.lon,p.lat,p.lon);
-
-  if(d<bestD){
-   bestD=d;
-   best=p;
-  }
-
- });
-
- document.getElementById('info').innerHTML=
- `🧭 ${best.name}<br>
- 📏 ${(bestD*1000).toFixed(0)} m / ${bestD.toFixed(2)} km`;
-}
-
-/////////////////////////////////////////////////////
-// 📡 GSM LAYER
-/////////////////////////////////////////////////////
-
-function toggleGSM(){
-
- gsmLayer.forEach(x=>map.removeLayer(x));
- gsmLayer=[];
-
- for(let i=0;i<200;i++){
-
-  const lat=47.85+Math.random()*0.20;
-  const lon=18.80+Math.random()*0.20;
-
-  const s=gsm(lat,lon);
-
-  const color=
-   s>80?'green':
-   s>50?'yellow':
-   s>20?'orange':'red';
-
-  const c=L.circleMarker([lat,lon],{
-   radius:4,
-   color:color,
-   fillOpacity:0.6
-  }).addTo(map);
-
-  gsmLayer.push(c);
- }
-}
-
-/////////////////////////////////////////////////////
-// 🐾 WILDLIFE LAYER
-/////////////////////////////////////////////////////
-
-function toggleWildlife(){
-
- wildlifeLayer.forEach(x=>map.removeLayer(x));
- wildlifeLayer=[];
-
- for(let i=0;i<100;i++){
-
-  const lat=47.87+Math.random()*0.18;
-  const lon=18.82+Math.random()*0.18;
-
-  const r=wildlife(lat,lon);
-
-  const color=
-   r<30?'green':
-   r<60?'orange':'red';
-
-  const c=L.circleMarker([lat,lon],{
-   radius:6,
-   color:color,
-   fillOpacity:0.5
-  }).addTo(map);
-
-  wildlifeLayer.push(c);
- }
-}
-
-/////////////////////////////////////////////////////
-// 🚨 EMERGENCY ROUTE
-/////////////////////////////////////////////////////
-
-function emergencyRoute(){
-
- if(routeLine) map.removeLayer(routeLine);
-
- const shelters=pois.filter(p=>p.type==='shelter');
-
- let best=null;
- let bestScore=-999;
-
- shelters.forEach(s=>{
-
-  const d=dist(user.lat,user.lon,s.lat,s.lon);
-
-  const signal=gsm(s.lat,s.lon);
-  const risk=wildlife(s.lat,s.lon);
-
-  const score=(signal-risk)-(d*10);
-
-  if(score>bestScore){
-   bestScore=score;
-   best=s;
-  }
- });
-
- routeLine=L.polyline([
-  [user.lat,user.lon],
-  [best.lat,best.lon]
- ],{color:'blue'}).addTo(map);
-
- const d=dist(user.lat,user.lon,best.lat,best.lon);
-
- document.getElementById('info').innerHTML=
- `🚨 Evakuációs cél:<br>
- 🏕️ ${best.name}<br>
- 📏 ${d.toFixed(2)} km<br>
- 📡 GSM: ${gsm(best.lat,best.lon)}%`;
-}
+loadGTFS();
 
 </script>
 </body>
 </html>
-```
 
----
