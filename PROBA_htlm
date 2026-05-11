@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>REALTIME CORE V4</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+body { margin:0; font-family:Arial; display:flex; }
+
+#sidebar{
+  width:380px;
+  border-right:1px solid #ddd;
+  overflow:auto;
+}
+
+#map{ flex:1; height:100vh; }
+
+.stop{
+  padding:10px;
+  border-bottom:1px solid #eee;
+  cursor:pointer;
+}
+
+.stop:hover{ background:#f2f2f2; }
+
+.matrix{
+  background:black;
+  color:#00ff66;
+  font-family:monospace;
+  padding:10px;
+}
+
+.row{
+  display:flex;
+  justify-content:space-between;
+  padding:6px 0;
+  border-bottom:1px solid #003300;
+}
+
+.badge{ font-size:12px; opacity:0.7; }
+
+.green{ color:#00ff66; }
+.blue{ color:#00aaff; }
+.red{ color:#ff4444; }
+
+.blink{ animation:blink 1s infinite; }
+@keyframes blink{ 50%{opacity:0.3;} }
+
+</style>
+</head>
+
+<body>
+
+<div id="sidebar">
+<h3>🚦 REALTIME CORE V4</h3>
+
+<input id="search" placeholder="Keresés...">
+<button onclick="resetCache()">RESET CACHE</button>
+
+<div id="list"></div>
+<div id="panel">Válassz megállót</div>
+</div>
+
+<div id="map"></div>
+
+<script>
+
+// ================= MAP =================
+const map = L.map('map').setView([47.6,19.05],10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+// ================= GTFS CACHE =================
+let GTFS = {
+  stops: [],
+  stop_times: [],
+  trips: [],
+  routes: []
+};
+
+// ================= LOAD CACHE =================
+function loadCache(){
+  const c = localStorage.getItem("CORE_GTFS_V4");
+  if(c){
+    GTFS = JSON.parse(c);
+    console.log("⚡ CACHE LOADED");
+  }
+}
+
+function saveCache(){
+  localStorage.setItem("CORE_GTFS_V4", JSON.stringify(GTFS));
+}
+
+function resetCache(){
+  localStorage.removeItem("CORE_GTFS_V4");
+  alert("Cache törölve");
+}
+
+// ================= CSV PARSER =================
+function parseCSV(text){
+  const lines = text.split("\n").filter(l=>l.trim());
+  const headers = lines[0].split(",");
+  return lines.slice(1).map(line=>{
+    const values = line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);
+    let obj={};
+    headers.forEach((h,i)=>obj[h]=values[i]?.replace(/"/g,""));
+    return obj;
+  });
+}
+
+// ================= ZIP LOAD =================
+async function loadGTFS(file){
+
+  const zip = await JSZip.loadAsync(file);
+
+  async function read(name){
+    return zip.file(name)?.async("string") || "";
+  }
+
+  GTFS.stops = parseCSV(await read("stops.txt"));
+  GTFS.stop_times = parseCSV(await read("stop_times.txt"));
+  GTFS.trips = parseCSV(await read("trips.txt"));
+  GTFS.routes = parseCSV(await read("routes.txt"));
+
+  saveCache();
+  alert("✅ GTFS BETÖLTVE V4 CORE");
+}
+
+// ================= DELAY ENGINE =================
+function getStatus(diff){
+
+  if(diff < -60) return {txt:"SIET", cls:"green"};
+  if(diff > 60) return {txt:"KÉSIK", cls:"red"};
+  return {txt:"IDŐBEN", cls:"blue"};
+}
+
+// ================= DEPARTURES =================
+function getDepartures(stop){
+
+  if(!GTFS.stop_times.length){
+    return [{route:"--",headsign:"NINCS GTFS",time:"--:--",diff:0}];
+  }
+
+  const match = GTFS.stops.find(s =>
+    (s.stop_name||"").toLowerCase().includes(stop.name.toLowerCase())
+  );
+
+  if(!match) return [];
+
+  const now = new Date();
+  const nowSec = now.getHours()*3600 + now.getMinutes()*60;
+
+  return GTFS.stop_times
+    .filter(st=>st.stop_id===match.stop_id)
+    .map(st=>{
+
+      const [h,m,s]=st.departure_time.split(":").map(Number);
+      const sec=h*3600+m*60+s;
+
+      return {
+        trip_id: st.trip_id,
+        time: st.departure_time,
+        diff: sec-nowSec
+      };
+    })
+    .sort((a,b)=>a.diff-b.diff)
+    .slice(0,10);
+}
+
+// ================= UI =================
+function showStop(stop){
+
+  const deps = getDepartures(stop);
+
+  let html = `<div class="matrix">
+  <h3>🚏 ${stop.name}</h3>
+  <div class="badge">REALTIME CORE V4</div>`;
+
+  deps.forEach((d,i)=>{
+
+    const st = getStatus(d.diff);
+    const min = Math.round(d.diff/60);
+
+    html += `
+    <div class="row">
+      <div>${d.trip_id || "?"}</div>
+      <div class="${st.cls} ${i===0?'blink':''}">
+        ${st.txt}
+      </div>
+      <div>${min}p</div>
+      <div>${d.time}</div>
+    </div>`;
+  });
+
+  html += "</div>";
+
+  // BKK embed ha van ID
+  if(stop.gtfs?.includes("F")){
+    const id = stop.gtfs.match(/F\d+/)?.[0];
+    if(id){
+      html += `
+      <button onclick="openBKK('${id}')">
+        🔵 BKK LIVE VIEW
+      </button>`;
+    }
+  }
+
+  panel.innerHTML = html;
+}
+
+// ================= BKK EMBED =================
+function openBKK(id){
+  panel.innerHTML = `
+  <iframe
+    src="https://realtimenext.hu/embed/bkv/stops/${id}/schedule"
+    width="100%" height="500" style="border:none;">
+  </iframe>`;
+}
+
+// ================= STOPS (MINIMAL DEMO) =================
+const STOPS = [
+  {name:"Békásmegyer", gtfs:"F00457", lat:47.598, lon:19.054},
+  {name:"Flórián tér", gtfs:"F00611", lat:47.542, lon:19.042},
+  {name:"Batthyány tér", gtfs:"F00057", lat:47.506, lon:19.039}
+];
+
+// ================= LIST =================
+function render(){
+  list.innerHTML="";
+  STOPS.forEach(s=>{
+    const d=document.createElement("div");
+    d.className="stop";
+    d.innerHTML="📍 "+s.name;
+    d.onclick=()=>showStop(s);
+    list.appendChild(d);
+  });
+}
+
+// ================= MAP =================
+STOPS.forEach(s=>{
+  L.marker([s.lat,s.lon])
+    .addTo(map)
+    .on("click",()=>showStop(s));
+});
+
+// ================= INIT =================
+const list=document.getElementById("list");
+const panel=document.getElementById("panel");
+const search=document.getElementById("search");
+
+search.oninput=e=>{
+  const q=e.target.value.toLowerCase();
+  render(STOPS.filter(s=>s.name.toLowerCase().includes(q)));
+};
+
+loadCache();
+render();
+
+</script>
+
+</body>
+</html>
