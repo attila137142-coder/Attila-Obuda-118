@@ -2,219 +2,268 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés PRO</title>
+<title>ATTILA DISPATCHER V7.1 – AUTO UI FIX</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
 <style>
-body{background:black;color:yellow;font-family:Arial;text-align:center;}
-#kmh{font-size:70px;color:#0f0;text-shadow:0 0 20px #0f0;}
-#ms{font-size:25px;}
-#coords,#alt,#cim,#helyek,#megallok{color:cyan;margin:5px;}
-#map{height:700px;margin-top:10px;}
-button{margin:5px;padding:10px;font-size:16px;}
-.stop{background:#222;margin:5px;padding:10px;border-radius:10px;}
-.red{color:#ff5555;}
-.blue{color:#55aaff;}
-.white{color:white;}
+body{margin:0;font-family:Arial;display:flex;height:100vh;}
+#sidebar{width:380px;background:#0b1220;color:#00ff66;overflow:auto;}
+#map{flex:1;}
+
+.tabbar{
+  display:flex;
+  background:#001a00;
+}
+
+.tab{
+  flex:1;
+  padding:8px;
+  text-align:center;
+  cursor:pointer;
+  border-bottom:2px solid transparent;
+}
+
+.tab.active{
+  border-bottom:2px solid #00ff66;
+}
+
+.panel{
+  padding:10px;
+  font-family:monospace;
+}
+
+.matrix{
+  background:black;
+  color:#00ff66;
+  padding:10px;
+}
+
+.row{
+  display:flex;
+  justify-content:space-between;
+  border-bottom:1px solid #003300;
+  padding:4px;
+}
+
+button{
+  padding:6px;
+  margin:4px;
+  background:#003300;
+  color:#00ff66;
+  border:none;
+}
 </style>
 </head>
 
 <body>
 
-<h1>🚌 Attila Közlekedés PRO</h1>
+<div id="sidebar">
 
-<div id="kmh">0 km/h</div>
-<div id="ms">0 m/s</div>
-<div id="coords">GPS...</div>
-<div id="alt">-</div>
-<div id="cim">Cím...</div>
+<h3>🟢 V7.1 DISPATCH</h3>
 
-<div>
-<button onclick="setLayer('osm')">Alap</button>
-<button onclick="setLayer('topo')">Topo</button>
-<button onclick="setLayer('turista')">Turista</button>
-<button onclick="setLayer('rail')">Vasút</button>
-<button onclick="setLayer('jelzes')">Jelzések</button>
+<input type="file" id="zip">
+<button onclick="loadGTFS()">LOAD GTFS</button>
+
+<div class="tabbar">
+  <div class="tab active" onclick="setView('list')">LISTA</div>
+  <div class="tab" onclick="setView('board')">INDULÁS</div>
+  <div class="tab" onclick="setView('debug')">DEBUG</div>
+</div>
+
+<div id="content"></div>
+
 </div>
 
 <div id="map"></div>
 
-<h2>🚌 Közeli megállók</h2>
-<div id="megallok"></div>
-
-<h2>🌲 Közeli helyek</h2>
-<div id="helyek"></div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script>
 
-// ===== MAP
-var map=L.map('map').setView([47.49,19.04],13);
+// ================= MAP =================
+const map = L.map('map').setView([47.5,19.05],10);
 
-var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-var topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
-var turista=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:0.6});
-var rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/{z}/{x}/{y}.png');
-var jelzes=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'OSM'
+}).addTo(map);
 
-osm.addTo(map);
+// ================= STATE =================
+let stops = [];
+let stopTimes = [];
+let departures = {};
+let currentView = "list";
 
-function setLayer(n){
-map.eachLayer(l=>map.removeLayer(l));
-osm.addTo(map);
-if(n==="topo") topo.addTo(map);
-if(n==="turista") turista.addTo(map);
-if(n==="rail") rail.addTo(map);
-if(n==="jelzes") jelzes.addTo(map);
+// ================= SAFE STATE =================
+function safe(v, fallback=[]){
+  return v && v.length ? v : fallback;
 }
 
-let marker=L.circleMarker([47.49,19.04],{radius:8,color:'red'}).addTo(map);
+// ================= VIEW SWITCH =================
+function setView(v){
+  currentView = v;
 
-// ===== TÁVOLSÁG
-function dist(a,b,c,d){
-const R=6371e3;
-const p1=a*Math.PI/180,p2=c*Math.PI/180;
-const dp=(c-a)*Math.PI/180;
-const dl=(d-b)*Math.PI/180;
-const x=Math.sin(dp/2)**2+
-Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
-return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  event.target.classList.add("active");
+
+  renderUI(lastSelectedStop);
 }
 
-// ===== GPS
-let lastPos=null,lastTime=null;
+// ================= GTFS LOAD =================
+let lastSelectedStop = null;
 
-navigator.geolocation.watchPosition(pos=>{
+async function loadGTFS(){
 
-let lat=pos.coords.latitude;
-let lon=pos.coords.longitude;
-let alt=pos.coords.altitude;
+  const file = document.getElementById("zip").files[0];
+  const zip = await JSZip.loadAsync(file);
 
-marker.setLatLng([lat,lon]);
-map.setView([lat,lon]);
+  stops = [];
+  stopTimes = [];
+  departures = {};
 
-document.getElementById("coords").innerText=
-lat.toFixed(5)+","+lon.toFixed(5);
+  for(let path in zip.files){
 
-document.getElementById("alt").innerText=
-(alt?alt.toFixed(0):"-")+" m";
+    let name = path.toLowerCase().split("/").pop();
+    let content = await zip.files[path].async("string");
 
-// sebesség
-let now=Date.now();
-if(lastPos){
-let d=dist(lastPos[0],lastPos[1],lat,lon);
-let t=(now-lastTime)/1000;
-let ms=d/t;
-let kmh=ms*3.6;
+    if(name==="stops.txt"){
+      stops = Papa.parse(content,{header:true,skipEmptyLines:true}).data
+        .filter(s=>s.stop_lat && s.stop_lon);
+    }
 
-document.getElementById("kmh").innerText=kmh.toFixed(1)+" km/h";
-document.getElementById("ms").innerText=ms.toFixed(2)+" m/s";
+    if(name==="stop_times.txt"){
+      stopTimes = Papa.parse(content,{header:true,skipEmptyLines:true}).data;
+    }
+  }
+
+  buildDepartures();
+  renderStops();
+
+  console.log("GTFS LOADED ✔", stops.length, stopTimes.length);
+
+  // 🔥 AUTO UI TRIGGER (EZ A LÉNYEG)
+  setTimeout(()=>{
+    renderUI(stops[0]);
+  },100);
 }
 
-lastPos=[lat,lon];
-lastTime=now;
+// ================= BUILD DEPARTURES =================
+function buildDepartures(){
 
-cim(lat,lon);
-megallok(lat,lon);
-helyek(lat,lon);
+  departures = {};
 
-});
+  stopTimes.forEach(st=>{
 
-// ===== CÍM
-function cim(lat,lon){
-fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
-.then(r=>r.json())
-.then(d=>{
-document.getElementById("cim").innerText=d.display_name;
-});
+    if(!departures[st.stop_id]){
+      departures[st.stop_id]=[];
+    }
+
+    departures[st.stop_id].push({
+      trip: st.trip_id,
+      time: st.departure_time
+    });
+  });
 }
 
-// ===== MEGÁLLÓK
-function megallok(lat,lon){
+// ================= STOPS =================
+function renderStops(){
 
-fetch(`https://overpass-api.de/api/interpreter?data=
-[out:json];
-node(around:1000,${lat},${lon})["highway"="bus_stop"];
-out;`)
-.then(r=>r.json())
-.then(d=>{
+  map.eachLayer(l=>{
+    if(l instanceof L.CircleMarker) map.removeLayer(l);
+  });
 
-let lista=d.elements.map(e=>{
-return {
-nev:e.tags.name||"Megálló",
-lat:e.lat,
-lon:e.lon,
-tav:dist(lat,lon,e.lat,e.lon)
-};
-});
+  stops.forEach(s=>{
 
-lista.sort((a,b)=>a.tav-b.tav);
+    L.circleMarker([s.stop_lat,s.stop_lon],{
+      radius:4,
+      color:"cyan"
+    }).addTo(map)
+    .on("click",()=>{
+      lastSelectedStop = s;
+      renderUI(s);
+    });
+  });
 
-let html="";
-
-lista.slice(0,8).forEach(s=>{
-
-let ut=Math.round(s.tav*1.3);
-
-html+=`
-<div class="stop">
-<b>${s.nev}</b><br>
-📏 ${s.tav} m | 🛣 ~${ut} m
-${menetrend()}
-</div>`;
-});
-
-document.getElementById("megallok").innerHTML=html;
-
-});
+  renderList();
 }
 
-// ===== MENETREND (stabil visszaszámláló)
-function menetrend(){
+// ================= LIST =================
+function renderList(){
 
-let html="";
+  let html = "<div class='panel'>📍 MEGÁLLÓK<br><br>";
 
-for(let i=1;i<=3;i++){
+  safe(stops).slice(0,50).forEach(s=>{
+    html += `📍 ${s.stop_name}<br>`;
+  });
 
-let sec=Math.floor(Math.random()*600-200);
+  html += "</div>";
 
-let color="white";
-if(sec<0) color="red";
-if(sec>300) color="blue";
-
-let m=Math.floor(Math.abs(sec)/60);
-let s=Math.abs(sec)%60;
-
-html+=`<div class="${color}">
-Járat ${i} → ${sec>=0?"+":"-"}${m}:${String(s).padStart(2,"0")}
-</div>`;
+  if(currentView==="list"){
+    document.getElementById("content").innerHTML = html;
+  }
 }
 
-return html;
+// ================= MATRIX BOARD =================
+function renderBoard(stop){
+
+  let list = departures[stop?.stop_id] || [];
+
+  let html = `
+  <div class="matrix">
+    🟢 INDULÁSOK<br>
+    <b>${stop?.stop_name || "–"}</b>
+    <hr>
+    <div class="row"><b>Trip</b><b>Idő</b></div>
+  `;
+
+  list.slice(0,15).forEach(d=>{
+    html += `
+    <div class="row">
+      <div>${d.trip}</div>
+      <div>${d.time}</div>
+    </div>`;
+  });
+
+  html += "</div>";
+
+  if(currentView==="board"){
+    document.getElementById("content").innerHTML = html;
+  }
 }
 
-// ===== HELYEK
-function helyek(lat,lon){
+// ================= DEBUG =================
+function renderDebug(){
 
-fetch(`https://overpass-api.de/api/interpreter?data=
-[out:json];
-node(around:1500,${lat},${lon});
-out;`)
-.then(r=>r.json())
-.then(d=>{
+  let html = `
+  <div class="panel">
+    🧠 DEBUG<br><br>
+    stops: ${stops.length}<br>
+    stop_times: ${stopTimes.length}<br>
+    departures keys: ${Object.keys(departures).length}<br>
+  </div>
+  `;
 
-let html="";
+  if(currentView==="debug"){
+    document.getElementById("content").innerHTML = html;
+  }
+}
 
-d.elements.slice(0,5).forEach(e=>{
-let t=dist(lat,lon,e.lat,e.lon);
-html+=`<div>${e.tags.name||"hely"} - ${t} m</div>`;
-});
+// ================= UI MASTER =================
+function renderUI(stop){
 
-document.getElementById("helyek").innerHTML=html;
+  if(!stops.length){
+    document.getElementById("content").innerHTML =
+      "❌ NINCS GTFS BETÖLTVE";
+    return;
+  }
 
-});
+  renderList();
+  renderBoard(stop);
+  renderDebug();
 }
 
 </script>
