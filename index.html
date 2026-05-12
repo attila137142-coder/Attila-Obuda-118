@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚆 Unified Transit V1</title>
+<title>🚆 DEPARTURE MAP V1</title>
 
 <style>
 body{
@@ -31,19 +31,19 @@ left:10px;
 background:#111827;
 padding:12px;
 border-radius:10px;
-width:320px;
 font-size:13px;
-line-height:1.4;
+width:260px;
 }
 
 .badge{
+display:inline-block;
 padding:2px 6px;
 border-radius:6px;
-display:inline-block;
 margin:2px 0;
 }
 
 .green{background:#14532d;color:#4ade80;}
+.blue{background:#1e3a8a;color:#38bdf8;}
 .yellow{background:#78350f;color:#fbbf24;}
 .red{background:#7f1d1d;color:#f87171;}
 </style>
@@ -51,10 +51,20 @@ margin:2px 0;
 
 <body>
 
-<header>🚆 UNIFIED TRANSIT V1 – Indulás • Útvonal • Távolság • Késés</header>
+<header>🚆 DEPARTURE MAP V1 – Budapest • Dunakanyar • Börzsöny</header>
 
-<div class="panel" id="panel">
-🧠 Loading...
+<div class="panel">
+🟢 zöld = időben<br>
+🟡 sárga = késés<br>
+🔴 piros = nagy késés<br><br>
+
+📍 Régiók:
+<div class="badge green">Budapest</div>
+<div class="badge blue">Dunakanyar</div>
+<div class="badge yellow">Börzsöny</div>
+
+<br><br>
+⏱️ élő indulás szimuláció
 </div>
 
 <canvas id="c"></canvas>
@@ -76,91 +86,68 @@ window.onresize=resize;
 resize();
 
 // ============================
-// ROUTE MODEL (UBU CORE)
+// REGION STOPS
 // ============================
 
-const route={
-name:"Budapest → Vác → Nagymaros → Szob",
-stops:[
-{name:"Budapest", x:150, y:400, km:0},
-{name:"Vác", x:400, y:300, km:35},
-{name:"Nagymaros", x:650, y:220, km:60},
-{name:"Szob", x:850, y:160, km:80}
-],
-departure:{
-scheduled:12*60, // percben
-delay:Math.floor(Math.random()*10)
-},
-vehicle:{
-id:"IC-742",
-speed:60 // km/h
-}
-};
+const stops=[
+
+{ name:"Budapest-Nyugati", x:200, y:400, region:"BP" },
+{ name:"Kőbánya", x:320, y:360, region:"BP" },
+
+{ name:"Vác", x:500, y:300, region:"DK" },
+{ name:"Verőce", x:620, y:260, region:"DK" },
+{ name:"Nagymaros", x:740, y:230, region:"DK" },
+
+{ name:"Szob", x:860, y:200, region:"BR" },
+{ name:"Kismaros", x:700, y:200, region:"BR" },
+{ name:"Királyrét", x:820, y:120, region:"BR" }
+
+];
 
 // ============================
-// TIME
+// LINES (simplified network)
 // ============================
 
-let start=Date.now();
+const lines=[
+["Budapest-Nyugati","Kőbánya","Vác","Verőce","Nagymaros","Szob"],
+["Vác","Kismaros","Királyrét"]
+];
 
 // ============================
-// DISTANCE HELPERS
+// DEPARTURES (simulated)
 // ============================
 
-function totalKm(){
-return route.stops[route.stops.length-1].km;
-}
-
-// progress time → km
-function getProgressKm(){
-
-let elapsed=(Date.now()-start)/1000/60; // perc
-let speed=route.vehicle.speed/60; // km/min
-
-let km=elapsed*speed;
-
-let delayedStart=route.departure.delay*speed;
-
-return Math.min(totalKm(),Math.max(0,km-delayedStart));
+function genDelay(){
+return Math.floor(Math.random()*15); // 0–15 min
 }
 
-// interpolate position
-function getPos(km){
-
-for(let i=0;i<route.stops.length-1;i++){
-
-let a=route.stops[i];
-let b=route.stops[i+1];
-
-if(km>=a.km && km<=b.km){
-
-let t=(km-a.km)/(b.km-a.km);
+let departures=stops.map(s=>{
 
 return{
-x:a.x+(b.x-a.x)*t,
-y:a.y+(b.y-a.y)*t
+name:s.name,
+time:Math.floor(Math.random()*60),
+delay:genDelay()
 };
 
-}
-
-}
-
-return route.stops[route.stops.length-1];
-
-}
+});
 
 // ============================
-// DRAW MAP
+// DRAW NETWORK
 // ============================
 
-function drawLine(){
+function drawLines(){
 
 ctx.strokeStyle="#334155";
-ctx.lineWidth=3;
+ctx.lineWidth=2;
+
+lines.forEach(line=>{
 
 ctx.beginPath();
 
-route.stops.forEach((s,i)=>{
+line.forEach((name,i)=>{
+
+let s=stops.find(x=>x.name===name);
+if(!s) return;
 
 if(i===0) ctx.moveTo(s.x,s.y);
 else ctx.lineTo(s.x,s.y);
@@ -169,19 +156,25 @@ else ctx.lineTo(s.x,s.y);
 
 ctx.stroke();
 
+});
+
 }
+
+// ============================
+// DRAW STOPS
+// ============================
 
 function drawStops(){
 
-route.stops.forEach(s=>{
+stops.forEach(s=>{
 
-ctx.fillStyle="#4ade80";
 ctx.beginPath();
+ctx.fillStyle="#4ade80";
 ctx.arc(s.x,s.y,6,0,Math.PI*2);
 ctx.fill();
 
 ctx.fillStyle="white";
-ctx.font="12px Arial";
+ctx.font="11px Arial";
 ctx.fillText(s.name,s.x+8,s.y-8);
 
 });
@@ -189,58 +182,32 @@ ctx.fillText(s.name,s.x+8,s.y-8);
 }
 
 // ============================
-// TRAIN
+// DRAW DEPARTURES
 // ============================
 
-function drawTrain(){
+function drawDepartures(){
 
-let km=getProgressKm();
-let pos=getPos(km);
+let y=80;
 
-ctx.fillStyle="#f87171";
-ctx.beginPath();
-ctx.arc(pos.x,pos.y,8,0,Math.PI*2);
-ctx.fill();
-
-ctx.fillStyle="white";
 ctx.font="12px Arial";
 
+departures.forEach(d=>{
+
+let color="#4ade80";
+
+if(d.delay>10) color="#f87171";
+else if(d.delay>5) color="#fbbf24";
+
+ctx.fillStyle=color;
+
 ctx.fillText(
-`🚆 ${route.vehicle.id}`,
-pos.x+10,pos.y-10
+`${d.name} → indulás: ${d.time} perc | késés: +${d.delay} min`,
+20,y
 );
 
-}
+y+=18;
 
-// ============================
-// PANEL
-// ============================
-
-function updatePanel(){
-
-let km=getProgressKm();
-let total=totalKm();
-let percent=(km/total)*100;
-
-let delay=route.departure.delay;
-
-let color="green";
-if(delay>5) color="yellow";
-if(delay>10) color="red";
-
-document.getElementById("panel").innerHTML=`
-
-🧭 Útvonal: <b>${route.name}</b><br><br>
-
-⏱️ Menetrend: 12:00<br>
-⚠️ Késés: <span class="badge ${color}">+${delay} min</span><br>
-🚆 Jármű: ${route.vehicle.id}<br><br>
-
-📏 Teljes táv: <b>${total} km</b><br>
-📍 Megtett: <b>${km.toFixed(1)} km</b><br>
-📊 Progress: <b>${percent.toFixed(1)}%</b>
-
-`;
+});
 
 }
 
@@ -252,14 +219,23 @@ function loop(){
 
 ctx.clearRect(0,0,c.width,c.height);
 
+// background
 ctx.fillStyle="#0b1220";
 ctx.fillRect(0,0,c.width,c.height);
 
-drawLine();
+// map
+drawLines();
 drawStops();
-drawTrain();
 
-updatePanel();
+// departures list
+drawDepartures();
+
+// simulate updates
+if(Math.random()<0.01){
+departures.forEach(d=>{
+d.delay=genDelay();
+});
+}
 
 requestAnimationFrame(loop);
 
@@ -272,4 +248,3 @@ loop();
 </body>
 </html>
 
--
