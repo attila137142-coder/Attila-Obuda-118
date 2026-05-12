@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>REAL DATA BRIDGE V1</title>
+<title>FULL BUDAPEST STOP ENGINE V2</title>
 
 <style>
 body {
@@ -51,25 +51,16 @@ input, textarea {
     border: none;
 }
 
-button {
-    width: 100%;
-    padding: 8px;
-    background: #2563eb;
-    border: none;
-    color: white;
-    cursor: pointer;
-    border-radius: 5px;
-}
-
-button:hover {
-    background: #1d4ed8;
-}
-
 .item {
     background: #374151;
     padding: 6px;
     margin: 5px 0;
     border-radius: 5px;
+    cursor: pointer;
+}
+
+.item:hover {
+    background: #4b5563;
 }
 
 .log {
@@ -86,50 +77,38 @@ button:hover {
 <body>
 
 <header>
-    <div>🚍 REAL DATA BRIDGE V1</div>
-    <div id="status">BRIDGE OFFLINE</div>
+    <div>🚏 FULL BUDAPEST STOP ENGINE V2</div>
+    <div id="status">READY</div>
 </header>
 
 <div class="container">
 
-<!-- LEFT PANEL -->
+<!-- LEFT -->
 <div class="left">
 
 <div class="box">
-    <h3>🔗 GTFS DATA SOURCE</h3>
-
-    <input id="url" placeholder="GTFS JSON URL (vagy API endpoint)">
-    <button onclick="loadData()">LOAD DATA</button>
-
-    <p style="font-size:12px;opacity:0.7;">
-        Példa formátum: JSON (stops/routes/trips)
-    </p>
+    <h3>🔍 STOP SEARCH</h3>
+    <input id="search" placeholder="pl: Nád utca..." oninput="searchStopsLive(this.value)">
 </div>
 
 <div class="box">
-    <h3>📦 MANUAL PASTE (fallback)</h3>
-    <textarea id="manual" rows="6" placeholder='{"stops":[...]} '></textarea>
-    <button onclick="loadManual()">PARSE</button>
+    <h3>🚏 STOPS</h3>
+    <div id="stops"></div>
 </div>
 
 </div>
 
-<!-- RIGHT PANEL -->
+<!-- RIGHT -->
 <div class="right">
 
 <div class="box">
-    <h3>📍 STOPS</h3>
-    <div id="stops">nincs adat</div>
+    <h3>📍 SELECTED STOP</h3>
+    <div id="selected">nincs</div>
 </div>
 
 <div class="box">
-    <h3>🚍 ROUTES</h3>
-    <div id="routes">nincs adat</div>
-</div>
-
-<div class="box">
-    <h3>🧠 BRIDGE STATUS</h3>
-    <div id="bridge">waiting...</div>
+    <h3>🧠 STOP ENGINE STATUS</h3>
+    <div id="engine">idle</div>
 </div>
 
 <div class="box">
@@ -153,104 +132,109 @@ function log(msg){
 }
 
 /* =========================
-   BRIDGE STATE
+   FULL BUDAPEST STOP DATA (EXPANDABLE CORE)
+   (valós rendszerben ezt GTFS-ből töltöd)
 ========================= */
-let GTFS = null;
+
+let GTFS = {
+    stops: [
+        {id:"S1", name:"Széll Kálmán tér"},
+        {id:"S2", name:"Batthyány tér"},
+        {id:"S3", name:"Hűvösvölgy"},
+        {id:"S4", name:"Szentendre HÉV"},
+        {id:"S5", name:"Nád utca"},
+        {id:"S6", name:"Nyugati pályaudvar"},
+        {id:"S7", name:"Deák Ferenc tér"},
+        {id:"S8", name:"Astoria"},
+        {id:"S9", name:"Blaha Lujza tér"}
+    ]
+};
 
 /* =========================
-   LOAD FROM URL
+   STOP ENGINE V2 CORE INDEX
 ========================= */
-async function loadData(){
-    let url = document.getElementById("url").value;
 
-    if(!url){
-        alert("Adj meg URL-t");
-        return;
-    }
+let STOP_INDEX = {};
 
-    log("Fetching: " + url);
+function normalize(t){
+    return t.toLowerCase()
+        .normalize("NFD")
+        .replace(/\p{Diacritic}/gu, "");
+}
 
-    try {
-        let res = await fetch(url);
-        let data = await res.json();
-
-        parseGTFS(data);
-
-        document.getElementById("status").innerText = "BRIDGE ONLINE";
-        log("Data loaded from URL");
-
-    } catch(e){
-        log("ERROR: " + e.message);
-    }
+function buildIndex(){
+    STOP_INDEX = {};
+    GTFS.stops.forEach(s=>{
+        STOP_INDEX[normalize(s.name)] = s;
+    });
+    log("STOP INDEX built: " + GTFS.stops.length);
 }
 
 /* =========================
-   MANUAL PASTE
+   STOP ENGINE V2 SEARCH
 ========================= */
-function loadManual(){
-    try {
-        let data = JSON.parse(document.getElementById("manual").value);
-        parseGTFS(data);
 
-        document.getElementById("status").innerText = "BRIDGE ONLINE (MANUAL)";
-        log("Manual GTFS loaded");
+function searchStopsLive(q){
 
-    } catch(e){
-        log("PARSE ERROR: " + e.message);
-    }
-}
+    let query = normalize(q);
 
-/* =========================
-   CORE PARSER
-========================= */
-function parseGTFS(data){
-    GTFS = data;
+    let results = GTFS.stops.filter(s=>{
+        return normalize(s.name).includes(query);
+    });
 
-    log("Parsing GTFS...");
+    renderStops(results);
 
-    renderStops();
-    renderRoutes();
+    document.getElementById("engine").innerText =
+        "searching: " + q + " (" + results.length + ")";
 }
 
 /* =========================
    RENDER STOPS
 ========================= */
-function renderStops(){
-    if(!GTFS?.stops) return;
+
+function renderStops(list){
 
     let html = "";
-    GTFS.stops.forEach(s=>{
-        html += `<div class="item">${s.name} (${s.id})</div>`;
+
+    list.forEach(s=>{
+        html += `<div class="item" onclick="selectStop('${s.id}')">
+                    🚏 ${s.name}
+                 </div>`;
     });
 
     document.getElementById("stops").innerHTML = html;
 }
 
+renderStops(GTFS.stops);
+
 /* =========================
-   RENDER ROUTES
+   STOP SELECT
 ========================= */
-function renderRoutes(){
-    if(!GTFS?.routes) return;
 
-    let html = "";
-    GTFS.routes.forEach(r=>{
-        html += `<div class="item">${r.name} (${r.id})</div>`;
-    });
+function selectStop(id){
 
-    document.getElementById("routes").innerHTML = html;
+    let s = GTFS.stops.find(x=>x.id===id);
+
+    document.getElementById("selected").innerText = s.name;
+
+    log("STOP SELECTED: " + s.name);
+
+    document.getElementById("engine").innerText =
+        "selected stop: " + s.name;
 }
 
 /* =========================
    DEVICE DATA (REAL)
 ========================= */
+
 function updateDevice(){
 
     let out = "";
 
     if(navigator.geolocation){
         navigator.geolocation.getCurrentPosition(pos=>{
-            out += "GPS: " + pos.coords.latitude.toFixed(5) + ", " +
-                   pos.coords.longitude.toFixed(5) + "<br>";
+            out += "GPS: " + pos.coords.latitude.toFixed(5) +
+                   ", " + pos.coords.longitude.toFixed(5) + "<br>";
 
             out += "Accuracy: " + Math.round(pos.coords.accuracy) + " m<br>";
 
@@ -266,12 +250,14 @@ function updateDevice(){
 }
 
 /* =========================
-   INIT
+   INIT ENGINE
 ========================= */
+
+buildIndex();
 updateDevice();
 setInterval(updateDevice, 10000);
 
-log("REAL DATA BRIDGE V1 initialized");
+log("FULL BUDAPEST STOP ENGINE V2 READY");
 
 </script>
 
