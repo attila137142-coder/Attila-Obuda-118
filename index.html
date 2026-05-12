@@ -2,14 +2,15 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>SLOPE V3.1 FIX</title>
+<title>SLOPE ULTRA V3.2</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
 body { margin:0; background:#111; color:#fff; font-family:Arial;}
 #map { height:50vh;}
 #panel { padding:10px;}
 input,button { padding:10px; margin:5px;}
-#results div { cursor:pointer; padding:5px; border-bottom:1px solid #333;}
+#results div { padding:5px; cursor:pointer; border-bottom:1px solid #333;}
+#results div:hover { background:#333;}
 table { width:100%; font-size:12px; border-collapse:collapse;}
 td,th { border:1px solid #444; padding:4px;}
 </style>
@@ -19,7 +20,7 @@ td,th { border:1px solid #444; padding:4px;}
 <div id="map"></div>
 
 <div id="panel">
-<input id="street" placeholder="pl: Hegyalja út">
+<input id="street" placeholder="pl: Hármashatárhegyi út / turista út">
 <button onclick="search()">KERESÉS</button>
 <button onclick="calc()">MEREDESÉG</button>
 
@@ -39,30 +40,41 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 let coords = [];
 let line;
 
-// 🔍 KERESÉS
+// 🔍 KERESÉS + AUTO LOAD
 async function search(){
   let q = street.value;
-  let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q},Budapest&limit=5`);
+
+  let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q},Hungary&limit=5`);
   let data = await res.json();
 
   results.innerHTML="";
+
+  if(data.length==0){
+    alert("Nincs találat!");
+    return;
+  }
+
   data.forEach(p=>{
     let d=document.createElement("div");
     d.innerText=p.display_name;
     d.onclick=()=>load(p);
     results.appendChild(d);
   });
+
+  // AUTO LOAD első
+  await load(data[0]);
 }
 
-// 📍 UTCA BETÖLTÉS – FIX név alapú
+// 📍 ULTRA LOAD (turista utak + fallback)
 async function load(p){
-  map.setView([p.lat,p.lon],16);
-
-  let name = p.display_name.split(",")[0];
+  map.setView([p.lat,p.lon],15);
 
   let q = `
   [out:json];
-  way["name"="${name}"]["highway"](around:1000,${p.lat},${p.lon});
+  (
+    way["highway"~"primary|secondary|tertiary|residential|service"](around:1200,${p.lat},${p.lon});
+    way["highway"~"path|footway|track"](around:1200,${p.lat},${p.lon});
+  );
   out geom;
   `;
 
@@ -70,23 +82,29 @@ async function load(p){
   let data = await res.json();
 
   if(data.elements.length==0){
-    alert("Nem található pontos utca!");
+    alert("Nincs út a közelben!");
     return;
   }
 
-  coords = data.elements[0].geometry.map(p=>[p.lat,p.lon]);
+  // 🔥 leghosszabb út kiválasztása (stabilabb!)
+  let best = data.elements.reduce((a,b)=>
+    (b.geometry.length > a.geometry.length ? b : a)
+  );
+
+  coords = best.geometry.map(p=>[p.lat,p.lon]);
 
   if(line) map.removeLayer(line);
   line = L.polyline(coords,{color:"cyan"}).addTo(map);
 
-  alert("Utca OK!");
+  alert("Út betöltve ✔ (turista + közút)");
 }
 
-// ⛰️ MAGASSÁG – LIMITÁLT (nem hal el)
+// ⛰️ MAGASSÁG (stabil mintavétel)
 async function getElev(points){
 
-  // max 100 pont
-  let sample = points.filter((_,i)=> i%3===0);
+  let step = Math.max(1, Math.floor(points.length/80));
+
+  let sample = points.filter((_,i)=> i%step===0);
 
   let res = await fetch("https://api.open-elevation.com/api/v1/lookup",{
     method:"POST",
@@ -98,11 +116,11 @@ async function getElev(points){
 
   let data = await res.json();
 
-  // visszaskálázás
   let elev=[];
   let j=0;
+
   for(let i=0;i<points.length;i++){
-    if(i%3===0){
+    if(i%step===0){
       elev.push(data.results[j].elevation);
       j++;
     } else {
@@ -113,17 +131,17 @@ async function getElev(points){
   return elev;
 }
 
-// 📊 SZÁMÍTÁS – FIX
+// 📊 MEREDESÉG (BIZTOS KIÍRÁS)
 async function calc(){
 
-  if(coords.length==0){
-    alert("Nincs utca!");
+  if(coords.length<2){
+    alert("Nincs út betöltve!");
     return;
   }
 
   let elev = await getElev(coords);
 
-  tbl.innerHTML="<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>";
+  tbl.innerHTML="<tr><th>#</th><th>Hossz (m)</th><th>Δh (m)</th><th>%</th></tr>";
 
   for(let i=0;i<coords.length-1;i++){
 
@@ -134,15 +152,15 @@ async function calc(){
     let dh = elev[i+1]-elev[i];
     let slope = (dh/d)*100;
 
-    // RAJZ
-    let c="green";
-    if(slope>5) c="orange";
-    if(slope>10) c="red";
+    let color="green";
+    if(slope>5) color="orange";
+    if(slope>10) color="red";
 
-    L.polyline([p1,p2],{color:c,weight:5}).addTo(map);
+    L.polyline([p1,p2],{color:color,weight:5}).addTo(map);
 
-    let r = tbl.insertRow();
-    r.innerHTML=`
+    let row = tbl.insertRow();
+
+    row.innerHTML=`
       <td>${i}</td>
       <td>${d.toFixed(1)}</td>
       <td>${dh.toFixed(1)}</td>
@@ -150,7 +168,7 @@ async function calc(){
     `;
   }
 
-  alert("KÉSZ ✔ (MOST MÁR LESZ %)");
+  alert("KÉSZ ✔ Minden szakasz kiszámolva!");
 }
 </script>
 
