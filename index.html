@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>REAL TIME DEPARTURE PANEL V1</title>
+<title>TRANSIT FUSION CORE V6</title>
 
 <style>
 body{
@@ -13,13 +13,30 @@ color:white;
 }
 
 header{
-padding:10px;
 background:#111827;
+padding:10px;
 font-weight:bold;
+display:flex;
+justify-content:space-between;
 }
 
-#panel{
+.container{
+display:grid;
+grid-template-columns:360px 1fr;
+height:90vh;
+}
+
+.left{
+background:#1f2937;
 padding:10px;
+overflow:auto;
+}
+
+.box{
+background:#111827;
+padding:10px;
+margin-bottom:10px;
+border-radius:6px;
 }
 
 .row{
@@ -27,142 +44,165 @@ display:flex;
 justify-content:space-between;
 padding:8px;
 border-bottom:1px solid #1f2937;
-font-size:14px;
-}
-
-.small{
-font-size:11px;
-opacity:0.8;
+font-size:13px;
 }
 
 .badge{
-background:#222;
-padding:2px 6px;
-border-radius:4px;
 font-size:11px;
+padding:2px 6px;
+background:#222;
+border-radius:4px;
+margin-left:5px;
 }
 
 .red{color:#ff4d4d;font-weight:bold;}
 .blue{color:#4da6ff;font-weight:bold;}
 .green{color:#7CFF7C;font-weight:bold;}
-.gray{opacity:0.7;}
 
+.small{font-size:11px;opacity:0.8;}
 </style>
 </head>
 
 <body>
 
 <header>
-🚍 BUDAPEST REAL TIME DEPARTURE PANEL V1
-<span id="clock"></span>
+🚍 TRANSIT FUSION CORE V6
+<div id="clock"></div>
 </header>
 
+<div class="container">
+
+<!-- LEFT PANEL -->
+<div class="left">
+
+<div class="box">
+<h3>🧠 REGION FILTER</h3>
+<div>2-3 kerület + Szentendre + Agglo</div>
+</div>
+
+<div class="box">
+<h3>🚏 CONTROL PANEL (15 sor)</h3>
 <div id="panel"></div>
+</div>
+
+</div>
+
+<!-- RIGHT (INFO ONLY) -->
+<div class="left">
+
+<div class="box">
+<h3>📡 ENGINE STATUS</h3>
+<div id="status">INIT</div>
+</div>
+
+<div class="box">
+<h3>🚍 ROUTE CORE</h3>
+<div class="small">
+160 / 243 / 134 / H5 / VOLÁN SZENTENDRE
+</div>
+</div>
+
+</div>
+
+</div>
 
 <script>
 
 /* =========================
-   CLOCK
+CLOCK
 ========================= */
 
-function updateClock(){
-const now = new Date();
+function clock(){
 document.getElementById("clock").innerText =
-now.toLocaleTimeString();
+new Date().toLocaleTimeString();
 }
-setInterval(updateClock,1000);
-updateClock();
+setInterval(clock,1000);
+clock();
 
 /* =========================
-   VEHICLES (SIMULATED REAL DATA CORE)
+ROUTE MODEL (FUSION CORE)
 ========================= */
 
-let vehicles = [
-{id:"7A-391", route:"7", type:"bus", speed:42, delay:30},
-{id:"4-6-882", route:"4-6", type:"tram", speed:28, delay:-90},
-{id:"M2-1105", route:"M2", type:"metro", speed:60, delay:140},
-{id:"H5-203", route:"H5", type:"HÉV", speed:55, delay:0},
-{id:"12A-771", route:"12A", type:"bus", speed:38, delay:12},
-{id:"40-912", route:"40", type:"bus", speed:45, delay:65},
-{id:"8E-554", route:"8E", type:"bus", speed:52, delay:-40},
-{id:"9-301", route:"9", type:"bus", speed:33, delay:18},
-{id:"2-118", route:"2", type:"tram", speed:27, delay:95},
-{id:"1-442", route:"1", type:"tram", speed:29, delay:-20},
-{id:"Buda-55", route:"55", type:"bus", speed:41, delay:5},
-{id:"Pest-77", route:"77", type:"tram", speed:31, delay:200},
-{id:"23-901", route:"23", type:"bus", speed:36, delay:-10},
-{id:"16-812", route:"16", type:"bus", speed:44, delay:60},
-{id:"19-501", route:"19", type:"tram", speed:26, delay:0}
+const routes = [
+{route:"160", id:"1600", type:"bus", region:"buda", baseDelay:30},
+{route:"243", id:"2430", type:"bus", region:"buda", baseDelay:-40},
+{route:"134", id:"1340", type:"bus", region:"buda", baseDelay:10},
+{route:"H5", id:"H5", type:"HÉV", region:"corridor", baseDelay:0},
+{route:"VOLÁN", id:"SZENT", type:"bus", region:"agglo", baseDelay:50},
+{route:"7", id:"7007", type:"tram", region:"bp", baseDelay:-20},
+{route:"4-6", id:"4600", type:"tram", region:"bp", baseDelay:80},
+{route:"M2", id:"M2", type:"metro", region:"bp", baseDelay:120},
+{route:"9", id:"9009", type:"bus", region:"bp", baseDelay:15},
+{route:"12A", id:"120A", type:"bus", region:"bp", baseDelay:5},
+{route:"8E", id:"8E00", type:"bus", region:"bp", baseDelay:-30},
+{route:"23", id:"2300", type:"bus", region:"bp", baseDelay:40},
+{route:"19", id:"1900", type:"tram", region:"bp", baseDelay:0},
+{route:"1", id:"1001", type:"tram", region:"bp", baseDelay:60},
+{route:"2", id:"2002", type:"tram", region:"bp", baseDelay:-10}
 ];
 
 /* =========================
-   FORMAT ENGINE
+STATUS ENGINE
 ========================= */
 
-function format(delay){
+function state(delay){
 
-let d = Math.round(delay);
+delay = Math.round(delay);
 
-let mm = Math.floor(Math.abs(d)/60);
-let ss = Math.abs(d)%60;
+if(delay > 30)
+return `<span class="red">🔴 SIET ${delay}s</span>`;
 
-if(d > 20){
-return `<span class="red">🔴 SIET ${mm}:${ss.toString().padStart(2,'0')}</span>`;
-}
-
-if(d < -20){
-return `<span class="blue">🔵 KÉSÉS ${mm}:${ss.toString().padStart(2,'0')}</span>`;
-}
+if(delay < -30)
+return `<span class="blue">🔵 KÉSÉS ${Math.abs(delay)}s</span>`;
 
 return `<span class="green">🟢 PONTOS</span>`;
 }
 
 /* =========================
-   PANEL RENDER (15 ROWS)
+CORE SIM ENGINE
 ========================= */
 
-function render(){
+function update(){
 
 let html = "";
 
 for(let i=0;i<15;i++){
 
-let v = vehicles[i];
+let v = routes[i];
 
-v.delay += (Math.random()*6 - 3);
-v.speed += (Math.random()*2 - 1);
+v.baseDelay += (Math.random()*6 - 3);
 
 let time = new Date();
-time.setSeconds(time.getSeconds() + v.delay);
+time.setSeconds(time.getSeconds() + v.baseDelay);
 
 html += `
 <div class="row">
 <div>
 ${v.route}
-<div class="small">
-${v.type} • ID: ${v.id}
-</div>
+<span class="badge">${v.type}</span>
+<div class="small">${v.id} • ${v.region}</div>
 </div>
 
 <div>
-${format(v.delay)}
-<div class="small gray">
-${v.speed.toFixed(1)} km/h • ${time.toLocaleTimeString()}
-</div>
+${state(v.baseDelay)}
+<div class="small">${time.toLocaleTimeString()}</div>
 </div>
 </div>
 `;
 }
 
 document.getElementById("panel").innerHTML = html;
+
+document.getElementById("status").innerText =
+"FUSION ACTIVE ✔";
 }
 
 /* =========================
-   LOOP
+LOOP
 ========================= */
 
-setInterval(render,1000);
-render();
+setInterval(update,1000);
+update();
 
 </script>
 
