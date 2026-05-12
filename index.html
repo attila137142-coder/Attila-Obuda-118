@@ -1,203 +1,109 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<title>ATTILA DISPATCHER FULL ENGINE V2</title>
-<!-- Leaflet -->
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<!-- PapaParse -->
+<meta charset="UTF-8">
+<title>GTFS HARD VALIDATION ENGINE V1</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
-<!-- RTree -->
-<script src="https://unpkg.com/rbush@3.0.1/rbush.min.js"></script>
 <style>
-body { margin:0; font-family: Arial; background:#0b1220; color:white; }
-#map { height:70vh; width:100%; }
+body { font-family:Arial; background:#0b1220; color:white; margin:0; }
 .panel { padding:10px; background:#111a2e; }
-button, input { padding:8px; margin:5px; }
-table { width:100%; border-collapse: collapse; }
-td,th { border:1px solid #2a3550; padding:6px; font-size:13px; }
-th { background:#1b2740; }
+pre { white-space:pre-wrap; font-size:12px; }
+button { padding:8px; margin:5px; }
+.ok { color:#4cff4c; }
+.err { color:#ff4c4c; }
+.warn { color:#ffcc00; }
 </style>
 </head>
 <body>
 <div class="panel">
-<h2>🚆 ATTILA DISPATCHER V2</h2>
-<input type="file" id="gtfsFile">
-<button onclick="loadGTFS()">GTFS LOAD</button>
-<button onclick="buildEngine()">ENGINE BUILD</button>
-<span id="status">READY</span>
-</div>
-<div id="map"></div>
-<div class="panel">
-<table>
-<thead>
-<tr>
-<th>GLOBAL ID</th>
-<th>Név</th>
-<th>Lat</th>
-<th>Lon</th>
-<th>Forrás</th>
-</tr>
-</thead>
-<tbody id="list"></tbody>
-</table>
+<h2>🚆 GTFS HARD VALIDATION ENGINE V1</h2>
+<input type="file" id="zip" accept=".zip">
+<button onclick="run()">ANALYZE GTFS ZIP</button>
+<pre id="log"></pre>
 </div>
 <script>
-// ---------------- MAP ----------------
-const map = L.map('map').setView([47.4979, 19.0402], 10);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-attribution: 'OSM'
-}).addTo(map);
-// ---------------- DATA ----------------
-let stops = [];
-let tree = new RBush();
-let nodes = [];
-let id = 1;
-// ---------------- LOAD GTFS ----------------
-function loadGTFS() {
-const file = document.getElementById("gtfsFile").files[0];
-if (!file) return alert("Nincs GTFS file!");
-Papa.parse(file, {
-header: true,
-complete: (res) => {
-stops = res.data
-.filter(s => s.stop_lat && s.stop_lon)
-.map(s => ({
-stop_id: s.stop_id,
-name: s.stop_name,
-lat: parseFloat(s.stop_lat),
-lon: parseFloat(s.stop_lon),
-type: "GTFS"
-}));
-setStatus("GTFS loaded: " + stops.length);
-index();
+function log(t, type=""){
+document.getElementById("log").innerText += (type ? `[${type}] ` : "") + t + "\n";
 }
+function ok(t){ log(t,"OK"); }
+function err(t){ log(t,"ERROR"); }
+function warn(t){ log(t,"WARN"); }
+function clean(name){
+return name.toLowerCase().split("/").pop();
+}
+// ---------------- MAIN ----------------
+async function run(){
+document.getElementById("log").innerText = "";
+const file = document.getElementById("zip").files[0];
+if(!file){
+err("Nincs ZIP kiválasztva!");
+return;
+}
+ok("ZIP betöltés indul...");
+const zip = await JSZip.loadAsync(file);
+let foundFiles = [];
+let stopsRaw = null;
+// ---------------- SCAN ZIP ----------------
+for(let path in zip.files){
+foundFiles.push(path);
+let name = clean(path);
+ok("FÁJL TALÁLVA: " + path);
+let content = await zip.files[path].async("string");
+// --- DEBUG RAW ---
+log(" SIZE: " + content.length);
+if(name === "stops.txt"){
+ok("STOPS.TXT MEGTALÁLVA!");
+log("FIRST 200 CHARS:");
+log(content.slice(0,200));
+stopsRaw = content;
+}
+}
+// ---------------- ZIP SUMMARY ----------------
+log("=== ZIP SUMMARY ===");
+log("Total files: " + foundFiles.length);
+if(!stopsRaw){
+err("NINCS stops.txt a ZIP-ben!");
+return;
+}
+// ---------------- PARSE TEST ----------------
+ok("PARSING stops.txt...");
+let parsed = Papa.parse(stopsRaw.trim(), {
+header:true,
+skipEmptyLines:true
 });
+log("ROWS: " + parsed.data.length);
+// ---------------- FIELD CHECK ----------------
+let sample = parsed.data[0];
+if(!sample){
+err("ÜRES stops.txt (nincs sor)");
+return;
 }
-// ---------------- INDEX ----------------
-function index() {
-tree.clear();
-stops.forEach(s => {
-tree.insert({
-minX: s.lon,
-minY: s.lat,
-maxX: s.lon,
-maxY: s.lat,
-data: s
-});
-});
-setStatus("Indexed (R-tree ready)");
+log("COLUMNS: " + Object.keys(sample).join(", "));
+// ---------------- REQUIRED FIELDS ----------------
+let required = ["stop_id","stop_name","stop_lat","stop_lon"];
+for(let r of required){
+if(!(r in sample)){
+err("HIÁNYZIK OSZLOP: " + r);
+} else {
+ok("OK FIELD: " + r);
 }
-// ---------------- DIST ----------------
-function dist(a,b){
-const R=6371e3;
-const toRad=x=>x*Math.PI/180;
-const dLat=toRad(b.lat-a.lat);
-const dLon=toRad(b.lon-a.lon);
-const A=toRad(a.lat), B=toRad(b.lat);
-const x=
-Math.sin(dLat/2)**2 +
-Math.cos(A)*Math.cos(B)*Math.sin(dLon/2)**2;
-return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
-// ---------------- SCORE ----------------
-function score(a,b){
-let d = dist(a,b);
-let geo = d<50?1:d<120?0.7:0;
-let na=(a.name||"").toLowerCase();
-let nb=(b.name||"").toLowerCase();
-let name = (na.includes(nb)||nb.includes(na))?0.8:0.4;
-return geo*0.7 + name*0.3;
-}
-// ---------------- GET NODE ----------------
-function getNode(stop){
-let near = tree.search({
-minX: stop.lon-0.002,
-minY: stop.lat-0.002,
-maxX: stop.lon+0.002,
-maxY: stop.lat+0.002
-});
-let best=null;
-let bestScore=0;
-near.forEach(n=>{
-let s=score(stop,n.data);
-if(s>bestScore){
-bestScore=s;
-best=n.data;
-}
-});
-if(best && bestScore>0.85){
-let node = nodes.find(n =>
-n.sources.some(x=>x.stop_id===best.stop_id)
+// ---------------- VALID ROW CHECK ----------------
+let valid = parsed.data.filter(s =>
+s.stop_lat && s.stop_lon &&
+!isNaN(parseFloat(s.stop_lat)) &&
+!isNaN(parseFloat(s.stop_lon))
 );
-if(!node){
-node={
-id:"HUN_"+String(id++).padStart(5,"0"),
-name:stop.name,
-lat:stop.lat,
-lon:stop.lon,
-sources:[]
-};
-nodes.push(node);
+log("VALID STOPS: " + valid.length);
+if(valid.length === 0){
+err("0 VALID STOP → EZ A PROBLÉMA!");
+warn("valószínű: rossz oszlopnév vagy rossz CSV formátum");
 }
-node.sources.push(stop);
-return node;
-}
-let node={
-id:"HUN_"+String(id++).padStart(5,"0"),
-name:stop.name,
-lat:stop.lat,
-lon:stop.lon,
-sources:[stop]
-};
-nodes.push(node);
-return node;
-}
-// ---------------- BUILD ENGINE ----------------
-function buildEngine(){
-nodes=[];
-id=1;
-stops.forEach(s=>getNode(s));
-render();
-drawMap();
-setStatus("ENGINE READY: "+nodes.length+" nodes");
-}
-// ---------------- MAP DRAW ----------------
-function drawMap(){
-nodes.forEach(n=>{
-let color = n.sources.length>1 ? "red" : "blue";
-L.circleMarker([n.lat,n.lon],{
-radius:6,
-color:color
-})
-.addTo(map)
-.bindPopup(`
-<b>${n.name}</b><br>
-${n.id}<br>
-sources: ${n.sources.length}
-`);
-});
-}
-// ---------------- TABLE ----------------
-function render(){
-let out=document.getElementById("list");
-out.innerHTML="";
-nodes.forEach(n=>{
-let tr=document.createElement("tr");
-tr.innerHTML=`
-<td>${n.id}</td>
-<td>${n.name}</td>
-<td>${n.lat.toFixed(5)}</td>
-<td>${n.lon.toFixed(5)}</td>
-<td>${n.sources.length}</td>
-`;
-out.appendChild(tr);
-});
-}
-// ---------------- STATUS ----------------
-function setStatus(t){
-document.getElementById("status").innerText=t;
+// ---------------- SAMPLE DEBUG ----------------
+log("=== SAMPLE STOP ===");
+log(JSON.stringify(valid[0],null,2));
+ok("ANALYSIS DONE ✔");
 }
 </script>
 </body>
