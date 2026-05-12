@@ -1,8 +1,9 @@
+TELJES 1-FILE GTFS ENGINE V1
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Budapest GTFS Control Room V1</title>
+<title>GTFS REAL DATA ENGINE V1</title>
 
 <style>
 body {
@@ -15,14 +16,14 @@ body {
 header {
     background: #111827;
     padding: 10px;
+    font-weight: bold;
     display: flex;
     justify-content: space-between;
-    font-weight: bold;
 }
 
 .container {
     display: grid;
-    grid-template-columns: 280px 1fr;
+    grid-template-columns: 300px 1fr;
     height: 80vh;
 }
 
@@ -32,18 +33,15 @@ header {
     overflow-y: auto;
 }
 
-.map {
-    background: #0a0f1c;
+.right {
     padding: 10px;
 }
 
-.panel {
-    height: 20vh;
+.box {
     background: #111827;
-    overflow-y: auto;
-    font-size: 12px;
-    padding: 8px;
-    border-top: 1px solid #333;
+    padding: 10px;
+    margin-bottom: 10px;
+    border-radius: 6px;
 }
 
 .item {
@@ -58,13 +56,21 @@ header {
     background: #4b5563;
 }
 
-.badge {
-    font-size: 11px;
-    color: #93c5fd;
+input {
+    width: 100%;
+    padding: 8px;
+    margin-bottom: 10px;
+    border: none;
+    border-radius: 5px;
 }
-.small {
+
+.log {
+    height: 20vh;
+    background: #0f172a;
+    overflow-y: auto;
     font-size: 12px;
-    opacity: 0.8;
+    padding: 8px;
+    border-top: 1px solid #333;
 }
 </style>
 </head>
@@ -72,116 +78,179 @@ header {
 <body>
 
 <header>
-    <div>🚍 BUDAPEST GTFS CONTROL ROOM V1</div>
-    <div id="gps">GPS: keresés...</div>
+    <div>🚍 GTFS REAL DATA ENGINE V1</div>
+    <div id="status">ENGINE READY</div>
 </header>
 
 <div class="container">
 
-<!-- LEFT PANEL -->
+<!-- LEFT -->
 <div class="left">
-    <h3>Járatok (demo GTFS)</h3>
 
-    <div class="item" onclick="selectRoute('118 busz')">
-        118-as busz
-        <div class="badge">Belváros ↔ Hűvösvölgy</div>
-    </div>
+<h3>GTFS Control</h3>
 
-    <div class="item" onclick="selectRoute('HÉV H5')">
-        HÉV H5
-        <div class="badge">Batthyány tér ↔ Szentendre</div>
-    </div>
+<input id="search" placeholder="Megálló keresés..." oninput="searchStops()">
 
-    <div class="item" onclick="selectRoute('MÁV IC')">
-        MÁV IC 600
-        <div class="badge">Budapest ↔ Debrecen</div>
-    </div>
+<div id="stops"></div>
 
 </div>
 
-<!-- MAP AREA -->
-<div class="map">
-    <h3>Térkép (placeholder)</h3>
+<!-- RIGHT -->
+<div class="right">
 
-    <div class="small">
-        Ide jön később:
-        <ul>
-            <li>Leaflet térkép</li>
-            <li>GTFS stop layer</li>
-            <li>jármű marker</li>
-        </ul>
-    </div>
+<div class="box">
+    <h3>Kiválasztott megálló</h3>
+    <div id="selectedStop">nincs</div>
+</div>
 
-    <hr>
+<div class="box">
+    <h3>Következő indulások (ENGINE)</h3>
+    <div id="departures">-</div>
+</div>
 
-    <div>
-        <b>Kiválasztott járat:</b> <span id="route">nincs</span>
-    </div>
-
-    <div>
-        <b>Pontosság:</b> <span id="acc">-</span>
-    </div>
-
-    <div>
-        <b>Kapcsolat (becslés):</b> <span id="net">-</span>
-    </div>
+<div class="box">
+    <h3>Járat logika</h3>
+    <div id="engine">GTFS engine idle</div>
+</div>
 
 </div>
 
 </div>
 
-<!-- LOG PANEL -->
-<div class="panel" id="log">
-LOG indul...<br>
-</div>
+<div class="log" id="log"></div>
 
 <script>
 
-// LOG rendszer
+/* =========================
+   GTFS MOCK DATA (ENGINE)
+========================= */
+
+const GTFS = {
+    stops: [
+        {id:"S1", name:"Széll Kálmán tér"},
+        {id:"S2", name:"Batthyány tér"},
+        {id:"S3", name:"Hűvösvölgy"},
+        {id:"S4", name:"Szentendre HÉV"},
+    ],
+
+    trips: {
+        "118": {
+            name: "118-as busz",
+            stops: ["S1","S2","S3"],
+            stop_times: ["08:00","08:10","08:25","08:40","09:00"]
+        },
+        "H5": {
+            name: "HÉV H5",
+            stops: ["S2","S4"],
+            stop_times: ["08:05","08:15","08:25","08:35","08:45"]
+        }
+    }
+};
+
+/* =========================
+   ENGINE LOG
+========================= */
+
 function log(msg){
     document.getElementById("log").innerHTML += msg + "<br>";
 }
 
-// Járat választás
-function selectRoute(name){
-    document.getElementById("route").innerText = name;
-    log("Járat kiválasztva: " + name);
-}
+/* =========================
+   STOP LIST RENDER
+========================= */
 
-// GPS lekérés
-if ("geolocation" in navigator) {
-    navigator.geolocation.watchPosition((pos) => {
-        let acc = pos.coords.accuracy;
-
-        document.getElementById("gps").innerText =
-            "GPS: " + pos.coords.latitude.toFixed(5) + ", " + pos.coords.longitude.toFixed(5);
-
-        document.getElementById("acc").innerText = Math.round(acc) + " m";
-
-    }, (err) => {
-        document.getElementById("gps").innerText = "GPS: nincs engedély";
-        log("GPS hiba: " + err.message);
+function renderStops(list){
+    let html = "";
+    list.forEach(s=>{
+        html += `<div class="item" onclick="selectStop('${s.id}')">${s.name}</div>`;
     });
+    document.getElementById("stops").innerHTML = html;
 }
 
-// Network info (ha elérhető)
-if (navigator.connection) {
-    let conn = navigator.connection;
-    document.getElementById("net").innerText =
-        conn.effectiveType + " | downlink: " + conn.downlink + " Mbps";
+renderStops(GTFS.stops);
 
-    log("Hálózat: " + conn.effectiveType);
-} else {
-    document.getElementById("net").innerText = "nem elérhető";
-    log("Network API nem támogatott");
+/* =========================
+   STOP SEARCH
+========================= */
+
+function searchStops(){
+    let q = document.getElementById("search").value.toLowerCase();
+
+    let filtered = GTFS.stops.filter(s =>
+        s.name.toLowerCase().includes(q)
+    );
+
+    renderStops(filtered);
 }
 
-// Mock realtime log
-setInterval(() => {
-    log("GTFS update tick...");
-}, 8000);
+/* =========================
+   STOP SELECT
+========================= */
 
-log("Control Room V1 ready");
+let currentStop = null;
+
+function selectStop(id){
+    currentStop = id;
+
+    let stop = GTFS.stops.find(s=>s.id===id);
+    document.getElementById("selectedStop").innerText = stop.name;
+
+    log("Stop selected: " + stop.name);
+
+    calculateDepartures();
+}
+
+/* =========================
+   GTFS ENGINE CORE
+========================= */
+
+function calculateDepartures(){
+
+    if(!currentStop) return;
+
+    let now = new Date();
+    let currentTime =
+        now.getHours().toString().padStart(2,'0') + ":" +
+        now.getMinutes().toString().padStart(2,'0');
+
+    let output = "";
+
+    Object.keys(GTFS.trips).forEach(tripId=>{
+        let trip = GTFS.trips[tripId];
+
+        if(trip.stops.includes(currentStop)){
+            output += `<b>${trip.name}</b><br>`;
+            output += "következő indulások:<br>";
+
+            trip.stop_times.forEach(t=>{
+                if(t > currentTime){
+                    output += "🟢 " + t + "<br>";
+                }
+            });
+
+            output += "<hr>";
+        }
+    });
+
+    document.getElementById("departures").innerHTML = output || "nincs adat";
+
+    document.getElementById("engine").innerText =
+        "GTFS engine calculated at " + currentTime;
+
+    log("Departures recalculated");
+}
+
+/* =========================
+   AUTO ENGINE TICK
+========================= */
+
+setInterval(()=>{
+    if(currentStop){
+        calculateDepartures();
+    }
+}, 30000);
+
+log("GTFS ENGINE V1 initialized");
 
 </script>
 
