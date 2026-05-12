@@ -2,198 +2,270 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>V6 TERRAIN HEATMAP ENGINE</title>
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<title>ATTILA DISPATCHER V7.1 – AUTO UI FIX</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
 <style>
-body { margin:0; font-family:Arial; background:#111; color:#fff;}
-#map { height:55vh;}
-#panel { padding:10px;}
-input,button { padding:10px; margin:5px;}
-#results div { padding:6px; border-bottom:1px solid #333; cursor:pointer;}
-#results div:hover { background:#333;}
-table { width:100%; font-size:12px; border-collapse:collapse;}
-td,th { border:1px solid #444; padding:4px;}
+body{margin:0;font-family:Arial;display:flex;height:100vh;}
+#sidebar{width:380px;background:#0b1220;color:#00ff66;overflow:auto;}
+#map{flex:1;}
+
+.tabbar{
+  display:flex;
+  background:#001a00;
+}
+
+.tab{
+  flex:1;
+  padding:8px;
+  text-align:center;
+  cursor:pointer;
+  border-bottom:2px solid transparent;
+}
+
+.tab.active{
+  border-bottom:2px solid #00ff66;
+}
+
+.panel{
+  padding:10px;
+  font-family:monospace;
+}
+
+.matrix{
+  background:black;
+  color:#00ff66;
+  padding:10px;
+}
+
+.row{
+  display:flex;
+  justify-content:space-between;
+  border-bottom:1px solid #003300;
+  padding:4px;
+}
+
+button{
+  padding:6px;
+  margin:4px;
+  background:#003300;
+  color:#00ff66;
+  border:none;
+}
 </style>
 </head>
 
 <body>
 
-<div id="map"></div>
+<div id="sidebar">
 
-<div id="panel">
-<input id="street" placeholder="pl: Hármashatárhegyi út / turista út">
-<button onclick="search()">KERESÉS + HEATMAP</button>
+<h3>🟢 V7.1 DISPATCH</h3>
 
-<div id="results"></div>
+<input type="file" id="zip">
+<button onclick="loadGTFS()">LOAD GTFS</button>
 
-<table id="tbl">
-<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>
-</table>
+<div class="tabbar">
+  <div class="tab active" onclick="setView('list')">LISTA</div>
+  <div class="tab" onclick="setView('board')">INDULÁS</div>
+  <div class="tab" onclick="setView('debug')">DEBUG</div>
 </div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<div id="content"></div>
+
+</div>
+
+<div id="map"></div>
 
 <script>
-let map = L.map('map').setView([47.4979,19.0402],13);
+
+// ================= MAP =================
+const map = L.map('map').setView([47.5,19.05],10);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  opacity:0.9
+  attribution:'OSM'
 }).addTo(map);
 
-let coords = [];
-let layers = [];
+// ================= STATE =================
+let stops = [];
+let stopTimes = [];
+let departures = {};
+let currentView = "list";
 
-// ==========================
-// 🔍 SEARCH + ROUTE LOAD
-// ==========================
-async function search(){
-
-  let q = street.value;
-
-  let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q},Hungary&limit=5`);
-  let data = await res.json();
-
-  results.innerHTML="";
-
-  if(data.length==0){
-    alert("Nincs találat!");
-    return;
-  }
-
-  data.forEach(p=>{
-    let d=document.createElement("div");
-    d.innerText=p.display_name;
-    d.onclick=()=>loadRoute(p);
-    results.appendChild(d);
-  });
-
-  await loadRoute(data[0]);
+// ================= SAFE STATE =================
+function safe(v, fallback=[]){
+  return v && v.length ? v : fallback;
 }
 
-// ==========================
-// 🧭 ROUTE + TURISTA UTAK
-// ==========================
-async function loadRoute(p){
+// ================= VIEW SWITCH =================
+function setView(v){
+  currentView = v;
 
-  map.setView([p.lat,p.lon],15);
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  event.target.classList.add("active");
 
-  let q = `
-  [out:json];
-  (
-    way["highway"~"primary|secondary|tertiary|residential|service"](around:1500,${p.lat},${p.lon});
-    way["highway"~"path|footway|track"](around:1500,${p.lat},${p.lon});
-  );
-  out geom;
+  renderUI(lastSelectedStop);
+}
+
+// ================= GTFS LOAD =================
+let lastSelectedStop = null;
+
+async function loadGTFS(){
+
+  const file = document.getElementById("zip").files[0];
+  const zip = await JSZip.loadAsync(file);
+
+  stops = [];
+  stopTimes = [];
+  departures = {};
+
+  for(let path in zip.files){
+
+    let name = path.toLowerCase().split("/").pop();
+    let content = await zip.files[path].async("string");
+
+    if(name==="stops.txt"){
+      stops = Papa.parse(content,{header:true,skipEmptyLines:true}).data
+        .filter(s=>s.stop_lat && s.stop_lon);
+    }
+
+    if(name==="stop_times.txt"){
+      stopTimes = Papa.parse(content,{header:true,skipEmptyLines:true}).data;
+    }
+  }
+
+  buildDepartures();
+  renderStops();
+
+  console.log("GTFS LOADED ✔", stops.length, stopTimes.length);
+
+  // 🔥 AUTO UI TRIGGER (EZ A LÉNYEG)
+  setTimeout(()=>{
+    renderUI(stops[0]);
+  },100);
+}
+
+// ================= BUILD DEPARTURES =================
+function buildDepartures(){
+
+  departures = {};
+
+  stopTimes.forEach(st=>{
+
+    if(!departures[st.stop_id]){
+      departures[st.stop_id]=[];
+    }
+
+    departures[st.stop_id].push({
+      trip: st.trip_id,
+      time: st.departure_time
+    });
+  });
+}
+
+// ================= STOPS =================
+function renderStops(){
+
+  map.eachLayer(l=>{
+    if(l instanceof L.CircleMarker) map.removeLayer(l);
+  });
+
+  stops.forEach(s=>{
+
+    L.circleMarker([s.stop_lat,s.stop_lon],{
+      radius:4,
+      color:"cyan"
+    }).addTo(map)
+    .on("click",()=>{
+      lastSelectedStop = s;
+      renderUI(s);
+    });
+  });
+
+  renderList();
+}
+
+// ================= LIST =================
+function renderList(){
+
+  let html = "<div class='panel'>📍 MEGÁLLÓK<br><br>";
+
+  safe(stops).slice(0,50).forEach(s=>{
+    html += `📍 ${s.stop_name}<br>`;
+  });
+
+  html += "</div>";
+
+  if(currentView==="list"){
+    document.getElementById("content").innerHTML = html;
+  }
+}
+
+// ================= MATRIX BOARD =================
+function renderBoard(stop){
+
+  let list = departures[stop?.stop_id] || [];
+
+  let html = `
+  <div class="matrix">
+    🟢 INDULÁSOK<br>
+    <b>${stop?.stop_name || "–"}</b>
+    <hr>
+    <div class="row"><b>Trip</b><b>Idő</b></div>
   `;
 
-  let res = await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:q});
-  let data = await res.json();
+  list.slice(0,15).forEach(d=>{
+    html += `
+    <div class="row">
+      <div>${d.trip}</div>
+      <div>${d.time}</div>
+    </div>`;
+  });
 
-  if(data.elements.length==0){
-    alert("Nincs út!");
+  html += "</div>";
+
+  if(currentView==="board"){
+    document.getElementById("content").innerHTML = html;
+  }
+}
+
+// ================= DEBUG =================
+function renderDebug(){
+
+  let html = `
+  <div class="panel">
+    🧠 DEBUG<br><br>
+    stops: ${stops.length}<br>
+    stop_times: ${stopTimes.length}<br>
+    departures keys: ${Object.keys(departures).length}<br>
+  </div>
+  `;
+
+  if(currentView==="debug"){
+    document.getElementById("content").innerHTML = html;
+  }
+}
+
+// ================= UI MASTER =================
+function renderUI(stop){
+
+  if(!stops.length){
+    document.getElementById("content").innerHTML =
+      "❌ NINCS GTFS BETÖLTVE";
     return;
   }
 
-  coords = [];
-
-  data.elements.forEach(el=>{
-    if(el.geometry){
-      el.geometry.forEach(p=>{
-        coords.push([p.lat,p.lon]);
-      });
-    }
-  });
-
-  drawBaseRoute();
-  await buildTerrain();
+  renderList();
+  renderBoard(stop);
+  renderDebug();
 }
 
-// ==========================
-// 🗺️ BASE ROUTE
-// ==========================
-function drawBaseRoute(){
-
-  layers.forEach(l=>map.removeLayer(l));
-  layers=[];
-
-  let line = L.polyline(coords,{
-    color:"#00d4ff",
-    weight:4,
-    opacity:0.8
-  }).addTo(map);
-
-  layers.push(line);
-}
-
-// ==========================
-// ⛰️ TERRAIN ENGINE
-// ==========================
-async function buildTerrain(){
-
-  let elev = await getElev(coords);
-
-  tbl.innerHTML="<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>";
-
-  for(let i=0;i<coords.length-1;i++){
-
-    let p1=coords[i];
-    let p2=coords[i+1];
-
-    let d = map.distance(p1,p2);
-    let dh = elev[i+1]-elev[i];
-    let slope = (dh/d)*100;
-
-    // 🎨 HEATMAP COLOR
-    let color = getColor(slope);
-
-    let seg = L.polyline([p1,p2],{
-      color:color,
-      weight:6,
-      opacity:0.9
-    }).addTo(map);
-
-    layers.push(seg);
-
-    let r = tbl.insertRow();
-    r.innerHTML=`
-      <td>${i}</td>
-      <td>${d.toFixed(1)}</td>
-      <td>${dh.toFixed(1)}</td>
-      <td>${slope.toFixed(2)}</td>
-    `;
-  }
-
-  alert("HEATMAP kész ✔");
-}
-
-// ==========================
-// 🎨 COLOR LOGIC
-// ==========================
-function getColor(s){
-
-  if(s < 2) return "#00ff6a";   // zöld (könnyű)
-  if(s < 5) return "#ffd000";   // sárga
-  if(s < 10) return "#ff7a00";  // narancs
-  return "#ff1e1e";             // piros (meredek)
-}
-
-// ==========================
-// ⛰️ ELEVATION API
-// ==========================
-async function getElev(points){
-
-  let res = await fetch("https://api.open-elevation.com/api/v1/lookup",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({
-      locations: points.map(p=>({latitude:p[0],longitude:p[1]}))
-    })
-  });
-
-  let data = await res.json();
-  return data.results.map(r=>r.elevation);
-}
 </script>
 
 </body>
