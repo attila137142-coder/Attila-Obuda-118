@@ -1,210 +1,204 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<title>TRANSIT FUSION CORE V6</title>
-
+<meta charset="UTF-8" />
+<title>ATTILA DISPATCHER FULL ENGINE V2</title>
+<!-- Leaflet -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<!-- PapaParse -->
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
+<!-- RTree -->
+<script src="https://unpkg.com/rbush@3.0.1/rbush.min.js"></script>
 <style>
-body{
-margin:0;
-font-family:Arial;
-background:#0b1220;
-color:white;
-}
-
-header{
-background:#111827;
-padding:10px;
-font-weight:bold;
-display:flex;
-justify-content:space-between;
-}
-
-.container{
-display:grid;
-grid-template-columns:360px 1fr;
-height:90vh;
-}
-
-.left{
-background:#1f2937;
-padding:10px;
-overflow:auto;
-}
-
-.box{
-background:#111827;
-padding:10px;
-margin-bottom:10px;
-border-radius:6px;
-}
-
-.row{
-display:flex;
-justify-content:space-between;
-padding:8px;
-border-bottom:1px solid #1f2937;
-font-size:13px;
-}
-
-.badge{
-font-size:11px;
-padding:2px 6px;
-background:#222;
-border-radius:4px;
-margin-left:5px;
-}
-
-.red{color:#ff4d4d;font-weight:bold;}
-.blue{color:#4da6ff;font-weight:bold;}
-.green{color:#7CFF7C;font-weight:bold;}
-
-.small{font-size:11px;opacity:0.8;}
+body { margin:0; font-family: Arial; background:#0b1220; color:white; }
+#map { height:70vh; width:100%; }
+.panel { padding:10px; background:#111a2e; }
+button, input { padding:8px; margin:5px; }
+table { width:100%; border-collapse: collapse; }
+td,th { border:1px solid #2a3550; padding:6px; font-size:13px; }
+th { background:#1b2740; }
 </style>
 </head>
-
 <body>
-
-<header>
-🚍 TRANSIT FUSION CORE V6
-<div id="clock"></div>
-</header>
-
-<div class="container">
-
-<!-- LEFT PANEL -->
-<div class="left">
-
-<div class="box">
-<h3>🧠 REGION FILTER</h3>
-<div>2-3 kerület + Szentendre + Agglo</div>
+<div class="panel">
+<h2>🚆 ATTILA DISPATCHER V2</h2>
+<input type="file" id="gtfsFile">
+<button onclick="loadGTFS()">GTFS LOAD</button>
+<button onclick="buildEngine()">ENGINE BUILD</button>
+<span id="status">READY</span>
 </div>
-
-<div class="box">
-<h3>🚏 CONTROL PANEL (15 sor)</h3>
-<div id="panel"></div>
+<div id="map"></div>
+<div class="panel">
+<table>
+<thead>
+<tr>
+<th>GLOBAL ID</th>
+<th>Név</th>
+<th>Lat</th>
+<th>Lon</th>
+<th>Forrás</th>
+</tr>
+</thead>
+<tbody id="list"></tbody>
+</table>
 </div>
-
-</div>
-
-<!-- RIGHT (INFO ONLY) -->
-<div class="left">
-
-<div class="box">
-<h3>📡 ENGINE STATUS</h3>
-<div id="status">INIT</div>
-</div>
-
-<div class="box">
-<h3>🚍 ROUTE CORE</h3>
-<div class="small">
-160 / 243 / 134 / H5 / VOLÁN SZENTENDRE
-</div>
-</div>
-
-</div>
-
-</div>
-
 <script>
-
-/* =========================
-CLOCK
-========================= */
-
-function clock(){
-document.getElementById("clock").innerText =
-new Date().toLocaleTimeString();
+// ---------------- MAP ----------------
+const map = L.map('map').setView([47.4979, 19.0402], 10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+attribution: 'OSM'
+}).addTo(map);
+// ---------------- DATA ----------------
+let stops = [];
+let tree = new RBush();
+let nodes = [];
+let id = 1;
+// ---------------- LOAD GTFS ----------------
+function loadGTFS() {
+const file = document.getElementById("gtfsFile").files[0];
+if (!file) return alert("Nincs GTFS file!");
+Papa.parse(file, {
+header: true,
+complete: (res) => {
+stops = res.data
+.filter(s => s.stop_lat && s.stop_lon)
+.map(s => ({
+stop_id: s.stop_id,
+name: s.stop_name,
+lat: parseFloat(s.stop_lat),
+lon: parseFloat(s.stop_lon),
+type: "GTFS"
+}));
+setStatus("GTFS loaded: " + stops.length);
+index();
 }
-setInterval(clock,1000);
-clock();
-
-/* =========================
-ROUTE MODEL (FUSION CORE)
-========================= */
-
-const routes = [
-{route:"160", id:"1600", type:"bus", region:"buda", baseDelay:30},
-{route:"243", id:"2430", type:"bus", region:"buda", baseDelay:-40},
-{route:"134", id:"1340", type:"bus", region:"buda", baseDelay:10},
-{route:"H5", id:"H5", type:"HÉV", region:"corridor", baseDelay:0},
-{route:"VOLÁN", id:"SZENT", type:"bus", region:"agglo", baseDelay:50},
-{route:"7", id:"7007", type:"tram", region:"bp", baseDelay:-20},
-{route:"4-6", id:"4600", type:"tram", region:"bp", baseDelay:80},
-{route:"M2", id:"M2", type:"metro", region:"bp", baseDelay:120},
-{route:"9", id:"9009", type:"bus", region:"bp", baseDelay:15},
-{route:"12A", id:"120A", type:"bus", region:"bp", baseDelay:5},
-{route:"8E", id:"8E00", type:"bus", region:"bp", baseDelay:-30},
-{route:"23", id:"2300", type:"bus", region:"bp", baseDelay:40},
-{route:"19", id:"1900", type:"tram", region:"bp", baseDelay:0},
-{route:"1", id:"1001", type:"tram", region:"bp", baseDelay:60},
-{route:"2", id:"2002", type:"tram", region:"bp", baseDelay:-10}
-];
-
-/* =========================
-STATUS ENGINE
-========================= */
-
-function state(delay){
-
-delay = Math.round(delay);
-
-if(delay > 30)
-return `<span class="red">🔴 SIET ${delay}s</span>`;
-
-if(delay < -30)
-return `<span class="blue">🔵 KÉSÉS ${Math.abs(delay)}s</span>`;
-
-return `<span class="green">🟢 PONTOS</span>`;
+});
 }
-
-/* =========================
-CORE SIM ENGINE
-========================= */
-
-function update(){
-
-let html = "";
-
-for(let i=0;i<15;i++){
-
-let v = routes[i];
-
-v.baseDelay += (Math.random()*6 - 3);
-
-let time = new Date();
-time.setSeconds(time.getSeconds() + v.baseDelay);
-
-html += `
-<div class="row">
-<div>
-${v.route}
-<span class="badge">${v.type}</span>
-<div class="small">${v.id} • ${v.region}</div>
-</div>
-
-<div>
-${state(v.baseDelay)}
-<div class="small">${time.toLocaleTimeString()}</div>
-</div>
-</div>
+// ---------------- INDEX ----------------
+function index() {
+tree.clear();
+stops.forEach(s => {
+tree.insert({
+minX: s.lon,
+minY: s.lat,
+maxX: s.lon,
+maxY: s.lat,
+data: s
+});
+});
+setStatus("Indexed (R-tree ready)");
+}
+// ---------------- DIST ----------------
+function dist(a,b){
+const R=6371e3;
+const toRad=x=>x*Math.PI/180;
+const dLat=toRad(b.lat-a.lat);
+const dLon=toRad(b.lon-a.lon);
+const A=toRad(a.lat), B=toRad(b.lat);
+const x=
+Math.sin(dLat/2)**2 +
+Math.cos(A)*Math.cos(B)*Math.sin(dLon/2)**2;
+return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+// ---------------- SCORE ----------------
+function score(a,b){
+let d = dist(a,b);
+let geo = d<50?1:d<120?0.7:0;
+let na=(a.name||"").toLowerCase();
+let nb=(b.name||"").toLowerCase();
+let name = (na.includes(nb)||nb.includes(na))?0.8:0.4;
+return geo*0.7 + name*0.3;
+}
+// ---------------- GET NODE ----------------
+function getNode(stop){
+let near = tree.search({
+minX: stop.lon-0.002,
+minY: stop.lat-0.002,
+maxX: stop.lon+0.002,
+maxY: stop.lat+0.002
+});
+let best=null;
+let bestScore=0;
+near.forEach(n=>{
+let s=score(stop,n.data);
+if(s>bestScore){
+bestScore=s;
+best=n.data;
+}
+});
+if(best && bestScore>0.85){
+let node = nodes.find(n =>
+n.sources.some(x=>x.stop_id===best.stop_id)
+);
+if(!node){
+node={
+id:"HUN_"+String(id++).padStart(5,"0"),
+name:stop.name,
+lat:stop.lat,
+lon:stop.lon,
+sources:[]
+};
+nodes.push(node);
+}
+node.sources.push(stop);
+return node;
+}
+let node={
+id:"HUN_"+String(id++).padStart(5,"0"),
+name:stop.name,
+lat:stop.lat,
+lon:stop.lon,
+sources:[stop]
+};
+nodes.push(node);
+return node;
+}
+// ---------------- BUILD ENGINE ----------------
+function buildEngine(){
+nodes=[];
+id=1;
+stops.forEach(s=>getNode(s));
+render();
+drawMap();
+setStatus("ENGINE READY: "+nodes.length+" nodes");
+}
+// ---------------- MAP DRAW ----------------
+function drawMap(){
+nodes.forEach(n=>{
+let color = n.sources.length>1 ? "red" : "blue";
+L.circleMarker([n.lat,n.lon],{
+radius:6,
+color:color
+})
+.addTo(map)
+.bindPopup(`
+<b>${n.name}</b><br>
+${n.id}<br>
+sources: ${n.sources.length}
+`);
+});
+}
+// ---------------- TABLE ----------------
+function render(){
+let out=document.getElementById("list");
+out.innerHTML="";
+nodes.forEach(n=>{
+let tr=document.createElement("tr");
+tr.innerHTML=`
+<td>${n.id}</td>
+<td>${n.name}</td>
+<td>${n.lat.toFixed(5)}</td>
+<td>${n.lon.toFixed(5)}</td>
+<td>${n.sources.length}</td>
 `;
+out.appendChild(tr);
+});
 }
-
-document.getElementById("panel").innerHTML = html;
-
-document.getElementById("status").innerText =
-"FUSION ACTIVE ✔";
+// ---------------- STATUS ----------------
+function setStatus(t){
+document.getElementById("status").innerText=t;
 }
-
-/* =========================
-LOOP
-========================= */
-
-setInterval(update,1000);
-update();
-
 </script>
-
 </body>
 </html>
