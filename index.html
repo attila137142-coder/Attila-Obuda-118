@@ -2,207 +2,141 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>TRANSIT GRAPH BUILDER V1</title>
-
+<title>ATTILA DISPATCHER V7 – GTFS DEPARTURE ENGINE</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 <style>
-body{
-margin:0;
-font-family:Arial;
-background:#0b1220;
-color:white;
-}
-
-header{
-background:#111827;
+body{margin:0;font-family:Arial;display:flex;height:100vh;}
+#sidebar{width:380px;background:#0b1220;color:#00ff66;overflow:auto;}
+#map{flex:1;}
+.matrix{
+background:black;
+color:#00ff66;
+font-family:monospace;
 padding:10px;
-font-weight:bold;
 }
-
-.container{
-display:grid;
-grid-template-columns:360px 1fr;
-height:90vh;
-}
-
-.left{
-background:#1f2937;
-padding:10px;
-overflow:auto;
-}
-
-.box{
-background:#111827;
-padding:10px;
-margin-bottom:10px;
-border-radius:6px;
-}
-
 .row{
+display:flex;
+justify-content:space-between;
+border-bottom:1px solid #003300;
+padding:4px;
+}
+.btn{
 padding:6px;
-border-bottom:1px solid #1f2937;
-font-size:13px;
-}
-
-.badge{
-font-size:11px;
-padding:2px 6px;
-background:#222;
-border-radius:4px;
-margin-left:5px;
-}
-
-.green{color:#7CFF7C;}
-.blue{color:#4da6ff;}
-.red{color:#ff4d4d;}
-
-input{
-width:100%;
-padding:8px;
-margin:5px 0;
+margin:4px;
+background:#003300;
+color:#00ff66;
 border:none;
-border-radius:5px;
+cursor:pointer;
 }
-
-.small{font-size:11px;opacity:0.8;}
 </style>
 </head>
-
 <body>
-
-<header>
-🧠 TRANSIT GRAPH BUILDER V1
-</header>
-
-<div class="container">
-
-<!-- LEFT -->
-<div class="left">
-
-<div class="box">
-<h3>🔍 STOP SEARCH</h3>
-<input oninput="searchStops(this.value)">
+<div id="sidebar">
+<h3>🟢 V7 GTFS DISPATCH</h3>
+<input type="file" id="zip">
+<button class="btn" onclick="loadGTFS()">LOAD GTFS</button>
+<div id="list"></div>
+<div id="panel">Válassz megállót</div>
 </div>
-
-<div class="box">
-<h3>🚏 STOPS</h3>
-<div id="stops"></div>
-</div>
-
-</div>
-
-<!-- RIGHT -->
-<div class="left">
-
-<div class="box">
-<h3>🧠 GRAPH VIEW</h3>
-<div id="graph"></div>
-</div>
-
-</div>
-
-</div>
-
+<div id="map"></div>
 <script>
-
-/* =========================
-GTFS MINIMAL STOP SET
-========================= */
-
-let STOPS = [
-
-{name:"Rendelőintézet", id:"1600_A"},
-{name:"Békásmegyer HÉV", id:"1600_B"},
-
-{name:"Békásmegyer HÉV", id:"2430_A"},
-{name:"Donát utca", id:"2430_B"},
-
-{name:"Szentlélek tér", id:"1340_A"},
-{name:"Békásmegyer", id:"1340_B"},
-
-{name:"Örs vezér tere", id:"M2_A"},
-{name:"Kálvin tér", id:"M2_B"}
-];
-
-/* =========================
-ROUTE MODEL (SIMPLIFIED GRAPH EDGES)
-========================= */
-
-let EDGES = [
-{from:"Rendelőintézet", to:"Békásmegyer HÉV", line:"160"},
-{from:"Békásmegyer HÉV", to:"Donát utca", line:"243"},
-{from:"Szentlélek tér", to:"Békásmegyer", line:"134"},
-{from:"Örs vezér tere", to:"Kálvin tér", line:"M2"}
-];
-
-/* =========================
-RENDER STOPS
-========================= */
-
-function renderStops(list){
-
-let html="";
-
-list.forEach(s=>{
-html += `
-<div class="row" onclick="showGraph('${s.name}')">
-🚏 ${s.name}
-<span class="badge">STOP</span>
-</div>`;
+// ---------------- MAP ----------------
+const map = L.map('map').setView([47.5,19.05],10);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+attribution:'OSM'
+}).addTo(map);
+// ---------------- STATE ----------------
+let stops = [];
+let stopTimes = [];
+let trips = [];
+let routes = [];
+// stop → departures cache
+let departures = {};
+// ---------------- LOAD GTFS ----------------
+async function loadGTFS(){
+const file = document.getElementById("zip").files[0];
+const zip = await JSZip.loadAsync(file);
+for(let path in zip.files){
+let name = path.toLowerCase().split("/").pop();
+let content = await zip.files[path].async("string");
+if(name==="stops.txt"){
+let p = Papa.parse(content,{header:true,skipEmptyLines:true});
+stops = p.data.filter(s=>s.stop_lat && s.stop_lon);
+}
+if(name==="stop_times.txt"){
+let p = Papa.parse(content,{header:true,skipEmptyLines:true});
+stopTimes = p.data;
+}
+if(name==="trips.txt"){
+let p = Papa.parse(content,{header:true,skipEmptyLines:true});
+trips = p.data;
+}
+if(name==="routes.txt"){
+let p = Papa.parse(content,{header:true,skipEmptyLines:true});
+routes = p.data;
+}
+}
+buildDepartures();
+renderStops();
+console.log("V7 READY ✔");
+}
+// ---------------- BUILD DEPARTURES ----------------
+function buildDepartures(){
+departures = {};
+for(let st of stopTimes){
+let sid = st.stop_id;
+if(!departures[sid]) departures[sid]=[];
+departures[sid].push({
+trip: st.trip_id,
+time: st.departure_time
 });
-
-document.getElementById("stops").innerHTML = html;
 }
-
-renderStops(STOPS);
-
-/* =========================
-SEARCH
-========================= */
-
-function searchStops(q){
-
-renderStops(
-STOPS.filter(s=>
-s.name.toLowerCase().includes(q.toLowerCase())
-)
-);
 }
-
-/* =========================
-GRAPH ENGINE (CORE IDEA)
-========================= */
-
-function showGraph(stop){
-
-let connections = EDGES.filter(e=>
-e.from === stop || e.to === stop
-);
-
-let html = `<h3>📍 ${stop}</h3>`;
-
-if(connections.length === 0){
-html += `<div class="red">Nincs közvetlen kapcsolat</div>`;
+// ---------------- FIND ROUTE LABEL ----------------
+function getRoute(trip_id){
+let trip = trips.find(t=>t.trip_id===trip_id);
+if(!trip) return "–";
+let route = routes.find(r=>r.route_id===trip.route_id);
+return route ? route.route_short_name : "–";
 }
-
-connections.forEach(c=>{
+// ---------------- RENDER STOPS ----------------
+function renderStops(){
+stops.forEach(s=>{
+L.circleMarker([s.stop_lat,s.stop_lon],{
+radius:4,
+color:"cyan"
+}).addTo(map)
+.on("click",()=>showBoard(s));
+});
+document.getElementById("list").innerHTML =
+stops.slice(0,50).map(s=>`📍 ${s.stop_name}`).join("<br>");
+}
+// ---------------- ZÖLD INDULÁSI TÁBLA ----------------
+function showBoard(stop){
+let list = departures[stop.stop_id] || [];
+let html = `
+<div class="matrix">
+<h3>🟢 INDULÁSOK</h3>
+<b>${stop.stop_name}</b>
+<div class="row">
+<b>Vonal</b><b>Trip</b><b>Idő</b>
+</div>
+`;
+list.slice(0,15).forEach(d=>{
 html += `
 <div class="row">
-🟢 ${c.from} → ${c.to}
-<span class="badge">${c.line}</span>
+<div>${getRoute(d.trip)}</div>
+<div>${d.trip}</div>
+<div>${d.time}</div>
 </div>`;
 });
-
-document.getElementById("graph").innerHTML = html;
+html += `</div>`;
+document.getElementById("panel").innerHTML = html;
 }
-
-/* =========================
-INIT GRAPH VIEW
-========================= */
-
-document.getElementById("graph").innerHTML =
-"<div class='small'>Válassz egy megállót a gráfhoz</div>";
-
 </script>
-
 </body>
 </html>
