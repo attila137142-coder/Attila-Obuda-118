@@ -1,1 +1,189 @@
-<!DOCTYPE html><html lang="hu"><head><meta charset="UTF-8"><title>ATTILA REALTIME CORE V5</title><meta name="viewport" content="width=device-width, initial-scale=1.0"><link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"><script src="https://unpkg.com/leaflet/dist/leaflet.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script><style>body{  margin:0;  display:flex;  font-family:Arial;  background:#061b1b;  color:white;}#sidebar{  width:420px;  height:100vh;  overflow:auto;  border-right:2px solid #00ff99;  background:#031313;}#map{  flex:1;  height:100vh;}.topbar{  padding:10px;  border-bottom:1px solid #00aa66;  background:#042020;}h2{  margin:0 0 10px 0;  color:#00ffaa;}button{  padding:8px;  margin:3px;  border:none;  background:#00aa66;  color:white;  cursor:pointer;  border-radius:6px;}button:hover{  background:#00cc88;}input{  width:95%;  padding:8px;  margin-top:8px;  background:#111;  color:white;  border:1px solid #00aa66;}#list{  padding:5px;}.stop{  padding:8px;  border-bottom:1px solid #114444;  cursor:pointer;}.stop:hover{  background:#083333;}.matrix{  background:black;  color:#00ff66;  font-family:monospace;  padding:10px;}.row{  display:flex;  justify-content:space-between;  border-bottom:1px solid #003300;  padding:6px;}.good{  color:#00ff66;}.late{  color:#44aaff;}.early{  color:#ff4444;}.blink{  animation:blink 1s infinite;}@keyframes blink{  50%{opacity:0.2;}}#panel{  border-top:1px solid #00aa66;}.info{  padding:8px;  font-size:12px;  color:#88ffaa;}</style></head><body><div id="sidebar"><div class="topbar"><h2>🚍 ATTILA REALTIME CORE V5</h2><input type="file" id="file"><button onclick="renderStops()">RENDER</button><button onclick="resetGTFS()">CACHE RESET</button><input id="search" placeholder="Keresés..."><div class="info">BKK + VOLÁN + HÉV + TURISTA + ERDEI VASÚT</div></div><div id="list"></div><div id="panel"><div class="matrix">Rendszer indul...</div></div></div><div id="map"></div><script>// ================= MAP =================const map = L.map('map').setView([47.6,19.05],9);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}).addTo(map);// ================= STORAGE =================let GTFS = {stops:[]};let markers = [];// ================= CSV PARSER =================function parseCSV(text){const lines = text.split(/\r?\n/).filter(l=>l.trim());if(!lines.length) return [];const headers = lines[0].split(",");return lines.slice(1).map(line=>{const values =line.split(/,(?=(?:(?:[^"]*"){2})*[^"]*$)/);let obj={};headers.forEach((h,i)=>{obj[h.trim()] =(values[i] || "").replace(/"/g,"").trim();});return obj;});}// ================= LOAD ZIP =================async function loadZIP(file){try{const zip = await JSZip.loadAsync(file);async function read(name){const f = zip.file(name);if(!f) return "";return await f.async("string");}const stopsText = await read("stops.txt");GTFS.stops = parseCSV(stopsText);localStorage.setItem("ATTILA_GTFS",JSON.stringify(GTFS));alert("✅ GTFS BETÖLTVE: "+ GTFS.stops.length+ " megálló");renderStops();}catch(e){console.error(e);alert("❌ GTFS HIBA");}}// ================= CACHE =================function loadCache(){const c = localStorage.getItem("ATTILA_GTFS");if(c){GTFS = JSON.parse(c);console.log("⚡ CACHE LOADED",GTFS.stops.length);}}function resetGTFS(){localStorage.removeItem("ATTILA_GTFS");alert("Cache törölve");}// ================= STOP TYPE =================function getType(stop){const id = (stop.stop_id ||"").toUpperCase();if(id.includes("BKK"))return "bkk";if(id.includes("VOLAN") ||id.includes("VOLÁN"))return "volan";if(id.includes("H5") ||id.startsWith("09"))return "hev";return "other";}// ================= MARKER COLOR =================function getColor(type){if(type==="bkk") return "yellow";if(type==="volan") return "blue";if(type==="hev") return "green";return "orange";}// ================= RENDER =================function renderStops(list=null){markers.forEach(m=>map.removeLayer(m));markers=[];const container =document.getElementById("list");container.innerHTML="";const stops = list || GTFS.stops;stops.forEach(stop=>{const lat =parseFloat(stop.stop_lat);const lon =parseFloat(stop.stop_lon);if(!isNaN(lat) &&!isNaN(lon) &&lat > 46 &&lat < 49 &&lon > 16 &&lon < 23){console.log(stop.stop_name,lat,lon);const type = getType(stop);const color = getColor(type);const marker = L.circleMarker([lat,lon],{radius:5,color:color,fillColor:color,fillOpacity:0.9}).addTo(map).on("click",()=>openStop(stop));markers.push(marker);const div =document.createElement("div");div.className="stop";let icon="📍";if(type==="bkk")icon="🚍";if(type==="volan")icon="🚌";if(type==="hev")icon="🚆";div.innerHTML =`${icon} ${stop.stop_name}`;div.onclick=()=>{map.setView([lat,lon],15);openStop(stop);};container.appendChild(div);}});}// ================= REALTIME PANEL =================function realtimeDemo(){return [{line:"243",dest:"Békásmegyer H",time:"2 p",delay:"IDŐBEN",cls:"good",vehicle:"NKH-852",type:"Volvo 7700"},{line:"204",dest:"Újmegyeri tér",time:"5 p",delay:"+2p",cls:"late",vehicle:"DPY-256",type:"Ikarus 412"},{line:"134",dest:"Szentendre",time:"1 p",delay:"-1p",cls:"early",vehicle:"GAN-765",type:"MAN Lion"}];}// ================= OPEN STOP =================function openStop(stop){const id =stop.stop_id || "ismeretlen";const deps = realtimeDemo();let html =`<div class="matrix">`;html +=`<h3>🚏 ${stop.stop_name}</h3>`;html +=`GTFS ID: ${id}<br><br>`;deps.forEach((d,i)=>{html += `<div class="row"><div><b>${d.line}</b></div><div>${d.dest}</div><div class="${i<2?"blink":""}">${d.time}</div><div class="${d.cls}">${d.delay}</div></div><div style="font-size:11px;padding-left:5px;padding-bottom:6px;color:#aaa;">🚍 ${d.vehicle}&nbsp;|&nbsp;${d.type}</div>`;});html += "</div>";// ===== REALTIME EMBED =====if(id){html += `<iframesrc="https://realtimenext.hu/embed/bkv/stops/${id}/schedule"width="100%"height="420"style="border:none;background:white;"></iframe>`;}document.getElementById("panel").innerHTML = html;}// ================= SEARCH =================document.getElementById("search").oninput = e=>{const q =e.target.value.toLowerCase();const filtered =GTFS.stops.filter(s=>(s.stop_name || "").toLowerCase().includes(q));renderStops(filtered);};// ================= FILE =================document.getElementById("file").onchange = e=>{loadZIP(e.target.files[0]);};// ================= START =================loadCache();if(GTFS.stops.length){renderStops();}</script></body></html>
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>Budapest GTFS Control Room V1</title>
+
+<style>
+body {
+    margin: 0;
+    font-family: Arial;
+    background: #0b1220;
+    color: #e5e7eb;
+}
+
+header {
+    background: #111827;
+    padding: 10px;
+    display: flex;
+    justify-content: space-between;
+    font-weight: bold;
+}
+
+.container {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    height: 80vh;
+}
+
+.left {
+    background: #1f2937;
+    padding: 10px;
+    overflow-y: auto;
+}
+
+.map {
+    background: #0a0f1c;
+    padding: 10px;
+}
+
+.panel {
+    height: 20vh;
+    background: #111827;
+    overflow-y: auto;
+    font-size: 12px;
+    padding: 8px;
+    border-top: 1px solid #333;
+}
+
+.item {
+    background: #374151;
+    padding: 8px;
+    margin: 6px 0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.item:hover {
+    background: #4b5563;
+}
+
+.badge {
+    font-size: 11px;
+    color: #93c5fd;
+}
+.small {
+    font-size: 12px;
+    opacity: 0.8;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <div>🚍 BUDAPEST GTFS CONTROL ROOM V1</div>
+    <div id="gps">GPS: keresés...</div>
+</header>
+
+<div class="container">
+
+<!-- LEFT PANEL -->
+<div class="left">
+    <h3>Járatok (demo GTFS)</h3>
+
+    <div class="item" onclick="selectRoute('118 busz')">
+        118-as busz
+        <div class="badge">Belváros ↔ Hűvösvölgy</div>
+    </div>
+
+    <div class="item" onclick="selectRoute('HÉV H5')">
+        HÉV H5
+        <div class="badge">Batthyány tér ↔ Szentendre</div>
+    </div>
+
+    <div class="item" onclick="selectRoute('MÁV IC')">
+        MÁV IC 600
+        <div class="badge">Budapest ↔ Debrecen</div>
+    </div>
+
+</div>
+
+<!-- MAP AREA -->
+<div class="map">
+    <h3>Térkép (placeholder)</h3>
+
+    <div class="small">
+        Ide jön később:
+        <ul>
+            <li>Leaflet térkép</li>
+            <li>GTFS stop layer</li>
+            <li>jármű marker</li>
+        </ul>
+    </div>
+
+    <hr>
+
+    <div>
+        <b>Kiválasztott járat:</b> <span id="route">nincs</span>
+    </div>
+
+    <div>
+        <b>Pontosság:</b> <span id="acc">-</span>
+    </div>
+
+    <div>
+        <b>Kapcsolat (becslés):</b> <span id="net">-</span>
+    </div>
+
+</div>
+
+</div>
+
+<!-- LOG PANEL -->
+<div class="panel" id="log">
+LOG indul...<br>
+</div>
+
+<script>
+
+// LOG rendszer
+function log(msg){
+    document.getElementById("log").innerHTML += msg + "<br>";
+}
+
+// Járat választás
+function selectRoute(name){
+    document.getElementById("route").innerText = name;
+    log("Járat kiválasztva: " + name);
+}
+
+// GPS lekérés
+if ("geolocation" in navigator) {
+    navigator.geolocation.watchPosition((pos) => {
+        let acc = pos.coords.accuracy;
+
+        document.getElementById("gps").innerText =
+            "GPS: " + pos.coords.latitude.toFixed(5) + ", " + pos.coords.longitude.toFixed(5);
+
+        document.getElementById("acc").innerText = Math.round(acc) + " m";
+
+    }, (err) => {
+        document.getElementById("gps").innerText = "GPS: nincs engedély";
+        log("GPS hiba: " + err.message);
+    });
+}
+
+// Network info (ha elérhető)
+if (navigator.connection) {
+    let conn = navigator.connection;
+    document.getElementById("net").innerText =
+        conn.effectiveType + " | downlink: " + conn.downlink + " Mbps";
+
+    log("Hálózat: " + conn.effectiveType);
+} else {
+    document.getElementById("net").innerText = "nem elérhető";
+    log("Network API nem támogatott");
+}
+
+// Mock realtime log
+setInterval(() => {
+    log("GTFS update tick...");
+}, 8000);
+
+log("Control Room V1 ready");
+
+</script>
+
+</body>
+</html>
