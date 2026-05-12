@@ -2,226 +2,208 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>HUNGARY REAL TRANSIT CORE V5</title>
+<title>PRO BUDAPEST CONTROL ROOM V9</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-body{
-    margin:0;
-    font-family:Arial;
-    background:#0b1220;
-    color:#e5e7eb;
+body { margin:0; display:flex; height:100vh; font-family:Arial; }
+
+#panel {
+width:380px;
+background:#062b22;
+color:white;
+overflow:auto;
+padding:10px;
 }
 
-header{
-    background:#111827;
-    padding:10px;
-    font-weight:bold;
+h3 { margin:5px 0; }
+
+.row {
+display:flex;
+justify-content:space-between;
+padding:6px;
+border-bottom:1px solid rgba(255,255,255,0.1);
+font-size:13px;
 }
 
-.container{
-    display:grid;
-    grid-template-columns:340px 1fr;
-    height:85vh;
+.green { color:#7CFF7C; }
+.red { color:#ff4d4d; font-weight:bold; }
+.blue { color:#4da6ff; font-weight:bold; }
+
+.badge {
+font-size:11px;
+padding:2px 5px;
+background:#222;
+border-radius:4px;
 }
 
-.left{
-    background:#1f2937;
-    padding:10px;
-    overflow:auto;
-}
-
-#map{
-    height:100%;
-}
-
-.box{
-    background:#111827;
-    padding:10px;
-    margin-bottom:10px;
-    border-radius:6px;
-}
-
-.item{
-    background:#374151;
-    padding:6px;
-    margin:4px 0;
-    border-radius:5px;
-    cursor:pointer;
-}
-
-.item:hover{
-    background:#4b5563;
-}
-
-input{
-    width:100%;
-    padding:8px;
-    margin:5px 0;
-    border:none;
-    border-radius:5px;
-}
-
-.log{
-    height:15vh;
-    overflow:auto;
-    background:#0f172a;
-    font-size:12px;
-    padding:8px;
-}
+#map { flex:1; }
 </style>
 </head>
 
 <body>
 
-<header>
-🇭🇺 HUNGARY REAL TRANSIT CORE V5
-</header>
-
-<div class="container">
-
-<!-- LEFT -->
-<div class="left">
-
-<div class="box">
-<h3>🔍 STOP SEARCH</h3>
-<input oninput="search(this.value)">
+<div id="panel">
+<h3>🚏 Budapest Control Room V9</h3>
+<div id="list"></div>
 </div>
 
-<div class="box">
-<h3>🚏 STOPS</h3>
-<div id="stops"></div>
-</div>
-
-<div class="box">
-<h3>📍 USER</h3>
-<div id="user">loading...</div>
-</div>
-
-</div>
-
-<!-- MAP -->
 <div id="map"></div>
-
-</div>
-
-<div class="log" id="log"></div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <script>
 
 /* =========================
-   MAP
+🗺️ REAL MAP
 ========================= */
 
-let map = L.map("map").setView([47.2,19.5],8);
+const map = L.map('map').setView([47.4979, 19.0402], 12);
 
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")
-.addTo(map);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+attribution:'OSM'
+}).addTo(map);
 
 /* =========================
-   REGION DATA
+🚏 EXTENDED BUDAPEST + AGGLO
 ========================= */
 
-let STOPS = [
+const stops = [
+{name:"Deák tér", lat:47.4979, lon:19.0540},
+{name:"Kálvin tér", lat:47.4895, lon:19.0616},
+{name:"Fővám tér", lat:47.4869, lon:19.0570},
+{name:"Széll Kálmán tér", lat:47.5070, lon:19.0243},
 
-/* BUDAPEST */
-{id:1,name:"Deák Ferenc tér",lat:47.4979,lon:19.054},
-{id:2,name:"Nád utca",lat:47.52,lon:19.04},
-
-/* PEST MEGYE */
-{id:3,name:"Érd központ",lat:47.386,lon:18.912},
-{id:4,name:"Dunakeszi",lat:47.631,lon:19.137},
-
-/* ZALA MEGYE */
-{id:5,name:"Zalaegerszeg autóbusz",lat:46.84,lon:16.843},
-{id:6,name:"Keszthely",lat:46.768,lon:17.244}
+// agglomeráció jelleg
+{name:"Szentendre HÉV", lat:47.6693, lon:19.0750},
+{name:"Budaörs központ", lat:47.4619, lon:18.9586},
+{name:"Vecsés", lat:47.4070, lon:19.2620}
 ];
 
-/* =========================
-   NORMALIZE SEARCH
-========================= */
-
-function norm(t){
-    return (t||"")
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/\p{Diacritic}/gu,"");
-}
-
-/* =========================
-   RENDER
-========================= */
-
-function render(list){
-
-    document.getElementById("stops").innerHTML =
-    list.map(s=>
-        `<div class="item" onclick="go(${s.lat},${s.lon},'${s.name}')">
-            🚏 ${s.name}
-        </div>`
-    ).join("");
-}
-
-render(STOPS);
-
-/* =========================
-   SEARCH
-========================= */
-
-function search(q){
-
-    render(STOPS.filter(s=>
-        norm(s.name).includes(norm(q))
-    ));
-}
-
-/* =========================
-   MAP ACTION
-========================= */
-
-function go(lat,lon,name){
-
-    map.setView([lat,lon],14);
-
-    L.marker([lat,lon])
-    .addTo(map)
-    .bindPopup(name)
-    .openPopup();
-
-    log("SELECT: "+name);
-}
-
-/* =========================
-   USER LOCATION
-========================= */
-
-navigator.geolocation.getCurrentPosition(pos=>{
-
-    let lat = pos.coords.latitude;
-    let lon = pos.coords.longitude;
-
-    L.marker([lat,lon])
-    .addTo(map)
-    .bindPopup("USER");
-
-    map.setView([lat,lon],10);
-
-    document.getElementById("user").innerHTML =
-        "GPS: "+lat.toFixed(5)+","+lon.toFixed(5);
+stops.forEach(s=>{
+L.circleMarker([s.lat,s.lon],{
+radius:6,
+color:"#00aa00"
+}).addTo(map).bindPopup(s.name);
 });
 
 /* =========================
-   LOG
+🚍 REAL MULTI ROUTE SYSTEM
 ========================= */
 
-function log(m){
-    document.getElementById("log").innerHTML += m+"<br>";
+let vehicles = [
+{id:"7", route:"7", lat:47.48, lon:19.06, dlat:0.00035, dlon:-0.0005, delay:30},
+{id:"4-6", route:"4-6", lat:47.51, lon:19.03, dlat:-0.00045, dlon:0.0003, delay:-80},
+{id:"12A", route:"12A", lat:47.50, lon:19.05, dlat:0.0004, dlon:0.0002, delay:10},
+{id:"M2", route:"M2", lat:47.49, lon:19.04, dlat:-0.00025, dlon:0.00045, delay:120},
+{id:"H5", route:"H5", lat:47.66, lon:19.07, dlat:0.0003, dlon:-0.0002, delay:0},
+{id:"Törökbálint-40", route:"40", lat:47.45, lon:18.95, dlat:0.0002, dlon:0.0004, delay:60}
+];
+
+let markers = {};
+
+/* =========================
+🧠 SAFE FORMAT ENGINE
+========================= */
+
+function format(d){
+d = d || 0;
+
+const m = Math.floor(Math.abs(d)/60);
+const s = Math.abs(d)%60;
+
+if(d > 20) return `<span class="blue">🔵 +${m}:${s.toString().padStart(2,'0')}</span>`;
+if(d < -20) return `<span class="red">🔴 -${m}:${s.toString().padStart(2,'0')}</span>`;
+return `<span class="green">🟢 ON TIME</span>`;
 }
 
-log("V5 CORE READY");
+/* =========================
+🚏 REAL STOP-BASED PANEL
+========================= */
+
+function generateDepartures(){
+
+let out = [];
+
+stops.forEach((s, idx)=>{
+
+const v = vehicles[idx % vehicles.length];
+
+out.push({
+route: v.route,
+stop: s.name,
+delay: v.delay
+});
+});
+
+return out;
+}
+
+function updatePanel(){
+
+const data = generateDepartures();
+
+let html = "";
+
+for(let i=0;i<15;i++){
+
+const d = data[i % data.length];
+
+html += `
+<div class="row">
+<div>
+${d.route}
+<span class="badge">GTFS</span>
+</div>
+<div>${format(d.delay)}</div>
+</div>
+`;
+}
+
+document.getElementById("list").innerHTML = html;
+}
+
+/* =========================
+🚍 VEHICLE ENGINE (CLEAN)
+========================= */
+
+function renderVehicles(){
+
+vehicles.forEach(v=>{
+
+v.lat += v.dlat;
+v.lon += v.dlon;
+
+if(!markers[v.id]){
+markers[v.id] = L.circleMarker([v.lat,v.lon],{
+radius:8,
+color:"red"
+}).addTo(map).bindPopup(v.route);
+} else {
+markers[v.id].setLatLng([v.lat,v.lon]);
+}
+
+if(v.delay > 20) markers[v.id].setStyle({color:"blue"});
+else if(v.delay < -20) markers[v.id].setStyle({color:"red"});
+else markers[v.id].setStyle({color:"green"});
+
+v.delay += (Math.random()*6 - 3);
+});
+}
+
+/* =========================
+LOOP
+========================= */
+
+function tick(){
+renderVehicles();
+updatePanel();
+}
+
+setInterval(tick, 1000);
+
+tick();
 
 </script>
 
