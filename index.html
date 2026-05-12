@@ -2,14 +2,14 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>SLOPE ULTRA V3.2</title>
+<title>SLOPE V4 INTELLIGENS</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <style>
-body { margin:0; background:#111; color:#fff; font-family:Arial;}
+body { margin:0; font-family:Arial; background:#111; color:#fff;}
 #map { height:50vh;}
 #panel { padding:10px;}
 input,button { padding:10px; margin:5px;}
-#results div { padding:5px; cursor:pointer; border-bottom:1px solid #333;}
+#results div { padding:6px; border-bottom:1px solid #333; cursor:pointer;}
 #results div:hover { background:#333;}
 table { width:100%; font-size:12px; border-collapse:collapse;}
 td,th { border:1px solid #444; padding:4px;}
@@ -27,7 +27,7 @@ td,th { border:1px solid #444; padding:4px;}
 <div id="results"></div>
 
 <table id="tbl">
-<tr><th>#</th><th>Hossz (m)</th><th>Δh (m)</th><th>%</th></tr>
+<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>
 </table>
 </div>
 
@@ -40,7 +40,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 let coords = [];
 let line;
 
-// 🔍 KERESÉS + AUTO LOAD
+// 🔍 KERESÉS
 async function search(){
   let q = street.value;
 
@@ -49,11 +49,6 @@ async function search(){
 
   results.innerHTML="";
 
-  if(data.length==0){
-    alert("Nincs találat!");
-    return;
-  }
-
   data.forEach(p=>{
     let d=document.createElement("div");
     d.innerText=p.display_name;
@@ -61,19 +56,18 @@ async function search(){
     results.appendChild(d);
   });
 
-  // AUTO LOAD első
   await load(data[0]);
 }
 
-// 📍 ULTRA LOAD (turista utak + fallback)
+// 📍 INTELLIGENS ÚT ILLESZTÉS
 async function load(p){
   map.setView([p.lat,p.lon],15);
 
   let q = `
   [out:json];
   (
-    way["highway"~"primary|secondary|tertiary|residential|service"](around:1200,${p.lat},${p.lon});
-    way["highway"~"path|footway|track"](around:1200,${p.lat},${p.lon});
+    way["highway"~"primary|secondary|tertiary|residential|service"](around:1500,${p.lat},${p.lon});
+    way["highway"~"path|footway|track"](around:1500,${p.lat},${p.lon});
   );
   out geom;
   `;
@@ -82,66 +76,73 @@ async function load(p){
   let data = await res.json();
 
   if(data.elements.length==0){
-    alert("Nincs út a közelben!");
+    alert("Nincs út!");
     return;
   }
 
-  // 🔥 leghosszabb út kiválasztása (stabilabb!)
-  let best = data.elements.reduce((a,b)=>
-    (b.geometry.length > a.geometry.length ? b : a)
-  );
+  // 🔥 1. WAY-ek szétbontása
+  let ways = data.elements.map(el=>el.geometry);
 
-  coords = best.geometry.map(p=>[p.lat,p.lon]);
+  // 🔥 2. láncolt összefűzés (intelligens sorrend)
+  coords = [];
 
-  if(line) map.removeLayer(line);
-  line = L.polyline(coords,{color:"cyan"}).addTo(map);
+  let used = new Array(ways.length).fill(false);
 
-  alert("Út betöltve ✔ (turista + közút)");
-}
+  coords.push([ways[0][0].lat, ways[0][0].lon]);
+  used[0]=true;
 
-// ⛰️ MAGASSÁG (stabil mintavétel)
-async function getElev(points){
+  let changed=true;
 
-  let step = Math.max(1, Math.floor(points.length/80));
+  while(changed){
+    changed=false;
 
-  let sample = points.filter((_,i)=> i%step===0);
+    for(let i=0;i<ways.length;i++){
+      if(used[i]) continue;
 
-  let res = await fetch("https://api.open-elevation.com/api/v1/lookup",{
-    method:"POST",
-    headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({
-      locations: sample.map(p=>({latitude:p[0],longitude:p[1]}))
-    })
-  });
+      let w = ways[i];
 
-  let data = await res.json();
+      let last = coords[coords.length-1];
 
-  let elev=[];
-  let j=0;
+      let start = [w[0].lat,w[0].lon];
+      let end = [w[w.length-1].lat,w[w.length-1].lon];
 
-  for(let i=0;i<points.length;i++){
-    if(i%step===0){
-      elev.push(data.results[j].elevation);
-      j++;
-    } else {
-      elev.push(elev[elev.length-1]);
+      // ha illeszkedik
+      if(distance(last,start)<0.0005){
+        w.forEach(p=>coords.push([p.lat,p.lon]));
+        used[i]=true;
+        changed=true;
+      }
+      else if(distance(last,end)<0.0005){
+        w.reverse().forEach(p=>coords.push([p.lat,p.lon]));
+        used[i]=true;
+        changed=true;
+      }
     }
   }
 
-  return elev;
+  if(line) map.removeLayer(line);
+
+  line = L.polyline(coords,{color:"cyan",weight:5}).addTo(map);
+
+  alert(`Út betöltve ✔ (${coords.length} pont)`);
 }
 
-// 📊 MEREDESÉG (BIZTOS KIÍRÁS)
+// 📏 egyszerű távolság
+function distance(a,b){
+  return Math.abs(a[0]-b[0])+Math.abs(a[1]-b[1]);
+}
+
+// ⛰️ MEREDESÉG
 async function calc(){
 
   if(coords.length<2){
-    alert("Nincs út betöltve!");
+    alert("Nincs út!");
     return;
   }
 
   let elev = await getElev(coords);
 
-  tbl.innerHTML="<tr><th>#</th><th>Hossz (m)</th><th>Δh (m)</th><th>%</th></tr>";
+  tbl.innerHTML="<tr><th>#</th><th>m</th><th>Δh</th><th>%</th></tr>";
 
   for(let i=0;i<coords.length-1;i++){
 
@@ -152,25 +153,35 @@ async function calc(){
     let dh = elev[i+1]-elev[i];
     let slope = (dh/d)*100;
 
-    let color="green";
-    if(slope>5) color="orange";
-    if(slope>10) color="red";
+    let c="green";
+    if(slope>5) c="orange";
+    if(slope>10) c="red";
 
-    L.polyline([p1,p2],{color:color,weight:5}).addTo(map);
+    L.polyline([p1,p2],{color:c,weight:4}).addTo(map);
 
-    let row = tbl.insertRow();
-
-    row.innerHTML=`
-      <td>${i}</td>
-      <td>${d.toFixed(1)}</td>
-      <td>${dh.toFixed(1)}</td>
-      <td>${slope.toFixed(2)}</td>
-    `;
+    let r = tbl.insertRow();
+    r.innerHTML=`<td>${i}</td><td>${d.toFixed(1)}</td><td>${dh.toFixed(1)}</td><td>${slope.toFixed(2)}</td>`;
   }
 
-  alert("KÉSZ ✔ Minden szakasz kiszámolva!");
+  alert("KÉSZ ✔ intelligens út + slope");
+}
+
+// ⛰️ magasság
+async function getElev(points){
+
+  let res = await fetch("https://api.open-elevation.com/api/v1/lookup",{
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      locations: points.map(p=>({latitude:p[0],longitude:p[1]}))
+    })
+  });
+
+  let data = await res.json();
+  return data.results.map(r=>r.elevation);
 }
 </script>
 
 </body>
 </html>
+
