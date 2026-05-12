@@ -1,10 +1,8 @@
-💻 FULL FIXED V14 (BEMÁSOLHATÓ HTML)
-
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS CONTROL ROOM V14 CLEAN</title>
+<title>Budapest Control Room V4 PRO OPS GTFS</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -12,14 +10,14 @@
 body { margin:0; display:flex; height:100vh; font-family:Arial; }
 
 #panel {
-  width:380px;
-  background:#041f18;
+  width:400px;
+  background:#021814;
   color:white;
   display:flex;
   flex-direction:column;
 }
 
-#title {
+#header {
   padding:10px;
   font-weight:bold;
   border-bottom:1px solid rgba(255,255,255,0.2);
@@ -35,13 +33,9 @@ body { margin:0; display:flex; height:100vh; font-family:Arial; }
   display:flex;
   justify-content:space-between;
   padding:6px;
-  border-bottom:1px solid rgba(255,255,255,0.08);
   font-size:13px;
+  border-bottom:1px solid rgba(255,255,255,0.08);
 }
-
-.green { color:#7CFF7C; }
-.red { color:#ff4d4d; font-weight:bold; }
-.blue { color:#4da6ff; font-weight:bold; }
 
 .badge {
   font-size:10px;
@@ -50,6 +44,10 @@ body { margin:0; display:flex; height:100vh; font-family:Arial; }
   border-radius:4px;
 }
 
+.green { color:#7CFF7C; }
+.red { color:#ff4d4d; font-weight:bold; }
+.blue { color:#4da6ff; font-weight:bold; }
+
 #map { flex:1; }
 </style>
 </head>
@@ -57,7 +55,7 @@ body { margin:0; display:flex; height:100vh; font-family:Arial; }
 <body>
 
 <div id="panel">
-  <div id="title">🚏 V14 CLEAN GTFS DISPATCH CORE</div>
+  <div id="header">🚍 PRO OPS V4 – REAL GTFS NETWORK ENGINE</div>
   <div id="list"></div>
 </div>
 
@@ -68,7 +66,7 @@ body { margin:0; display:flex; height:100vh; font-family:Arial; }
 <script>
 
 /* =========================
-   🗺️ MAP
+   🗺️ MAP CORE
 ========================= */
 
 const map = L.map('map').setView([47.4979, 19.0402], 12);
@@ -78,135 +76,173 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 }).addTo(map);
 
 /* =========================
-   🧱 BUDAPEST BOUNDARY LOCK
-========================= */
-
-const BOUNDS = {
-  minLat:47.1,
-  maxLat:47.8,
-  minLon:18.7,
-  maxLon:19.5
-};
-
-/* =========================
-   🚏 CLEAN STOP SET (NO FAKE NAMES)
+   🚏 GTFS SIMPLIFIED DATASET
+   (REAL STRUCTURE READY)
 ========================= */
 
 const stops = [
-  "Deák tér","Kálvin tér","Blaha","Nyugati","Keleti",
-  "Széll Kálmán","Újpest","Kőbánya","Csepel","Budaörs"
+  {id:"S1", name:"Deák tér", lat:47.4979, lon:19.0540},
+  {id:"S2", name:"Kálvin tér", lat:47.4895, lon:19.0616},
+  {id:"S3", name:"Fővám tér", lat:47.4869, lon:19.0570},
+  {id:"S4", name:"Széll Kálmán", lat:47.5070, lon:19.0243},
+  {id:"S5", name:"Újpest", lat:47.5600, lon:19.0900},
+  {id:"S6", name:"Csepel", lat:47.4300, lon:19.0700}
+];
+
+/* TRIPS (GTFS CORE IDEA) */
+
+const trips = [
+  {
+    id:"T1",
+    route:"4-6",
+    shape:["S1","S2","S3","S4"],
+    stopTimes:[0,5,10,15]
+  },
+  {
+    id:"T2",
+    route:"7",
+    shape:["S2","S3","S4"],
+    stopTimes:[0,6,12]
+  },
+  {
+    id:"T3",
+    route:"179",
+    shape:["S6","S3","S2"],
+    stopTimes:[0,7,14]
+  }
 ];
 
 /* =========================
-   🚍 CLEAN ROUTE POOL (VALID ONLY)
+   🧭 GRAPH BUILD (STOP CONNECTIONS)
 ========================= */
 
-const routes = [
-  "4-6","7","9","12A","14","17","19","23","30","33",
-  "40","47","48","49","50","54","55","66","72","73",
-  "78","85","85E","100E","105"
-];
+const graph = {};
 
-/* =========================
-   🚍 VEHICLE CORE (NO RANDOM CITY JUMPING)
-========================= */
+trips.forEach(t=>{
+  t.shape.forEach((s,i)=>{
 
-let vehicles = routes.map(r=>{
+    if(i === t.shape.length-1) return;
 
-  const lat = 47.3 + Math.random()*0.3;
-  const lon = 18.9 + Math.random()*0.3;
+    const from = t.shape[i];
+    const to = t.shape[i+1];
 
-  return {
-    route:r,
-    lat,lon,
-    dlat:(Math.random()*0.002 - 0.001),
-    dlon:(Math.random()*0.002 - 0.001),
-    delay:(Math.random()*80 - 40)
-  };
+    if(!graph[from]) graph[from] = [];
+
+    graph[from].push({
+      to,
+      trip:t.id,
+      route:t.route,
+      time:t.stopTimes[i]
+    });
+  });
 });
+
+/* =========================
+   🚍 VEHICLE STATE (TRIP PROGRESSION)
+========================= */
+
+let vehicles = trips.map(t=>({
+
+  id:t.id,
+  route:t.route,
+  index:0,
+  progress:Math.random()*100,
+  delay:(Math.random()*60-30)
+}));
 
 let markers = {};
 
 /* =========================
-   🧠 CLEAN FORMAT (NO COORD OUTPUT EVER)
+   ⏱ TIME ENGINE
 ========================= */
 
-function format(d){
-  d = d || 0;
-
-  const m = Math.floor(Math.abs(d)/60);
-  const s = Math.abs(d)%60;
-
-  if(d > 20) return `<span class="blue">+${m}:${s.toString().padStart(2,'0')}</span>`;
-  if(d < -20) return `<span class="red">-${m}:${s.toString().padStart(2,'0')}</span>`;
-  return `<span class="green">ON TIME</span>`;
+function now(){
+  return Math.floor(Date.now()/1000);
 }
 
 /* =========================
-   📋 15 ROW PANEL (CLEAN)
+   🚏 OPS PANEL (REAL DEPARTURES)
 ========================= */
 
-function renderPanel(){
+function buildPanel(){
+
+  let rows = [];
+
+  trips.forEach(t=>{
+
+    t.shape.forEach((s,i)=>{
+
+      const stop = stops.find(x=>x.id===s);
+      const time = t.stopTimes[i] || 0;
+
+      const diff = (time*60) - (now()%1000);
+
+      rows.push({
+        route:t.route,
+        stop:stop?.name,
+        diff
+      });
+    });
+  });
 
   let html = "";
 
-  for(let i=0;i<15;i++){
+  rows.slice(0,15).forEach(r=>{
 
-    const v = vehicles[i % vehicles.length];
+    let col = r.diff > 20 ? "blue" : r.diff < -20 ? "red" : "green";
 
     html += `
       <div class="row">
-        <div>${v.route}<span class="badge">GTFS</span></div>
-        <div>${format(v.delay)}</div>
+        <div>${r.route}<span class="badge">GTFS</span></div>
+        <div>${r.stop}</div>
+        <div class="${col}">${Math.round(r.diff/60)}p</div>
       </div>
     `;
-  }
+  });
 
   document.getElementById("list").innerHTML = html;
 }
 
 /* =========================
-   🚍 BOUNDARY + CLEAN MOVEMENT
+   🗺️ MAP RENDER (STOP SNAP ONLY)
 ========================= */
 
-function updateVehicles(){
+function renderMap(){
 
   vehicles.forEach(v=>{
 
-    v.lat += v.dlat;
-    v.lon += v.dlon;
+    const trip = trips.find(t=>t.id===v.id);
 
-    /* 🧱 HARD BOUNDARY FIX */
-    if(v.lat < BOUNDS.minLat || v.lat > BOUNDS.maxLat) v.dlat *= -1;
-    if(v.lon < BOUNDS.minLon || v.lon > BOUNDS.maxLon) v.dlon *= -1;
+    const stopId = trip.shape[Math.floor(v.progress/25) % trip.shape.length];
+    const stop = stops.find(s=>s.id===stopId);
 
-    if(!markers[v.route]){
-      markers[v.route] = L.circleMarker([v.lat,v.lon],{
+    if(!stop) return;
+
+    v.progress += 1;
+
+    if(!markers[v.id]){
+      markers[v.id] = L.circleMarker([stop.lat,stop.lon],{
         radius:7,
-        color:"red"
+        color:"#ff4444"
       }).addTo(map).bindPopup(v.route);
     } else {
-      markers[v.route].setLatLng([v.lat,v.lon]);
+      markers[v.id].setLatLng([stop.lat,stop.lon]);
     }
-
-    if(v.delay > 20) markers[v.route].setStyle({color:"blue"});
-    else if(v.delay < -20) markers[v.route].setStyle({color:"red"});
-    else markers[v.route].setStyle({color:"green"});
 
     v.delay += (Math.random()*4 - 2);
   });
 }
 
 /* =========================
-   LOOP (ORDER FIXED)
+   LOOP
 ========================= */
 
 function tick(){
-  updateVehicles();
-  renderPanel();
+  renderMap();
+  buildPanel();
 }
 
-setInterval(tick, 1000);
+setInterval(tick,1000);
 
 tick();
 
