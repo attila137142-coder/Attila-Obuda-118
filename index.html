@@ -2,251 +2,168 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Budapest Control Room V4 PRO OPS GTFS</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-
-<style>
-body { margin:0; display:flex; height:100vh; font-family:Arial; }
-
-#panel {
-  width:400px;
-  background:#021814;
-  color:white;
-  display:flex;
-  flex-direction:column;
-}
-
-#header {
-  padding:10px;
-  font-weight:bold;
-  border-bottom:1px solid rgba(255,255,255,0.2);
-}
-
-#list {
-  flex:1;
-  overflow:auto;
-  padding:8px;
-}
-
-.row {
-  display:flex;
-  justify-content:space-between;
-  padding:6px;
-  font-size:13px;
-  border-bottom:1px solid rgba(255,255,255,0.08);
-}
-
-.badge {
-  font-size:10px;
-  background:#222;
-  padding:2px 5px;
-  border-radius:4px;
-}
-
-.green { color:#7CFF7C; }
-.red { color:#ff4d4d; font-weight:bold; }
-.blue { color:#4da6ff; font-weight:bold; }
-
-#map { flex:1; }
-</style>
+<title>GTFS INDEX ENGINE V1</title>
 </head>
 
 <body>
+<input type="file" id="file">
+<pre id="log">INDEX ENGINE READY</pre>
 
-<div id="panel">
-  <div id="header">🚍 PRO OPS V4 – REAL GTFS NETWORK ENGINE</div>
-  <div id="list"></div>
-</div>
-
-<div id="map"></div>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 
 /* =========================
-   🗺️ MAP CORE
+🧠 STORAGE
 ========================= */
 
-const map = L.map('map').setView([47.4979, 19.0402], 12);
+let GTFS = {
+stops: [],
+trips: [],
+stop_times: [],
+routes: []
+};
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'OSM'
-}).addTo(map);
+let INDEX = {
+stop: {},
+trip: {},
+route: {}
+};
 
 /* =========================
-   🚏 GTFS SIMPLIFIED DATASET
-   (REAL STRUCTURE READY)
+📦 CSV PARSER
 ========================= */
 
-const stops = [
-  {id:"S1", name:"Deák tér", lat:47.4979, lon:19.0540},
-  {id:"S2", name:"Kálvin tér", lat:47.4895, lon:19.0616},
-  {id:"S3", name:"Fővám tér", lat:47.4869, lon:19.0570},
-  {id:"S4", name:"Széll Kálmán", lat:47.5070, lon:19.0243},
-  {id:"S5", name:"Újpest", lat:47.5600, lon:19.0900},
-  {id:"S6", name:"Csepel", lat:47.4300, lon:19.0700}
-];
+function parse(text){
 
-/* TRIPS (GTFS CORE IDEA) */
+const lines = text.trim().split("\n");
+const h = lines[0].split(",");
 
-const trips = [
-  {
-    id:"T1",
-    route:"4-6",
-    shape:["S1","S2","S3","S4"],
-    stopTimes:[0,5,10,15]
-  },
-  {
-    id:"T2",
-    route:"7",
-    shape:["S2","S3","S4"],
-    stopTimes:[0,6,12]
-  },
-  {
-    id:"T3",
-    route:"179",
-    shape:["S6","S3","S2"],
-    stopTimes:[0,7,14]
-  }
-];
+return lines.slice(1).map(l=>{
+const o = {};
+l.split(",").forEach((v,i)=>o[h[i]]=v);
+return o;
+});
+}
 
 /* =========================
-   🧭 GRAPH BUILD (STOP CONNECTIONS)
+🧠 BUILD STOP INDEX
 ========================= */
 
-const graph = {};
+function buildStopIndex(){
 
-trips.forEach(t=>{
-  t.shape.forEach((s,i)=>{
+INDEX.stop = {};
 
-    if(i === t.shape.length-1) return;
+GTFS.stop_times.forEach(st=>{
 
-    const from = t.shape[i];
-    const to = t.shape[i+1];
+if(!INDEX.stop[st.stop_id])
+INDEX.stop[st.stop_id] = [];
 
-    if(!graph[from]) graph[from] = [];
-
-    graph[from].push({
-      to,
-      trip:t.id,
-      route:t.route,
-      time:t.stopTimes[i]
-    });
-  });
+INDEX.stop[st.stop_id].push({
+trip_id: st.trip_id,
+time: st.departure_time
+});
 });
 
-/* =========================
-   🚍 VEHICLE STATE (TRIP PROGRESSION)
-========================= */
-
-let vehicles = trips.map(t=>({
-
-  id:t.id,
-  route:t.route,
-  index:0,
-  progress:Math.random()*100,
-  delay:(Math.random()*60-30)
-}));
-
-let markers = {};
-
-/* =========================
-   ⏱ TIME ENGINE
-========================= */
-
-function now(){
-  return Math.floor(Date.now()/1000);
 }
 
 /* =========================
-   🚏 OPS PANEL (REAL DEPARTURES)
+🧠 BUILD TRIP INDEX
 ========================= */
 
-function buildPanel(){
+function buildTripIndex(){
 
-  let rows = [];
+INDEX.trip = {};
 
-  trips.forEach(t=>{
+GTFS.stop_times.forEach(st=>{
 
-    t.shape.forEach((s,i)=>{
+if(!INDEX.trip[st.trip_id])
+INDEX.trip[st.trip_id] = [];
 
-      const stop = stops.find(x=>x.id===s);
-      const time = t.stopTimes[i] || 0;
+INDEX.trip[st.trip_id].push({
+stop_id: st.stop_id,
+time: st.departure_time
+});
+});
 
-      const diff = (time*60) - (now()%1000);
-
-      rows.push({
-        route:t.route,
-        stop:stop?.name,
-        diff
-      });
-    });
-  });
-
-  let html = "";
-
-  rows.slice(0,15).forEach(r=>{
-
-    let col = r.diff > 20 ? "blue" : r.diff < -20 ? "red" : "green";
-
-    html += `
-      <div class="row">
-        <div>${r.route}<span class="badge">GTFS</span></div>
-        <div>${r.stop}</div>
-        <div class="${col}">${Math.round(r.diff/60)}p</div>
-      </div>
-    `;
-  });
-
-  document.getElementById("list").innerHTML = html;
 }
 
 /* =========================
-   🗺️ MAP RENDER (STOP SNAP ONLY)
+🧠 TIME ENGINE
 ========================= */
 
-function renderMap(){
+function toSec(t){
+const p = t.split(":");
+return (+p[0])*3600 + (+p[1])*60 + (+p[2]||0);
+}
 
-  vehicles.forEach(v=>{
-
-    const trip = trips.find(t=>t.id===v.id);
-
-    const stopId = trip.shape[Math.floor(v.progress/25) % trip.shape.length];
-    const stop = stops.find(s=>s.id===stopId);
-
-    if(!stop) return;
-
-    v.progress += 1;
-
-    if(!markers[v.id]){
-      markers[v.id] = L.circleMarker([stop.lat,stop.lon],{
-        radius:7,
-        color:"#ff4444"
-      }).addTo(map).bindPopup(v.route);
-    } else {
-      markers[v.id].setLatLng([stop.lat,stop.lon]);
-    }
-
-    v.delay += (Math.random()*4 - 2);
-  });
+function nowSec(){
+const d = new Date();
+return d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds();
 }
 
 /* =========================
-   LOOP
+🚏 QUERY ENGINE
 ========================= */
 
-function tick(){
-  renderMap();
-  buildPanel();
+function getDepartures(stop_id){
+
+const list = INDEX.stop[stop_id] || [];
+const now = nowSec();
+
+return list
+.map(d=>({
+trip:d.trip_id,
+time:d.time,
+diff:toSec(d.time)-now
+}))
+.sort((a,b)=>a.diff-b.diff)
+.slice(0,10);
 }
 
-setInterval(tick,1000);
+/* =========================
+🧭 VIEW FILTER (ÓBUDA–SZENTENDRE)
+========================= */
 
-tick();
+function applyFilter(){
+
+const allowedStops = ["BKS","KAS","OBU","AQI","RUF","SZT"];
+
+let out = "";
+
+allowedStops.forEach(s=>{
+
+const dep = getDepartures(s);
+
+dep.forEach(d=>{
+out += `${s} | ${d.trip} | ${d.time} | ${d.diff}\n`;
+});
+
+});
+
+document.getElementById("log").innerText = out;
+
+}
+
+/* =========================
+📦 LOAD GTFS
+========================= */
+
+document.getElementById("file").addEventListener("change", async e=>{
+
+const zip = await JSZip.loadAsync(e.target.files[0]);
+
+GTFS.stops = parse(await zip.file("stops.txt").async("string"));
+GTFS.trips = parse(await zip.file("trips.txt").async("string"));
+GTFS.stop_times = parse(await zip.file("stop_times.txt").async("string"));
+
+buildStopIndex();
+buildTripIndex();
+
+applyFilter();
+
+});
 
 </script>
-
 </body>
 </html>
