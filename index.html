@@ -2,12 +2,274 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila Közlekedés</title>
+<title>🚆 Unified Transit V1</title>
+
+<style>
+body{
+margin:0;
+font-family:Arial;
+background:#0b1220;
+color:white;
+overflow:hidden;
+}
+
+header{
+background:#111827;
+padding:12px;
+color:#4ade80;
+font-weight:bold;
+}
+
+canvas{
+display:block;
+}
+
+.panel{
+position:absolute;
+top:60px;
+left:10px;
+background:#111827;
+padding:12px;
+border-radius:10px;
+width:320px;
+font-size:13px;
+line-height:1.4;
+}
+
+.badge{
+padding:2px 6px;
+border-radius:6px;
+display:inline-block;
+margin:2px 0;
+}
+
+.green{background:#14532d;color:#4ade80;}
+.yellow{background:#78350f;color:#fbbf24;}
+.red{background:#7f1d1d;color:#f87171;}
+</style>
 </head>
+
 <body>
 
-<h1>Attila-Obuda-118 ✔️</h1>
-<p>Rendszer újra stabil.</p>
+<header>🚆 UNIFIED TRANSIT V1 – Indulás • Útvonal • Távolság • Késés</header>
+
+<div class="panel" id="panel">
+🧠 Loading...
+</div>
+
+<canvas id="c"></canvas>
+
+<script>
+
+// ============================
+// CANVAS
+// ============================
+
+const c=document.getElementById("c");
+const ctx=c.getContext("2d");
+
+function resize(){
+c.width=window.innerWidth;
+c.height=window.innerHeight;
+}
+window.onresize=resize;
+resize();
+
+// ============================
+// ROUTE MODEL (UBU CORE)
+// ============================
+
+const route={
+name:"Budapest → Vác → Nagymaros → Szob",
+stops:[
+{name:"Budapest", x:150, y:400, km:0},
+{name:"Vác", x:400, y:300, km:35},
+{name:"Nagymaros", x:650, y:220, km:60},
+{name:"Szob", x:850, y:160, km:80}
+],
+departure:{
+scheduled:12*60, // percben
+delay:Math.floor(Math.random()*10)
+},
+vehicle:{
+id:"IC-742",
+speed:60 // km/h
+}
+};
+
+// ============================
+// TIME
+// ============================
+
+let start=Date.now();
+
+// ============================
+// DISTANCE HELPERS
+// ============================
+
+function totalKm(){
+return route.stops[route.stops.length-1].km;
+}
+
+// progress time → km
+function getProgressKm(){
+
+let elapsed=(Date.now()-start)/1000/60; // perc
+let speed=route.vehicle.speed/60; // km/min
+
+let km=elapsed*speed;
+
+let delayedStart=route.departure.delay*speed;
+
+return Math.min(totalKm(),Math.max(0,km-delayedStart));
+}
+
+// interpolate position
+function getPos(km){
+
+for(let i=0;i<route.stops.length-1;i++){
+
+let a=route.stops[i];
+let b=route.stops[i+1];
+
+if(km>=a.km && km<=b.km){
+
+let t=(km-a.km)/(b.km-a.km);
+
+return{
+x:a.x+(b.x-a.x)*t,
+y:a.y+(b.y-a.y)*t
+};
+
+}
+
+}
+
+return route.stops[route.stops.length-1];
+
+}
+
+// ============================
+// DRAW MAP
+// ============================
+
+function drawLine(){
+
+ctx.strokeStyle="#334155";
+ctx.lineWidth=3;
+
+ctx.beginPath();
+
+route.stops.forEach((s,i)=>{
+
+if(i===0) ctx.moveTo(s.x,s.y);
+else ctx.lineTo(s.x,s.y);
+
+});
+
+ctx.stroke();
+
+}
+
+function drawStops(){
+
+route.stops.forEach(s=>{
+
+ctx.fillStyle="#4ade80";
+ctx.beginPath();
+ctx.arc(s.x,s.y,6,0,Math.PI*2);
+ctx.fill();
+
+ctx.fillStyle="white";
+ctx.font="12px Arial";
+ctx.fillText(s.name,s.x+8,s.y-8);
+
+});
+
+}
+
+// ============================
+// TRAIN
+// ============================
+
+function drawTrain(){
+
+let km=getProgressKm();
+let pos=getPos(km);
+
+ctx.fillStyle="#f87171";
+ctx.beginPath();
+ctx.arc(pos.x,pos.y,8,0,Math.PI*2);
+ctx.fill();
+
+ctx.fillStyle="white";
+ctx.font="12px Arial";
+
+ctx.fillText(
+`🚆 ${route.vehicle.id}`,
+pos.x+10,pos.y-10
+);
+
+}
+
+// ============================
+// PANEL
+// ============================
+
+function updatePanel(){
+
+let km=getProgressKm();
+let total=totalKm();
+let percent=(km/total)*100;
+
+let delay=route.departure.delay;
+
+let color="green";
+if(delay>5) color="yellow";
+if(delay>10) color="red";
+
+document.getElementById("panel").innerHTML=`
+
+🧭 Útvonal: <b>${route.name}</b><br><br>
+
+⏱️ Menetrend: 12:00<br>
+⚠️ Késés: <span class="badge ${color}">+${delay} min</span><br>
+🚆 Jármű: ${route.vehicle.id}<br><br>
+
+📏 Teljes táv: <b>${total} km</b><br>
+📍 Megtett: <b>${km.toFixed(1)} km</b><br>
+📊 Progress: <b>${percent.toFixed(1)}%</b>
+
+`;
+
+}
+
+// ============================
+// LOOP
+// ============================
+
+function loop(){
+
+ctx.clearRect(0,0,c.width,c.height);
+
+ctx.fillStyle="#0b1220";
+ctx.fillRect(0,0,c.width,c.height);
+
+drawLine();
+drawStops();
+drawTrain();
+
+updatePanel();
+
+requestAnimationFrame(loop);
+
+}
+
+loop();
+
+</script>
 
 </body>
 </html>
+
+-
