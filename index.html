@@ -2,7 +2,9 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS REAL DATA CORE V2</title>
+<title>LIVE DISPATCH MAP V4 - REGIONS + USER</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
 body{
@@ -16,12 +18,14 @@ header{
     background:#111827;
     padding:10px;
     font-weight:bold;
+    display:flex;
+    justify-content:space-between;
 }
 
 .container{
     display:grid;
-    grid-template-columns:320px 1fr;
-    height:80vh;
+    grid-template-columns:340px 1fr;
+    height:85vh;
 }
 
 .left{
@@ -30,8 +34,8 @@ header{
     overflow:auto;
 }
 
-.right{
-    padding:10px;
+#map{
+    height:100%;
 }
 
 .box{
@@ -56,17 +60,17 @@ header{
 input{
     width:100%;
     padding:8px;
-    margin-bottom:10px;
+    margin:5px 0;
     border:none;
     border-radius:5px;
 }
 
 .log{
-    height:20vh;
-    overflow:auto;
+    height:15vh;
     background:#0f172a;
-    padding:8px;
     font-size:12px;
+    padding:8px;
+    overflow:auto;
 }
 </style>
 </head>
@@ -74,7 +78,8 @@ input{
 <body>
 
 <header>
-🚍 GTFS REAL DATA CORE V2
+🚍 LIVE DISPATCH MAP V4 (REGIONS + USER LOCATION)
+<div id="status">INIT</div>
 </header>
 
 <div class="container">
@@ -83,22 +88,18 @@ input{
 <div class="left">
 
 <div class="box">
-<h3>📂 GTFS FILES</h3>
+<h3>📍 SAJÁT HELY (kézi)</h3>
 
-<label>stops.txt</label>
-<input type="file" id="stopsFile">
+<input id="city" placeholder="város">
+<input id="street" placeholder="utca">
+<input id="house" placeholder="házszám">
 
-<label>stop_times.txt</label>
-<input type="file" id="timesFile">
-
-<button onclick="loadGTFS()">LOAD GTFS</button>
+<button onclick="setManualLocation()">SET LOCATION</button>
 </div>
 
 <div class="box">
 <h3>🔍 STOP SEARCH</h3>
-<input id="search"
-placeholder="pl: Nád utca"
-oninput="searchStops(this.value)">
+<input oninput="searchStops(this.value)">
 </div>
 
 <div class="box">
@@ -106,139 +107,91 @@ oninput="searchStops(this.value)">
 <div id="stops"></div>
 </div>
 
-</div>
-
-<!-- RIGHT -->
-<div class="right">
-
 <div class="box">
-<h3>📍 SELECTED STOP</h3>
-<div id="selected">nincs</div>
-</div>
-
-<div class="box">
-<h3>⏱ VALÓS INDULÁSOK</h3>
-<div id="departures">nincs adat</div>
-</div>
-
-<div class="box">
-<h3>🧠 ENGINE STATUS</h3>
-<div id="engine">idle</div>
+<h3>📌 USER INFO</h3>
+<div id="user">nincs adat</div>
 </div>
 
 </div>
+
+<!-- MAP -->
+<div id="map"></div>
 
 </div>
 
 <div class="log" id="log"></div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
 
 /* =========================
-   STATE
+   MAP
 ========================= */
 
-let GTFS = {
-    stops: [],
-    stop_times: []
-};
+let map = L.map('map').setView([47.2,19.5],8);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:"OSM"
+}).addTo(map);
 
 /* =========================
    LOG
 ========================= */
 
 function log(msg){
-    document.getElementById("log").innerHTML += msg + "<br>";
+    document.getElementById("log").innerHTML += "🧠 "+msg+"<br>";
 }
 
 /* =========================
-   NORMALIZE
+   REGION STOP DATABASE
+   (BŐVÍTETT, NEM VALÓDI GTFS)
 ========================= */
 
-function norm(t){
-    return t.toLowerCase()
-        .normalize("NFD")
-        .replace(/\p{Diacritic}/gu, "");
-}
+let STOPS = [
+
+/* --- BUDAPEST --- */
+{id:"bp1", name:"Széll Kálmán tér", lat:47.5079, lon:19.0244, region:"Budapest"},
+{id:"bp2", name:"Deák Ferenc tér", lat:47.4979, lon:19.0540, region:"Budapest"},
+{id:"bp3", name:"Nád utca", lat:47.5200, lon:19.0400, region:"Budapest"},
+
+/* --- PEST MEGYE --- */
+{id:"p1", name:"Érd központ", lat:47.3860, lon:18.9123, region:"Pest"},
+{id:"p2", name:"Dunakeszi vasútállomás", lat:47.6310, lon:19.1370, region:"Pest"},
+{id:"p3", name:"Szentendre HÉV", lat:47.6690, lon:19.0750, region:"Pest"},
+
+/* --- ZALA MEGYE --- */
+{id:"z1", name:"Zalaegerszeg autóbusz-állomás", lat:46.8400, lon:16.8439, region:"Zala"},
+{id:"z2", name:"Keszthely vasútállomás", lat:46.7680, lon:17.2440, region:"Zala"},
+{id:"z3", name:"Lenti központ", lat:46.6230, lon:16.5380, region:"Zala"}
+];
 
 /* =========================
-   CSV PARSER
+   USER LOCATION
 ========================= */
 
-function parseCSV(text){
-
-    let lines = text.split("\n");
-
-    let headers = lines[0].split(",");
-
-    let rows = [];
-
-    for(let i=1;i<lines.length;i++){
-
-        let row = lines[i].split(",");
-
-        if(row.length < headers.length) continue;
-
-        let obj = {};
-
-        headers.forEach((h,index)=>{
-            obj[h.trim()] = row[index]?.trim();
-        });
-
-        rows.push(obj);
-    }
-
-    return rows;
-}
+let userMarker = null;
 
 /* =========================
-   LOAD FILE
+   DISTANCE (Haversine)
 ========================= */
 
-function readFile(file){
+function distance(lat1,lon1,lat2,lon2){
 
-    return new Promise((resolve)=>{
+    let R = 6371;
 
-        let reader = new FileReader();
+    let dLat = (lat2-lat1)*Math.PI/180;
+    let dLon = (lon2-lon1)*Math.PI/180;
 
-        reader.onload = e => resolve(e.target.result);
+    let a =
+        Math.sin(dLat/2)*Math.sin(dLat/2)+
+        Math.cos(lat1*Math.PI/180)*
+        Math.cos(lat2*Math.PI/180)*
+        Math.sin(dLon/2)*Math.sin(dLon/2);
 
-        reader.readAsText(file);
-    });
-}
+    let c = 2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 
-/* =========================
-   LOAD GTFS
-========================= */
-
-async function loadGTFS(){
-
-    let stopsFile =
-        document.getElementById("stopsFile").files[0];
-
-    let timesFile =
-        document.getElementById("timesFile").files[0];
-
-    if(!stopsFile || !timesFile){
-        alert("Töltsd be a GTFS fájlokat");
-        return;
-    }
-
-    log("Loading GTFS...");
-
-    let stopsText = await readFile(stopsFile);
-    let timesText = await readFile(timesFile);
-
-    GTFS.stops = parseCSV(stopsText);
-    GTFS.stop_times = parseCSV(timesText);
-
-    log("Stops loaded: " + GTFS.stops.length);
-    log("Stop times loaded: " + GTFS.stop_times.length);
-
-    renderStops(GTFS.stops);
-
-    document.getElementById("engine").innerText =
-        "GTFS loaded";
+    return R*c;
 }
 
 /* =========================
@@ -247,21 +200,20 @@ async function loadGTFS(){
 
 function renderStops(list){
 
-    let html = "";
+    let html="";
 
-    list.slice(0,300).forEach(s=>{
-
+    list.forEach(s=>{
         html += `
-        <div class="item"
-             onclick="selectStop('${s.stop_id}')">
-
-            🚏 ${s.stop_name}
-
+        <div class="item" onclick="goToStop('${s.id}')">
+            🚏 ${s.name} <br>
+            <small>${s.region}</small>
         </div>`;
     });
 
     document.getElementById("stops").innerHTML = html;
 }
+
+renderStops(STOPS);
 
 /* =========================
    SEARCH
@@ -269,78 +221,87 @@ function renderStops(list){
 
 function searchStops(q){
 
-    let query = norm(q);
-
-    let results = GTFS.stops.filter(s=>{
-
-        return norm(s.stop_name || "")
-            .includes(query);
-
-    });
-
-    renderStops(results);
-
-    document.getElementById("engine").innerText =
-        "Search results: " + results.length;
-}
-
-/* =========================
-   SELECT STOP
-========================= */
-
-function selectStop(stopId){
-
-    let stop =
-        GTFS.stops.find(s=>s.stop_id===stopId);
-
-    if(!stop) return;
-
-    document.getElementById("selected").innerText =
-        stop.stop_name;
-
-    log("Selected stop: " + stop.stop_name);
-
-    renderDepartures(stopId);
-}
-
-/* =========================
-   REAL DEPARTURES
-========================= */
-
-function renderDepartures(stopId){
-
-    let deps =
-        GTFS.stop_times.filter(t=>t.stop_id===stopId);
-
-    deps.sort((a,b)=>
-        (a.departure_time || "")
-        .localeCompare(b.departure_time || "")
+    let r = STOPS.filter(s=>
+        s.name.toLowerCase().includes(q.toLowerCase())
     );
 
-    let html = "";
+    renderStops(r);
+}
 
-    deps.slice(0,20).forEach(d=>{
+/* =========================
+   STOP CLICK
+========================= */
 
-        html += `
-        <div class="item">
-            🕒 ${d.departure_time}
-            <br>
-            Trip: ${d.trip_id}
-        </div>`;
-    });
+function goToStop(id){
 
-    document.getElementById("departures").innerHTML =
-        html || "nincs indulás";
+    let s = STOPS.find(x=>x.id===id);
 
-    document.getElementById("engine").innerText =
-        "Departures calculated";
+    map.setView([s.lat,s.lon],13);
+
+    L.marker([s.lat,s.lon])
+        .addTo(map)
+        .bindPopup(s.name)
+        .openPopup();
+
+    log("STOP: " + s.name);
+
+    if(userMarker){
+        let d = distance(
+            userMarker.getLatLng().lat,
+            userMarker.getLatLng().lng,
+            s.lat,s.lon
+        );
+
+        log("Distance to user: " + d.toFixed(2) + " km");
+    }
+}
+
+/* =========================
+   USER LOCATION (REAL GPS)
+========================= */
+
+navigator.geolocation.getCurrentPosition(pos=>{
+
+    let lat = pos.coords.latitude;
+    let lon = pos.coords.longitude;
+
+    userMarker = L.marker([lat,lon])
+        .addTo(map)
+        .bindPopup("SAJÁT HELY");
+
+    map.setView([lat,lon],12);
+
+    document.getElementById("user").innerHTML =
+        "GPS: "+lat.toFixed(5)+", "+lon.toFixed(5)+
+        "<br>Accuracy: "+Math.round(pos.coords.accuracy)+"m";
+
+    log("USER GPS LOADED");
+
+});
+
+/* =========================
+   MANUAL LOCATION
+========================= */
+
+function setManualLocation(){
+
+    let city = document.getElementById("city").value;
+    let street = document.getElementById("street").value;
+    let house = document.getElementById("house").value;
+
+    let text = city+" "+street+" "+house;
+
+    document.getElementById("user").innerHTML =
+        "MANUAL: "+text;
+
+    log("MANUAL LOCATION SET: "+text);
 }
 
 /* =========================
    INIT
 ========================= */
 
-log("GTFS REAL DATA CORE V2 READY");
+log("V4 REGIONAL DISPATCH MAP READY");
 
 </script>
 
