@@ -2,74 +2,71 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FULL BUDAPEST STOP ENGINE V2</title>
+<title>GTFS REAL DATA CORE V2</title>
 
 <style>
-body {
-    margin: 0;
-    font-family: Arial;
-    background: #0b1220;
-    color: #e5e7eb;
+body{
+    margin:0;
+    font-family:Arial;
+    background:#0b1220;
+    color:#e5e7eb;
 }
 
-header {
-    background: #111827;
-    padding: 10px;
-    font-weight: bold;
-    display: flex;
-    justify-content: space-between;
+header{
+    background:#111827;
+    padding:10px;
+    font-weight:bold;
 }
 
-.container {
-    display: grid;
-    grid-template-columns: 320px 1fr;
-    height: 80vh;
+.container{
+    display:grid;
+    grid-template-columns:320px 1fr;
+    height:80vh;
 }
 
-.left {
-    background: #1f2937;
-    padding: 10px;
-    overflow-y: auto;
+.left{
+    background:#1f2937;
+    padding:10px;
+    overflow:auto;
 }
 
-.right {
-    padding: 10px;
+.right{
+    padding:10px;
 }
 
-.box {
-    background: #111827;
-    padding: 10px;
-    margin-bottom: 10px;
-    border-radius: 6px;
+.box{
+    background:#111827;
+    padding:10px;
+    margin-bottom:10px;
+    border-radius:6px;
 }
 
-input, textarea {
-    width: 100%;
-    padding: 8px;
-    margin: 5px 0;
-    border-radius: 5px;
-    border: none;
+.item{
+    background:#374151;
+    padding:6px;
+    margin:4px 0;
+    border-radius:5px;
+    cursor:pointer;
 }
 
-.item {
-    background: #374151;
-    padding: 6px;
-    margin: 5px 0;
-    border-radius: 5px;
-    cursor: pointer;
+.item:hover{
+    background:#4b5563;
 }
 
-.item:hover {
-    background: #4b5563;
+input{
+    width:100%;
+    padding:8px;
+    margin-bottom:10px;
+    border:none;
+    border-radius:5px;
 }
 
-.log {
-    height: 20vh;
-    background: #0f172a;
-    font-size: 12px;
-    overflow-y: auto;
-    padding: 8px;
-    border-top: 1px solid #333;
+.log{
+    height:20vh;
+    overflow:auto;
+    background:#0f172a;
+    padding:8px;
+    font-size:12px;
 }
 </style>
 </head>
@@ -77,8 +74,7 @@ input, textarea {
 <body>
 
 <header>
-    <div>🚏 FULL BUDAPEST STOP ENGINE V2</div>
-    <div id="status">READY</div>
+🚍 GTFS REAL DATA CORE V2
 </header>
 
 <div class="container">
@@ -87,13 +83,27 @@ input, textarea {
 <div class="left">
 
 <div class="box">
-    <h3>🔍 STOP SEARCH</h3>
-    <input id="search" placeholder="pl: Nád utca..." oninput="searchStopsLive(this.value)">
+<h3>📂 GTFS FILES</h3>
+
+<label>stops.txt</label>
+<input type="file" id="stopsFile">
+
+<label>stop_times.txt</label>
+<input type="file" id="timesFile">
+
+<button onclick="loadGTFS()">LOAD GTFS</button>
 </div>
 
 <div class="box">
-    <h3>🚏 STOPS</h3>
-    <div id="stops"></div>
+<h3>🔍 STOP SEARCH</h3>
+<input id="search"
+placeholder="pl: Nád utca"
+oninput="searchStops(this.value)">
+</div>
+
+<div class="box">
+<h3>🚏 STOPS</h3>
+<div id="stops"></div>
 </div>
 
 </div>
@@ -102,18 +112,18 @@ input, textarea {
 <div class="right">
 
 <div class="box">
-    <h3>📍 SELECTED STOP</h3>
-    <div id="selected">nincs</div>
+<h3>📍 SELECTED STOP</h3>
+<div id="selected">nincs</div>
 </div>
 
 <div class="box">
-    <h3>🧠 STOP ENGINE STATUS</h3>
-    <div id="engine">idle</div>
+<h3>⏱ VALÓS INDULÁSOK</h3>
+<div id="departures">nincs adat</div>
 </div>
 
 <div class="box">
-    <h3>📡 DEVICE DATA</h3>
-    <div id="device"></div>
+<h3>🧠 ENGINE STATUS</h3>
+<div id="engine">idle</div>
 </div>
 
 </div>
@@ -125,67 +135,110 @@ input, textarea {
 <script>
 
 /* =========================
+   STATE
+========================= */
+
+let GTFS = {
+    stops: [],
+    stop_times: []
+};
+
+/* =========================
    LOG
 ========================= */
+
 function log(msg){
     document.getElementById("log").innerHTML += msg + "<br>";
 }
 
 /* =========================
-   FULL BUDAPEST STOP DATA (EXPANDABLE CORE)
-   (valós rendszerben ezt GTFS-ből töltöd)
+   NORMALIZE
 ========================= */
 
-let GTFS = {
-    stops: [
-        {id:"S1", name:"Széll Kálmán tér"},
-        {id:"S2", name:"Batthyány tér"},
-        {id:"S3", name:"Hűvösvölgy"},
-        {id:"S4", name:"Szentendre HÉV"},
-        {id:"S5", name:"Nád utca"},
-        {id:"S6", name:"Nyugati pályaudvar"},
-        {id:"S7", name:"Deák Ferenc tér"},
-        {id:"S8", name:"Astoria"},
-        {id:"S9", name:"Blaha Lujza tér"}
-    ]
-};
-
-/* =========================
-   STOP ENGINE V2 CORE INDEX
-========================= */
-
-let STOP_INDEX = {};
-
-function normalize(t){
+function norm(t){
     return t.toLowerCase()
         .normalize("NFD")
         .replace(/\p{Diacritic}/gu, "");
 }
 
-function buildIndex(){
-    STOP_INDEX = {};
-    GTFS.stops.forEach(s=>{
-        STOP_INDEX[normalize(s.name)] = s;
-    });
-    log("STOP INDEX built: " + GTFS.stops.length);
+/* =========================
+   CSV PARSER
+========================= */
+
+function parseCSV(text){
+
+    let lines = text.split("\n");
+
+    let headers = lines[0].split(",");
+
+    let rows = [];
+
+    for(let i=1;i<lines.length;i++){
+
+        let row = lines[i].split(",");
+
+        if(row.length < headers.length) continue;
+
+        let obj = {};
+
+        headers.forEach((h,index)=>{
+            obj[h.trim()] = row[index]?.trim();
+        });
+
+        rows.push(obj);
+    }
+
+    return rows;
 }
 
 /* =========================
-   STOP ENGINE V2 SEARCH
+   LOAD FILE
 ========================= */
 
-function searchStopsLive(q){
+function readFile(file){
 
-    let query = normalize(q);
+    return new Promise((resolve)=>{
 
-    let results = GTFS.stops.filter(s=>{
-        return normalize(s.name).includes(query);
+        let reader = new FileReader();
+
+        reader.onload = e => resolve(e.target.result);
+
+        reader.readAsText(file);
     });
+}
 
-    renderStops(results);
+/* =========================
+   LOAD GTFS
+========================= */
+
+async function loadGTFS(){
+
+    let stopsFile =
+        document.getElementById("stopsFile").files[0];
+
+    let timesFile =
+        document.getElementById("timesFile").files[0];
+
+    if(!stopsFile || !timesFile){
+        alert("Töltsd be a GTFS fájlokat");
+        return;
+    }
+
+    log("Loading GTFS...");
+
+    let stopsText = await readFile(stopsFile);
+    let timesText = await readFile(timesFile);
+
+    GTFS.stops = parseCSV(stopsText);
+    GTFS.stop_times = parseCSV(timesText);
+
+    log("Stops loaded: " + GTFS.stops.length);
+    log("Stop times loaded: " + GTFS.stop_times.length);
+
+    renderStops(GTFS.stops);
 
     document.getElementById("engine").innerText =
-        "searching: " + q + " (" + results.length + ")";
+        "GTFS loaded";
 }
 
 /* =========================
@@ -196,68 +249,98 @@ function renderStops(list){
 
     let html = "";
 
-    list.forEach(s=>{
-        html += `<div class="item" onclick="selectStop('${s.id}')">
-                    🚏 ${s.name}
-                 </div>`;
+    list.slice(0,300).forEach(s=>{
+
+        html += `
+        <div class="item"
+             onclick="selectStop('${s.stop_id}')">
+
+            🚏 ${s.stop_name}
+
+        </div>`;
     });
 
     document.getElementById("stops").innerHTML = html;
 }
 
-renderStops(GTFS.stops);
-
 /* =========================
-   STOP SELECT
+   SEARCH
 ========================= */
 
-function selectStop(id){
+function searchStops(q){
 
-    let s = GTFS.stops.find(x=>x.id===id);
+    let query = norm(q);
 
-    document.getElementById("selected").innerText = s.name;
+    let results = GTFS.stops.filter(s=>{
 
-    log("STOP SELECTED: " + s.name);
+        return norm(s.stop_name || "")
+            .includes(query);
+
+    });
+
+    renderStops(results);
 
     document.getElementById("engine").innerText =
-        "selected stop: " + s.name;
+        "Search results: " + results.length;
 }
 
 /* =========================
-   DEVICE DATA (REAL)
+   SELECT STOP
 ========================= */
 
-function updateDevice(){
+function selectStop(stopId){
 
-    let out = "";
+    let stop =
+        GTFS.stops.find(s=>s.stop_id===stopId);
 
-    if(navigator.geolocation){
-        navigator.geolocation.getCurrentPosition(pos=>{
-            out += "GPS: " + pos.coords.latitude.toFixed(5) +
-                   ", " + pos.coords.longitude.toFixed(5) + "<br>";
+    if(!stop) return;
 
-            out += "Accuracy: " + Math.round(pos.coords.accuracy) + " m<br>";
+    document.getElementById("selected").innerText =
+        stop.stop_name;
 
-            document.getElementById("device").innerHTML = out;
-        });
-    }
+    log("Selected stop: " + stop.stop_name);
 
-    if(navigator.connection){
-        let c = navigator.connection;
-        out += "Network: " + c.effectiveType + "<br>";
-        out += "Downlink: " + c.downlink + " Mbps<br>";
-    }
+    renderDepartures(stopId);
 }
 
 /* =========================
-   INIT ENGINE
+   REAL DEPARTURES
 ========================= */
 
-buildIndex();
-updateDevice();
-setInterval(updateDevice, 10000);
+function renderDepartures(stopId){
 
-log("FULL BUDAPEST STOP ENGINE V2 READY");
+    let deps =
+        GTFS.stop_times.filter(t=>t.stop_id===stopId);
+
+    deps.sort((a,b)=>
+        (a.departure_time || "")
+        .localeCompare(b.departure_time || "")
+    );
+
+    let html = "";
+
+    deps.slice(0,20).forEach(d=>{
+
+        html += `
+        <div class="item">
+            🕒 ${d.departure_time}
+            <br>
+            Trip: ${d.trip_id}
+        </div>`;
+    });
+
+    document.getElementById("departures").innerHTML =
+        html || "nincs indulás";
+
+    document.getElementById("engine").innerText =
+        "Departures calculated";
+}
+
+/* =========================
+   INIT
+========================= */
+
+log("GTFS REAL DATA CORE V2 READY");
 
 </script>
 
