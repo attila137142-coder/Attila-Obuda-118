@@ -2,108 +2,111 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS HARD VALIDATION ENGINE V1</title>
+<title>GTFS STREAMING ENGINE V5</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 <style>
-body { font-family:Arial; background:#0b1220; color:white; margin:0; }
+body { margin:0; font-family:Arial; background:#0b1220; color:white; }
+#map { height:70vh; }
 .panel { padding:10px; background:#111a2e; }
-pre { white-space:pre-wrap; font-size:12px; }
+pre { font-size:12px; white-space:pre-wrap; height:200px; overflow:auto; }
 button { padding:8px; margin:5px; }
-.ok { color:#4cff4c; }
-.err { color:#ff4c4c; }
-.warn { color:#ffcc00; }
 </style>
 </head>
 <body>
 <div class="panel">
-<h2>🚆 GTFS HARD VALIDATION ENGINE V1</h2>
+<h2>🚆 GTFS STREAMING ENGINE V5</h2>
 <input type="file" id="zip" accept=".zip">
-<button onclick="run()">ANALYZE GTFS ZIP</button>
+<button onclick="load()">LOAD ZIP</button>
+<button onclick="build()">BUILD STREAM</button>
+<div id="status">READY</div>
 <pre id="log"></pre>
 </div>
+<div id="map"></div>
 <script>
-function log(t, type=""){
-document.getElementById("log").innerText += (type ? `[${type}] ` : "") + t + "\n";
+const map = L.map('map').setView([47.5,19.05],9);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+attribution:'OSM'
+}).addTo(map);
+// ---------------- STATE ----------------
+let stops = [];
+let streamStops = [];
+// ---------------- LOG ----------------
+function log(t){
+document.getElementById("log").innerText += t + "\n";
 }
-function ok(t){ log(t,"OK"); }
-function err(t){ log(t,"ERROR"); }
-function warn(t){ log(t,"WARN"); }
-function clean(name){
-return name.toLowerCase().split("/").pop();
+function setStatus(t){
+document.getElementById("status").innerText = t;
 }
-// ---------------- MAIN ----------------
-async function run(){
-document.getElementById("log").innerText = "";
+// ---------------- ZIP LOAD ----------------
+async function load(){
 const file = document.getElementById("zip").files[0];
-if(!file){
-err("Nincs ZIP kiválasztva!");
-return;
-}
-ok("ZIP betöltés indul...");
 const zip = await JSZip.loadAsync(file);
-let foundFiles = [];
-let stopsRaw = null;
-// ---------------- SCAN ZIP ----------------
+log("📦 ZIP LOADED");
 for(let path in zip.files){
-foundFiles.push(path);
-let name = clean(path);
-ok("FÁJL TALÁLVA: " + path);
-let content = await zip.files[path].async("string");
-// --- DEBUG RAW ---
-log(" SIZE: " + content.length);
-if(name === "stops.txt"){
-ok("STOPS.TXT MEGTALÁLVA!");
-log("FIRST 200 CHARS:");
-log(content.slice(0,200));
-stopsRaw = content;
-}
-}
-// ---------------- ZIP SUMMARY ----------------
-log("=== ZIP SUMMARY ===");
-log("Total files: " + foundFiles.length);
-if(!stopsRaw){
-err("NINCS stops.txt a ZIP-ben!");
-return;
-}
-// ---------------- PARSE TEST ----------------
-ok("PARSING stops.txt...");
-let parsed = Papa.parse(stopsRaw.trim(), {
+let name = path.toLowerCase().split("/").pop();
+if(name !== "stops.txt") continue;
+log("✔ STREAMING stops.txt...");
+const text = await zip.files[path].async("string");
+// ---------------- STREAM PARSE ----------------
+Papa.parse(text, {
 header:true,
-skipEmptyLines:true
+skipEmptyLines:true,
+worker:true,
+step: function(row){
+let s = row.data;
+if(!s.stop_lat || !s.stop_lon) return;
+let stop = {
+name: s.stop_name,
+lat: parseFloat(s.stop_lat),
+lon: parseFloat(s.stop_lon)
+};
+streamStops.push(stop);
+// LIVE RENDER (streaming effect)
+if(streamStops.length % 200 === 0){
+renderPartial();
+log("STREAMED: " + streamStops.length);
+}
+},
+complete: function(){
+log("✔ STREAM COMPLETE");
+setStatus("STREAM READY ✔");
+}
 });
-log("ROWS: " + parsed.data.length);
-// ---------------- FIELD CHECK ----------------
-let sample = parsed.data[0];
-if(!sample){
-err("ÜRES stops.txt (nincs sor)");
-return;
-}
-log("COLUMNS: " + Object.keys(sample).join(", "));
-// ---------------- REQUIRED FIELDS ----------------
-let required = ["stop_id","stop_name","stop_lat","stop_lon"];
-for(let r of required){
-if(!(r in sample)){
-err("HIÁNYZIK OSZLOP: " + r);
-} else {
-ok("OK FIELD: " + r);
 }
 }
-// ---------------- VALID ROW CHECK ----------------
-let valid = parsed.data.filter(s =>
-s.stop_lat && s.stop_lon &&
-!isNaN(parseFloat(s.stop_lat)) &&
-!isNaN(parseFloat(s.stop_lon))
-);
-log("VALID STOPS: " + valid.length);
-if(valid.length === 0){
-err("0 VALID STOP → EZ A PROBLÉMA!");
-warn("valószínű: rossz oszlopnév vagy rossz CSV formátum");
+// ---------------- BUILD (optional full finalize) ----------------
+function build(){
+log("=== FINAL BUILD ===");
+stops = streamStops;
+log("TOTAL STOPS: " + stops.length);
+renderFull();
 }
-// ---------------- SAMPLE DEBUG ----------------
-log("=== SAMPLE STOP ===");
-log(JSON.stringify(valid[0],null,2));
-ok("ANALYSIS DONE ✔");
+// ---------------- LIVE RENDER ----------------
+function renderPartial(){
+map.eachLayer(l=>{
+if(l instanceof L.CircleMarker) map.removeLayer(l);
+});
+streamStops.slice(-2000).forEach(s=>{
+L.circleMarker([s.lat,s.lon],{
+radius:3,
+color:"cyan"
+}).addTo(map);
+});
+}
+// ---------------- FULL RENDER ----------------
+function renderFull(){
+map.eachLayer(l=>{
+if(l instanceof L.CircleMarker) map.removeLayer(l);
+});
+stops.forEach(s=>{
+L.circleMarker([s.lat,s.lon],{
+radius:3,
+color:"cyan"
+}).addTo(map);
+});
 }
 </script>
 </body>
