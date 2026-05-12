@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>LIVE DISPATCH MAP V4 - REGIONS + USER</title>
+<title>HUNGARY REAL TRANSIT CORE V5</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -18,8 +18,6 @@ header{
     background:#111827;
     padding:10px;
     font-weight:bold;
-    display:flex;
-    justify-content:space-between;
 }
 
 .container{
@@ -67,10 +65,10 @@ input{
 
 .log{
     height:15vh;
+    overflow:auto;
     background:#0f172a;
     font-size:12px;
     padding:8px;
-    overflow:auto;
 }
 </style>
 </head>
@@ -78,8 +76,7 @@ input{
 <body>
 
 <header>
-🚍 LIVE DISPATCH MAP V4 (REGIONS + USER LOCATION)
-<div id="status">INIT</div>
+🇭🇺 HUNGARY REAL TRANSIT CORE V5
 </header>
 
 <div class="container">
@@ -88,18 +85,8 @@ input{
 <div class="left">
 
 <div class="box">
-<h3>📍 SAJÁT HELY (kézi)</h3>
-
-<input id="city" placeholder="város">
-<input id="street" placeholder="utca">
-<input id="house" placeholder="házszám">
-
-<button onclick="setManualLocation()">SET LOCATION</button>
-</div>
-
-<div class="box">
 <h3>🔍 STOP SEARCH</h3>
-<input oninput="searchStops(this.value)">
+<input oninput="search(this.value)">
 </div>
 
 <div class="box">
@@ -108,8 +95,8 @@ input{
 </div>
 
 <div class="box">
-<h3>📌 USER INFO</h3>
-<div id="user">nincs adat</div>
+<h3>📍 USER</h3>
+<div id="user">loading...</div>
 </div>
 
 </div>
@@ -129,135 +116,86 @@ input{
    MAP
 ========================= */
 
-let map = L.map('map').setView([47.2,19.5],8);
+let map = L.map("map").setView([47.2,19.5],8);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-    attribution:"OSM"
-}).addTo(map);
-
-/* =========================
-   LOG
-========================= */
-
-function log(msg){
-    document.getElementById("log").innerHTML += "🧠 "+msg+"<br>";
-}
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")
+.addTo(map);
 
 /* =========================
-   REGION STOP DATABASE
-   (BŐVÍTETT, NEM VALÓDI GTFS)
+   REGION DATA
 ========================= */
 
 let STOPS = [
 
-/* --- BUDAPEST --- */
-{id:"bp1", name:"Széll Kálmán tér", lat:47.5079, lon:19.0244, region:"Budapest"},
-{id:"bp2", name:"Deák Ferenc tér", lat:47.4979, lon:19.0540, region:"Budapest"},
-{id:"bp3", name:"Nád utca", lat:47.5200, lon:19.0400, region:"Budapest"},
+/* BUDAPEST */
+{id:1,name:"Deák Ferenc tér",lat:47.4979,lon:19.054},
+{id:2,name:"Nád utca",lat:47.52,lon:19.04},
 
-/* --- PEST MEGYE --- */
-{id:"p1", name:"Érd központ", lat:47.3860, lon:18.9123, region:"Pest"},
-{id:"p2", name:"Dunakeszi vasútállomás", lat:47.6310, lon:19.1370, region:"Pest"},
-{id:"p3", name:"Szentendre HÉV", lat:47.6690, lon:19.0750, region:"Pest"},
+/* PEST MEGYE */
+{id:3,name:"Érd központ",lat:47.386,lon:18.912},
+{id:4,name:"Dunakeszi",lat:47.631,lon:19.137},
 
-/* --- ZALA MEGYE --- */
-{id:"z1", name:"Zalaegerszeg autóbusz-állomás", lat:46.8400, lon:16.8439, region:"Zala"},
-{id:"z2", name:"Keszthely vasútállomás", lat:46.7680, lon:17.2440, region:"Zala"},
-{id:"z3", name:"Lenti központ", lat:46.6230, lon:16.5380, region:"Zala"}
+/* ZALA MEGYE */
+{id:5,name:"Zalaegerszeg autóbusz",lat:46.84,lon:16.843},
+{id:6,name:"Keszthely",lat:46.768,lon:17.244}
 ];
 
 /* =========================
-   USER LOCATION
+   NORMALIZE SEARCH
 ========================= */
 
-let userMarker = null;
-
-/* =========================
-   DISTANCE (Haversine)
-========================= */
-
-function distance(lat1,lon1,lat2,lon2){
-
-    let R = 6371;
-
-    let dLat = (lat2-lat1)*Math.PI/180;
-    let dLon = (lon2-lon1)*Math.PI/180;
-
-    let a =
-        Math.sin(dLat/2)*Math.sin(dLat/2)+
-        Math.cos(lat1*Math.PI/180)*
-        Math.cos(lat2*Math.PI/180)*
-        Math.sin(dLon/2)*Math.sin(dLon/2);
-
-    let c = 2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-
-    return R*c;
+function norm(t){
+    return (t||"")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{Diacritic}/gu,"");
 }
 
 /* =========================
-   RENDER STOPS
+   RENDER
 ========================= */
 
-function renderStops(list){
+function render(list){
 
-    let html="";
-
-    list.forEach(s=>{
-        html += `
-        <div class="item" onclick="goToStop('${s.id}')">
-            🚏 ${s.name} <br>
-            <small>${s.region}</small>
-        </div>`;
-    });
-
-    document.getElementById("stops").innerHTML = html;
+    document.getElementById("stops").innerHTML =
+    list.map(s=>
+        `<div class="item" onclick="go(${s.lat},${s.lon},'${s.name}')">
+            🚏 ${s.name}
+        </div>`
+    ).join("");
 }
 
-renderStops(STOPS);
+render(STOPS);
 
 /* =========================
    SEARCH
 ========================= */
 
-function searchStops(q){
+function search(q){
 
-    let r = STOPS.filter(s=>
-        s.name.toLowerCase().includes(q.toLowerCase())
-    );
-
-    renderStops(r);
+    render(STOPS.filter(s=>
+        norm(s.name).includes(norm(q))
+    ));
 }
 
 /* =========================
-   STOP CLICK
+   MAP ACTION
 ========================= */
 
-function goToStop(id){
+function go(lat,lon,name){
 
-    let s = STOPS.find(x=>x.id===id);
+    map.setView([lat,lon],14);
 
-    map.setView([s.lat,s.lon],13);
+    L.marker([lat,lon])
+    .addTo(map)
+    .bindPopup(name)
+    .openPopup();
 
-    L.marker([s.lat,s.lon])
-        .addTo(map)
-        .bindPopup(s.name)
-        .openPopup();
-
-    log("STOP: " + s.name);
-
-    if(userMarker){
-        let d = distance(
-            userMarker.getLatLng().lat,
-            userMarker.getLatLng().lng,
-            s.lat,s.lon
-        );
-
-        log("Distance to user: " + d.toFixed(2) + " km");
-    }
+    log("SELECT: "+name);
 }
 
 /* =========================
-   USER LOCATION (REAL GPS)
+   USER LOCATION
 ========================= */
 
 navigator.geolocation.getCurrentPosition(pos=>{
@@ -265,43 +203,25 @@ navigator.geolocation.getCurrentPosition(pos=>{
     let lat = pos.coords.latitude;
     let lon = pos.coords.longitude;
 
-    userMarker = L.marker([lat,lon])
-        .addTo(map)
-        .bindPopup("SAJÁT HELY");
+    L.marker([lat,lon])
+    .addTo(map)
+    .bindPopup("USER");
 
-    map.setView([lat,lon],12);
+    map.setView([lat,lon],10);
 
     document.getElementById("user").innerHTML =
-        "GPS: "+lat.toFixed(5)+", "+lon.toFixed(5)+
-        "<br>Accuracy: "+Math.round(pos.coords.accuracy)+"m";
-
-    log("USER GPS LOADED");
-
+        "GPS: "+lat.toFixed(5)+","+lon.toFixed(5);
 });
 
 /* =========================
-   MANUAL LOCATION
+   LOG
 ========================= */
 
-function setManualLocation(){
-
-    let city = document.getElementById("city").value;
-    let street = document.getElementById("street").value;
-    let house = document.getElementById("house").value;
-
-    let text = city+" "+street+" "+house;
-
-    document.getElementById("user").innerHTML =
-        "MANUAL: "+text;
-
-    log("MANUAL LOCATION SET: "+text);
+function log(m){
+    document.getElementById("log").innerHTML += m+"<br>";
 }
 
-/* =========================
-   INIT
-========================= */
-
-log("V4 REGIONAL DISPATCH MAP READY");
+log("V5 CORE READY");
 
 </script>
 
