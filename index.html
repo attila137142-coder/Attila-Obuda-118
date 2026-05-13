@@ -2,52 +2,58 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>CONTROL ROOM // ATTILA KÖZLEKEDÉS</title>
+<title>CONTROL ROOM V2 // ATTILA KÖZLEKEDÉS</title>
 
 <style>
 body {
     margin: 0;
     font-family: Arial, sans-serif;
-    background: #0b0f14;
+    background: #070b10;
     color: #00ff9d;
 }
 
 header {
-    background: #111826;
-    padding: 12px;
-    font-size: 18px;
-    font-weight: bold;
+    padding: 14px;
+    background: #0f1722;
     border-bottom: 1px solid #00ff9d33;
+    font-weight: bold;
+    display: flex;
+    justify-content: space-between;
+}
+
+.statusbar {
+    font-size: 12px;
+    color: #ffd166;
 }
 
 .grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1.2fr 1fr;
     grid-template-rows: 45vh 45vh;
     gap: 8px;
     padding: 8px;
 }
 
 .panel {
-    background: #0f1622;
-    border: 1px solid #00ff9d33;
-    overflow: hidden;
+    background: #0c121b;
+    border: 1px solid #00ff9d22;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
 }
 
 .panel h3 {
     margin: 0;
     padding: 8px;
-    background: #111f2e;
-    font-size: 14px;
-    border-bottom: 1px solid #00ff9d33;
+    background: #111c2a;
+    font-size: 13px;
+    border-bottom: 1px solid #00ff9d22;
 }
 
 .content {
     padding: 8px;
-    overflow: auto;
     font-size: 12px;
+    overflow: auto;
 }
 
 iframe {
@@ -56,120 +62,165 @@ iframe {
     border: none;
 }
 
-.status {
-    color: #ffd166;
-}
 .ok { color: #00ff9d; }
 .err { color: #ff4d4d; }
+.warn { color: #ffd166; }
+
+.small {
+    font-size: 11px;
+    opacity: 0.8;
+}
 
 button {
     background: #00ff9d;
     border: none;
-    padding: 6px;
+    padding: 6px 10px;
     margin-top: 6px;
     cursor: pointer;
     font-weight: bold;
 }
+
+.badge {
+    padding: 2px 6px;
+    border: 1px solid #00ff9d55;
+    font-size: 11px;
+    margin-left: 6px;
+}
+
 </style>
 </head>
 
 <body>
 
 <header>
-🚦 CONTROL ROOM // ATTILA KÖZLEKEDÉS // REALTIME SYSTEM V1
+<div>🚦 CONTROL ROOM V2 // ATTILA KÖZLEKEDÉS</div>
+<div class="statusbar" id="status">SYSTEM BOOTING...</div>
 </header>
 
 <div class="grid">
 
-    <!-- VEHICLES -->
-    <div class="panel">
-        <h3>🚌 JÁRMŰVEK (REALTIME)</h3>
-        <div class="content" id="vehicles">Betöltés...</div>
-    </div>
+<!-- VEHICLES -->
+<div class="panel">
+    <h3>🚌 REALTIME JÁRMŰVEK <span class="badge">GTFS-RT</span></h3>
+    <div class="content" id="vehicles">INIT...</div>
+</div>
 
-    <!-- LINES -->
-    <div class="panel">
-        <h3>📊 VONAL / HISTORY</h3>
-        <div class="content" id="lines">Betöltés...</div>
-    </div>
+<!-- LINES -->
+<div class="panel">
+    <h3>📊 VONAL INTELLIGENCE <span class="badge">HISTORY</span></h3>
+    <div class="content" id="lines">INIT...</div>
+</div>
 
-    <!-- MAP -->
-    <div class="panel">
-        <h3>🗺️ TÉRKÉP (REALTIME MAP)</h3>
-        <iframe src="https://futar.bkk.hu/"></iframe>
-    </div>
+<!-- MAP -->
+<div class="panel">
+    <h3>🗺️ LIVE MAP CORE</h3>
+    <iframe src="https://futar.bkk.hu/"></iframe>
+</div>
 
-    <!-- DEBUG / LINKS -->
-    <div class="panel">
-        <h3>🧠 DEBUG + ADAT FORRÁSOK</h3>
-        <div class="content">
-            <div class="status">LIVE DATA STREAM ATTEMPT</div>
+<!-- CONTROL / DEBUG -->
+<div class="panel">
+    <h3>🧠 CONTROL + DEBUG LAYER</h3>
+    <div class="content">
 
-            <p>Vehicles API:</p>
-            <code>https://online.winmenetrend.hu/futar/vehicles?more_info=1</code>
+        <div id="health">SYSTEM CHECK...</div>
 
-            <p>Lines history:</p>
-            <code>https://online.winmenetrend.hu/futar/history/lines</code>
+        <hr>
 
-            <p>Realtime map:</p>
-            <code>https://futar.bkk.hu/</code>
-
-            <p>Extra map layer:</p>
-            <code>https://map.realtimenext.hu/</code>
-
-            <button onclick="loadData()">🔄 ADAT FRISSÍTÉS</button>
+        <div class="small">
+            <b>DATA SOURCES:</b><br>
+            • BKK FUTÁR realtime map<br>
+            • winmenetrend vehicles API<br>
+            • line history stream<br>
+            • external map overlay
         </div>
+
+        <button onclick="startLoop()">▶ START LIVE LOOP</button>
+        <button onclick="stopLoop()">⛔ STOP LOOP</button>
+
     </div>
+</div>
 
 </div>
 
 <script>
 
-async function fetchData(url) {
+let loop = null;
+
+function setStatus(msg) {
+    document.getElementById("status").innerText = msg;
+}
+
+async function safeFetch(url) {
     try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("HTTP error");
-        return await res.text();
-    } catch (e) {
+        const r = await fetch(url);
+        if (!r.ok) throw new Error("fail");
+        return await r.text();
+    } catch {
         return null;
     }
 }
 
-async function loadData() {
+function renderBox(id, data, label) {
+    const el = document.getElementById(id);
 
-    document.getElementById("vehicles").innerHTML = "Betöltés...";
-
-    // VEHICLES
-    let v = await fetchData("https://online.winmenetrend.hu/futar/vehicles?more_info=1");
-
-    if (v) {
-        document.getElementById("vehicles").innerHTML =
-            "<span class='ok'>LIVE DATA OK</span><br><pre>" +
-            v.slice(0, 1500) +
-            "</pre>";
-    } else {
-        document.getElementById("vehicles").innerHTML =
-            "<span class='err'>NINCS DIRECT HOZZÁFÉRÉS (CORS)</span><br>" +
-            "👉 de az API él:<br>" +
-            "<a href='https://online.winmenetrend.hu/futar/vehicles?more_info=1' target='_blank'>megnyitás</a>";
+    if (!data) {
+        el.innerHTML = `<span class="err">OFFLINE / CORS BLOCK</span><br>
+        <span class="small">${label} elérhető, de nem olvasható böngészőből.</span>`;
+        return;
     }
 
-    // LINES
-    let l = await fetchData("https://online.winmenetrend.hu/futar/history/lines");
-
-    if (l) {
-        document.getElementById("lines").innerHTML =
-            "<span class='ok'>LIVE DATA OK</span><br><pre>" +
-            l.slice(0, 1500) +
-            "</pre>";
-    } else {
-        document.getElementById("lines").innerHTML =
-            "<span class='err'>NINCS DIRECT HOZZÁFÉRÉS (CORS)</span><br>" +
-            "👉 vonal history elérhető, csak böngészőből:";
-    }
+    el.innerHTML =
+        `<span class="ok">LIVE</span> <span class="small">${label}</span><br><br>` +
+        `<pre style="white-space:pre-wrap">${data.slice(0, 1200)}</pre>`;
 }
 
-loadData();
+async function update() {
+
+    setStatus("SYNCING REALTIME DATA...");
+
+    // 🚍 vehicles
+    const vehicles = await safeFetch(
+        "https://online.winmenetrend.hu/futar/vehicles?more_info=1"
+    );
+
+    renderBox("vehicles", vehicles, "vehicles stream");
+
+    // 📊 lines
+    const lines = await safeFetch(
+        "https://online.winmenetrend.hu/futar/history/lines"
+    );
+
+    renderBox("lines", lines, "line history");
+
+    // 🧠 health check
+    document.getElementById("health").innerHTML =
+        `
+        <div class="ok">✔ CORE UI OK</div>
+        <div class="warn">⚠ LIVE DATA LIMIT: BROWSER CORS</div>
+        <div class="small">
+        A rendszer működik, de FULL REALTIME-hoz backend kell.
+        </div>
+        `;
+
+    setStatus("IDLE / LAST SYNC OK");
+}
+
+function startLoop() {
+    if (loop) return;
+
+    update();
+    loop = setInterval(update, 8000);
+
+    setStatus("LIVE LOOP ACTIVE (8s)");
+}
+
+function stopLoop() {
+    clearInterval(loop);
+    loop = null;
+    setStatus("LOOP STOPPED");
+}
+
+update();
 
 </script>
 
