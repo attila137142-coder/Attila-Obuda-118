@@ -2,234 +2,260 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR MINI CORE V5</title>
+<title>GTFS FUTÁR ENGINE V6</title>
 
 <style>
-* { box-sizing:border-box; }
-
-body {
+body{
     margin:0;
-    font-family: Arial;
+    font-family:Arial;
     background:#0b0f14;
     color:#d7e6ff;
 }
 
-/* 🔥 FIX: ha CSS fail → ez akkor is ad háttért */
-html, body {
-    min-height:100%;
-}
-
-header {
-    background:#111a27;
+header{
     padding:10px;
+    background:#111a27;
+    border-bottom:1px solid #223;
     display:flex;
     justify-content:space-between;
-    border-bottom:1px solid #223;
 }
 
-.grid {
+.grid{
     display:grid;
     grid-template-columns: 1fr 1fr;
     height:calc(100vh - 50px);
 }
 
-.panel {
+.panel{
     margin:6px;
     padding:10px;
     background:#0f1724;
     border:1px solid #223;
     overflow:auto;
-    min-height:200px;
 }
 
-h2 { font-size:13px; color:#7cc4ff; }
-
-input {
+input{
     width:100%;
     padding:8px;
-    margin:5px 0;
+    margin:6px 0;
     background:#0b1220;
     border:1px solid #2a3a55;
     color:white;
 }
 
-.stop {
+.stop{
     padding:6px;
     border-bottom:1px solid #1f2c40;
     cursor:pointer;
 }
-.stop:hover { background:#162235; }
+.stop:hover{ background:#162235; }
 
-.good { color:#7CFF9E; }
-.bad { color:#ff6b6b; }
-.warn { color:#ffd37c; }
+.good{ color:#7CFF9E; }
+.bad{ color:#ff6b6b; }
+.warn{ color:#ffd37c; }
 
-#mapBox {
-    height:150px;
-    border:1px solid #223;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    background:#0c1320;
-}
-
-.small { font-size:12px; opacity:0.8; }
+.small{ font-size:12px; opacity:0.8; }
 </style>
 </head>
 
 <body>
 
 <header>
-<div>🚦 FUTÁR MINI CORE V5 (SAFE)</div>
-<div class="small">NO WHITE SCREEN MODE ACTIVE</div>
+<div>🚦 GTFS FUTÁR ENGINE V6</div>
+<div class="small">schedule engine active</div>
 </header>
 
 <div class="grid">
 
 <!-- SEARCH -->
 <div class="panel">
-<h2>🔎 MEGÁLLÓK</h2>
-<input id="search" placeholder="Keresés..." oninput="searchStops()">
+<h2>🔎 STOP SEARCH</h2>
+<input id="q" placeholder="megálló keresés..." oninput="search()">
 <div id="results"></div>
 </div>
 
 <!-- DEPARTURES -->
 <div class="panel">
-<h2>🚏 INDULÁSOK</h2>
-<div id="departures">Válassz megállót</div>
+<h2>🚏 DEPARTURES (GTFS ENGINE)</h2>
+<div id="departures">válassz megállót</div>
 </div>
 
-<!-- MAP -->
+<!-- DEBUG -->
 <div class="panel">
-<h2>🗺 MAP CORE</h2>
-<div id="mapBox">Nincs kiválasztva</div>
+<h2>🧠 ENGINE DEBUG</h2>
+<div id="debug"></div>
 </div>
 
-<!-- LOG -->
+<!-- MAP SIM -->
 <div class="panel">
-<h2>🧠 LOG</h2>
-<div id="log"></div>
+<h2>🗺 LIVE SIM MAP</h2>
+<div id="map">no stop selected</div>
 </div>
 
 </div>
 
 <script>
 
-let selected = null;
+/* =========================
+   🧠 GTFS CORE MODEL
+========================= */
 
-/* 🔥 STABLE GTFS-LIKE STOP DB */
-const STOPS = [
- "Deák Ferenc tér",
- "Nyugati pályaudvar",
- "Batthyány tér",
- "Kelenföld vasútállomás",
- "Örs vezér tere",
- "Blaha Lujza tér",
- "Astoria",
- "Széll Kálmán tér"
+/*
+STOP MODEL (GTFS stops.txt)
+*/
+const stops = [
+ {id:"S1", name:"Deák Ferenc tér"},
+ {id:"S2", name:"Nyugati pályaudvar"},
+ {id:"S3", name:"Batthyány tér"},
+ {id:"S4", name:"Kelenföld vasútállomás"},
+ {id:"S5", name:"Örs vezér tere"},
 ];
 
-function log(msg){
-    const el = document.getElementById("log");
-    el.innerText += msg + "\n";
+/*
+TRIPS (gtfs trips.txt)
+*/
+const trips = [
+ {id:"T1", route:"M2"},
+ {id:"T2", route:"4-6"},
+ {id:"T3", route:"47"},
+ {id:"T4", route:"H5"},
+];
+
+/*
+STOP TIMES (gtfs stop_times.txt)
+trip_id → stop_id → minutes from midnight
+*/
+const stopTimes = [
+ {trip:"T1", stop:"S1", min:0},
+ {trip:"T1", stop:"S2", min:5},
+
+ {trip:"T2", stop:"S2", min:0},
+ {trip:"T2", stop:"S3", min:4},
+
+ {trip:"T3", stop:"S1", min:2},
+ {trip:"T3", stop:"S4", min:12},
+
+ {trip:"T4", stop:"S3", min:0},
+ {trip:"T4", stop:"S5", min:6},
+];
+
+/* =========================
+   🧠 ENGINE UTIL
+========================= */
+
+let selectedStop = null;
+
+function nowMinutes(){
+    const d = new Date();
+    return d.getHours()*60 + d.getMinutes();
 }
 
-/* 🔥 SAFE SEARCH (NO CRASH) */
-function searchStops(){
+function log(msg){
+    document.getElementById("debug").innerHTML += msg + "<br>";
+}
+
+/* =========================
+   🔎 SEARCH ENGINE
+========================= */
+
+function search(){
+    const q = document.getElementById("q").value.toLowerCase();
+    const box = document.getElementById("results");
+    box.innerHTML = "";
+
+    const res = stops.filter(s =>
+        s.name.toLowerCase().includes(q)
+    );
+
+    res.forEach(s=>{
+        const div = document.createElement("div");
+        div.className="stop";
+        div.innerText = s.name;
+        div.onclick = ()=>selectStop(s);
+        box.appendChild(div);
+    });
+}
+
+/* =========================
+   🚏 SELECT STOP
+========================= */
+
+function selectStop(stop){
+    selectedStop = stop;
+    log("SELECT STOP: " + stop.name);
+
+    renderDepartures(stop.id);
+    renderMap(stop.name);
+}
+
+/* =========================
+   🚦 GTFS ENGINE CORE
+========================= */
+
+function renderDepartures(stopId){
+    const box = document.getElementById("departures");
+    const now = nowMinutes();
+
     try {
-        const q = document.getElementById("search").value.toLowerCase();
-        const res = document.getElementById("results");
-        res.innerHTML = "";
 
-        if(!q) return;
+        // 1. find all stop_times for this stop
+        let hits = stopTimes.filter(st => st.stop === stopId);
 
-        const found = STOPS.filter(s =>
-            s.toLowerCase().includes(q)
-        );
-
-        if(found.length === 0){
-            res.innerHTML = "<div class='warn'>Nincs találat</div>";
+        if(hits.length === 0){
+            box.innerHTML = "<span class='warn'>no GTFS data for stop</span>";
             return;
         }
 
-        found.forEach(s=>{
-            const div = document.createElement("div");
-            div.className="stop";
-            div.innerText = s;
-            div.onclick = ()=>selectStop(s);
-            res.appendChild(div);
+        // 2. convert to real departures
+        let departures = hits.map(h => {
+            let trip = trips.find(t => t.id === h.trip);
+
+            return {
+                line: trip.route,
+                timeMin: h.min
+            };
         });
 
-    } catch(e){
-        log("SEARCH ERROR: " + e.message);
-    }
-}
+        // 3. filter future only
+        departures = departures.filter(d => d.timeMin >= now % 60);
 
-/* 🔥 SELECT STOP */
-function selectStop(stop){
-    selected = stop;
-    log("STOP: " + stop);
+        // 4. render
+        box.innerHTML = "<b>STOP ID:</b> " + stopId + "<br><br>";
 
-    renderDepartures(stop);
-    renderMap(stop);
-}
-
-/* 🔥 FUTÁR-SZERŰ INDULÁS (SIMULÁLT, DE VALÓS LOGIKA) */
-function renderDepartures(stop){
-    try {
-        const box = document.getElementById("departures");
-        const now = new Date();
-
-        const lines = [
-            {line:"M2", offset:2},
-            {line:"4-6", offset:4},
-            {line:"47", offset:7},
-            {line:"H5", offset:11}
-        ];
-
-        box.innerHTML = "<b>" + stop + "</b><br><br>";
-
-        lines.forEach(l=>{
-            const t = new Date(now.getTime() + l.offset*60000);
+        departures.forEach(d=>{
+            let t = new Date();
+            t.setMinutes(t.getMinutes() + (d.timeMin - (now % 60)));
 
             box.innerHTML += `
-                🚍 ${l.line} → ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}<br>
+                🚍 ${d.line} → ${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}<br>
             `;
         });
 
+        log("DEPARTURES OK: " + departures.length);
+
     } catch(e){
-        log("DEPARTURE ERROR: " + e.message);
+        box.innerHTML = "<span class='bad'>ENGINE ERROR SAFE MODE</span>";
+        log("ERROR: " + e.message);
     }
 }
 
-/* 🔥 SAFE MAP (SOHA NEM FEHÉR) */
-function renderMap(stop){
-    const m = document.getElementById("mapBox");
+/* =========================
+   🗺 MAP SIM
+========================= */
 
-    try {
-        if(!stop){
-            m.innerHTML = "Nincs kiválasztva";
-            return;
-        }
+function renderMap(name){
+    const m = document.getElementById("map");
 
-        m.innerHTML = `
-            <div>
-                📍 <b>${stop}</b><br><br>
-                🚌 járművek szimulációja aktív<br>
-                <span class="small">SAFE MAP CORE OK</span>
-            </div>
-        `;
-
-    } catch(e){
-        m.innerHTML = "MAP ERROR SAFE MODE";
-        log("MAP ERROR: " + e.message);
-    }
+    m.innerHTML = `
+        <div class="good">📍 ACTIVE STOP</div>
+        <div>${name}</div>
+        <br>
+        <div class="small">GTFS ENGINE LINKED</div>
+        <div>🚌 vehicles simulation layer active</div>
+    `;
 }
 
-/* 🔥 BOOT SAFETY */
-try {
-    log("FUTÁR V5 START OK");
-} catch(e){}
+log("GTFS ENGINE V6 BOOT OK");
 
 </script>
 
