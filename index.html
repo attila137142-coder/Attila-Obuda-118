@@ -1,1 +1,177 @@
-<!DOCTYPE html><html lang="hu"><head><meta charset="UTF-8"><title>FAILSAFE CONTROL ROOM V2</title><style>body{margin:0;font-family:Arial;background:#0b1220;color:white;overflow:hidden;}header{height:55px;background:#111827;display:flex;align-items:center;justify-content:space-between;padding:0 15px;font-size:22px;font-weight:bold;border-bottom:2px solid #1f2937;}.layout{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 55px);}.left{background:#111827;overflow:auto;padding:10px;border-right:2px solid #1f2937;}.right{overflow:auto;padding:10px;background:#0f172a;}.box{background:#1e293b;border-radius:10px;padding:12px;margin-bottom:12px;box-shadow:0 0 12px rgba(0,0,0,0.4);}.row{display:flex;justify-content:space-between;padding:8px;border-bottom:1px solid rgba(255,255,255,0.08);font-size:13px;}.green{color:#7CFF7C;font-weight:bold;}.blue{color:#4da6ff;font-weight:bold;}.red{color:#ff6666;font-weight:bold;}.yellow{color:#ffd966;font-weight:bold;}.badge{background:#222;padding:2px 6px;border-radius:5px;font-size:11px;margin-left:5px;}.small{font-size:11px;opacity:0.8;}button{background:#2563eb;color:white;border:none;padding:8px 10px;border-radius:6px;margin:3px;cursor:pointer;font-weight:bold;}button:hover{background:#3b82f6;}.hidden{display:none;}.telemetry{font-family:monospace;line-height:1.6;font-size:13px;}.gauge{height:22px;background:#111;border-radius:6px;overflow:hidden;margin-top:5px;}.fill{height:100%;background:#4da6ff;width:50%;transition:0.4s;}.graph{height:140px;background:#111;border-radius:8px;position:relative;overflow:hidden;}.bar{position:absolute;bottom:0;width:8px;background:#4da6ff;}.statusDot{width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:6px;}</style></head><body><header><div>🚍 FAILSAFE CONTROL ROOM V2</div><div id="clock"></div></header><div class="layout"><!-- LEFT --><div class="left"><div class="box"><h3>🧠 CONTROL SWITCHES</h3><button onclick="toggleBox('telemetryBox')">📡 TELEMETRIA</button><button onclick="toggleBox('graphBox')">📈 GRAPH</button><button onclick="toggleBox('dashboardBox')">🚍 MŰSZERFAL</button></div><div class="box"><h3>🔍 MEGÁLLÓ KERESŐ</h3><inputtype="text"placeholder="Pl: Békásmegyer"style="width:100%;padding:8px;border:none;border-radius:6px;"oninput="search(this.value)"></div><div class="box"><h3>🚏 ÉLŐ INDULÁSOK</h3><div id="departures"></div></div><div class="box"><h3>🛰 FAILSAFE STATUS</h3><div id="failsafe"></div></div></div><!-- RIGHT --><div class="right"><div class="box" id="dashboardBox"><h3>🚍 MŰSZERFAL</h3><div class="row"><div>⚡ Sebesség</div><div id="speedText">0 km/h</div></div><div class="gauge"><div class="fill" id="speedFill"></div></div><div class="row"><div>📶 GPRS</div><div id="signalText"></div></div><div class="gauge"><div class="fill" id="signalFill"></div></div><div class="row"><div>🎯 GPS Pontosság</div><div id="gpsText"></div></div><div class="gauge"><div class="fill" id="gpsFill"></div></div></div><div class="box" id="telemetryBox"><h3>📡 TELEMETRY CORE</h3><div id="telemetry" class="telemetry"></div></div><div class="box" id="graphBox"><h3>📈 SPEED GRAPH</h3><div class="graph" id="graph"></div></div></div></div><script>/* =========================CLOCK========================= */function updateClock(){document.getElementById("clock").innerText =new Date().toLocaleTimeString();}setInterval(updateClock,1000);updateClock();/* =========================ROUTES========================= */let routes = [{line:"160",stop:"Békásmegyer HÉV",forda:"F12",bus:"MXT-442",delay:35},{line:"243",stop:"Donát utca",forda:"F7",bus:"NZA-188",delay:-18},{line:"134",stop:"Szentlélek tér",forda:"F2",bus:"SGX-921",delay:5},{line:"H5",stop:"Szentendre",forda:"HÉV-3",bus:"MXA-H5",delay:0}];/* =========================STATE FORMAT========================= */function formatDelay(d){if(d > 20)return `<span class="red">🔴 SIET +${d.toFixed(0)}s</span>`;if(d < -20)return `<span class="blue">🔵 KÉSÉS ${d.toFixed(0)}s</span>`;return `<span class="green">🟢 PONTOS</span>`;}/* =========================RENDER========================= */function render(list){let html = "";list.forEach(r=>{let t = new Date();t.setSeconds(t.getSeconds() + r.delay);html += `<div class="row"><div><b>${r.line}</b><div class="small">🚏 ${r.stop}</div><div class="small">🧩 ${r.forda}</div><div class="small">🚍 ${r.bus}</div></div><div>${formatDelay(r.delay)}<div class="small">${t.toLocaleTimeString()}</div></div></div>`;});document.getElementById("departures").innerHTML = html;}render(routes);/* =========================SEARCH========================= */function search(q){q = q.toLowerCase();render(routes.filter(r=>r.stop.toLowerCase().includes(q) ||r.line.toLowerCase().includes(q)));}/* =========================FAILSAFE ENGINE========================= */let sourceModes = ["LIVE","GTFS","SIM"];let currentMode = 0;function failsafe(){let mode = sourceModes[currentMode];let color = "green";if(mode === "GTFS") color = "yellow";if(mode === "SIM") color = "red";document.getElementById("failsafe").innerHTML = `<div class="row"><div><span class="statusDot"style="background:${color};"></span>DATA SOURCE</div><div class="${color}">${mode}</div></div><div class="row"><div>LAST UPDATE</div><div>${new Date().toLocaleTimeString()}</div></div><div class="row"><div>ROXYKA SAFE MODE</div><div class="green">ACTIVE 😄</div></div>`;}/* =========================TELEMETRY========================= */let speed = 34;let graphData = [];function telemetry(){try{speed += (Math.random()*8 - 4);if(speed < 0) speed = 0;if(speed > 70) speed = 70;let signal = -60 - Math.floor(Math.random()*25);let gps = (Math.random()*5 + 2).toFixed(1);let doors = [Math.random() > 0.7 ? "OPEN" : "CLOSED",Math.random() > 0.8 ? "OPEN" : "CLOSED",Math.random() > 0.9 ? "OPEN" : "CLOSED"];document.getElementById("telemetry").innerHTML = `🚍 VEHICLE: MXT-442<br>📍 GPS: 47.5123 , 19.0456<br>📶 SIGNAL: ${signal} dBm<br>🎯 GPS: ${gps}m<br>⚡ SPEED: ${speed.toFixed(0)} km/h<br>🛰 HEARTBEAT: OK<br><br>🚪 D1: ${doors[0]}<br>🚪 D2: ${doors[1]}<br>🚪 D3: ${doors[2]}<br><br>🚏 NEXT STOP:<br>Békásmegyer HÉV`;document.getElementById("speedText").innerText =speed.toFixed(0) + " km/h";document.getElementById("speedFill").style.width =(speed*1.4) + "%";document.getElementById("signalText").innerText =signal + " dBm";document.getElementById("signalFill").style.width =(100 - Math.abs(signal)) + "%";document.getElementById("gpsText").innerText =gps + "m";document.getElementById("gpsFill").style.width =(100 - gps*10) + "%";graphData.push(speed);if(graphData.length > 40)graphData.shift();let ghtml = "";graphData.forEach((v,i)=>{ghtml += `<div class="bar"style="left:${i*9}px;height:${v*1.5}px;"></div>`;});document.getElementById("graph").innerHTML = ghtml;}catch(e){currentMode = 2;}}/* =========================TOGGLE========================= */function toggleBox(id){document.getElementById(id).classList.toggle("hidden");}/* =========================MAIN LOOP========================= */function loop(){routes.forEach(r=>{r.delay += (Math.random()*6 - 3);});telemetry();failsafe();render(routes);/* RANDOM FAILSAFE SWITCH */if(Math.random() > 0.97){currentMode++;if(currentMode > 2)currentMode = 0;}}setInterval(loop,1000);loop();</script></body></html>
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>CONTROL ROOM // ATTILA KÖZLEKEDÉS</title>
+
+<style>
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #0b0f14;
+    color: #00ff9d;
+}
+
+header {
+    background: #111826;
+    padding: 12px;
+    font-size: 18px;
+    font-weight: bold;
+    border-bottom: 1px solid #00ff9d33;
+}
+
+.grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: 45vh 45vh;
+    gap: 8px;
+    padding: 8px;
+}
+
+.panel {
+    background: #0f1622;
+    border: 1px solid #00ff9d33;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
+.panel h3 {
+    margin: 0;
+    padding: 8px;
+    background: #111f2e;
+    font-size: 14px;
+    border-bottom: 1px solid #00ff9d33;
+}
+
+.content {
+    padding: 8px;
+    overflow: auto;
+    font-size: 12px;
+}
+
+iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+}
+
+.status {
+    color: #ffd166;
+}
+.ok { color: #00ff9d; }
+.err { color: #ff4d4d; }
+
+button {
+    background: #00ff9d;
+    border: none;
+    padding: 6px;
+    margin-top: 6px;
+    cursor: pointer;
+    font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+🚦 CONTROL ROOM // ATTILA KÖZLEKEDÉS // REALTIME SYSTEM V1
+</header>
+
+<div class="grid">
+
+    <!-- VEHICLES -->
+    <div class="panel">
+        <h3>🚌 JÁRMŰVEK (REALTIME)</h3>
+        <div class="content" id="vehicles">Betöltés...</div>
+    </div>
+
+    <!-- LINES -->
+    <div class="panel">
+        <h3>📊 VONAL / HISTORY</h3>
+        <div class="content" id="lines">Betöltés...</div>
+    </div>
+
+    <!-- MAP -->
+    <div class="panel">
+        <h3>🗺️ TÉRKÉP (REALTIME MAP)</h3>
+        <iframe src="https://futar.bkk.hu/"></iframe>
+    </div>
+
+    <!-- DEBUG / LINKS -->
+    <div class="panel">
+        <h3>🧠 DEBUG + ADAT FORRÁSOK</h3>
+        <div class="content">
+            <div class="status">LIVE DATA STREAM ATTEMPT</div>
+
+            <p>Vehicles API:</p>
+            <code>https://online.winmenetrend.hu/futar/vehicles?more_info=1</code>
+
+            <p>Lines history:</p>
+            <code>https://online.winmenetrend.hu/futar/history/lines</code>
+
+            <p>Realtime map:</p>
+            <code>https://futar.bkk.hu/</code>
+
+            <p>Extra map layer:</p>
+            <code>https://map.realtimenext.hu/</code>
+
+            <button onclick="loadData()">🔄 ADAT FRISSÍTÉS</button>
+        </div>
+    </div>
+
+</div>
+
+<script>
+
+async function fetchData(url) {
+    try {
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("HTTP error");
+        return await res.text();
+    } catch (e) {
+        return null;
+    }
+}
+
+async function loadData() {
+
+    document.getElementById("vehicles").innerHTML = "Betöltés...";
+
+    // VEHICLES
+    let v = await fetchData("https://online.winmenetrend.hu/futar/vehicles?more_info=1");
+
+    if (v) {
+        document.getElementById("vehicles").innerHTML =
+            "<span class='ok'>LIVE DATA OK</span><br><pre>" +
+            v.slice(0, 1500) +
+            "</pre>";
+    } else {
+        document.getElementById("vehicles").innerHTML =
+            "<span class='err'>NINCS DIRECT HOZZÁFÉRÉS (CORS)</span><br>" +
+            "👉 de az API él:<br>" +
+            "<a href='https://online.winmenetrend.hu/futar/vehicles?more_info=1' target='_blank'>megnyitás</a>";
+    }
+
+    // LINES
+    let l = await fetchData("https://online.winmenetrend.hu/futar/history/lines");
+
+    if (l) {
+        document.getElementById("lines").innerHTML =
+            "<span class='ok'>LIVE DATA OK</span><br><pre>" +
+            l.slice(0, 1500) +
+            "</pre>";
+    } else {
+        document.getElementById("lines").innerHTML =
+            "<span class='err'>NINCS DIRECT HOZZÁFÉRÉS (CORS)</span><br>" +
+            "👉 vonal history elérhető, csak böngészőből:";
+    }
+}
+
+loadData();
+
+</script>
+
+</body>
+</html>
