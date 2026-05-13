@@ -1,4 +1,92 @@
-<!DOCTYPE html><html lang="hu"><head><meta charset="UTF-8"><title>DISPATCHER CORE V3</title><style>body { margin:0; font-family:Arial; background:#0b0f14; color:#d7e6ff; }header {    background:#111a27;    padding:10px;    display:flex;    justify-content:space-between;    border-bottom:1px solid #223;}.grid {    display:grid;    grid-template-columns: 1fr 1fr;    height:calc(100vh - 50px);}.panel {    margin:6px;    padding:10px;    background:#0f1724;    border:1px solid #223;    overflow:auto;}h2 { font-size:13px; color:#7cc4ff; }input {    width:90%;    padding:6px;    margin:4px 0;    background:#0b1220;    border:1px solid #2a3a55;    color:white;}button {    padding:6px;    margin:3px;    background:#1d2a40;    border:1px solid #2b3f5a;    color:white;    cursor:pointer;}button:hover { background:#24364f; }.stop { padding:6px; border-bottom:1px solid #1f2c40; cursor:pointer; }.stop:hover { background:#162235; }.good { color:#7CFF9E; }.bad { color:#ff6b6b; }.warn { color:#ffd37c; }#log { font-size:12px; white-space:pre-wrap; }.small { font-size:12px; opacity:0.8; }</style></head><body><header><div>🚦 DISPATCHER CORE V3</div><div><button onclick="loadFeed()">REFRESH FEED</button><button onclick="toggleMock()">TOGGLE MOCK API</button></div></header><div class="grid"><!-- SEARCH PANEL --><div class="panel"><h2>🔎 MEGÁLLÓ KERESŐ</h2><input id="search" placeholder="pl. Nyugati, Deák, Batthyány..." oninput="searchStops()"><div id="results"></div></div><!-- DEPARTURES --><div class="panel"><h2>🚏 INDULÁSOK</h2><div id="departures" class="small">Válassz megállót...</div></div><!-- MAP SIM --><div class="panel"><h2>🗺 LIVE MAP CORE (SIM)</h2><div id="map"></div></div><!-- LOG --><div class="panel"><h2>🧠 SYSTEM LOG</h2><div id="log"></div></div></div><script>let USE_MOCK = true;let selectedStop = null;/* --- DEMO GTFS-LIKE ADAT --- */const STOPS = [ {id:1, name:"Deák Ferenc tér"}, {id:2, name:"Nyugati pályaudvar"}, {id:3, name:"Batthyány tér"}, {id:4, name:"Kelenföld vasútállomás"}, {id:5, name:"Örs vezér tere"}];const DEPARTURES = {  1:[{t:"12:01",line:"M2"},{t:"12:05",line:"47"}],  2:[{t:"12:10",line:"4-6"},{t:"12:14",line:"6"}],  3:[{t:"12:08",line:"H5"},{t:"12:20",line:"19"}],  4:[{t:"12:03",line:"M4"},{t:"12:17",line:"7"}],  5:[{t:"12:02",line:"M2"},{t:"12:25",line:"80"}]};function log(msg){  document.getElementById("log").innerText += msg + "\n";}/* --- SAFE SEARCH --- */function searchStops(){  try {    const q = document.getElementById("search").value.toLowerCase();    const res = document.getElementById("results");    res.innerHTML = "";    const filtered = STOPS.filter(s => s.name.toLowerCase().includes(q));    if(filtered.length === 0){      res.innerHTML = "<div class='warn'>Nincs találat</div>";      return;    }    filtered.forEach(s=>{      const div = document.createElement("div");      div.className="stop";      div.innerText = s.name;      div.onclick = ()=>selectStop(s);      res.appendChild(div);    });  } catch(e){    log("SEARCH ERROR: " + e.message);  }}/* --- STOP SELECT --- */function selectStop(stop){  selectedStop = stop;  log("SELECTED STOP: " + stop.name);  loadDepartures(stop.id);  renderMap(stop);}/* --- DEPARTURES --- */function loadDepartures(id){  try {    const box = document.getElementById("departures");    let data = USE_MOCK ? DEPARTURES[id] : null;    if(!data){      box.innerHTML = "<span class='bad'>No live data → fallback mode</span>";      return;    }    box.innerHTML = "<b>" + selectedStop.name + "</b><br><br>";    data.forEach(d=>{      box.innerHTML += `🚍 ${d.line} → ${d.t}<br>`;    });  } catch(e){    log("DEPARTURE ERROR: " + e.message);  }}/* --- MAP SIM --- */function renderMap(stop){  const m = document.getElementById("map");  try {    m.innerHTML = `      <div class='good'>📍 ACTIVE STOP:</div>      <div>${stop.name}</div>      <br>      <div class='small'>LIVE VEHICLES SIMULATION</div>      <div>🚌 bus moving... (mock)</div>    `;  } catch(e){    log("MAP ERROR: " + e.message);  }}/* --- FEED --- */function loadFeed(){  log("FEED REFRESH");  searchStops();  if(selectedStop) loadDepartures(selectedStop.id);}/* --- MOCK SWITCH --- */function toggleMock(){  USE_MOCK = !USE_MOCK;  log("MOCK MODE: " + USE_MOCK);}log("DISPATCHER V3 BOOT OK");</script></body></html>
+<script>
+
+// 🔥 FAKE → GTFS READY STOP DATABASE (később CSV-ből jön)
+let STOPS = [
+  "Deák Ferenc tér",
+  "Nyugati pályaudvar",
+  "Batthyány tér",
+  "Kelenföld vasútállomás",
+  "Örs vezér tere",
+  "Astoria",
+  "Blaha Lujza tér",
+  "Széll Kálmán tér",
+  "Móricz Zsigmond körtér",
+  "Keleti pályaudvar"
+];
+
+// 🔥 REAL SEARCH ENGINE (FIX)
+function normalize(str){
+  return str
+    .toLowerCase()
+    .replaceAll("á","a")
+    .replaceAll("é","e")
+    .replaceAll("í","i")
+    .replaceAll("ó","o")
+    .replaceAll("ö","o")
+    .replaceAll("ő","o")
+    .replaceAll("ú","u")
+    .replaceAll("ü","u");
+}
+
+function searchStops(){
+  try {
+    const q = normalize(document.getElementById("search").value);
+    const res = document.getElementById("results");
+    res.innerHTML = "";
+
+    if(!q) return;
+
+    const filtered = STOPS.filter(s =>
+      normalize(s).includes(q)
+    );
+
+    if(filtered.length === 0){
+      res.innerHTML = "<div class='warn'>Nincs találat (GTFS DB kell majd)</div>";
+      return;
+    }
+
+    filtered.forEach(name=>{
+      const div = document.createElement("div");
+      div.className="stop";
+      div.innerText = name;
+      div.onclick = ()=>selectStop(name);
+      res.appendChild(div);
+    });
+
+  } catch(e){
+    log("SEARCH ERROR: " + e.message);
+  }
+}
+
+// 🔥 FAKE → REAL SLOT FOR GTFS DEPARTURES
+function loadDepartures(stopName){
+  const box = document.getElementById("departures");
+
+  try {
+
+    // 👉 EZ MÉG DEMO, DE MÁR STRUKTURÁLT
+    const now = new Date();
+
+    const mock = [
+      {line:"M2", min:2},
+      {line:"47", min:5},
+      {line:"4-6", min:7},
+      {line:"H5", min:12}
+    ];
+
+    box.innerHTML = "<b>" + stopName + "</b><br><br>";
+
+    mock.forEach(d=>{
+      const t = new Date(now.getTime() + d.min*60000);
+      box.innerHTML += `🚍 ${d.line} → ${t.getHours()}:${String(t.getMinutes()).padStart(2,'0')}<br>`;
+    });
+
+  } catch(e){
+    log("DEPARTURE ERROR: " + e.message);
+  }
+}
+
+</script>
 
 
 
