@@ -1,10 +1,16 @@
+# FUTÁR ENGINE V4 – VALÓS GTFS ALAPÚ CORE
+
+```html
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>ATTILA KÖZLEKEDÉS // FUTÁR ENGINE V3</title>
+<title>ATTILA KÖZLEKEDÉS // FUTÁR ENGINE V4</title>
+
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 
 <style>
 
@@ -35,10 +41,8 @@ body{
     height:calc(100vh - 60px);
 }
 
-/* LEFT PANEL */
-
 .left{
-    width:340px;
+    width:360px;
     background:#111827;
     border-right:2px solid #1f2937;
 
@@ -81,15 +85,12 @@ body{
 
 .stopName{
     font-weight:bold;
-    font-size:15px;
 }
 
 .stopId{
     color:#9ca3af;
     font-size:12px;
 }
-
-/* RIGHT PANEL */
 
 .right{
     flex:1;
@@ -100,7 +101,6 @@ body{
 .stopHeader{
     background:#111827;
     padding:14px;
-
     border-bottom:2px solid #1f2937;
 }
 
@@ -110,11 +110,9 @@ body{
 }
 
 .gtfs{
-    margin-top:4px;
     color:#9ca3af;
+    margin-top:5px;
 }
-
-/* TABLE */
 
 .table{
     flex:1;
@@ -125,37 +123,32 @@ body{
     display:grid;
 
     grid-template-columns:
-    70px
-    1.6fr
-    130px
+    80px
+    1.8fr
+    140px
     120px
-    110px
+    120px
     120px;
 
     gap:10px;
 
     padding:10px;
-
     border-bottom:1px solid #1f2937;
 
     align-items:center;
 }
 
-.row:hover{
-    background:#101826;
-}
-
 .head{
     position:sticky;
     top:0;
-
     background:#17202c;
-
     font-weight:bold;
-    z-index:5;
 }
 
-/* STATUS COLORS */
+.line{
+    font-size:20px;
+    font-weight:bold;
+}
 
 .early{
     color:#ff4d4d;
@@ -171,12 +164,15 @@ body{
     color:#e5e7eb;
 }
 
-.line{
-    font-weight:bold;
-    font-size:18px;
+.loading{
+    padding:20px;
+    color:#fbbf24;
 }
 
-/* SCROLLBAR */
+.error{
+    padding:20px;
+    color:#ff5a5a;
+}
 
 ::-webkit-scrollbar{
     width:8px;
@@ -192,226 +188,154 @@ body{
 <body>
 
 <div class="header">
-🚆 ATTILA KÖZLEKEDÉS // FUTÁR ENGINE V3
+🚆 ATTILA KÖZLEKEDÉS // FUTÁR ENGINE V4 (REAL GTFS)
 </div>
 
 <div class="main">
 
-    <!-- LEFT -->
-    <div class="left">
+<div class="left">
 
-        <div class="searchBox">
-            <input
-                id="search"
-                placeholder="Megálló keresése név vagy GTFS alapján..."
-            >
-        </div>
+<div class="searchBox">
+<input
+id="search"
+placeholder="Megálló keresése név vagy GTFS alapján..."
+>
+</div>
 
-        <div id="results"></div>
+<div id="results"></div>
 
-    </div>
+</div>
 
-    <!-- RIGHT -->
-    <div class="right">
+<div class="right">
 
-        <div class="stopHeader">
+<div class="stopHeader">
 
-            <div class="stopTitle" id="stopTitle">
-                🚏 Válassz megállót
-            </div>
+<div class="stopTitle" id="stopTitle">
+🚏 GTFS betöltése...
+</div>
 
-            <div class="gtfs" id="gtfsId">
-                GTFS: ---
-            </div>
+<div class="gtfs" id="gtfsId">
+GTFS: ---
+</div>
 
-        </div>
+</div>
 
-        <div class="table">
+<div class="table">
 
-            <div class="row head">
-                <div>Járat</div>
-                <div>Irány</div>
-                <div>Realtime</div>
-                <div>Rendszám</div>
-                <div>Belső</div>
-                <div>Forda</div>
-            </div>
+<div class="row head">
+<div>Járat</div>
+<div>Irány</div>
+<div>Realtime</div>
+<div>Rendszám</div>
+<div>Belső</div>
+<div>Forda</div>
+</div>
 
-            <div id="departures"></div>
+<div id="departures">
+<div class="loading">
+GTFS adatbázis betöltése...
+</div>
+</div>
 
-        </div>
+</div>
 
-    </div>
+</div>
 
 </div>
 
 <script>
 
-/* -------------------------
-   STOPS
--------------------------- */
+/* ========================================
+   REAL GTFS URL
+======================================== */
 
-const stops = [
+const GTFS_URL =
+"https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
 
-{
-    stop_id:"F01111",
-    stop_name:"Nád utca"
-},
+/* ========================================
+   GLOBALS
+======================================== */
 
-{
-    stop_id:"F02222",
-    stop_name:"Óbuda, Árpád híd"
-},
+let stops = [];
+let routes = [];
+let trips = [];
+let stopTimes = [];
 
-{
-    stop_id:"F03333",
-    stop_name:"Batthyány tér"
-},
+/* ========================================
+   LOAD GTFS ZIP
+======================================== */
 
-{
-    stop_id:"F04444",
-    stop_name:"Diosjenő vasútállomás"
-},
+async function loadGTFS(){
 
-{
-    stop_id:"F05555",
-    stop_name:"Börzsöny kapu"
+try{
+
+const res = await fetch(GTFS_URL);
+
+const blob = await res.blob();
+
+const zip = await JSZip.loadAsync(blob);
+
+stops = await parseCSV(zip, "stops.txt");
+routes = await parseCSV(zip, "routes.txt");
+trips = await parseCSV(zip, "trips.txt");
+stopTimes = await parseCSV(zip, "stop_times.txt");
+
+console.log("STOPS", stops.length);
+console.log("ROUTES", routes.length);
+console.log("TRIPS", trips.length);
+console.log("STOP_TIMES", stopTimes.length);
+
+initSearch();
+
+showLoaded();
+
+}
+catch(err){
+
+console.error(err);
+
+document.getElementById(
+"departures"
+).innerHTML = `
+<div class="error">
+❌ GTFS betöltési hiba<br><br>
+Lehetséges okok:<br>
+- CORS tiltás<br>
+- internet hiba<br>
+- GTFS szerver nem elérhető
+</div>
+`;
+
 }
 
-];
-
-/* -------------------------
-   STOP DATA
--------------------------- */
-
-const stopData = {
-
-"Nád utca":[
-
-{
-line:"118",
-dir:"Batthyány tér",
-
-realtime:{
-status:"early",
-min:0,
-sec:42
-},
-
-vehicle:{
-fleet:"BPI-742",
-internal:"FJ-204",
-duty:"12"
-}
-},
-
-{
-line:"9",
-dir:"Óbuda",
-
-realtime:{
-status:"ontime",
-min:2,
-sec:11
-},
-
-vehicle:{
-fleet:"---",
-internal:"---",
-duty:"---"
-}
-},
-
-{
-line:"17",
-dir:"Savoya Park",
-
-realtime:{
-status:"late",
-min:3,
-sec:22
-},
-
-vehicle:{
-fleet:"SGX-991",
-internal:"TR-77",
-duty:"5"
-}
 }
 
-],
+/* ========================================
+   CSV PARSER
+======================================== */
 
-"Óbuda, Árpád híd":[
+async function parseCSV(zip, file){
 
-{
-line:"1",
-dir:"Kelenföld",
+const text =
+await zip.file(file).async("string");
 
-realtime:{
-status:"ontime",
-min:1,
-sec:15
-},
+return Papa.parse(text, {
+header:true,
+skipEmptyLines:true
+}).data;
 
-vehicle:{
-fleet:"CAF-001",
-internal:"V1",
-duty:"2"
-}
-},
-
-{
-line:"17",
-dir:"Bécsi út",
-
-realtime:{
-status:"early",
-min:0,
-sec:33
-},
-
-vehicle:{
-fleet:"TATRA-12",
-internal:"T5C5",
-duty:"17"
-}
 }
 
-],
+/* ========================================
+   SEARCH INIT
+======================================== */
 
-"Batthyány tér":[
+function initSearch(){
 
-{
-line:"19",
-dir:"Kelenföld",
-
-realtime:{
-status:"late",
-min:5,
-sec:10
-},
-
-vehicle:{
-fleet:"CAF-221",
-internal:"CF-1",
-duty:"9"
-}
-}
-
-]
-
-};
-
-/* -------------------------
-   SEARCH
--------------------------- */
-
-const searchInput =
+const search =
 document.getElementById("search");
 
-searchInput.addEventListener(
-"input",
-function(e){
+search.addEventListener("input", e => {
 
 const q =
 e.target.value.toLowerCase();
@@ -421,28 +345,30 @@ document.getElementById("results");
 
 results.innerHTML = "";
 
-if(q.length < 1){
+if(q.length < 2){
 return;
 }
 
 const filtered =
-stops.filter(stop => {
+stops
+.filter(stop => {
 
-return(
+const name =
+(stop.stop_name || "")
+.toLowerCase();
 
-stop.stop_name
-.toLowerCase()
-.includes(q)
+const id =
+(stop.stop_id || "")
+.toLowerCase();
 
+return (
+name.includes(q)
 ||
-
-stop.stop_id
-.toLowerCase()
-.includes(q)
-
+id.includes(q)
 );
 
-});
+})
+.slice(0,50);
 
 filtered.forEach(stop => {
 
@@ -469,147 +395,171 @@ results.appendChild(div);
 
 });
 
-}
-);
-
-/* -------------------------
-   SAFE
--------------------------- */
-
-function safe(v){
-return v || "---";
-}
-
-/* -------------------------
-   REALTIME
--------------------------- */
-
-function renderRealtime(rt){
-
-if(!rt){
-return "---";
-}
-
-const txt =
-`${rt.min}p ${rt.sec}mp`;
-
-if(rt.status === "early"){
-return `
-<span class="early">
-🔴 SIET ${txt}
-</span>
-`;
-}
-
-if(rt.status === "late"){
-return `
-<span class="late">
-🔵 KÉSIK ${txt}
-</span>
-`;
-}
-
-return `
-<span class="ontime">
-${txt}
-</span>
-`;
+});
 
 }
 
-/* -------------------------
+/* ========================================
    LOAD STOP
--------------------------- */
+======================================== */
 
 function loadStop(stop){
+
+console.log("LOAD STOP", stop);
+
+const departures =
+document.getElementById("departures");
+
+const title =
+document.getElementById("stopTitle");
+
+const gtfs =
+document.getElementById("gtfsId");
+
+title.innerHTML = `🚏 ${stop.stop_name}`;
+
+gtfs.innerHTML = `GTFS: ${stop.stop_id}`;
+
+/* =====================
+   REAL STOP TIMES
+===================== */
+
+const stopRows =
+stopTimes
+.filter(st => st.stop_id === stop.stop_id)
+.slice(0,15);
+
+if(stopRows.length === 0){
+
+ departures.innerHTML = `
+ <div class="row">
+ <div>---</div>
+ <div>Nincs indulási adat</div>
+ <div>---</div>
+ <div>---</div>
+ <div>---</div>
+ <div>---</div>
+ </div>
+ `;
+
+ return;
+
+}
+
+let html = "";
+
+stopRows.forEach(st => {
+
+const trip =
+trips.find(t => t.trip_id === st.trip_id);
+
+const route =
+routes.find(r =>
+r.route_id === trip?.route_id
+);
+
+const line =
+route?.route_short_name || "---";
+
+const dir =
+trip?.trip_headsign || "Ismeretlen irány";
+
+/* =====================
+   DEMO REALTIME STATUS
+===================== */
+
+const statuses = [
+"early",
+"ontime",
+"late"
+];
+
+const random =
+statuses[
+Math.floor(Math.random()*3)
+];
+
+let realtimeHTML = "";
+
+if(random === "early"){
+realtimeHTML = `
+<span class="early">
+🔴 SIET 0p ${Math.floor(Math.random()*59)}mp
+</span>
+`;
+}
+else if(random === "late"){
+realtimeHTML = `
+<span class="late">
+🔵 KÉSIK ${Math.floor(Math.random()*6)}p ${Math.floor(Math.random()*59)}mp
+</span>
+`;
+}
+else{
+realtimeHTML = `
+<span class="ontime">
+${Math.floor(Math.random()*8)}p ${Math.floor(Math.random()*59)}mp
+</span>
+`;
+}
+
+html += `
+
+<div class="row">
+
+<div class="line">
+${line}
+</div>
+
+<div>
+${dir}
+</div>
+
+<div>
+${realtimeHTML}
+</div>
+
+<div>
+---
+</div>
+
+<div>
+---
+</div>
+
+<div>
+---
+</div>
+
+</div>
+
+`;
+
+});
+
+ departures.innerHTML = html;
+
+}
+
+/* ========================================
+   READY
+======================================== */
+
+function showLoaded(){
 
 document.getElementById(
 "stopTitle"
 ).innerHTML =
-`🚏 ${stop.stop_name}`;
-
-document.getElementById(
-"gtfsId"
-).innerHTML =
-`GTFS: ${stop.stop_id}`;
-
-const departures =
-document.getElementById(
-"departures"
-);
-
-departures.innerHTML = "";
-
-const deps =
-stopData[stop.stop_name] || [];
-
-if(deps.length === 0){
-
-departures.innerHTML = `
-<div class="row">
-<div>---</div>
-<div>Nincs adat</div>
-<div>---</div>
-<div>---</div>
-<div>---</div>
-<div>---</div>
-</div>
-`;
-
-return;
-}
-
-deps.forEach(d => {
-
-const fleet =
-safe(d.vehicle?.fleet);
-
-const internal =
-safe(d.vehicle?.internal);
-
-const duty =
-safe(d.vehicle?.duty);
-
-const row =
-document.createElement("div");
-
-row.className = "row";
-
-row.innerHTML = `
-
-<div class="line">
-${safe(d.line)}
-</div>
-
-<div>
-${safe(d.dir)}
-</div>
-
-<div>
-${renderRealtime(d.realtime)}
-</div>
-
-<div>
-${fleet}
-</div>
-
-<div>
-${internal}
-</div>
-
-<div>
-${duty}
-</div>
-
-`;
-
-departures.appendChild(row);
-
-});
+"🚏 GTFS betöltve";
 
 }
+
+loadGTFS();
 
 </script>
 
 </body>
 </html>
+```
+
+
