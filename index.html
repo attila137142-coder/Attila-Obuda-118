@@ -2,459 +2,174 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>ÓBUDA LIVE DISPATCH BOARD V1</title>
+<title>Attila Közlekedés - Unified Search</title>
 
 <style>
-
-body{
-margin:0;
-background:#08111f;
-font-family:Arial;
-color:white;
-overflow:hidden;
+body {
+  margin: 0;
+  font-family: Arial;
+  background: #0f0f0f;
+  color: white;
 }
 
-/* =========================
-HEADER
-========================= */
-
-#topbar{
-height:70px;
-background:#0d1a2e;
-display:flex;
-align-items:center;
-padding:0 20px;
-border-bottom:2px solid #1d3557;
+.header {
+  padding: 10px;
+  background: #1a1a1a;
+  font-size: 18px;
+  font-weight: bold;
 }
 
-#title{
-font-size:34px;
-font-weight:bold;
+.container {
+  display: flex;
+  height: calc(100vh - 40px);
 }
 
-#clock{
-margin-left:auto;
-font-size:30px;
-font-weight:bold;
-color:#7dc3ff;
+/* LEFT SEARCH */
+.left {
+  width: 30%;
+  padding: 10px;
+  border-right: 1px solid #333;
 }
 
-/* =========================
-SEARCH
-========================= */
-
-#searchWrap{
-padding:15px;
-background:#101c30;
-border-bottom:1px solid #22395f;
+input {
+  width: 100%;
+  padding: 10px;
+  font-size: 16px;
+  margin-bottom: 10px;
 }
 
-#search{
-width:100%;
-height:55px;
-font-size:26px;
-border:none;
-outline:none;
-border-radius:10px;
-padding-left:15px;
-background:#e8eef7;
+.result {
+  padding: 6px;
+  border-bottom: 1px solid #222;
+  cursor: pointer;
 }
 
-/* =========================
-BOARD
-========================= */
-
-#board{
-height:calc(100vh - 140px);
-overflow:auto;
+/* RIGHT PANEL */
+.right {
+  flex: 1;
+  padding: 10px;
 }
 
-/* =========================
-HEADER ROW
-========================= */
-
-.headerRow{
-display:grid;
-grid-template-columns:
-90px
-320px
-180px
-120px
-160px
-160px;
-padding:12px;
-background:#13233d;
-font-weight:bold;
-font-size:20px;
-position:sticky;
-top:0;
-z-index:10;
-border-bottom:2px solid #335b99;
+.panel {
+  border: 1px solid #333;
+  padding: 10px;
+  height: 90%;
+  overflow: hidden;
 }
 
-/* =========================
-LIVE ROW
-========================= */
-
-.row{
-display:grid;
-grid-template-columns:
-90px
-320px
-180px
-120px
-160px
-160px;
-
-padding:12px;
-font-size:24px;
-
-border-bottom:1px solid rgba(255,255,255,0.08);
-
-align-items:center;
+.row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px;
+  border-bottom: 1px solid #222;
+  font-size: 13px;
 }
 
-.row:nth-child(even){
-background:#0c1628;
+.siet {
+  color: red;
+  font-weight: bold;
 }
-
-.row:hover{
-background:#142544;
-}
-
-/* =========================
-STATUS COLORS
-========================= */
-
-.early{
-color:#ff4040;
-font-weight:bold;
-}
-
-.ontime{
-color:#ffffff;
-font-weight:bold;
-}
-
-.late{
-color:#58a6ff;
-font-weight:bold;
-}
-
-/* =========================
-BADGES
-========================= */
-
-.badge{
-display:inline-block;
-padding:3px 8px;
-border-radius:6px;
-background:#22395f;
-font-size:15px;
-margin-left:6px;
-}
-
-/* =========================
-SCROLLBAR
-========================= */
-
-::-webkit-scrollbar{
-width:10px;
-}
-
-::-webkit-scrollbar-thumb{
-background:#355a92;
-border-radius:10px;
-}
-
 </style>
 </head>
 
 <body>
 
-<!-- =========================
-TOP BAR
-========================= -->
+<div class="header">🚆 ATTILA KÖZLEKEDÉS // UNIFIED SEARCH CORE V1</div>
 
-<div id="topbar">
+<div class="container">
 
-<div id="title">
-🚍 ÓBUDA LIVE DISPATCH BOARD V1
-</div>
+  <!-- SEARCH -->
+  <div class="left">
+    <input id="search" placeholder="Megálló neve vagy GTFS ID..." />
 
-<div id="clock">
---:--:--
-</div>
+    <div id="results"></div>
+  </div>
 
-</div>
-
-<!-- =========================
-SEARCH
-========================= -->
-
-<div id="searchWrap">
-
-<input
-id="search"
-placeholder="🔎 Megálló keresése NÉV vagy GTFS ID alapján...">
-
-</div>
-
-<!-- =========================
-BOARD
-========================= -->
-
-<div id="board">
-
-<div class="headerRow">
-
-<div>VONAL</div>
-<div>IRÁNY</div>
-<div>ÁLLAPOT</div>
-<div>FORDA</div>
-<div>RENDSZÁM</div>
-<div>BELSŐ ID</div>
-
-</div>
-
-<div id="rows"></div>
+  <!-- REALTIME PANEL -->
+  <div class="right">
+    <div class="panel">
+      <div id="departures"></div>
+    </div>
+  </div>
 
 </div>
 
 <script>
-
-/* =========================
-CLOCK
-========================= */
-
-function updateClock(){
-
-const now = new Date();
-
-document.getElementById("clock").innerText =
-now.toLocaleTimeString("hu-HU");
-
-}
-
-setInterval(updateClock,1000);
-updateClock();
-
-/* =========================
-REALISTIC SAMPLE DATA
-(KÉSŐBB GTFS/REALTIME IDE)
-========================= */
-
-let departures = [
-
-{
-line:"160",
-direction:"Békásmegyer HÉV",
-delay:82,
-forda:"F12",
-plate:"AOFL-240",
-internal:"V2259",
-stop_name:"Békásmegyer H",
-stop_id:"F00457"
-},
-
-{
-line:"243",
-direction:"Donát utca",
-delay:0,
-forda:"F7",
-plate:"AOFL-241",
-internal:"V1188",
-stop_name:"Békásmegyer H",
-stop_id:"F00457"
-},
-
-{
-line:"134",
-direction:"Szentlélek tér",
-delay:-38,
-forda:"F2",
-plate:"NGC-156",
-internal:"V4421",
-stop_name:"Békásmegyer H",
-stop_id:"F00457"
-},
-
-{
-line:"H5",
-direction:"Szentendre",
-delay:95,
-forda:"HÉV-3",
-plate:"1103-752",
-internal:"H5110",
-stop_name:"Aquincum",
-stop_id:"H00312"
-},
-
-{
-line:"17",
-direction:"Savoya Park",
-delay:12,
-forda:"TRAM-4",
-plate:"V2259",
-internal:"TR177",
-stop_name:"Bécsi út",
-stop_id:"T00112"
-}
-
+// -------------------- MOCK GTFS --------------------
+const stops = [
+  { id: 1, name: "Nád utca" },
+  { id: 2, name: "Óbuda, Árpád híd" },
+  { id: 3, name: "Diosjenő vasútállomás" },
+  { id: 4, name: "Börzsöny kapu" }
 ];
 
-/* =========================
-GENERATE MORE ROWS
-========================= */
+const departuresMock = [
+  { line: "9", dir: "Újpest", min: 2, siet: true },
+  { line: "17", dir: "Savoya Park", min: 5, siet: false },
+  { line: "19", dir: "Kelenföld", min: 1, siet: true },
+  { line: "60", dir: "Széll Kálmán tér", min: 12, siet: false },
+  { line: "118", dir: "Batthyány tér", min: 3, siet: true },
+  { line: "160", dir: "Rómaifürdő", min: 8, siet: false },
+  { line: "260", dir: "Solymár", min: 6, siet: false },
+  { line: "260A", dir: "Hűvösvölgy", min: 4, siet: true },
+  { line: "219", dir: "Gazdagrét", min: 10, siet: false },
+  { line: "1", dir: "Bécsi út", min: 7, siet: false },
+  { line: "41", dir: "Kamaraerdő", min: 9, siet: false },
+  { line: "47", dir: "Deák tér", min: 3, siet: true },
+  { line: "49", dir: "Kelenföld", min: 14, siet: false },
+  { line: "56", dir: "Hűvösvölgy", min: 11, siet: false },
+  { line: "17", dir: "Bécsi út", min: 15, siet: false }
+];
 
-while(departures.length < 15){
-
-departures.push({
-...departures[departures.length % 5]
+// -------------------- SEARCH FIX --------------------
+document.getElementById("search").addEventListener("input", (e) => {
+  searchStops(e.target.value);
 });
 
+function searchStops(q) {
+  const box = document.getElementById("results");
+  box.innerHTML = "";
+
+  if (!q) return;
+
+  const res = stops.filter(s =>
+    s.name.toLowerCase().includes(q.toLowerCase())
+  );
+
+  res.forEach(r => {
+    const div = document.createElement("div");
+    div.className = "result";
+    div.textContent = r.name;
+
+    div.onclick = () => loadDepartures(r.name);
+
+    box.appendChild(div);
+  });
 }
 
-/* =========================
-FORMAT DELAY
-========================= */
+// -------------------- PANEL RENDER (15 SOR) --------------------
+function loadDepartures(stopName) {
+  const box = document.getElementById("departures");
+  box.innerHTML = `<b>🚏 ${stopName}</b><br><br>`;
 
-function formatDelay(sec){
+  departuresMock.forEach((d, i) => {
+    const row = document.createElement("div");
+    row.className = "row";
 
-const abs = Math.abs(sec);
+    row.innerHTML = `
+      <div>${d.line}</div>
+      <div>${d.dir}</div>
+      <div class="${d.siet ? 'siet' : ''}">
+        ${d.min}p
+      </div>
+    `;
 
-const min = Math.floor(abs/60);
-const s = abs % 60;
-
-const txt =
-`${min}:${s.toString().padStart(2,'0')}`;
-
-if(sec < -20){
-
-return `<span class="early">
-🔴 SIET -${txt}
-</span>`;
-
+    box.appendChild(row);
+  });
 }
 
-if(sec > 20){
-
-return `<span class="late">
-🔵 KÉSIK +${txt}
-</span>`;
-
-}
-
-return `<span class="ontime">
-⚪ PONTOS
-</span>`;
-
-}
-
-/* =========================
-RENDER
-========================= */
-
-function render(filter=""){
-
-const rows = document.getElementById("rows");
-
-rows.innerHTML = "";
-
-departures
-.filter(d=>{
-
-const q = filter.toLowerCase();
-
-return (
-d.stop_name.toLowerCase().includes(q)
-||
-d.stop_id.toLowerCase().includes(q)
-||
-d.line.toLowerCase().includes(q)
-);
-
-})
-
-.forEach(d=>{
-
-rows.innerHTML += `
-
-<div class="row">
-
-<div>
-${d.line}
-<span class="badge">GTFS</span>
-</div>
-
-<div>
-${d.direction}
-</div>
-
-<div>
-${formatDelay(d.delay)}
-</div>
-
-<div>
-${d.forda}
-</div>
-
-<div>
-${d.plate}
-</div>
-
-<div>
-${d.internal}
-</div>
-
-</div>
-
-`;
-
-});
-
-}
-
-/* =========================
-SEARCH
-========================= */
-
-document
-.getElementById("search")
-.addEventListener("input",(e)=>{
-
-render(e.target.value);
-
-});
-
-/* =========================
-LIVE UPDATE SIM
-(KÉSŐBB REALTIME)
-========================= */
-
-function tick(){
-
-departures.forEach(d=>{
-
-d.delay += Math.floor(Math.random()*7)-3;
-
-if(d.delay > 300) d.delay = 40;
-if(d.delay < -120) d.delay = -20;
-
-});
-
-render(
-document.getElementById("search").value
-);
-
-}
-
-setInterval(tick,5000);
-
-render();
-
+// default view
+loadDepartures("Válassz megállót");
 </script>
 
 </body>
