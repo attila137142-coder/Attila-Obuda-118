@@ -1,152 +1,461 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>ÓBUDA LIVE DISPATCH BOARD V1</title>
+
+<style>
+
+body{
+margin:0;
+background:#08111f;
+font-family:Arial;
+color:white;
+overflow:hidden;
+}
+
+/* =========================
+HEADER
+========================= */
+
+#topbar{
+height:70px;
+background:#0d1a2e;
+display:flex;
+align-items:center;
+padding:0 20px;
+border-bottom:2px solid #1d3557;
+}
+
+#title{
+font-size:34px;
+font-weight:bold;
+}
+
+#clock{
+margin-left:auto;
+font-size:30px;
+font-weight:bold;
+color:#7dc3ff;
+}
+
+/* =========================
+SEARCH
+========================= */
+
+#searchWrap{
+padding:15px;
+background:#101c30;
+border-bottom:1px solid #22395f;
+}
+
+#search{
+width:100%;
+height:55px;
+font-size:26px;
+border:none;
+outline:none;
+border-radius:10px;
+padding-left:15px;
+background:#e8eef7;
+}
+
+/* =========================
+BOARD
+========================= */
+
+#board{
+height:calc(100vh - 140px);
+overflow:auto;
+}
+
+/* =========================
+HEADER ROW
+========================= */
+
+.headerRow{
+display:grid;
+grid-template-columns:
+90px
+320px
+180px
+120px
+160px
+160px;
+padding:12px;
+background:#13233d;
+font-weight:bold;
+font-size:20px;
+position:sticky;
+top:0;
+z-index:10;
+border-bottom:2px solid #335b99;
+}
+
+/* =========================
+LIVE ROW
+========================= */
+
+.row{
+display:grid;
+grid-template-columns:
+90px
+320px
+180px
+120px
+160px
+160px;
+
+padding:12px;
+font-size:24px;
+
+border-bottom:1px solid rgba(255,255,255,0.08);
+
+align-items:center;
+}
+
+.row:nth-child(even){
+background:#0c1628;
+}
+
+.row:hover{
+background:#142544;
+}
+
+/* =========================
+STATUS COLORS
+========================= */
+
+.early{
+color:#ff4040;
+font-weight:bold;
+}
+
+.ontime{
+color:#ffffff;
+font-weight:bold;
+}
+
+.late{
+color:#58a6ff;
+font-weight:bold;
+}
+
+/* =========================
+BADGES
+========================= */
+
+.badge{
+display:inline-block;
+padding:3px 8px;
+border-radius:6px;
+background:#22395f;
+font-size:15px;
+margin-left:6px;
+}
+
+/* =========================
+SCROLLBAR
+========================= */
+
+::-webkit-scrollbar{
+width:10px;
+}
+
+::-webkit-scrollbar-thumb{
+background:#355a92;
+border-radius:10px;
+}
+
+</style>
+</head>
+
+<body>
+
+<!-- =========================
+TOP BAR
+========================= -->
+
+<div id="topbar">
+
+<div id="title">
+🚍 ÓBUDA LIVE DISPATCH BOARD V1
+</div>
+
+<div id="clock">
+--:--:--
+</div>
+
+</div>
+
+<!-- =========================
+SEARCH
+========================= -->
+
+<div id="searchWrap">
+
+<input
+id="search"
+placeholder="🔎 Megálló keresése NÉV vagy GTFS ID alapján...">
+
+</div>
+
+<!-- =========================
+BOARD
+========================= -->
+
+<div id="board">
+
+<div class="headerRow">
+
+<div>VONAL</div>
+<div>IRÁNY</div>
+<div>ÁLLAPOT</div>
+<div>FORDA</div>
+<div>RENDSZÁM</div>
+<div>BELSŐ ID</div>
+
+</div>
+
+<div id="rows"></div>
+
+</div>
+
 <script>
 
-// 🚏 STOP CACHE
+/* =========================
+CLOCK
+========================= */
 
-const stops = [
+function updateClock(){
 
-{ id:"1", name:"Nás utca", type:"BKK" },
-{ id:"2", name:"Tahitótfalu, hídfő", type:"VOLÁN" },
-{ id:"3", name:"Nyugati pályaudvar", type:"BKK" },
-{ id:"4", name:"Batthyány tér", type:"BKK" },
-{ id:"5", name:"Szentendre, autóbusz-állomás", type:"VOLÁN" },
-{ id:"6", name:"Kelenföld vasútállomás", type:"BKK" }
+const now = new Date();
+
+document.getElementById("clock").innerText =
+now.toLocaleTimeString("hu-HU");
+
+}
+
+setInterval(updateClock,1000);
+updateClock();
+
+/* =========================
+REALISTIC SAMPLE DATA
+(KÉSŐBB GTFS/REALTIME IDE)
+========================= */
+
+let departures = [
+
+{
+line:"160",
+direction:"Békásmegyer HÉV",
+delay:82,
+forda:"F12",
+plate:"AOFL-240",
+internal:"V2259",
+stop_name:"Békásmegyer H",
+stop_id:"F00457"
+},
+
+{
+line:"243",
+direction:"Donát utca",
+delay:0,
+forda:"F7",
+plate:"AOFL-241",
+internal:"V1188",
+stop_name:"Békásmegyer H",
+stop_id:"F00457"
+},
+
+{
+line:"134",
+direction:"Szentlélek tér",
+delay:-38,
+forda:"F2",
+plate:"NGC-156",
+internal:"V4421",
+stop_name:"Békásmegyer H",
+stop_id:"F00457"
+},
+
+{
+line:"H5",
+direction:"Szentendre",
+delay:95,
+forda:"HÉV-3",
+plate:"1103-752",
+internal:"H5110",
+stop_name:"Aquincum",
+stop_id:"H00312"
+},
+
+{
+line:"17",
+direction:"Savoya Park",
+delay:12,
+forda:"TRAM-4",
+plate:"V2259",
+internal:"TR177",
+stop_name:"Bécsi út",
+stop_id:"T00112"
+}
 
 ];
 
-// 🧠 NORMALIZE
+/* =========================
+GENERATE MORE ROWS
+========================= */
 
-function normalize(str){
+while(departures.length < 15){
 
-    return str
-        .toLowerCase()
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g,"");
-
-}
-
-// 🔍 SEARCH ENGINE
-
-function searchStops(){
-
-    const input =
-        document.getElementById("search");
-
-    const results =
-        document.getElementById("results");
-
-    const q =
-        normalize(input.value);
-
-    results.innerHTML = "";
-
-    if(q.length < 1){
-        return;
-    }
-
-    const filtered =
-        stops.filter(stop =>
-
-            normalize(stop.name)
-            .includes(q)
-
-        );
-
-    filtered.forEach(stop=>{
-
-        const div =
-            document.createElement("div");
-
-        div.className = "stop";
-
-        div.innerHTML = `
-            🚏 ${stop.name}
-            <div class="sub">${stop.type}</div>
-        `;
-
-        div.onclick = ()=>loadStop(stop);
-
-        results.appendChild(div);
-
-    });
+departures.push({
+...departures[departures.length % 5]
+});
 
 }
 
-// 🚍 PANEL
+/* =========================
+FORMAT DELAY
+========================= */
 
-function loadStop(stop){
+function formatDelay(sec){
 
-    const panel =
-        document.getElementById("panel");
+const abs = Math.abs(sec);
 
-    panel.innerHTML =
-        `<h2>🚏 ${stop.name}</h2>`;
+const min = Math.floor(abs/60);
+const s = abs % 60;
 
-    const lines = [
+const txt =
+`${min}:${s.toString().padStart(2,'0')}`;
 
-        "4","6","7","8E",
-        "M2","M3","M4",
-        "105","133E",
-        "14","47","49",
-        "880","890","895"
+if(sec < -20){
 
-    ];
-
-    for(let i=0;i<15;i++){
-
-        const mins =
-            Math.floor(Math.random()*12)+1;
-
-        const delayed =
-            Math.random() > 0.8;
-
-        panel.innerHTML += `
-
-        <div class="row">
-
-            <div class="line">
-                ${lines[i]}
-            </div>
-
-            <div>
-                Irány ${i+1}
-            </div>
-
-            <div class="time">
-                ${mins} perc
-            </div>
-
-            <div class="${
-                delayed
-                ? 'delay'
-                : 'live'
-            }">
-
-                ${
-                    delayed
-                    ? 'KÉSIK'
-                    : 'LIVE'
-                }
-
-            </div>
-
-        </div>
-
-        `;
-    }
+return `<span class="early">
+🔴 SIET -${txt}
+</span>`;
 
 }
 
-// 🚀 EVENT LISTENER FIX
+if(sec > 20){
 
-window.onload = ()=>{
+return `<span class="late">
+🔵 KÉSIK +${txt}
+</span>`;
 
-    document
-        .getElementById("search")
-        .addEventListener(
-            "input",
-            searchStops
-        );
+}
 
-};
+return `<span class="ontime">
+⚪ PONTOS
+</span>`;
+
+}
+
+/* =========================
+RENDER
+========================= */
+
+function render(filter=""){
+
+const rows = document.getElementById("rows");
+
+rows.innerHTML = "";
+
+departures
+.filter(d=>{
+
+const q = filter.toLowerCase();
+
+return (
+d.stop_name.toLowerCase().includes(q)
+||
+d.stop_id.toLowerCase().includes(q)
+||
+d.line.toLowerCase().includes(q)
+);
+
+})
+
+.forEach(d=>{
+
+rows.innerHTML += `
+
+<div class="row">
+
+<div>
+${d.line}
+<span class="badge">GTFS</span>
+</div>
+
+<div>
+${d.direction}
+</div>
+
+<div>
+${formatDelay(d.delay)}
+</div>
+
+<div>
+${d.forda}
+</div>
+
+<div>
+${d.plate}
+</div>
+
+<div>
+${d.internal}
+</div>
+
+</div>
+
+`;
+
+});
+
+}
+
+/* =========================
+SEARCH
+========================= */
+
+document
+.getElementById("search")
+.addEventListener("input",(e)=>{
+
+render(e.target.value);
+
+});
+
+/* =========================
+LIVE UPDATE SIM
+(KÉSŐBB REALTIME)
+========================= */
+
+function tick(){
+
+departures.forEach(d=>{
+
+d.delay += Math.floor(Math.random()*7)-3;
+
+if(d.delay > 300) d.delay = 40;
+if(d.delay < -120) d.delay = -20;
+
+});
+
+render(
+document.getElementById("search").value
+);
+
+}
+
+setInterval(tick,5000);
+
+render();
 
 </script>
+
+</body>
+</html>
