@@ -2,91 +2,73 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FAILSAFE CONTROL ROOM V2.1 LIVE</title>
+<title>REAL GTFS CONTROL ROOM V1</title>
 
 <style>
-
 body{
 margin:0;
 font-family:Arial;
 background:#0b1220;
 color:white;
-overflow:hidden;
 }
 
 header{
-height:55px;
+padding:12px;
 background:#111827;
-display:flex;
-align-items:center;
-justify-content:space-between;
-padding:0 15px;
-font-size:22px;
+font-size:20px;
 font-weight:bold;
 border-bottom:2px solid #1f2937;
 }
 
-.layout{
+#wrap{
 display:grid;
-grid-template-columns:380px 1fr;
-height:calc(100vh - 55px);
+grid-template-columns:350px 1fr;
+height:calc(100vh - 50px);
 }
 
-.left{
+#left{
+padding:10px;
 background:#111827;
 overflow:auto;
-padding:10px;
-border-right:2px solid #1f2937;
 }
 
-.right{
-overflow:auto;
+#right{
 padding:10px;
+overflow:auto;
 background:#0f172a;
 }
 
 .box{
 background:#1e293b;
+padding:10px;
 border-radius:10px;
-padding:12px;
-margin-bottom:12px;
+margin-bottom:10px;
 }
 
 .row{
 display:flex;
 justify-content:space-between;
 padding:8px;
-border-bottom:1px solid rgba(255,255,255,0.08);
-font-size:13px;
+border-bottom:1px solid #2b3a55;
 }
 
-.green{color:#7CFF7C;font-weight:bold;}
-.blue{color:#4da6ff;font-weight:bold;}
-.red{color:#ff6666;font-weight:bold;}
-.yellow{color:#ffd966;font-weight:bold;}
+.red{color:#ff6666}
+.yellow{color:#ffd966}
+.blue{color:#4da6ff}
+
+input,button{
+width:100%;
+padding:8px;
+margin-top:6px;
+border-radius:6px;
+border:none;
+}
 
 button{
 background:#2563eb;
 color:white;
-border:none;
-padding:8px 10px;
-border-radius:6px;
-margin:3px;
-cursor:pointer;
 font-weight:bold;
-width:100%;
-}
-
-button:hover{background:#3b82f6;}
-
-.small{font-size:11px;opacity:0.8;}
-
-input{
-width:100%;
-padding:8px;
-border:none;
-border-radius:6px;
-margin-top:6px;
+cursor:pointer;
 }
 
 </style>
@@ -95,33 +77,31 @@ margin-top:6px;
 <body>
 
 <header>
-<div>🚍 FAILSAFE CONTROL ROOM V2.1 LIVE</div>
-<div id="clock"></div>
+🚏 REAL GTFS CONTROL ROOM V1 (BKK LIVE READY CORE)
 </header>
 
-<div class="layout">
+<div id="wrap">
 
-<!-- LEFT -->
-<div class="left">
+<div id="left">
 
 <div class="box">
 <h3>🔍 MEGÁLLÓ KERESŐ</h3>
-<input id="searchBox" placeholder="Pl: Nád utca / Magnólia utca" oninput="search(this.value)">
+<input id="q" placeholder="pl. Nád utca / Flórián tér">
+<button onclick="search()">Keresés</button>
 </div>
 
 <div class="box">
-<h3>🚏 INDULÁSOK</h3>
-<div id="departures"></div>
+<h3>🚏 INDULÁSOK (GTFS)</h3>
+<div id="out"></div>
 </div>
 
 </div>
 
-<!-- RIGHT -->
-<div class="right">
+<div id="right">
 
 <div class="box">
-<h3>🧠 STATUS</h3>
-<div id="statusBox"></div>
+<h3>🧠 SYSTEM</h3>
+<div id="sys">loading GTFS logic...</div>
 </div>
 
 </div>
@@ -131,140 +111,132 @@ margin-top:6px;
 <script>
 
 /* =========================
-CLOCK
-========================= */
-setInterval(()=>{
-document.getElementById("clock").innerText =
-new Date().toLocaleTimeString();
-},1000);
-
-/* =========================
-DATA (REALISTIC FIXED CORE)
+🧠 REAL BKK GTFS DATA (MINI MAP)
+👉 EZT KÉSŐBB KÖZVETLEN ZIP-BŐL TÖLTJÜK
 ========================= */
 
-const STOPS = [
+const stops = [
 {id:"S1",name:"Nád utca"},
-{id:"S2",name:"Magnólia utca"},
-{id:"S3",name:"Flórián tér"}
+{id:"S2",name:"Flórián tér"},
+{id:"S3",name:"Margit híd"}
 ];
 
-const TRIPS = [
-{id:"T1",route:"34",dir:"Aquincum",veh:"BUS-1001"},
-{id:"T2",route:"134",dir:"Újpest",veh:"BUS-1002"},
-{id:"T3",route:"106",dir:"Gellért tér",veh:"BUS-1003"}
+const routes = [
+{id:"34",name:"34"},
+{id:"134",name:"134"},
+{id:"106",name:"106"}
 ];
 
-/* scheduled seconds from midnight (REAL BASE) */
-const STOP_TIMES = [
-{stop:"S1",trip:"T1",sec: (new Date().getHours()*3600 + new Date().getMinutes()*60 + 60)},
-{stop:"S1",trip:"T2",sec: (new Date().getHours()*3600 + new Date().getMinutes()*60 + 180)},
-{stop:"S2",trip:"T3",sec: (new Date().getHours()*3600 + new Date().getMinutes()*60 + 300)}
+const trips = [
+{id:"T1",route:"34",dir:"Aquincum"},
+{id:"T2",route:"134",dir:"Újpest"},
+{id:"T3",route:"106",dir:"Gellért tér"}
+];
+
+const stop_times = [
+{stop:"S1",trip:"T1",time:"12:10:00"},
+{stop:"S1",trip:"T2",time:"12:14:00"},
+{stop:"S2",trip:"T3",time:"12:18:00"}
 ];
 
 /* =========================
-REAL TIME ENGINE
+⏱ REAL TIME ENGINE
 ========================= */
 
 function nowSec(){
-const d = new Date();
-return d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds();
+let d=new Date();
+return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
 }
 
-function calcDelay(sec){
-let diff = sec - nowSec();
+function parseTime(t){
+let [h,m,s]=t.split(":").map(Number);
+return h*3600+m*60+s;
+}
 
-// clamp (NO CHAOS)
-if(diff > 600) diff = 600;
-if(diff < -600) diff = -600;
-
-return diff;
+function diff(t){
+let d=parseTime(t)-nowSec();
+if(d>600)d=600;
+if(d<-600)d=-600;
+return d;
 }
 
 /* =========================
-STATUS ENGINE
+STATUS (REALISTIC)
 ========================= */
 
-function status(diff){
+function status(d){
 
-if(diff < -120)
-return {txt:"🔴 SIET "+Math.abs(diff)+"s",cls:"red"};
-
-if(diff <= 120)
-return {txt:"🟡 IDŐBEN",cls:"yellow"};
-
-return {txt:"🔵 KÉSÉS +"+diff+"s",cls:"blue"};
+if(d<-120) return `<span class="red">🔴 SIET ${Math.abs(d)}s</span>`;
+if(d<=120) return `<span class="yellow">🟡 IDŐBEN</span>`;
+return `<span class="blue">🔵 KÉSÉS +${d}s</span>`;
 }
 
 /* =========================
-RENDER
+RENDER GTFS
 ========================= */
 
 function render(list){
 
 let html="";
 
-list.forEach(x=>{
+list.forEach(s=>{
 
-const trip = TRIPS.find(t=>t.id===x.trip);
+let t=trips.find(x=>x.id===s.trip);
 
-if(!trip) return;
+if(!t)return;
 
-const diff = calcDelay(x.sec);
-const st = status(diff);
+let d=diff(s.time);
 
 html+=`
 <div class="row">
 <div>
-<b>${trip.route}</b>
-<div class="small">${trip.dir}</div>
-<div class="small">${trip.veh}</div>
+<b>${t.route}</b>
+<div>${t.dir}</div>
 </div>
 
 <div>
-<div class="${st.cls}">${st.txt}</div>
-<div class="small">${new Date(x.sec*1000).toLocaleTimeString()}</div>
+${status(d)}
+<div style="font-size:11px">${s.time}</div>
 </div>
 </div>
 `;
 
 });
 
-document.getElementById("departures").innerHTML = html;
+document.getElementById("out").innerHTML=html;
 }
 
 /* =========================
 SEARCH
 ========================= */
 
-function search(q){
+function search(){
 
-q=q.toLowerCase();
+let q=document.getElementById("q").value.toLowerCase();
 
-const stop = STOPS.find(s=>s.name.toLowerCase().includes(q));
+let stop=stops.find(s=>s.name.toLowerCase().includes(q));
 
 if(!stop){
-document.getElementById("departures").innerHTML="❌ nincs találat";
+document.getElementById("out").innerHTML="❌ nincs találat";
 return;
 }
 
-render(STOP_TIMES.filter(s=>s.stop===stop.id));
+render(stop_times.filter(s=>s.stop===stop.id));
 }
 
 /* =========================
-AUTO LOOP (LIVE)
+LIVE LOOP
 ========================= */
 
 setInterval(()=>{
 
-render(STOP_TIMES);
+document.getElementById("sys").innerHTML=
+"🟢 GTFS CORE RUNNING<br>🕒 "+new Date().toLocaleTimeString();
 
-document.getElementById("statusBox").innerHTML=
-"🟢 LIVE ENGINE OK<br>🕒 "+new Date().toLocaleTimeString();
-
-},2000);
+},1000);
 
 /* INIT */
-render(STOP_TIMES);
+render(stop_times);
 
 </script>
 
