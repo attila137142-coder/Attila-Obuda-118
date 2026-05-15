@@ -1,160 +1,77 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<title>Stop Arrivals V1</title>
-
-<style>
-body {
-  font-family: Arial;
-  background: #0f0f0f;
-  color: #fff;
-  margin: 0;
-  padding: 20px;
-}
-
-h1 {
-  font-size: 20px;
-  margin-bottom: 10px;
-}
-
-.search-box {
-  display: flex;
-  gap: 10px;
-  margin-bottom: 15px;
-}
-
-input {
-  flex: 1;
-  padding: 10px;
-  font-size: 14px;
-}
-
-button {
-  padding: 10px;
-  cursor: pointer;
-}
-
-#board {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-/* 15 soros kijelző */
-.row {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px;
-  background: #1c1c1c;
-  border-left: 4px solid #444;
-  font-size: 13px;
-}
-
-.row.siet {
-  border-left: 4px solid red;
-}
-
-.row.ok {
-  border-left: 4px solid lime;
-}
-
-.col {
-  width: 20%;
-  text-align: left;
-}
-
-.small {
-  font-size: 11px;
-  opacity: 0.8;
-}
-</style>
-</head>
-
-<body>
-
-<h1>🚏 STOP ARRIVALS V1</h1>
-
-<div class="search-box">
-  <input id="stopInput" placeholder="Megálló neve / kód (pl. Nád utca)">
-  <button onclick="loadStop()">Keresés</button>
-</div>
-
-<div id="board"></div>
-
 <script>
-// 🔥 MOCK GTFS / REALTIME SIMULATION
-function generateMockData() {
-  const data = [];
+// ===== GTFS CORE ENGINE (REAL STRUCTURE) =====
 
-  for (let i = 0; i < 15; i++) {
-    const delay = Math.floor(Math.random() * 6) - 2; // -2 to +3 min
-    const sec = Math.floor(Math.random() * 60);
+// STOP DATABASE (helyettesíti a stops.txt-t)
+const STOPS = [
+  { id: "H123", name: "Nád utca" },
+  { id: "H124", name: "Flórián tér" }
+];
 
-    data.push({
-      route: "B" + (5 + i),
-      direction: i % 2 === 0 ? "Árpád híd" : "Batthyány tér",
-      arrival: (10 + i) + ":" + (sec < 10 ? "0"+sec : sec),
-      delay: delay,
-      vehicleId: "BUS-" + (1000 + i),
-      tripId: "TRIP-" + Math.floor(Math.random() * 99999)
-    });
-  }
+// STOP_TIMES (helyettesíti stop_times.txt)
+const STOP_TIMES = [
+  { stop_id: "H123", trip_id: "T1", time: "12:10:00" },
+  { stop_id: "H123", trip_id: "T2", time: "12:14:30" },
+  { stop_id: "H124", trip_id: "T3", time: "12:16:10" }
+];
 
-  return data;
+// TRIPS (járatok)
+const TRIPS = [
+  { id: "T1", route: "34", direction: "Aquincum", vehicle: "BUS-1021" },
+  { id: "T2", route: "134", direction: "Újpest", vehicle: "BUS-2201" },
+  { id: "T3", route: "106", direction: "Gellért tér", vehicle: "BUS-7781" }
+];
+
+// ===== STOP SEARCH =====
+function findStop(name) {
+  return STOPS.find(s =>
+    s.name.toLowerCase().includes(name.toLowerCase())
+  );
 }
 
-// 🚏 RENDER 15 SOR
-function renderBoard(data) {
-  const board = document.getElementById("board");
-  board.innerHTML = "";
+// ===== REAL DEPARTURE BUILD =====
+function buildDepartures(stopId) {
 
-  data.slice(0, 15).forEach(d => {
-    const div = document.createElement("div");
+  const now = new Date();
+  const hhmmss = now.toTimeString().split(" ")[0];
 
-    let statusText = "OK";
-    let cls = "ok";
+  return STOP_TIMES
+    .filter(st => st.stop_id === stopId)
+    .map(st => {
 
-    if (d.delay > 0) {
-      statusText = "KÉSÉS +" + d.delay + "p";
-      cls = "siet";
-    } else if (d.delay < 0) {
-      statusText = "SIET " + d.delay + "p";
-      cls = "siet";
-    }
+      const trip = TRIPS.find(t => t.id === st.trip_id);
 
-    div.className = "row " + cls;
+      // VERY SIMPLE DELAY SIM (itt jön majd realtime API)
+      const delay = Math.floor(Math.random() * 5) - 1;
 
-    div.innerHTML = `
-      <div class="col"><b>${d.route}</b></div>
-      <div class="col">${d.direction}</div>
-      <div class="col">${d.arrival}</div>
-      <div class="col">${statusText}</div>
-      <div class="col small">${d.vehicleId}</div>
-    `;
-
-    board.appendChild(div);
-  });
+      return {
+        route: trip.route,
+        direction: trip.direction,
+        time: st.time,
+        vehicle: trip.vehicle,
+        delay: delay,
+        status:
+          delay > 0 ? "KÉSÉS +" + delay :
+          delay < 0 ? "SIET " + delay :
+          "OK"
+      };
+    })
+    .slice(0, 15);
 }
 
-// 🔍 STOP LOAD
+// ===== MAIN LOAD =====
 function loadStop() {
-  const val = document.getElementById("stopInput").value;
 
-  if (!val) {
-    alert("Adj meg egy megállót!");
+  const input = document.getElementById("stopInput").value;
+
+  const stop = findStop(input);
+
+  if (!stop) {
+    alert("Nincs ilyen megálló a GTFS-ben!");
     return;
   }
 
-  // itt később GTFS filter lesz
-  const data = generateMockData();
+  const data = buildDepartures(stop.id);
 
   renderBoard(data);
 }
-
-// auto start demo
-renderBoard(generateMockData());
 </script>
-
-</body>
-</html>
