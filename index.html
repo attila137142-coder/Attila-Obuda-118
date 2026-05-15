@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 STOP SEARCH ENGINE</title>
+<title>FUTÁR V5 LIVE GTFS STREAM</title>
 
 <style>
 body{
@@ -38,11 +38,10 @@ min-height:400px;
 
 input{
 width:100%;
-padding:12px;
+padding:10px;
 background:#05070d;
 border:1px solid #00ffcc;
 color:#00ffcc;
-font-size:14px;
 }
 
 button{
@@ -53,29 +52,6 @@ background:#00ffcc;
 border:none;
 font-weight:bold;
 cursor:pointer;
-}
-
-.list{
-margin-top:10px;
-max-height:300px;
-overflow:auto;
-border-top:1px solid #00ffcc33;
-}
-
-.item{
-padding:8px;
-border-bottom:1px solid #00ffcc22;
-cursor:pointer;
-}
-
-.item:hover{
-background:#00ffcc11;
-}
-
-.badge{
-padding:2px 6px;
-border:1px solid #00ffcc;
-font-size:11px;
 }
 
 table{
@@ -90,41 +66,45 @@ padding:6px;
 font-size:13px;
 text-align:left;
 }
+
+.badge{padding:2px 6px;border:1px solid #00ffcc}
+
+.siet{background:red;color:white;padding:2px 6px}
+.keses{background:deepskyblue;color:white;padding:2px 6px}
+.ok{background:green;color:white;padding:2px 6px}
 </style>
 </head>
 
 <body>
 
 <header>
-🚍 FUTÁR V5 STOP SEARCH ENGINE // DISPATCH LEVEL
+🚍 FUTÁR V5 LIVE GTFS STREAM ENGINE // REALTIME SIM
 </header>
 
 <div class="container">
 
-<!-- SEARCH -->
+<!-- LEFT -->
 <div class="panel">
-<h3>🚏 Megálló kereső</h3>
+<h3>🚏 Megálló (LIVE)</h3>
 
-<input id="search" placeholder="Írj be pl. Nád utca / Deák tér">
+<input id="stop" placeholder="pl. Deák tér">
+<button onclick="selectStop()">KIVÁLASZTÁS</button>
 
-<button onclick="searchStops()">KERESÉS</button>
-
-<div class="list" id="suggestions"></div>
+<div id="info"></div>
 </div>
 
-<!-- RESULTS -->
+<!-- RIGHT -->
 <div class="panel">
-<h3>🛰 Indulások</h3>
-
-<div id="selected"></div>
+<h3>🛰 LIVE INDULÁSOK STREAM</h3>
 
 <table>
 <thead>
 <tr>
 <th>Járat</th>
 <th>Irány</th>
-<th>Ford</th>
-<th>Idő</th>
+<th>Forda</th>
+<th>Indul</th>
+<th>Status</th>
 </tr>
 </thead>
 
@@ -139,118 +119,78 @@ text-align:left;
 
 /*
 ========================
-GTFS STOP INDEX (PRO)
+LIVE GTFS STREAM (SIMULÁLT)
 ========================
 */
 
-const stops = [
-"Deák tér",
-"Blaha Lujza tér",
-"Óbuda",
-"Kelenföld",
-"Déli pályaudvar",
-"Nád utca",
-"Batthyány tér",
-"Keleti pályaudvar"
-];
+let currentStop = "Deák tér";
 
 /*
-========================
-GTFS TRIPS + STOP_TIMES
-========================
+GTFS LIVE FEED (mock stream backend replacement)
 */
+function getLiveFeed(stop){
 
-const data = {
-"Nád utca":[
-  {route:"7E", dir:"Blaha Lujza tér", vehicle:"F-102 / BPO-778", min:2, sec:15, status:"SIET"},
-  {route:"9", dir:"Óbuda", vehicle:"F-205 / BPO-441", min:4, sec:40, status:"OK"}
-],
-
+const base = {
 "Deák tér":[
-  {route:"47", dir:"Kelenföld", vehicle:"F-311 / JLN-229", min:1, sec:10, status:"SIET"},
-  {route:"M2", dir:"Déli pályaudvar", vehicle:"METRO-02", min:6, sec:55, status:"KESÉS"}
+{route:"47", dir:"Kelenföld", vehicle:"F-311", min:1, sec:10},
+{route:"M2", dir:"Déli", vehicle:"METRO-02", min:5, sec:40}
 ],
-
-"Kelenföld":[
-  {route:"M4", dir:"Keleti pályaudvar", vehicle:"METRO-04", min:3, sec:20, status:"OK"}
+"Nád utca":[
+{route:"7E", dir:"Blaha", vehicle:"F-102", min:2, sec:30},
+{route:"9", dir:"Óbuda", vehicle:"F-205", min:4, sec:10}
 ]
 };
 
-/*
-========================
-NORMALIZER (GTFS STYLE)
-========================
-*/
-
-function norm(str){
-return str.toLowerCase()
-.normalize("NFD")
-.replace(/\p{Diacritic}/gu,"");
-}
+let data = base[stop] || [];
 
 /*
-========================
-TYPEAHEAD SEARCH
-========================
+LIVE SIMULATION:
+random delay shift every refresh
 */
+return data.map(d=>{
 
-function searchStops(){
-let val = document.getElementById("search").value;
+let drift = Math.floor(Math.random()*3)-1; // -1,0,+1
 
-let box = document.getElementById("suggestions");
-box.innerHTML="";
+let newMin = Math.max(0, d.min + drift);
 
-if(!val) return;
+let status =
+drift < 0 ? "SIET" :
+drift > 0 ? "KESÉS" : "OK";
 
-let found = stops.filter(s =>
-norm(s).includes(norm(val))
-);
-
-found.forEach(f=>{
-let div = document.createElement("div");
-div.className="item";
-div.innerHTML = "🚏 "+f;
-
-div.onclick = ()=>selectStop(f);
-
-box.appendChild(div);
+return {
+...d,
+min:newMin,
+status
+};
 });
 }
 
 /*
 ========================
-SELECT STOP
+RENDER STREAM
 ========================
 */
 
-function selectStop(name){
+function render(){
+let table = document.getElementById("table");
+table.innerHTML="";
 
-document.getElementById("selected").innerHTML =
-"🚏 Kiválasztva: <b>"+name+"</b>";
+let feed = getLiveFeed(currentStop);
 
-let t = document.getElementById("table");
-t.innerHTML="";
-
-let trips = data[name];
-
-if(!trips){
-t.innerHTML = "<tr><td colspan='4'>❌ nincs GTFS adat</td></tr>";
-return;
-}
-
-trips.forEach(d=>{
+feed.forEach(d=>{
 
 let status =
 d.status==="SIET" ? "🔴 SIET" :
 d.status==="KESÉS" ? "🔵 KÉSÉS" :
 "🟢 OK";
 
-t.innerHTML += `
+table.innerHTML += `
 <tr>
 <td>${d.route}</td>
 <td>${d.dir}</td>
 <td>${d.vehicle}</td>
-<td>${d.min}p ${d.sec}s (${status})</td>
+<td>${d.min}p ${d.sec}s</td>
+<td>${status}</td>
 </tr>
 `;
 });
@@ -258,14 +198,29 @@ t.innerHTML += `
 
 /*
 ========================
-ENTER SUPPORT
+STOP SELECT
 ========================
 */
 
-document.getElementById("search")
-.addEventListener("keydown", function(e){
-if(e.key==="Enter") searchStops();
-});
+function selectStop(){
+let v = document.getElementById("stop").value;
+if(v) currentStop = v;
+
+document.getElementById("info").innerHTML =
+"🚏 Aktív megálló: <b>"+currentStop+"</b>";
+}
+
+/*
+========================
+LIVE STREAM LOOP
+========================
+*/
+
+setInterval(()=>{
+render();
+}, 2000);
+
+render();
 
 </script>
 
