@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BKK GTFS IMPORTER V1</title>
+<title>BKK GTFS IMPORTER V1.1 FIX</title>
 
 <style>
 body{
@@ -41,11 +41,15 @@ margin-top:5px;
 background:#05070d;
 border:1px solid #00ffcc;
 color:#00ffcc;
+cursor:pointer;
 }
 
 pre{
 white-space:pre-wrap;
 font-size:12px;
+background:#05070d;
+padding:10px;
+border:1px solid #00ffcc33;
 }
 </style>
 </head>
@@ -53,24 +57,27 @@ font-size:12px;
 <body>
 
 <header>
-🚍 BKK GTFS IMPORTER V1 // ZIP → JSON ENGINE
+🚍 BKK GTFS IMPORTER V1.1 FIXED // DEBUG MODE
 </header>
 
 <div class="container">
 
 <div class="panel">
-<h3>📦 GTFS ZIP feltöltés</h3>
+<h3>📦 GTFS ZIP import</h3>
 
 <input type="file" id="file" accept=".zip">
-<button onclick="loadGTFS()">IMPORT</button>
+<button onclick="loadGTFS()">IMPORT GTFS</button>
 
-<h3>📊 Output</h3>
+<div id="status">🟡 várakozás...</div>
+
+<h3>📊 DEBUG OUTPUT</h3>
 <pre id="out">Nincs adat</pre>
+
 </div>
 
 <div class="panel">
-<h3>🧠 Parsed Data</h3>
-<div id="data"></div>
+<h3>🧠 PARSED DATA</h3>
+<div id="data">-</div>
 </div>
 
 </div>
@@ -79,39 +86,25 @@ font-size:12px;
 
 <script>
 
-/*
-========================
-GTFS STORAGE
-========================
-*/
-
 let GTFS = {
 stops:[],
 routes:[],
 trips:[]
 };
 
-/*
-========================
-CSV PARSER (LIGHT)
-========================
-*/
-
 function parseCSV(text){
 
 let lines = text.split("\n").filter(l=>l.trim()!=="");
-
 let headers = lines[0].split(",");
 
-let rows = [];
+let rows=[];
 
 for(let i=1;i<lines.length;i++){
-
-let obj = {};
+let obj={};
 let cols = lines[i].split(",");
 
 headers.forEach((h,idx)=>{
-obj[h.trim()] = (cols[idx]||"").trim();
+obj[h.trim()] = cols[idx] ? cols[idx].trim() : "";
 });
 
 rows.push(obj);
@@ -120,55 +113,49 @@ rows.push(obj);
 return rows;
 }
 
-/*
-========================
-IMPORT ENGINE
-========================
-*/
-
 async function loadGTFS(){
 
 let file = document.getElementById("file").files[0];
 
 if(!file){
-alert("Nincs fájl!");
+document.getElementById("status").innerHTML =
+"❌ Nincs kiválasztott ZIP fájl!";
 return;
 }
+
+document.getElementById("status").innerHTML =
+"🟡 betöltés...";
+
+try{
 
 let zip = await JSZip.loadAsync(file);
 
 /*
-========================
-stops.txt
-========================
+stops
 */
-
 if(zip.file("stops.txt")){
 let txt = await zip.file("stops.txt").async("string");
 GTFS.stops = parseCSV(txt);
 }
 
 /*
-========================
-routes.txt
-========================
+routes
 */
-
 if(zip.file("routes.txt")){
 let txt = await zip.file("routes.txt").async("string");
 GTFS.routes = parseCSV(txt);
 }
 
 /*
-========================
-trips.txt
-========================
+trips
 */
-
 if(zip.file("trips.txt")){
 let txt = await zip.file("trips.txt").async("string");
 GTFS.trips = parseCSV(txt);
 }
+
+document.getElementById("status").innerHTML =
+"🟢 GTFS sikeresen betöltve!";
 
 document.getElementById("out").innerText =
 JSON.stringify(GTFS,null,2);
@@ -178,6 +165,18 @@ document.getElementById("data").innerHTML = `
 ✔ Routes: ${GTFS.routes.length}<br>
 ✔ Trips: ${GTFS.trips.length}
 `;
+
+}catch(e){
+
+console.error(e);
+
+document.getElementById("status").innerHTML =
+"🔴 HIBA: nem sikerült betölteni a ZIP-et";
+
+document.getElementById("out").innerText =
+e.toString();
+
+}
 
 }
 
