@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 AUTOCOMPLETE</title>
+<title>FUTÁR V5 AUTOCOMPLETE + SEARCH</title>
 
 <style>
 body{
@@ -45,10 +45,20 @@ color:#00ffcc;
 font-size:14px;
 }
 
+button{
+width:100%;
+padding:10px;
+margin-top:5px;
+background:#00ffcc;
+border:none;
+font-weight:bold;
+cursor:pointer;
+}
+
 .suggestions{
 margin-top:10px;
 border-top:1px solid #00ffcc33;
-max-height:250px;
+max-height:220px;
 overflow:auto;
 }
 
@@ -86,7 +96,7 @@ font-size:11px;
 <body>
 
 <header>
-🚍 FUTÁR V5 AUTOCOMPLETE STOP SEARCH ENGINE
+🚍 FUTÁR V5 AUTOCOMPLETE + SEARCH BUTTON FIX
 </header>
 
 <div class="container">
@@ -96,6 +106,8 @@ font-size:11px;
 <h3>🚏 Megálló kereső</h3>
 
 <input id="input" placeholder="Írj be pl. Deák / Nád / Keleti">
+
+<button onclick="search()">KERESÉS</button>
 
 <div class="suggestions" id="suggestions"></div>
 
@@ -115,6 +127,7 @@ font-size:11px;
 <th>Idő</th>
 </tr>
 </thead>
+
 <tbody id="table"></tbody>
 </table>
 
@@ -126,7 +139,7 @@ font-size:11px;
 
 /*
 ========================
-GTFS STOP DATABASE
+DATA
 ========================
 */
 
@@ -140,12 +153,6 @@ const stops = [
 "Keleti pályaudvar",
 "Batthyány tér"
 ];
-
-/*
-========================
-STOP → TRIPS MAP (GTFS MINI)
-========================
-*/
 
 const GTFS = {
 "Deák tér":[
@@ -161,32 +168,26 @@ const GTFS = {
 ]
 };
 
-/*
-========================
-NORMALIZER (GTFS STYLE)
-========================
-*/
-
 function norm(str){
-return str
-.toLowerCase()
+return str.toLowerCase()
 .normalize("NFD")
 .replace(/\p{Diacritic}/gu,"");
 }
 
 /*
 ========================
-AUTOCOMPLETE ENGINE
+AUTOCOMPLETE
 ========================
 */
 
 const input = document.getElementById("input");
 const box = document.getElementById("suggestions");
 
+let selectedStop = null;
+
 input.addEventListener("input", ()=>{
 
 let val = input.value;
-
 box.innerHTML = "";
 
 if(!val) return;
@@ -197,10 +198,15 @@ norm(s).includes(norm(val))
 
 results.forEach(r=>{
 let div = document.createElement("div");
-div.className = "item";
-div.innerHTML = "🚏 " + r;
+div.className="item";
+div.innerHTML="🚏 "+r;
 
-div.onclick = ()=>selectStop(r);
+div.onclick=()=>{
+input.value = r;
+selectedStop = r;
+box.innerHTML="";
+loadStop(r);
+};
 
 box.appendChild(div);
 });
@@ -209,14 +215,40 @@ box.appendChild(div);
 
 /*
 ========================
-SELECT STOP
+SEARCH BUTTON
 ========================
 */
 
-function selectStop(stop){
+function search(){
 
-input.value = stop;
-box.innerHTML = "";
+let val = input.value;
+
+if(!val){
+alert("Írj be egy megállót!");
+return;
+}
+
+let match = stops.find(s =>
+norm(s) === norm(val)
+);
+
+if(!match){
+document.getElementById("selected").innerHTML =
+"❌ nincs ilyen megálló";
+return;
+}
+
+selectedStop = match;
+loadStop(match);
+}
+
+/*
+========================
+LOAD STOP DATA
+========================
+*/
+
+function loadStop(stop){
 
 document.getElementById("selected").innerHTML =
 "🚏 Kiválasztva: <b>"+stop+"</b>";
@@ -224,15 +256,15 @@ document.getElementById("selected").innerHTML =
 let data = GTFS[stop];
 
 let table = document.getElementById("table");
-table.innerHTML = "";
+table.innerHTML="";
 
 if(!data){
-table.innerHTML = "<tr><td colspan='3'>❌ nincs GTFS adat</td></tr>";
+table.innerHTML="<tr><td colspan='3'>❌ nincs GTFS adat</td></tr>";
 return;
 }
 
 data.forEach(d=>{
-table.innerHTML += `
+table.innerHTML+=`
 <tr>
 <td><span class="badge">${d.route}</span></td>
 <td>${d.dir}</td>
@@ -248,10 +280,9 @@ ENTER SUPPORT
 ========================
 */
 
-input.addEventListener("keydown", (e)=>{
-if(e.key === "Enter"){
-let first = document.querySelector(".item");
-if(first) first.click();
+input.addEventListener("keydown",(e)=>{
+if(e.key==="Enter"){
+search();
 }
 });
 
@@ -259,3 +290,4 @@ if(first) first.click();
 
 </body>
 </html>
+
