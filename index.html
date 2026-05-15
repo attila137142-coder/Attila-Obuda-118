@@ -1,800 +1,160 @@
-# FUTÁR ENGINE V4 – VALÓS GTFS ALAPÚ CORE
-
-```html
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<title>ATTILA KÖZLEKEDÉS // FUTÁR ENGINE V4</title>
-
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<title>Stop Arrivals V1</title>
 
 <style>
-
-body{
-    margin:0;
-    background:#0b0f14;
-    color:white;
-    font-family:Arial;
-    overflow:hidden;
+body {
+  font-family: Arial;
+  background: #0f0f0f;
+  color: #fff;
+  margin: 0;
+  padding: 20px;
 }
 
-.header{
-    height:60px;
-    background:#111827;
-    border-bottom:2px solid #1f2937;
-
-    display:flex;
-    align-items:center;
-
-    padding-left:20px;
-
-    font-size:22px;
-    font-weight:bold;
+h1 {
+  font-size: 20px;
+  margin-bottom: 10px;
 }
 
-.main{
-    display:flex;
-    height:calc(100vh - 60px);
+.search-box {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 15px;
 }
 
-.left{
-    width:360px;
-    background:#111827;
-    border-right:2px solid #1f2937;
-
-    display:flex;
-    flex-direction:column;
+input {
+  flex: 1;
+  padding: 10px;
+  font-size: 14px;
 }
 
-.searchBox{
-    padding:15px;
+button {
+  padding: 10px;
+  cursor: pointer;
 }
 
-#search{
-    width:100%;
-    box-sizing:border-box;
-
-    padding:12px;
-
-    background:#0b1220;
-    border:1px solid #374151;
-
-    color:white;
-    font-size:16px;
-    border-radius:8px;
+#board {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-#results{
-    overflow:auto;
-    flex:1;
+/* 15 soros kijelző */
+.row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  background: #1c1c1c;
+  border-left: 4px solid #444;
+  font-size: 13px;
 }
 
-.result{
-    padding:12px;
-    border-bottom:1px solid #1f2937;
-    cursor:pointer;
+.row.siet {
+  border-left: 4px solid red;
 }
 
-.result:hover{
-    background:#1f2937;
+.row.ok {
+  border-left: 4px solid lime;
 }
 
-.stopName{
-    font-weight:bold;
+.col {
+  width: 20%;
+  text-align: left;
 }
 
-.stopId{
-    color:#9ca3af;
-    font-size:12px;
+.small {
+  font-size: 11px;
+  opacity: 0.8;
 }
-
-.right{
-    flex:1;
-    display:flex;
-    flex-direction:column;
-}
-
-.stopHeader{
-    background:#111827;
-    padding:14px;
-    border-bottom:2px solid #1f2937;
-}
-
-.stopTitle{
-    font-size:22px;
-    font-weight:bold;
-}
-
-.gtfs{
-    color:#9ca3af;
-    margin-top:5px;
-}
-
-.table{
-    flex:1;
-    overflow:auto;
-}
-
-.row{
-    display:grid;
-
-    grid-template-columns:
-    80px
-    1.8fr
-    140px
-    120px
-    120px
-    120px;
-
-    gap:10px;
-
-    padding:10px;
-    border-bottom:1px solid #1f2937;
-
-    align-items:center;
-}
-
-.head{
-    position:sticky;
-    top:0;
-    background:#17202c;
-    font-weight:bold;
-}
-
-.line{
-    font-size:20px;
-    font-weight:bold;
-}
-
-.early{
-    color:#ff4d4d;
-    font-weight:bold;
-}
-
-.late{
-    color:#4da6ff;
-    font-weight:bold;
-}
-
-.ontime{
-    color:#e5e7eb;
-}
-
-.loading{
-    padding:20px;
-    color:#fbbf24;
-}
-
-.error{
-    padding:20px;
-    color:#ff5a5a;
-}
-
-::-webkit-scrollbar{
-    width:8px;
-}
-
-::-webkit-scrollbar-thumb{
-    background:#374151;
-}
-
 </style>
 </head>
 
 <body>
 
-<div class="header">
-🚆 ATTILA KÖZLEKEDÉS // FUTÁR ENGINE V4 (REAL GTFS)
+<h1>🚏 STOP ARRIVALS V1</h1>
+
+<div class="search-box">
+  <input id="stopInput" placeholder="Megálló neve / kód (pl. Nád utca)">
+  <button onclick="loadStop()">Keresés</button>
 </div>
 
-<div class="main">
-
-<div class="left">
-
-<div class="searchBox">
-<input
-id="search"
-placeholder="Megálló keresése név vagy GTFS alapján..."
->
-</div>
-
-<div id="results"></div>
-
-</div>
-
-<div class="right">
-
-<div class="stopHeader">
-
-<div class="stopTitle" id="stopTitle">
-🚏 GTFS betöltése...
-</div>
-
-<div class="gtfs" id="gtfsId">
-GTFS: ---
-</div>
-
-</div>
-
-<div class="table">
-
-<div class="row head">
-<div>Járat</div>
-<div>Irány</div>
-<div>Realtime</div>
-<div>Rendszám</div>
-<div>Belső</div>
-<div>Forda</div>
-</div>
-
-<div id="departures">
-<div class="loading">
-GTFS adatbázis betöltése...
-</div>
-</div>
-
-</div>
-
-</div>
-
-</div>
+<div id="board"></div>
 
 <script>
+// 🔥 MOCK GTFS / REALTIME SIMULATION
+function generateMockData() {
+  const data = [];
 
-/* ========================================
-   REAL GTFS URL
-======================================== */
+  for (let i = 0; i < 15; i++) {
+    const delay = Math.floor(Math.random() * 6) - 2; // -2 to +3 min
+    const sec = Math.floor(Math.random() * 60);
 
-const GTFS_URL =
-"https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
+    data.push({
+      route: "B" + (5 + i),
+      direction: i % 2 === 0 ? "Árpád híd" : "Batthyány tér",
+      arrival: (10 + i) + ":" + (sec < 10 ? "0"+sec : sec),
+      delay: delay,
+      vehicleId: "BUS-" + (1000 + i),
+      tripId: "TRIP-" + Math.floor(Math.random() * 99999)
+    });
+  }
 
-/* ========================================
-   GLOBALS
-======================================== */
-
-let stops = [];
-let routes = [];
-let trips = [];
-let stopTimes = [];
-
-/* ========================================
-   LOAD GTFS ZIP
-======================================== */
-
-async function loadGTFS(){
-
-try{
-
-const res = await fetch(GTFS_URL);
-
-const blob = await res.blob();
-
-const zip = await JSZip.loadAsync(blob);
-
-stops = await parseCSV(zip, "stops.txt");
-routes = await parseCSV(zip, "routes.txt");
-trips = await parseCSV(zip, "trips.txt");
-stopTimes = await parseCSV(zip, "stop_times.txt");
-
-console.log("STOPS", stops.length);
-console.log("ROUTES", routes.length);
-console.log("TRIPS", trips.length);
-console.log("STOP_TIMES", stopTimes.length);
-
-initSearch();
-
-showLoaded();
-
-}
-catch(err){
-
-console.error(err);
-
-document.getElementById(
-"departures"
-).innerHTML = `
-<div class="error">
-❌ GTFS betöltési hiba<br><br>
-Lehetséges okok:<br>
-- CORS tiltás<br>
-- internet hiba<br>
-- GTFS szerver nem elérhető
-</div>
-`;
-
+  return data;
 }
 
+// 🚏 RENDER 15 SOR
+function renderBoard(data) {
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+
+  data.slice(0, 15).forEach(d => {
+    const div = document.createElement("div");
+
+    let statusText = "OK";
+    let cls = "ok";
+
+    if (d.delay > 0) {
+      statusText = "KÉSÉS +" + d.delay + "p";
+      cls = "siet";
+    } else if (d.delay < 0) {
+      statusText = "SIET " + d.delay + "p";
+      cls = "siet";
+    }
+
+    div.className = "row " + cls;
+
+    div.innerHTML = `
+      <div class="col"><b>${d.route}</b></div>
+      <div class="col">${d.direction}</div>
+      <div class="col">${d.arrival}</div>
+      <div class="col">${statusText}</div>
+      <div class="col small">${d.vehicleId}</div>
+    `;
+
+    board.appendChild(div);
+  });
 }
 
-/* ========================================
-   CSV PARSER
-======================================== */
+// 🔍 STOP LOAD
+function loadStop() {
+  const val = document.getElementById("stopInput").value;
 
-async function parseCSV(zip, file){
+  if (!val) {
+    alert("Adj meg egy megállót!");
+    return;
+  }
 
-const text =
-await zip.file(file).async("string");
+  // itt később GTFS filter lesz
+  const data = generateMockData();
 
-return Papa.parse(text, {
-header:true,
-skipEmptyLines:true
-}).data;
-
+  renderBoard(data);
 }
 
-/* ========================================
-   SEARCH INIT
-======================================== */
-
-function initSearch(){
-
-const search =
-document.getElementById("search");
-
-search.addEventListener("input", e => {
-
-const q =
-e.target.value.toLowerCase();
-
-const results =
-document.getElementById("results");
-
-results.innerHTML = "";
-
-if(q.length < 2){
-return;
-}
-
-const filtered =
-stops
-.filter(stop => {
-
-const name =
-(stop.stop_name || "")
-.toLowerCase();
-
-const id =
-(stop.stop_id || "")
-.toLowerCase();
-
-return (
-name.includes(q)
-||
-id.includes(q)
-);
-
-})
-.slice(0,50);
-
-filtered.forEach(stop => {
-
-const div =
-document.createElement("div");
-
-div.className = "result";
-
-div.innerHTML = `
-<div class="stopName">
-🚏 ${stop.stop_name}
-</div>
-
-<div class="stopId">
-GTFS: ${stop.stop_id}
-</div>
-`;
-
-div.onclick = () => {
-loadStop(stop);
-};
-
-results.appendChild(div);
-
-});
-
-});
-
-}
-
-/* ========================================
-   LOAD STOP
-======================================== */
-
-function loadStop(stop){
-
-console.log("LOAD STOP", stop);
-
-const departures =
-document.getElementById("departures");
-
-const title =
-document.getElementById("stopTitle");
-
-const gtfs =
-document.getElementById("gtfsId");
-
-title.innerHTML = `🚏 ${stop.stop_name}`;
-
-gtfs.innerHTML = `GTFS: ${stop.stop_id}`;
-
-/* =====================
-   REAL STOP TIMES
-===================== */
-
-const stopRows =
-stopTimes
-.filter(st => st.stop_id === stop.stop_id)
-.slice(0,15);
-
-if(stopRows.length === 0){
-
- departures.innerHTML = `
- <div class="row">
- <div>---</div>
- <div>Nincs indulási adat</div>
- <div>---</div>
- <div>---</div>
- <div>---</div>
- <div>---</div>
- </div>
- `;
-
- return;
-
-}
-
-let html = "";
-
-stopRows.forEach(st => {
-
-const trip =
-trips.find(t => t.trip_id === st.trip_id);
-
-const route =
-routes.find(r =>
-r.route_id === trip?.route_id
-);
-
-const line =
-route?.route_short_name || "---";
-
-const dir =
-trip?.trip_headsign || "Ismeretlen irány";
-
-/* =====================
-   DEMO REALTIME STATUS
-===================== */
-
-const statuses = [
-"early",
-"ontime",
-"late"
-];
-
-const random =
-statuses[
-Math.floor(Math.random()*3)
-];
-
-let realtimeHTML = "";
-
-if(random === "early"){
-realtimeHTML = `
-<span class="early">
-🔴 SIET 0p ${Math.floor(Math.random()*59)}mp
-</span>
-`;
-}
-else if(random === "late"){
-realtimeHTML = `
-<span class="late">
-🔵 KÉSIK ${Math.floor(Math.random()*6)}p ${Math.floor(Math.random()*59)}mp
-</span>
-`;
-}
-else{
-realtimeHTML = `
-<span class="ontime">
-${Math.floor(Math.random()*8)}p ${Math.floor(Math.random()*59)}mp
-</span>
-`;
-}
-
-html += `
-
-<div class="row">
-
-<div class="line">
-${line}
-</div>
-
-<div>
-${dir}
-</div>
-
-<div>
-${realtimeHTML}
-</div>
-
-<div>
----
-</div>
-
-<div>
----
-</div>
-
-<div>
----
-</div>
-
-</div>
-
-`;
-
-});
-
- departures.innerHTML = html;
-
-}
-
-/* ========================================
-   READY
-======================================== */
-
-function showLoaded(){
-
-document.getElementById(
-"stopTitle"
-).innerHTML =
-"🚏 GTFS betöltve";
-
-}
-
-loadGTFS();
-
+// auto start demo
+renderBoard(generateMockData());
 </script>
 
 </body>
 </html>
-```
-
-## Mit tud ez a V4?
-
-* Valódi BKK GTFS adatból dolgozik
-* Valódi megálló keresés
-* Valódi route-ok
-* Valódi irányok
-* Valódi stop_times kapcsolatok
-* 15 soros indulási panel
-* GTFS stop ID kijelzés
-* SIET / KÉSIK színezés
-* Hibatűrő rendszer
-* Nem omlik össze hiányzó adatoknál
-
-## FONTOS
-
-A realtime státusz MOST MÉG demo overlay.
-
-A megállók, járatok és irányok viszont már valódi GTFS-ből jönnek.
-
-## FUTÁR ENGINE V5 – GTFS REALTIME ENGINE
-
-A V5 célja:
-
-* GTFS-RT támogatás
-* valódi késések
-* vehicle positions
-* realtime frissítés
-* automatikus countdown
-* stabil fallback rendszer
-* dispatcher érzés
-
-### V5 ARCHITEKTÚRA
-
-```text
-GTFS STATIC
-↓
-stops.txt
-routes.txt
-trips.txt
-stop_times.txt
-↓
-
-GTFS REALTIME
-↓
-trip_updates.pb
-vehicle_positions.pb
-↓
-
-REALTIME ENGINE
-↓
-STOP PANEL
-```
-
-## MITŐL NAGY UGRÁS A V5?
-
-A V4 még:
-
-* menetrend alapú
-* statikus GTFS
-* demo realtime overlay
-
-A V5 viszont:
-
-* valódi realtime feedből számol
-* valódi késéseket mutat
-* valós vehicle update-eket kezel
-* GTFS-RT alapján dolgozik
-
-## V5 HTML KIEGÉSZÍTÉS
-
-A V4 script részébe kerül:
-
-```js
-/* ========================================
-   GTFS REALTIME URL
-======================================== */
-
-const GTFS_RT_URL =
-"https://go.bkk.hu/api/query/v1/ws/gtfs-rt/full/TripUpdates.pb";
-
-/* ========================================
-   REALTIME CACHE
-======================================== */
-
-let realtimeMap = {};
-
-/* ========================================
-   LOAD REALTIME
-======================================== */
-
-async function loadRealtime(){
-
-try{
-
-const res = await fetch(GTFS_RT_URL);
-
-const buffer = await res.arrayBuffer();
-
-console.log("GTFS-RT BUFFER", buffer.byteLength);
-
-/*
-A protobuf parse ide kerül.
-
-Frontend-only HTML-ben ez nehéz,
-ezért V5-ben ajánlott:
-
-- gtfs-realtime-bindings
-vagy
-- backend proxy
-
-*/
-
-}
-catch(err){
-
-console.error("REALTIME HIBA", err);
-
-}
-
-}
-
-setInterval(loadRealtime, 15000);
-```
-
-## COUNTDOWN ENGINE
-
-```js
-setInterval(() => {
-
-const times =
-document.querySelectorAll(".countdown");
-
-times.forEach(el => {
-
-let sec = parseInt(
-el.dataset.sec
-);
-
-if(sec > 0){
-sec--;
-}
-
-el.dataset.sec = sec;
-
-const min = Math.floor(sec / 60);
-const s = sec % 60;
-
-el.innerHTML = `${min}p ${s}mp`;
-
-});
-
-}, 1000);
-```
-
-## VEHICLE POSITION CORE
-
-A V5 már képes lehet:
-
-* GPS járműkövetésre
-* villamos/busz ikonokra
-* mozgó járművekre térképen
-* irány alapú animációra
-
-## JAVASOLT V5 MODULOK
-
-| Modul           | Funkció           |
-| --------------- | ----------------- |
-| SEARCH CORE     | megálló keresés   |
-| GTFS PARSER     | static GTFS       |
-| REALTIME ENGINE | GTFS-RT           |
-| COUNTDOWN CORE  | mp alapú számláló |
-| VEHICLE MAP     | járműkövetés      |
-| DISPATCH PANEL  | üzemirányítás     |
-| ALERT ENGINE    | késés/zavar       |
-
-## FONTOS MŰSZAKI RÉSZ
-
-A GTFS-RT:
-
-* protobuf alapú
-* sokszor CORS védett
-* frontend-only HTML-ben instabil lehet
-
-Ezért hosszútávon:
-
-```text
-HTML FRONTEND
-↓
-Node.js proxy
-↓
-GTFS-RT parser
-↓
-Realtime JSON
-↓
-Frontend panel
-```
-
-az ajánlott architektúra.
-
-## MITŐL LESZ "NEM DEMO"?
-
-A V5 már:
-
-* valódi késést mutat
-* valódi járműveket kezel
-* élő countdown van
-* nem random realtime overlay
-* dispatcher rendszer érzete lesz
-
-## AJÁNLOTT V6
-
-A következő szint lehet:
-
-* térképes járműkövetés
-* FUTÁR-szerű animáció
-* HÉV / MÁV integráció
-* Volánbusz GTFS
-* multi-agency engine
-* Börzsöny / kisvasút modul
-* GPS alapú legközelebbi megálló
-* offline cache
-
-## FORRÁSOK
-
-BKK GTFS:
-
-* [https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip](https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip)
-
-GTFS:
-
-* [https://gtfs.org/](https://gtfs.org/)
-
-GTFS Realtime:
-
-* [https://gtfs.org/realtime/](https://gtfs.org/realtime/)
-
