@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BKK GTFS IMPORTER V1.1 FIX</title>
+<title>GTFS → MAP AUTO ENGINE</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body{
@@ -23,15 +25,20 @@ font-weight:bold;
 
 .container{
 display:grid;
-grid-template-columns:1fr 1fr;
+grid-template-columns:1fr 2fr;
 height:calc(100vh - 50px);
 }
 
-.panel{
+.left{
 padding:10px;
-overflow:auto;
 background:#0b1220;
+overflow:auto;
 border-right:1px solid #00ffcc33;
+}
+
+#map{
+height:100%;
+width:100%;
 }
 
 input,button{
@@ -44,12 +51,20 @@ color:#00ffcc;
 cursor:pointer;
 }
 
-pre{
-white-space:pre-wrap;
-font-size:12px;
-background:#05070d;
-padding:10px;
-border:1px solid #00ffcc33;
+.stop{
+padding:6px;
+border-bottom:1px solid #00ffcc22;
+cursor:pointer;
+}
+
+.stop:hover{
+background:#00ffcc11;
+}
+
+.badge{
+border:1px solid #00ffcc;
+padding:2px 6px;
+font-size:11px;
 }
 </style>
 </head>
@@ -57,40 +72,45 @@ border:1px solid #00ffcc33;
 <body>
 
 <header>
-🚍 BKK GTFS IMPORTER V1.1 FIXED // DEBUG MODE
+🚍 GTFS → MAP AUTO ENGINE V1 // ZIP → BUDAPEST MAP
 </header>
 
 <div class="container">
 
-<div class="panel">
-<h3>📦 GTFS ZIP import</h3>
+<div class="left">
+<h3>📦 GTFS IMPORT</h3>
 
 <input type="file" id="file" accept=".zip">
-<button onclick="loadGTFS()">IMPORT GTFS</button>
+<button onclick="loadGTFS()">IMPORT + MAP GENERATE</button>
 
-<div id="status">🟡 várakozás...</div>
-
-<h3>📊 DEBUG OUTPUT</h3>
-<pre id="out">Nincs adat</pre>
+<h3>🚏 MEGÁLLÓK</h3>
+<div id="list">Nincs adat</div>
 
 </div>
 
-<div class="panel">
-<h3>🧠 PARSED DATA</h3>
-<div id="data">-</div>
-</div>
+<div id="map"></div>
 
 </div>
 
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 
-let GTFS = {
-stops:[],
-routes:[],
-trips:[]
-};
+let map = L.map('map').setView([47.4979,19.0402], 12);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+attribution:'OSM'
+}).addTo(map);
+
+let GTFS = { stops:[] };
+let markers = [];
+
+/*
+========================
+CSV PARSER
+========================
+*/
 
 function parseCSV(text){
 
@@ -113,70 +133,102 @@ rows.push(obj);
 return rows;
 }
 
+/*
+========================
+MAIN IMPORT
+========================
+*/
+
 async function loadGTFS(){
 
 let file = document.getElementById("file").files[0];
 
 if(!file){
-document.getElementById("status").innerHTML =
-"❌ Nincs kiválasztott ZIP fájl!";
+alert("Nincs ZIP!");
 return;
 }
-
-document.getElementById("status").innerHTML =
-"🟡 betöltés...";
-
-try{
 
 let zip = await JSZip.loadAsync(file);
 
 /*
-stops
+========================
+STOPS ONLY (MAP CORE)
+========================
 */
+
 if(zip.file("stops.txt")){
+
 let txt = await zip.file("stops.txt").async("string");
 GTFS.stops = parseCSV(txt);
+
+renderMap();
+renderList();
+
+}else{
+alert("stops.txt nem található!");
+}
+
 }
 
 /*
-routes
+========================
+MAP RENDER
+========================
 */
-if(zip.file("routes.txt")){
-let txt = await zip.file("routes.txt").async("string");
-GTFS.routes = parseCSV(txt);
+
+function renderMap(){
+
+// clear old markers
+markers.forEach(m=>map.removeLayer(m));
+markers=[];
+
+GTFS.stops.forEach(s=>{
+
+if(!s.stop_lat || !s.stop_lon) return;
+
+let lat = parseFloat(s.stop_lat);
+let lng = parseFloat(s.stop_lon);
+
+let m = L.marker([lat,lng])
+.addTo(map)
+.bindPopup("🚏 "+(s.stop_name||"ismeretlen"));
+
+markers.push(m);
+
+});
+
 }
 
 /*
-trips
+========================
+LIST RENDER
+========================
 */
-if(zip.file("trips.txt")){
-let txt = await zip.file("trips.txt").async("string");
-GTFS.trips = parseCSV(txt);
-}
 
-document.getElementById("status").innerHTML =
-"🟢 GTFS sikeresen betöltve!";
+function renderList(){
 
-document.getElementById("out").innerText =
-JSON.stringify(GTFS,null,2);
+let box=document.getElementById("list");
+box.innerHTML="";
 
-document.getElementById("data").innerHTML = `
-✔ Stops: ${GTFS.stops.length}<br>
-✔ Routes: ${GTFS.routes.length}<br>
-✔ Trips: ${GTFS.trips.length}
-`;
+GTFS.stops.slice(0,200).forEach(s=>{
 
-}catch(e){
+let div=document.createElement("div");
+div.className="stop";
 
-console.error(e);
+div.innerHTML="🚏 "+(s.stop_name||"no name");
 
-document.getElementById("status").innerHTML =
-"🔴 HIBA: nem sikerült betölteni a ZIP-et";
+div.onclick=()=>{
 
-document.getElementById("out").innerText =
-e.toString();
+map.setView([
+parseFloat(s.stop_lat),
+parseFloat(s.stop_lon)
+],15);
 
-}
+};
+
+box.appendChild(div);
+
+});
 
 }
 
