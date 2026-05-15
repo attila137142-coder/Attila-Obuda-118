@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 GTFS IMPORT ENGINE</title>
+<title>HOL BUSZOM V1</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -40,28 +40,20 @@ height:100%;
 width:100%;
 }
 
-input{
-width:100%;
-padding:10px;
-background:#05070d;
-border:1px solid #00ffcc;
-color:#00ffcc;
-}
-
-.item{
-padding:8px;
-border-bottom:1px solid #00ffcc22;
-cursor:pointer;
-}
-
-.item:hover{
-background:#00ffcc11;
-}
-
 .badge{
 border:1px solid #00ffcc;
 padding:2px 6px;
 font-size:11px;
+}
+
+.card{
+padding:8px;
+border-bottom:1px solid #00ffcc22;
+}
+
+.status{
+margin-top:10px;
+font-weight:bold;
 }
 </style>
 </head>
@@ -69,22 +61,19 @@ font-size:11px;
 <body>
 
 <header>
-🚍 FUTÁR V5 GTFS IMPORT ENGINE // JSON → MAP → UI
+🚍 HOL BUSZOM V1 // LIVE PROXIMITY ENGINE
 </header>
 
 <div class="container">
 
 <div class="left">
-<h3>📦 GTFS Loader</h3>
+<h3>🚏 Megálló</h3>
+<div id="stopInfo"></div>
 
-<button onclick="loadGTFS()">GTFS BETÖLTÉS</button>
+<h3>🚍 Jármű</h3>
+<div id="busInfo"></div>
 
-<h3>🔍 Megállók</h3>
-<input id="search" placeholder="keresés...">
-<div id="list"></div>
-
-<h3>🛰 Indulások</h3>
-<div id="info"></div>
+<div class="status" id="status"></div>
 </div>
 
 <div id="map"></div>
@@ -101,145 +90,127 @@ MAP INIT
 ========================
 */
 
-const map = L.map('map').setView([47.4979,19.0402], 13);
+const map = L.map('map').setView([47.4979,19.0402], 14);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 attribution:'OSM'
 }).addTo(map);
 
-let markers = {};
-
 /*
 ========================
-EMPTY DATASET
+DATA (SIMULATED GTFS-RT)
 ========================
 */
 
-let GTFS = null;
-
-/*
-========================
-LOAD GTFS JSON (SIMULATED)
-========================
-*/
-
-function loadGTFS(){
-
-GTFS = {
-stops:[
-{ id:"S1", name:"Deák tér", lat:47.4979, lng:19.0540 },
-{ id:"S2", name:"Blaha Lujza tér", lat:47.4970, lng:19.0700 },
-{ id:"S3", name:"Kelenföld", lat:47.4649, lng:19.0227 }
-],
-trips:[
-{ route:"7E", stopId:"S2", dir:"Blaha", time:"+2" },
-{ route:"9", stopId:"S3", dir:"Óbuda", time:"+4" },
-{ route:"M4", stopId:"S3", dir:"Keleti", time:"+6" }
-]
+const stop = {
+name:"Deák tér",
+lat:47.4979,
+lng:19.0540
 };
 
-renderStops();
-alert("GTFS betöltve 🚍");
-}
+let bus = {
+id:"BUS-7E",
+route:"7E",
+lat:47.4920,
+lng:19.0300,
+speed:20
+};
 
 /*
 ========================
-RENDER STOPS + MAP
+MARKERS
 ========================
 */
 
-function renderStops(){
-
-GTFS.stops.forEach(s=>{
-
-// map marker
-let m = L.marker([s.lat,s.lng])
+const stopMarker = L.marker([stop.lat,stop.lng])
 .addTo(map)
-.bindPopup("🚏 "+s.name);
+.bindPopup("🚏 "+stop.name);
 
-markers[s.id]=m;
+let busMarker = L.marker([bus.lat,bus.lng])
+.addTo(map)
+.bindPopup("🚍 "+bus.route);
 
-});
+/*
+========================
+HAVERSINE DISTANCE
+========================
+*/
 
-renderList(GTFS.stops);
+function distance(lat1,lon1,lat2,lon2){
+
+const R = 6371000;
+
+const toRad = x => x * Math.PI / 180;
+
+const dLat = toRad(lat2-lat1);
+const dLon = toRad(lon2-lon1);
+
+const a =
+Math.sin(dLat/2) * Math.sin(dLat/2) +
+Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
+Math.sin(dLon/2) * Math.sin(dLon/2);
+
+const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+return R * c;
 }
 
 /*
 ========================
-LIST + SEARCH
+SIMULATION LOOP
 ========================
 */
 
-function renderList(stops){
+let lastDistance = null;
 
-let box=document.getElementById("list");
-box.innerHTML="";
+function update(){
 
-stops.forEach(s=>{
+// bus “mozgatás” a megálló felé
+bus.lat += (stop.lat - bus.lat) * 0.02;
+bus.lng += (stop.lng - bus.lng) * 0.02;
 
-let div=document.createElement("div");
-div.className="item";
-div.innerHTML="🚏 "+s.name;
+// marker update
+busMarker.setLatLng([bus.lat,bus.lng]);
 
-div.onclick=()=>selectStop(s);
+// distance calc
+let d = distance(bus.lat,bus.lng,stop.lat,stop.lng);
 
-box.appendChild(div);
+// direction detection
+let status = "";
 
-});
-
+if(lastDistance !== null){
+if(d < lastDistance){
+status = "🟢 KÖZELEDIK";
+}else{
+status = "🔵 TÁVOLODIK";
+}
 }
 
-/*
-========================
-SELECT STOP
-========================
-*/
-
-function selectStop(stop){
-
-map.setView([stop.lat,stop.lng],15);
-
-let trips = GTFS.trips.filter(t=>t.stopId===stop.id);
-
-let html = "<h4>🚏 "+stop.name+"</h4>";
-
-if(trips.length===0){
-html += "❌ nincs indulás";
+if(d < 50){
+status = "🚏 MEGÉRKEZETT";
 }
 
-trips.forEach(t=>{
-html += `
-<div>
-🚍 <span class="badge">${t.route}</span>
-→ ${t.dir}
-<strong>${t.time}</strong>
-</div>
+lastDistance = d;
+
+// UI
+document.getElementById("stopInfo").innerHTML =
+"🚏 <b>"+stop.name+"</b>";
+
+document.getElementById("busInfo").innerHTML =
+`
+🚍 ${bus.route}<br>
+<span class="badge">${bus.id}</span><br>
+📍 Lat: ${bus.lat.toFixed(5)}<br>
+📍 Lng: ${bus.lng.toFixed(5)}<br>
+📏 Távolság: <b>${Math.round(d)} m</b>
 `;
-});
 
-document.getElementById("info").innerHTML = html;
+document.getElementById("status").innerHTML = status;
 
 }
 
-/*
-========================
-SEARCH FILTER
-========================
-*/
-
-document.getElementById("search").addEventListener("input",(e)=>{
-
-if(!GTFS) return;
-
-let val=e.target.value.toLowerCase();
-
-let filtered = GTFS.stops.filter(s=>
-s.name.toLowerCase().includes(val)
-);
-
-renderList(filtered);
-
-});
+setInterval(update, 2000);
+update();
 
 </script>
 
