@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 MAP ENGINE</title>
+<title>FUTÁR V5 GTFS IMPORT ENGINE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -32,11 +32,12 @@ height:calc(100vh - 50px);
 .left{
 padding:10px;
 background:#0b1220;
-border-right:1px solid #00ffcc;
 overflow:auto;
 }
 
-.right{
+#map{
+height:100%;
+width:100%;
 }
 
 input{
@@ -45,16 +46,6 @@ padding:10px;
 background:#05070d;
 border:1px solid #00ffcc;
 color:#00ffcc;
-}
-
-button{
-width:100%;
-padding:10px;
-margin-top:5px;
-background:#00ffcc;
-border:none;
-font-weight:bold;
-cursor:pointer;
 }
 
 .item{
@@ -67,9 +58,10 @@ cursor:pointer;
 background:#00ffcc11;
 }
 
-#map{
-width:100%;
-height:100%;
+.badge{
+border:1px solid #00ffcc;
+padding:2px 6px;
+font-size:11px;
 }
 </style>
 </head>
@@ -77,24 +69,24 @@ height:100%;
 <body>
 
 <header>
-🚍 FUTÁR V5 MAP ENGINE // LEAFLET CONTROL ROOM
+🚍 FUTÁR V5 GTFS IMPORT ENGINE // JSON → MAP → UI
 </header>
 
 <div class="container">
 
-<!-- LEFT PANEL -->
 <div class="left">
-<h3>🚏 Megálló kereső</h3>
+<h3>📦 GTFS Loader</h3>
 
-<input id="input" placeholder="pl. Deák tér / Kelenföld">
-<button onclick="search()">KERESÉS</button>
+<button onclick="loadGTFS()">GTFS BETÖLTÉS</button>
 
+<h3>🔍 Megállók</h3>
+<input id="search" placeholder="keresés...">
 <div id="list"></div>
 
+<h3>🛰 Indulások</h3>
 <div id="info"></div>
 </div>
 
-<!-- MAP -->
 <div id="map"></div>
 
 </div>
@@ -102,19 +94,6 @@ height:100%;
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-
-/*
-========================
-GTFS STOP + COORDS
-========================
-*/
-
-const stops = [
-{name:"Deák tér", lat:47.4979, lng:19.0540},
-{name:"Blaha Lujza tér", lat:47.4970, lng:19.0700},
-{name:"Kelenföld", lat:47.4649, lng:19.0227},
-{name:"Nád utca", lat:47.5190, lng:19.0780}
-];
 
 /*
 ========================
@@ -128,71 +107,139 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 attribution:'OSM'
 }).addTo(map);
 
-let marker;
+let markers = {};
 
 /*
 ========================
-NORMALIZER
+EMPTY DATASET
 ========================
 */
 
-function norm(s){
-return s.toLowerCase()
-.normalize("NFD")
-.replace(/\p{Diacritic}/gu,"");
+let GTFS = null;
+
+/*
+========================
+LOAD GTFS JSON (SIMULATED)
+========================
+*/
+
+function loadGTFS(){
+
+GTFS = {
+stops:[
+{ id:"S1", name:"Deák tér", lat:47.4979, lng:19.0540 },
+{ id:"S2", name:"Blaha Lujza tér", lat:47.4970, lng:19.0700 },
+{ id:"S3", name:"Kelenföld", lat:47.4649, lng:19.0227 }
+],
+trips:[
+{ route:"7E", stopId:"S2", dir:"Blaha", time:"+2" },
+{ route:"9", stopId:"S3", dir:"Óbuda", time:"+4" },
+{ route:"M4", stopId:"S3", dir:"Keleti", time:"+6" }
+]
+};
+
+renderStops();
+alert("GTFS betöltve 🚍");
 }
 
 /*
 ========================
-SEARCH ENGINE
+RENDER STOPS + MAP
 ========================
 */
 
-function search(){
+function renderStops(){
 
-let val=document.getElementById("input").value;
+GTFS.stops.forEach(s=>{
 
-let found = stops.filter(s =>
-norm(s.name).includes(norm(val))
-);
+// map marker
+let m = L.marker([s.lat,s.lng])
+.addTo(map)
+.bindPopup("🚏 "+s.name);
 
-let list=document.getElementById("list");
-list.innerHTML="";
+markers[s.id]=m;
 
-found.forEach(f=>{
+});
+
+renderList(GTFS.stops);
+}
+
+/*
+========================
+LIST + SEARCH
+========================
+*/
+
+function renderList(stops){
+
+let box=document.getElementById("list");
+box.innerHTML="";
+
+stops.forEach(s=>{
+
 let div=document.createElement("div");
 div.className="item";
-div.innerHTML="🚏 "+f.name;
+div.innerHTML="🚏 "+s.name;
 
-div.onclick=()=>{
-selectStop(f);
-};
+div.onclick=()=>selectStop(s);
 
-list.appendChild(div);
+box.appendChild(div);
+
 });
 
 }
 
 /*
 ========================
-SELECT STOP + MAP
+SELECT STOP
 ========================
 */
 
 function selectStop(stop){
 
-document.getElementById("info").innerHTML=
-"🚏 <b>"+stop.name+"</b>";
+map.setView([stop.lat,stop.lng],15);
 
-map.setView([stop.lat,stop.lng],16);
+let trips = GTFS.trips.filter(t=>t.stopId===stop.id);
 
-if(marker) map.removeLayer(marker);
+let html = "<h4>🚏 "+stop.name+"</h4>";
 
-marker = L.marker([stop.lat,stop.lng])
-.addTo(map)
-.bindPopup("🚏 "+stop.name)
-.openPopup();
+if(trips.length===0){
+html += "❌ nincs indulás";
 }
+
+trips.forEach(t=>{
+html += `
+<div>
+🚍 <span class="badge">${t.route}</span>
+→ ${t.dir}
+<strong>${t.time}</strong>
+</div>
+`;
+});
+
+document.getElementById("info").innerHTML = html;
+
+}
+
+/*
+========================
+SEARCH FILTER
+========================
+*/
+
+document.getElementById("search").addEventListener("input",(e)=>{
+
+if(!GTFS) return;
+
+let val=e.target.value.toLowerCase();
+
+let filtered = GTFS.stops.filter(s=>
+s.name.toLowerCase().includes(val)
+);
+
+renderList(filtered);
+
+});
 
 </script>
 
