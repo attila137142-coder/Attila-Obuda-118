@@ -3,9 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>HOL BUSZOM V1</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<title>BKK GTFS IMPORTER V1</title>
 
 <style>
 body{
@@ -25,35 +23,29 @@ font-weight:bold;
 
 .container{
 display:grid;
-grid-template-columns:1fr 2fr;
+grid-template-columns:1fr 1fr;
 height:calc(100vh - 50px);
 }
 
-.left{
+.panel{
 padding:10px;
-background:#0b1220;
 overflow:auto;
+background:#0b1220;
+border-right:1px solid #00ffcc33;
 }
 
-#map{
-height:100%;
+input,button{
 width:100%;
-}
-
-.badge{
+padding:10px;
+margin-top:5px;
+background:#05070d;
 border:1px solid #00ffcc;
-padding:2px 6px;
-font-size:11px;
+color:#00ffcc;
 }
 
-.card{
-padding:8px;
-border-bottom:1px solid #00ffcc22;
-}
-
-.status{
-margin-top:10px;
-font-weight:bold;
+pre{
+white-space:pre-wrap;
+font-size:12px;
 }
 </style>
 </head>
@@ -61,156 +53,133 @@ font-weight:bold;
 <body>
 
 <header>
-🚍 HOL BUSZOM V1 // LIVE PROXIMITY ENGINE
+🚍 BKK GTFS IMPORTER V1 // ZIP → JSON ENGINE
 </header>
 
 <div class="container">
 
-<div class="left">
-<h3>🚏 Megálló</h3>
-<div id="stopInfo"></div>
+<div class="panel">
+<h3>📦 GTFS ZIP feltöltés</h3>
 
-<h3>🚍 Jármű</h3>
-<div id="busInfo"></div>
+<input type="file" id="file" accept=".zip">
+<button onclick="loadGTFS()">IMPORT</button>
 
-<div class="status" id="status"></div>
+<h3>📊 Output</h3>
+<pre id="out">Nincs adat</pre>
 </div>
 
-<div id="map"></div>
+<div class="panel">
+<h3>🧠 Parsed Data</h3>
+<div id="data"></div>
+</div>
 
 </div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 
 /*
 ========================
-MAP INIT
+GTFS STORAGE
 ========================
 */
 
-const map = L.map('map').setView([47.4979,19.0402], 14);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-attribution:'OSM'
-}).addTo(map);
-
-/*
-========================
-DATA (SIMULATED GTFS-RT)
-========================
-*/
-
-const stop = {
-name:"Deák tér",
-lat:47.4979,
-lng:19.0540
-};
-
-let bus = {
-id:"BUS-7E",
-route:"7E",
-lat:47.4920,
-lng:19.0300,
-speed:20
+let GTFS = {
+stops:[],
+routes:[],
+trips:[]
 };
 
 /*
 ========================
-MARKERS
+CSV PARSER (LIGHT)
 ========================
 */
 
-const stopMarker = L.marker([stop.lat,stop.lng])
-.addTo(map)
-.bindPopup("🚏 "+stop.name);
+function parseCSV(text){
 
-let busMarker = L.marker([bus.lat,bus.lng])
-.addTo(map)
-.bindPopup("🚍 "+bus.route);
+let lines = text.split("\n").filter(l=>l.trim()!=="");
 
-/*
-========================
-HAVERSINE DISTANCE
-========================
-*/
+let headers = lines[0].split(",");
 
-function distance(lat1,lon1,lat2,lon2){
+let rows = [];
 
-const R = 6371000;
+for(let i=1;i<lines.length;i++){
 
-const toRad = x => x * Math.PI / 180;
+let obj = {};
+let cols = lines[i].split(",");
 
-const dLat = toRad(lat2-lat1);
-const dLon = toRad(lon2-lon1);
+headers.forEach((h,idx)=>{
+obj[h.trim()] = (cols[idx]||"").trim();
+});
 
-const a =
-Math.sin(dLat/2) * Math.sin(dLat/2) +
-Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) *
-Math.sin(dLon/2) * Math.sin(dLon/2);
+rows.push(obj);
+}
 
-const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-return R * c;
+return rows;
 }
 
 /*
 ========================
-SIMULATION LOOP
+IMPORT ENGINE
 ========================
 */
 
-let lastDistance = null;
+async function loadGTFS(){
 
-function update(){
+let file = document.getElementById("file").files[0];
 
-// bus “mozgatás” a megálló felé
-bus.lat += (stop.lat - bus.lat) * 0.02;
-bus.lng += (stop.lng - bus.lng) * 0.02;
-
-// marker update
-busMarker.setLatLng([bus.lat,bus.lng]);
-
-// distance calc
-let d = distance(bus.lat,bus.lng,stop.lat,stop.lng);
-
-// direction detection
-let status = "";
-
-if(lastDistance !== null){
-if(d < lastDistance){
-status = "🟢 KÖZELEDIK";
-}else{
-status = "🔵 TÁVOLODIK";
-}
+if(!file){
+alert("Nincs fájl!");
+return;
 }
 
-if(d < 50){
-status = "🚏 MEGÉRKEZETT";
+let zip = await JSZip.loadAsync(file);
+
+/*
+========================
+stops.txt
+========================
+*/
+
+if(zip.file("stops.txt")){
+let txt = await zip.file("stops.txt").async("string");
+GTFS.stops = parseCSV(txt);
 }
 
-lastDistance = d;
+/*
+========================
+routes.txt
+========================
+*/
 
-// UI
-document.getElementById("stopInfo").innerHTML =
-"🚏 <b>"+stop.name+"</b>";
+if(zip.file("routes.txt")){
+let txt = await zip.file("routes.txt").async("string");
+GTFS.routes = parseCSV(txt);
+}
 
-document.getElementById("busInfo").innerHTML =
-`
-🚍 ${bus.route}<br>
-<span class="badge">${bus.id}</span><br>
-📍 Lat: ${bus.lat.toFixed(5)}<br>
-📍 Lng: ${bus.lng.toFixed(5)}<br>
-📏 Távolság: <b>${Math.round(d)} m</b>
+/*
+========================
+trips.txt
+========================
+*/
+
+if(zip.file("trips.txt")){
+let txt = await zip.file("trips.txt").async("string");
+GTFS.trips = parseCSV(txt);
+}
+
+document.getElementById("out").innerText =
+JSON.stringify(GTFS,null,2);
+
+document.getElementById("data").innerHTML = `
+✔ Stops: ${GTFS.stops.length}<br>
+✔ Routes: ${GTFS.routes.length}<br>
+✔ Trips: ${GTFS.trips.length}
 `;
 
-document.getElementById("status").innerHTML = status;
-
 }
-
-setInterval(update, 2000);
-update();
 
 </script>
 
