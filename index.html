@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Control Room V3 FULL</title>
+<title>Control Room V3.2 REAL</title>
 
 <style>
 body {
@@ -16,7 +16,6 @@ header {
   padding: 12px;
   background: #111;
   border-bottom: 1px solid #333;
-  font-weight: bold;
 }
 
 #container {
@@ -24,10 +23,17 @@ header {
   height: calc(100vh - 50px);
 }
 
-/* LEFT */
 #left {
   flex: 3;
   padding: 10px;
+}
+
+#right {
+  flex: 1;
+  border-left: 1px solid #333;
+  padding: 10px;
+  font-size: 12px;
+  background: #0b0b0b;
 }
 
 input, button {
@@ -36,11 +42,6 @@ input, button {
   width: 100%;
 }
 
-button {
-  cursor: pointer;
-}
-
-/* BOARD */
 .row {
   display: flex;
   justify-content: space-between;
@@ -48,33 +49,11 @@ button {
   margin-bottom: 6px;
   background: #1a1a1a;
   border-left: 5px solid #444;
-  font-size: 13px;
 }
 
-/* 🔴 SIETÉS */
-.row.fast {
-  border-left-color: red;
-}
-
-/* 🟡 IDŐBEN */
-.row.ok {
-  border-left-color: yellow;
-}
-
-/* 🔵 KÉSÉS */
-.row.delay {
-  border-left-color: deepskyblue;
-}
-
-/* RIGHT DEBUG */
-#right {
-  flex: 1;
-  border-left: 1px solid #333;
-  padding: 10px;
-  font-size: 12px;
-  background: #0b0b0b;
-  overflow: auto;
-}
+.row.fast { border-left-color: red; }
+.row.ok { border-left-color: yellow; }
+.row.delay { border-left-color: deepskyblue; }
 
 small { opacity: 0.7; }
 </style>
@@ -83,24 +62,19 @@ small { opacity: 0.7; }
 <body>
 
 <header>
-🚏 CONTROL ROOM V3 FULL — GTFS CORE ENGINE
+🚏 CONTROL ROOM V3.2 — REALISTIC ENGINE
 </header>
 
 <div id="container">
 
-<!-- LEFT -->
 <div id="left">
-
-<input id="stopInput" placeholder="Megálló (pl. Nád utca)">
+<input id="stopInput" placeholder="Megálló (pl. Nád utca / Magnólia utca)">
 <button onclick="loadStop()">Indítás</button>
-
 <div id="board"></div>
-
 </div>
 
-<!-- RIGHT DEBUG -->
 <div id="right">
-<b>DEBUG PANEL</b>
+<b>DEBUG</b>
 <pre id="log"></pre>
 </div>
 
@@ -116,29 +90,30 @@ function log(msg) {
 }
 
 // =====================
-// ERROR SAFE MODE
-// =====================
-window.onerror = function(msg, src, line) {
-  log("❌ ERROR: " + msg + " @ " + line);
-  return true;
-};
-
-// =====================
-// MOCK GTFS CORE
+// STOPS (BŐVÍTVE)
 // =====================
 const STOPS = [
-  { id: "S1", name: "Nád utca" }
+  { id: "S1", name: "Nád utca" },
+  { id: "S2", name: "Magnólia utca" },
+  { id: "S3", name: "Flórián tér" }
 ];
 
+// =====================
+// TRIPS (STABILIZÁLT)
+// =====================
+const TRIPS = [
+  { id: "T1", route: "34", direction: "Aquincum", vehicle: "BUS-1001" },
+  { id: "T2", route: "134", direction: "Újpest", vehicle: "BUS-1002" },
+  { id: "T3", route: "106", direction: "Gellért tér", vehicle: "BUS-1003" }
+];
+
+// =====================
+// STOP TIMES
+// =====================
 const STOP_TIMES = [
   { stop_id: "S1", trip_id: "T1", time: "12:10:00" },
   { stop_id: "S1", trip_id: "T2", time: "12:14:30" },
-  { stop_id: "S1", trip_id: "T3", time: "12:18:00" }
-];
-
-const TRIPS = [
-  { id: "T1", route: "34", direction: "Aquincum", vehicle: "BUS-1001" },
-  { id: "T2", route: "134", direction: "Újpest", vehicle: "BUS-1002" }
+  { stop_id: "S2", trip_id: "T3", time: "12:18:00" }
 ];
 
 // =====================
@@ -151,34 +126,42 @@ function findStop(name) {
 }
 
 // =====================
-// TIME DIFF ENGINE
+// REALISTIC DELAY ENGINE
 // =====================
-function calcStatus(timeStr) {
+function calcDelay(timeStr) {
 
-  const now = new Date();
   const [h, m, s] = timeStr.split(":").map(Number);
 
+  const now = new Date();
   const target = new Date();
   target.setHours(h, m, s, 0);
 
-  const diffMin = Math.round((target - now) / 60000);
+  const diffMin = Math.floor((target - now) / 60000);
 
-  // 🔴 SIETÉS (korai)
-  if (diffMin < -1) {
+  return diffMin;
+}
+
+// =====================
+// STATUS ENGINE (REALISTIC)
+// =====================
+function getStatus(diffMin) {
+
+  // 🔴 early (rare)
+  if (diffMin < -2) {
     return { text: "SIET " + Math.abs(diffMin) + "p", cls: "fast" };
   }
 
-  // 🟡 IDŐBEN
-  if (diffMin <= 2) {
+  // 🟡 near time window
+  if (diffMin <= 3) {
     return { text: "IDŐBEN", cls: "ok" };
   }
 
-  // 🔵 KÉSÉS
+  // 🔵 delay
   return { text: "KÉSÉS +" + diffMin + "p", cls: "delay" };
 }
 
 // =====================
-// BUILD DEPARTURES
+// BUILD (CLEAN GTFS LOGIC)
 // =====================
 function buildDepartures(stopId) {
 
@@ -188,23 +171,26 @@ function buildDepartures(stopId) {
     .filter(st => st.stop_id === stopId)
     .map(st => {
 
-      const trip = TRIPS.find(t => t.id === st.trip_id) || {
-        route: "??",
-        direction: "ISMERETLEN",
-        vehicle: "N/A"
-      };
+      const trip = TRIPS.find(t => t.id === st.trip_id);
 
-      const status = calcStatus(st.time);
+      if (!trip) {
+        log("⚠️ missing trip " + st.trip_id);
+        return null;
+      }
+
+      const diff = calcDelay(st.time);
+      const status = getStatus(diff);
 
       return {
         route: trip.route,
         direction: trip.direction,
         time: st.time,
         vehicle: trip.vehicle,
-        statusText: status.text,
+        status: status.text,
         cls: status.cls
       };
     })
+    .filter(Boolean)
     .slice(0, 15);
 }
 
@@ -225,7 +211,7 @@ function renderBoard(data) {
       <div><b>${d.route}</b></div>
       <div>${d.direction}</div>
       <div>${d.time}</div>
-      <div>${d.statusText}</div>
+      <div>${d.status}</div>
       <div><small>${d.vehicle}</small></div>
     `;
 
@@ -245,7 +231,7 @@ function loadStop() {
   const stop = findStop(val);
 
   if (!stop) {
-    log("❌ stop not found");
+    log("❌ STOP NOT FOUND");
     return;
   }
 
@@ -254,8 +240,7 @@ function loadStop() {
   renderBoard(data);
 }
 
-// INIT
-log("🟢 V3 FULL READY");
+log("🟢 V3.2 REAL READY");
 
 </script>
 
