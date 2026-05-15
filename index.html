@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 GITHUB PAGES</title>
+<title>FUTÁR V5 AUTOCOMPLETE</title>
 
 <style>
 body{
@@ -33,26 +33,33 @@ background:#0b1220;
 border:1px solid #00ffcc;
 border-radius:6px;
 padding:10px;
-min-height:400px;
-}
-
-input,button{
-width:100%;
-padding:10px;
-margin-top:5px;
+min-height:420px;
 }
 
 input{
+width:100%;
+padding:12px;
 background:#05070d;
 border:1px solid #00ffcc;
 color:#00ffcc;
+font-size:14px;
 }
 
-button{
-background:#00ffcc;
-border:none;
-font-weight:bold;
+.suggestions{
+margin-top:10px;
+border-top:1px solid #00ffcc33;
+max-height:250px;
+overflow:auto;
+}
+
+.item{
+padding:8px;
+border-bottom:1px solid #00ffcc22;
 cursor:pointer;
+}
+
+.item:hover{
+background:#00ffcc11;
 }
 
 table{
@@ -67,54 +74,187 @@ padding:6px;
 font-size:13px;
 text-align:left;
 }
+
+.badge{
+padding:2px 6px;
+border:1px solid #00ffcc;
+font-size:11px;
+}
 </style>
 </head>
 
 <body>
 
 <header>
-🚍 FUTÁR V5 // GITHUB PAGES READY
+🚍 FUTÁR V5 AUTOCOMPLETE STOP SEARCH ENGINE
 </header>
 
 <div class="container">
 
+<!-- LEFT -->
 <div class="panel">
 <h3>🚏 Megálló kereső</h3>
 
-<input id="stop" placeholder="pl. Deák tér / Nád utca">
-<button onclick="search()">KERESÉS</button>
+<input id="input" placeholder="Írj be pl. Deák / Nád / Keleti">
 
-<div id="result"></div>
+<div class="suggestions" id="suggestions"></div>
+
 </div>
 
+<!-- RIGHT -->
 <div class="panel">
 <h3>🛰 Indulások</h3>
 
+<div id="selected"></div>
+
 <table>
-<tr><th>Járat</th><th>Irány</th><th>Idő</th></tr>
-
-<tr><td>7E</td><td>Blaha</td><td>+2</td></tr>
-<tr><td>9</td><td>Óbuda</td><td>+4</td></tr>
-<tr><td>47</td><td>Deák</td><td>+1</td></tr>
-<tr><td>M2</td><td>Déli</td><td>+6</td></tr>
-
+<thead>
+<tr>
+<th>Járat</th>
+<th>Irány</th>
+<th>Idő</th>
+</tr>
+</thead>
+<tbody id="table"></tbody>
 </table>
+
 </div>
 
 </div>
 
 <script>
-function search(){
-let v=document.getElementById("stop").value;
 
-if(!v){
-document.getElementById("result").innerHTML="❌ nincs megálló";
+/*
+========================
+GTFS STOP DATABASE
+========================
+*/
+
+const stops = [
+"Deák tér",
+"Blaha Lujza tér",
+"Nád utca",
+"Óbuda",
+"Kelenföld",
+"Déli pályaudvar",
+"Keleti pályaudvar",
+"Batthyány tér"
+];
+
+/*
+========================
+STOP → TRIPS MAP (GTFS MINI)
+========================
+*/
+
+const GTFS = {
+"Deák tér":[
+{route:"47", dir:"Kelenföld", time:"+1"},
+{route:"M2", dir:"Déli", time:"+6"}
+],
+"Nád utca":[
+{route:"7E", dir:"Blaha", time:"+2"},
+{route:"9", dir:"Óbuda", time:"+4"}
+],
+"Kelenföld":[
+{route:"M4", dir:"Keleti", time:"+3"}
+]
+};
+
+/*
+========================
+NORMALIZER (GTFS STYLE)
+========================
+*/
+
+function norm(str){
+return str
+.toLowerCase()
+.normalize("NFD")
+.replace(/\p{Diacritic}/gu,"");
+}
+
+/*
+========================
+AUTOCOMPLETE ENGINE
+========================
+*/
+
+const input = document.getElementById("input");
+const box = document.getElementById("suggestions");
+
+input.addEventListener("input", ()=>{
+
+let val = input.value;
+
+box.innerHTML = "";
+
+if(!val) return;
+
+let results = stops.filter(s =>
+norm(s).includes(norm(val))
+);
+
+results.forEach(r=>{
+let div = document.createElement("div");
+div.className = "item";
+div.innerHTML = "🚏 " + r;
+
+div.onclick = ()=>selectStop(r);
+
+box.appendChild(div);
+});
+
+});
+
+/*
+========================
+SELECT STOP
+========================
+*/
+
+function selectStop(stop){
+
+input.value = stop;
+box.innerHTML = "";
+
+document.getElementById("selected").innerHTML =
+"🚏 Kiválasztva: <b>"+stop+"</b>";
+
+let data = GTFS[stop];
+
+let table = document.getElementById("table");
+table.innerHTML = "";
+
+if(!data){
+table.innerHTML = "<tr><td colspan='3'>❌ nincs GTFS adat</td></tr>";
 return;
 }
 
-document.getElementById("result").innerHTML =
-"🚏 Megálló: <b>"+v+"</b> (GitHub Pages OK)";
+data.forEach(d=>{
+table.innerHTML += `
+<tr>
+<td><span class="badge">${d.route}</span></td>
+<td>${d.dir}</td>
+<td>${d.time}</td>
+</tr>
+`;
+});
 }
+
+/*
+========================
+ENTER SUPPORT
+========================
+*/
+
+input.addEventListener("keydown", (e)=>{
+if(e.key === "Enter"){
+let first = document.querySelector(".item");
+if(first) first.click();
+}
+});
+
 </script>
 
 </body>
