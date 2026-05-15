@@ -1,4 +1,141 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>Control Room V2 Anti-Black</title>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial;
+  background: #0f0f0f;
+  color: white;
+}
+
+header {
+  padding: 12px;
+  background: #111;
+  border-bottom: 1px solid #333;
+}
+
+#container {
+  display: flex;
+  height: calc(100vh - 50px);
+}
+
+#left {
+  flex: 3;
+  padding: 10px;
+}
+
+#right {
+  flex: 1;
+  border-left: 1px solid #333;
+  padding: 10px;
+  font-size: 12px;
+  background: #0b0b0b;
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  margin-bottom: 5px;
+  background: #1a1a1a;
+  border-left: 4px solid #444;
+}
+
+.row.ok { border-left-color: lime; }
+.row.warn { border-left-color: orange; }
+.row.bad { border-left-color: red; }
+
+input, button {
+  padding: 8px;
+  margin: 5px 0;
+}
+
+small { opacity: 0.7; }
+</style>
+</head>
+
+<body>
+
+<header>
+🚏 CONTROL ROOM V2 — ANTI-BLACK SCREEN ENGINE
+</header>
+
+<div id="container">
+
+<!-- LEFT PANEL -->
+<div id="left">
+
+  <input id="stopInput" placeholder="Megálló keresés (pl. Nád utca)">
+  <button onclick="loadStop()">Indítás</button>
+
+  <div id="board"></div>
+</div>
+
+<!-- RIGHT DEBUG -->
+<div id="right">
+  <b>DEBUG PANEL</b>
+  <pre id="log"></pre>
+</div>
+
+</div>
+
+<script>
+
+// =====================
+// 🧠 SAFE LOG SYSTEM
+// =====================
+function log(msg) {
+  const el = document.getElementById("log");
+  el.innerText += msg + "\n";
+}
+
+// =====================
+// 🧯 GLOBAL ERROR CATCH
+// =====================
+window.onerror = function(msg, src, line) {
+  log("❌ ERROR: " + msg + " @ " + line);
+  return true; // NINCS WHITE SCREEN
+};
+
+// =====================
+// 📦 MOCK GTFS DATA
+// =====================
+const STOPS = [
+  { id: "S1", name: "Nád utca" },
+  { id: "S2", name: "Flórián tér" }
+];
+
+const STOP_TIMES = [
+  { stop_id: "S1", trip_id: "T1", time: "12:10:00" },
+  { stop_id: "S1", trip_id: "T2", time: "12:14:30" },
+  { stop_id: "S1", trip_id: "T3", time: "12:18:00" }
+];
+
+const TRIPS = [
+  { id: "T1", route: "34", direction: "Aquincum", vehicle: "BUS-1001" },
+  { id: "T2", route: "134", direction: "Újpest", vehicle: "BUS-1002" }
+  // T3 HIÁNYZIK → TESZT FAIL SAFE
+];
+
+// =====================
+// 🔍 STOP FIND
+// =====================
+function findStop(name) {
+  return STOPS.find(s =>
+    s.name.toLowerCase().includes(name.toLowerCase())
+  );
+}
+
+// =====================
+// 🚏 BUILD DEPARTURES (SAFE)
+// =====================
 function buildDepartures(stopId) {
+
+  log("⚙️ building departures for " + stopId);
 
   return STOP_TIMES
     .filter(st => st.stop_id === stopId)
@@ -6,15 +143,17 @@ function buildDepartures(stopId) {
 
       const trip = TRIPS.find(t => t.id === st.trip_id);
 
-      // 🔥 SAFETY CHECK (EZ A LÉNYEG)
+      // 🧯 SAFE FALLBACK
       if (!trip) {
+        log("⚠️ missing trip: " + st.trip_id);
+
         return {
           route: "??",
           direction: "UNKNOWN",
           time: st.time,
           vehicle: "N/A",
           delay: 0,
-          status: "HIÁNYZÓ TRIP"
+          status: "HIÁNYZÓ ADAT"
         };
       }
 
@@ -25,7 +164,7 @@ function buildDepartures(stopId) {
         direction: trip.direction,
         time: st.time,
         vehicle: trip.vehicle,
-        delay: delay,
+        delay,
         status:
           delay > 0 ? "KÉSÉS +" + delay :
           delay < 0 ? "SIET " + delay :
@@ -34,3 +173,74 @@ function buildDepartures(stopId) {
     })
     .slice(0, 15);
 }
+
+// =====================
+// 🖥 RENDER ENGINE (CRASH-PROOF)
+// =====================
+function renderBoard(data) {
+
+  const board = document.getElementById("board");
+  board.innerHTML = "";
+
+  try {
+
+    data.forEach(d => {
+
+      const row = document.createElement("div");
+
+      let cls = "ok";
+      if (d.status.includes("KÉSÉS")) cls = "bad";
+      if (d.status.includes("SIET")) cls = "warn";
+
+      row.className = "row " + cls;
+
+      row.innerHTML = `
+        <div>${d.route}</div>
+        <div>${d.direction}</div>
+        <div>${d.time}</div>
+        <div>${d.status}</div>
+        <div><small>${d.vehicle}</small></div>
+      `;
+
+      board.appendChild(row);
+    });
+
+  } catch (e) {
+    log("❌ render crash: " + e.message);
+  }
+}
+
+// =====================
+// 🚀 MAIN LOAD
+// =====================
+function loadStop() {
+
+  try {
+
+    const val = document.getElementById("stopInput").value;
+
+    log("🔎 searching: " + val);
+
+    const stop = findStop(val);
+
+    if (!stop) {
+      log("❌ stop not found");
+      return;
+    }
+
+    const data = buildDepartures(stop.id);
+
+    renderBoard(data);
+
+  } catch (e) {
+    log("❌ loadStop crash: " + e.message);
+  }
+}
+
+// auto start
+log("🟢 system ready");
+
+</script>
+
+</body>
+</html>
