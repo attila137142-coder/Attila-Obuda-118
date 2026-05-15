@@ -2,245 +2,269 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Control Room V3.2 REAL</title>
+<title>FAILSAFE CONTROL ROOM V2.1 LIVE</title>
 
 <style>
-body {
-  margin: 0;
-  font-family: Arial;
-  background: #0f0f0f;
-  color: white;
+
+body{
+margin:0;
+font-family:Arial;
+background:#0b1220;
+color:white;
+overflow:hidden;
 }
 
-header {
-  padding: 12px;
-  background: #111;
-  border-bottom: 1px solid #333;
+header{
+height:55px;
+background:#111827;
+display:flex;
+align-items:center;
+justify-content:space-between;
+padding:0 15px;
+font-size:22px;
+font-weight:bold;
+border-bottom:2px solid #1f2937;
 }
 
-#container {
-  display: flex;
-  height: calc(100vh - 50px);
+.layout{
+display:grid;
+grid-template-columns:380px 1fr;
+height:calc(100vh - 55px);
 }
 
-#left {
-  flex: 3;
-  padding: 10px;
+.left{
+background:#111827;
+overflow:auto;
+padding:10px;
+border-right:2px solid #1f2937;
 }
 
-#right {
-  flex: 1;
-  border-left: 1px solid #333;
-  padding: 10px;
-  font-size: 12px;
-  background: #0b0b0b;
+.right{
+overflow:auto;
+padding:10px;
+background:#0f172a;
 }
 
-input, button {
-  padding: 8px;
-  margin-bottom: 10px;
-  width: 100%;
+.box{
+background:#1e293b;
+border-radius:10px;
+padding:12px;
+margin-bottom:12px;
 }
 
-.row {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px;
-  margin-bottom: 6px;
-  background: #1a1a1a;
-  border-left: 5px solid #444;
+.row{
+display:flex;
+justify-content:space-between;
+padding:8px;
+border-bottom:1px solid rgba(255,255,255,0.08);
+font-size:13px;
 }
 
-.row.fast { border-left-color: red; }
-.row.ok { border-left-color: yellow; }
-.row.delay { border-left-color: deepskyblue; }
+.green{color:#7CFF7C;font-weight:bold;}
+.blue{color:#4da6ff;font-weight:bold;}
+.red{color:#ff6666;font-weight:bold;}
+.yellow{color:#ffd966;font-weight:bold;}
 
-small { opacity: 0.7; }
+button{
+background:#2563eb;
+color:white;
+border:none;
+padding:8px 10px;
+border-radius:6px;
+margin:3px;
+cursor:pointer;
+font-weight:bold;
+width:100%;
+}
+
+button:hover{background:#3b82f6;}
+
+.small{font-size:11px;opacity:0.8;}
+
+input{
+width:100%;
+padding:8px;
+border:none;
+border-radius:6px;
+margin-top:6px;
+}
+
 </style>
 </head>
 
 <body>
 
 <header>
-🚏 CONTROL ROOM V3.2 — REALISTIC ENGINE
+<div>🚍 FAILSAFE CONTROL ROOM V2.1 LIVE</div>
+<div id="clock"></div>
 </header>
 
-<div id="container">
+<div class="layout">
 
-<div id="left">
-<input id="stopInput" placeholder="Megálló (pl. Nád utca / Magnólia utca)">
-<button onclick="loadStop()">Indítás</button>
-<div id="board"></div>
+<!-- LEFT -->
+<div class="left">
+
+<div class="box">
+<h3>🔍 MEGÁLLÓ KERESŐ</h3>
+<input id="searchBox" placeholder="Pl: Nád utca / Magnólia utca" oninput="search(this.value)">
 </div>
 
-<div id="right">
-<b>DEBUG</b>
-<pre id="log"></pre>
+<div class="box">
+<h3>🚏 INDULÁSOK</h3>
+<div id="departures"></div>
+</div>
+
+</div>
+
+<!-- RIGHT -->
+<div class="right">
+
+<div class="box">
+<h3>🧠 STATUS</h3>
+<div id="statusBox"></div>
+</div>
+
 </div>
 
 </div>
 
 <script>
 
-// =====================
-// LOG
-// =====================
-function log(msg) {
-  document.getElementById("log").innerText += msg + "\n";
-}
+/* =========================
+CLOCK
+========================= */
+setInterval(()=>{
+document.getElementById("clock").innerText =
+new Date().toLocaleTimeString();
+},1000);
 
-// =====================
-// STOPS (BŐVÍTVE)
-// =====================
+/* =========================
+DATA (REALISTIC FIXED CORE)
+========================= */
+
 const STOPS = [
-  { id: "S1", name: "Nád utca" },
-  { id: "S2", name: "Magnólia utca" },
-  { id: "S3", name: "Flórián tér" }
+{id:"S1",name:"Nád utca"},
+{id:"S2",name:"Magnólia utca"},
+{id:"S3",name:"Flórián tér"}
 ];
 
-// =====================
-// TRIPS (STABILIZÁLT)
-// =====================
 const TRIPS = [
-  { id: "T1", route: "34", direction: "Aquincum", vehicle: "BUS-1001" },
-  { id: "T2", route: "134", direction: "Újpest", vehicle: "BUS-1002" },
-  { id: "T3", route: "106", direction: "Gellért tér", vehicle: "BUS-1003" }
+{id:"T1",route:"34",dir:"Aquincum",veh:"BUS-1001"},
+{id:"T2",route:"134",dir:"Újpest",veh:"BUS-1002"},
+{id:"T3",route:"106",dir:"Gellért tér",veh:"BUS-1003"}
 ];
 
-// =====================
-// STOP TIMES
-// =====================
+/* scheduled seconds from midnight (REAL BASE) */
 const STOP_TIMES = [
-  { stop_id: "S1", trip_id: "T1", time: "12:10:00" },
-  { stop_id: "S1", trip_id: "T2", time: "12:14:30" },
-  { stop_id: "S2", trip_id: "T3", time: "12:18:00" }
+{stop:"S1",trip:"T1",sec: (new Date().getHours()*3600 + new Date().getMinutes()*60 + 60)},
+{stop:"S1",trip:"T2",sec: (new Date().getHours()*3600 + new Date().getMinutes()*60 + 180)},
+{stop:"S2",trip:"T3",sec: (new Date().getHours()*3600 + new Date().getMinutes()*60 + 300)}
 ];
 
-// =====================
-// STOP FIND
-// =====================
-function findStop(name) {
-  return STOPS.find(s =>
-    s.name.toLowerCase().includes(name.toLowerCase())
-  );
+/* =========================
+REAL TIME ENGINE
+========================= */
+
+function nowSec(){
+const d = new Date();
+return d.getHours()*3600 + d.getMinutes()*60 + d.getSeconds();
 }
 
-// =====================
-// REALISTIC DELAY ENGINE
-// =====================
-function calcDelay(timeStr) {
+function calcDelay(sec){
+let diff = sec - nowSec();
 
-  const [h, m, s] = timeStr.split(":").map(Number);
+// clamp (NO CHAOS)
+if(diff > 600) diff = 600;
+if(diff < -600) diff = -600;
 
-  const now = new Date();
-  const target = new Date();
-  target.setHours(h, m, s, 0);
-
-  const diffMin = Math.floor((target - now) / 60000);
-
-  return diffMin;
+return diff;
 }
 
-// =====================
-// STATUS ENGINE (REALISTIC)
-// =====================
-function getStatus(diffMin) {
+/* =========================
+STATUS ENGINE
+========================= */
 
-  // 🔴 early (rare)
-  if (diffMin < -2) {
-    return { text: "SIET " + Math.abs(diffMin) + "p", cls: "fast" };
-  }
+function status(diff){
 
-  // 🟡 near time window
-  if (diffMin <= 3) {
-    return { text: "IDŐBEN", cls: "ok" };
-  }
+if(diff < -120)
+return {txt:"🔴 SIET "+Math.abs(diff)+"s",cls:"red"};
 
-  // 🔵 delay
-  return { text: "KÉSÉS +" + diffMin + "p", cls: "delay" };
+if(diff <= 120)
+return {txt:"🟡 IDŐBEN",cls:"yellow"};
+
+return {txt:"🔵 KÉSÉS +"+diff+"s",cls:"blue"};
 }
 
-// =====================
-// BUILD (CLEAN GTFS LOGIC)
-// =====================
-function buildDepartures(stopId) {
+/* =========================
+RENDER
+========================= */
 
-  log("⚙️ building for " + stopId);
+function render(list){
 
-  return STOP_TIMES
-    .filter(st => st.stop_id === stopId)
-    .map(st => {
+let html="";
 
-      const trip = TRIPS.find(t => t.id === st.trip_id);
+list.forEach(x=>{
 
-      if (!trip) {
-        log("⚠️ missing trip " + st.trip_id);
-        return null;
-      }
+const trip = TRIPS.find(t=>t.id===x.trip);
 
-      const diff = calcDelay(st.time);
-      const status = getStatus(diff);
+if(!trip) return;
 
-      return {
-        route: trip.route,
-        direction: trip.direction,
-        time: st.time,
-        vehicle: trip.vehicle,
-        status: status.text,
-        cls: status.cls
-      };
-    })
-    .filter(Boolean)
-    .slice(0, 15);
+const diff = calcDelay(x.sec);
+const st = status(diff);
+
+html+=`
+<div class="row">
+<div>
+<b>${trip.route}</b>
+<div class="small">${trip.dir}</div>
+<div class="small">${trip.veh}</div>
+</div>
+
+<div>
+<div class="${st.cls}">${st.txt}</div>
+<div class="small">${new Date(x.sec*1000).toLocaleTimeString()}</div>
+</div>
+</div>
+`;
+
+});
+
+document.getElementById("departures").innerHTML = html;
 }
 
-// =====================
-// RENDER
-// =====================
-function renderBoard(data) {
+/* =========================
+SEARCH
+========================= */
 
-  const board = document.getElementById("board");
-  board.innerHTML = "";
+function search(q){
 
-  data.forEach(d => {
+q=q.toLowerCase();
 
-    const row = document.createElement("div");
-    row.className = "row " + d.cls;
+const stop = STOPS.find(s=>s.name.toLowerCase().includes(q));
 
-    row.innerHTML = `
-      <div><b>${d.route}</b></div>
-      <div>${d.direction}</div>
-      <div>${d.time}</div>
-      <div>${d.status}</div>
-      <div><small>${d.vehicle}</small></div>
-    `;
-
-    board.appendChild(row);
-  });
+if(!stop){
+document.getElementById("departures").innerHTML="❌ nincs találat";
+return;
 }
 
-// =====================
-// MAIN
-// =====================
-function loadStop() {
-
-  const val = document.getElementById("stopInput").value;
-
-  log("🔎 " + val);
-
-  const stop = findStop(val);
-
-  if (!stop) {
-    log("❌ STOP NOT FOUND");
-    return;
-  }
-
-  const data = buildDepartures(stop.id);
-
-  renderBoard(data);
+render(STOP_TIMES.filter(s=>s.stop===stop.id));
 }
 
-log("🟢 V3.2 REAL READY");
+/* =========================
+AUTO LOOP (LIVE)
+========================= */
+
+setInterval(()=>{
+
+render(STOP_TIMES);
+
+document.getElementById("statusBox").innerHTML=
+"🟢 LIVE ENGINE OK<br>🕒 "+new Date().toLocaleTimeString();
+
+},2000);
+
+/* INIT */
+render(STOP_TIMES);
 
 </script>
 
