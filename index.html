@@ -3,7 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 AUTOCOMPLETE + SEARCH</title>
+<title>FUTÁR V5 MAP ENGINE</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body{
@@ -14,7 +16,7 @@ color:#00ffcc;
 }
 
 header{
-padding:15px;
+padding:12px;
 text-align:center;
 background:#0b1220;
 border-bottom:2px solid #00ffcc;
@@ -24,25 +26,25 @@ font-weight:bold;
 .container{
 display:grid;
 grid-template-columns:1fr 2fr;
-gap:10px;
-padding:10px;
+height:calc(100vh - 50px);
 }
 
-.panel{
-background:#0b1220;
-border:1px solid #00ffcc;
-border-radius:6px;
+.left{
 padding:10px;
-min-height:420px;
+background:#0b1220;
+border-right:1px solid #00ffcc;
+overflow:auto;
+}
+
+.right{
 }
 
 input{
 width:100%;
-padding:12px;
+padding:10px;
 background:#05070d;
 border:1px solid #00ffcc;
 color:#00ffcc;
-font-size:14px;
 }
 
 button{
@@ -55,13 +57,6 @@ font-weight:bold;
 cursor:pointer;
 }
 
-.suggestions{
-margin-top:10px;
-border-top:1px solid #00ffcc33;
-max-height:220px;
-overflow:auto;
-}
-
 .item{
 padding:8px;
 border-bottom:1px solid #00ffcc22;
@@ -72,23 +67,9 @@ cursor:pointer;
 background:#00ffcc11;
 }
 
-table{
+#map{
 width:100%;
-border-collapse:collapse;
-margin-top:10px;
-}
-
-td,th{
-border-bottom:1px solid #00ffcc33;
-padding:6px;
-font-size:13px;
-text-align:left;
-}
-
-.badge{
-padding:2px 6px;
-border:1px solid #00ffcc;
-font-size:11px;
+height:100%;
 }
 </style>
 </head>
@@ -96,198 +77,124 @@ font-size:11px;
 <body>
 
 <header>
-🚍 FUTÁR V5 AUTOCOMPLETE + SEARCH BUTTON FIX
+🚍 FUTÁR V5 MAP ENGINE // LEAFLET CONTROL ROOM
 </header>
 
 <div class="container">
 
-<!-- LEFT -->
-<div class="panel">
+<!-- LEFT PANEL -->
+<div class="left">
 <h3>🚏 Megálló kereső</h3>
 
-<input id="input" placeholder="Írj be pl. Deák / Nád / Keleti">
-
+<input id="input" placeholder="pl. Deák tér / Kelenföld">
 <button onclick="search()">KERESÉS</button>
 
-<div class="suggestions" id="suggestions"></div>
+<div id="list"></div>
+
+<div id="info"></div>
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
 
 </div>
 
-<!-- RIGHT -->
-<div class="panel">
-<h3>🛰 Indulások</h3>
-
-<div id="selected"></div>
-
-<table>
-<thead>
-<tr>
-<th>Járat</th>
-<th>Irány</th>
-<th>Idő</th>
-</tr>
-</thead>
-
-<tbody id="table"></tbody>
-</table>
-
-</div>
-
-</div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
 /*
 ========================
-DATA
+GTFS STOP + COORDS
 ========================
 */
 
 const stops = [
-"Deák tér",
-"Blaha Lujza tér",
-"Nád utca",
-"Óbuda",
-"Kelenföld",
-"Déli pályaudvar",
-"Keleti pályaudvar",
-"Batthyány tér"
+{name:"Deák tér", lat:47.4979, lng:19.0540},
+{name:"Blaha Lujza tér", lat:47.4970, lng:19.0700},
+{name:"Kelenföld", lat:47.4649, lng:19.0227},
+{name:"Nád utca", lat:47.5190, lng:19.0780}
 ];
 
-const GTFS = {
-"Deák tér":[
-{route:"47", dir:"Kelenföld", time:"+1"},
-{route:"M2", dir:"Déli", time:"+6"}
-],
-"Nád utca":[
-{route:"7E", dir:"Blaha", time:"+2"},
-{route:"9", dir:"Óbuda", time:"+4"}
-],
-"Kelenföld":[
-{route:"M4", dir:"Keleti", time:"+3"}
-]
-};
+/*
+========================
+MAP INIT
+========================
+*/
 
-function norm(str){
-return str.toLowerCase()
+const map = L.map('map').setView([47.4979,19.0402], 13);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+attribution:'OSM'
+}).addTo(map);
+
+let marker;
+
+/*
+========================
+NORMALIZER
+========================
+*/
+
+function norm(s){
+return s.toLowerCase()
 .normalize("NFD")
 .replace(/\p{Diacritic}/gu,"");
 }
 
 /*
 ========================
-AUTOCOMPLETE
-========================
-*/
-
-const input = document.getElementById("input");
-const box = document.getElementById("suggestions");
-
-let selectedStop = null;
-
-input.addEventListener("input", ()=>{
-
-let val = input.value;
-box.innerHTML = "";
-
-if(!val) return;
-
-let results = stops.filter(s =>
-norm(s).includes(norm(val))
-);
-
-results.forEach(r=>{
-let div = document.createElement("div");
-div.className="item";
-div.innerHTML="🚏 "+r;
-
-div.onclick=()=>{
-input.value = r;
-selectedStop = r;
-box.innerHTML="";
-loadStop(r);
-};
-
-box.appendChild(div);
-});
-
-});
-
-/*
-========================
-SEARCH BUTTON
+SEARCH ENGINE
 ========================
 */
 
 function search(){
 
-let val = input.value;
+let val=document.getElementById("input").value;
 
-if(!val){
-alert("Írj be egy megállót!");
-return;
-}
-
-let match = stops.find(s =>
-norm(s) === norm(val)
+let found = stops.filter(s =>
+norm(s.name).includes(norm(val))
 );
 
-if(!match){
-document.getElementById("selected").innerHTML =
-"❌ nincs ilyen megálló";
-return;
-}
+let list=document.getElementById("list");
+list.innerHTML="";
 
-selectedStop = match;
-loadStop(match);
+found.forEach(f=>{
+let div=document.createElement("div");
+div.className="item";
+div.innerHTML="🚏 "+f.name;
+
+div.onclick=()=>{
+selectStop(f);
+};
+
+list.appendChild(div);
+});
+
 }
 
 /*
 ========================
-LOAD STOP DATA
+SELECT STOP + MAP
 ========================
 */
 
-function loadStop(stop){
+function selectStop(stop){
 
-document.getElementById("selected").innerHTML =
-"🚏 Kiválasztva: <b>"+stop+"</b>";
+document.getElementById("info").innerHTML=
+"🚏 <b>"+stop.name+"</b>";
 
-let data = GTFS[stop];
+map.setView([stop.lat,stop.lng],16);
 
-let table = document.getElementById("table");
-table.innerHTML="";
+if(marker) map.removeLayer(marker);
 
-if(!data){
-table.innerHTML="<tr><td colspan='3'>❌ nincs GTFS adat</td></tr>";
-return;
+marker = L.marker([stop.lat,stop.lng])
+.addTo(map)
+.bindPopup("🚏 "+stop.name)
+.openPopup();
 }
-
-data.forEach(d=>{
-table.innerHTML+=`
-<tr>
-<td><span class="badge">${d.route}</span></td>
-<td>${d.dir}</td>
-<td>${d.time}</td>
-</tr>
-`;
-});
-}
-
-/*
-========================
-ENTER SUPPORT
-========================
-*/
-
-input.addEventListener("keydown",(e)=>{
-if(e.key==="Enter"){
-search();
-}
-});
 
 </script>
 
 </body>
 </html>
-
