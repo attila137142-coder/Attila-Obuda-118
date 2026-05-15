@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Control Room V2 Anti-Black</title>
+<title>Control Room V3 FULL</title>
 
 <style>
 body {
@@ -16,6 +16,7 @@ header {
   padding: 12px;
   background: #111;
   border-bottom: 1px solid #333;
+  font-weight: bold;
 }
 
 #container {
@@ -23,35 +24,56 @@ header {
   height: calc(100vh - 50px);
 }
 
+/* LEFT */
 #left {
   flex: 3;
   padding: 10px;
 }
 
+input, button {
+  padding: 8px;
+  margin-bottom: 10px;
+  width: 100%;
+}
+
+button {
+  cursor: pointer;
+}
+
+/* BOARD */
+.row {
+  display: flex;
+  justify-content: space-between;
+  padding: 8px;
+  margin-bottom: 6px;
+  background: #1a1a1a;
+  border-left: 5px solid #444;
+  font-size: 13px;
+}
+
+/* 🔴 SIETÉS */
+.row.fast {
+  border-left-color: red;
+}
+
+/* 🟡 IDŐBEN */
+.row.ok {
+  border-left-color: yellow;
+}
+
+/* 🔵 KÉSÉS */
+.row.delay {
+  border-left-color: deepskyblue;
+}
+
+/* RIGHT DEBUG */
 #right {
   flex: 1;
   border-left: 1px solid #333;
   padding: 10px;
   font-size: 12px;
   background: #0b0b0b;
-}
-
-.row {
-  display: flex;
-  justify-content: space-between;
-  padding: 8px;
-  margin-bottom: 5px;
-  background: #1a1a1a;
-  border-left: 4px solid #444;
-}
-
-.row.ok { border-left-color: lime; }
-.row.warn { border-left-color: orange; }
-.row.bad { border-left-color: red; }
-
-input, button {
-  padding: 8px;
-  margin: 5px 0;
+  overflow: auto;
 }
 
 small { opacity: 0.7; }
@@ -61,24 +83,25 @@ small { opacity: 0.7; }
 <body>
 
 <header>
-🚏 CONTROL ROOM V2 — ANTI-BLACK SCREEN ENGINE
+🚏 CONTROL ROOM V3 FULL — GTFS CORE ENGINE
 </header>
 
 <div id="container">
 
-<!-- LEFT PANEL -->
+<!-- LEFT -->
 <div id="left">
 
-  <input id="stopInput" placeholder="Megálló keresés (pl. Nád utca)">
-  <button onclick="loadStop()">Indítás</button>
+<input id="stopInput" placeholder="Megálló (pl. Nád utca)">
+<button onclick="loadStop()">Indítás</button>
 
-  <div id="board"></div>
+<div id="board"></div>
+
 </div>
 
 <!-- RIGHT DEBUG -->
 <div id="right">
-  <b>DEBUG PANEL</b>
-  <pre id="log"></pre>
+<b>DEBUG PANEL</b>
+<pre id="log"></pre>
 </div>
 
 </div>
@@ -86,27 +109,25 @@ small { opacity: 0.7; }
 <script>
 
 // =====================
-// 🧠 SAFE LOG SYSTEM
+// LOG
 // =====================
 function log(msg) {
-  const el = document.getElementById("log");
-  el.innerText += msg + "\n";
+  document.getElementById("log").innerText += msg + "\n";
 }
 
 // =====================
-// 🧯 GLOBAL ERROR CATCH
+// ERROR SAFE MODE
 // =====================
 window.onerror = function(msg, src, line) {
   log("❌ ERROR: " + msg + " @ " + line);
-  return true; // NINCS WHITE SCREEN
+  return true;
 };
 
 // =====================
-// 📦 MOCK GTFS DATA
+// MOCK GTFS CORE
 // =====================
 const STOPS = [
-  { id: "S1", name: "Nád utca" },
-  { id: "S2", name: "Flórián tér" }
+  { id: "S1", name: "Nád utca" }
 ];
 
 const STOP_TIMES = [
@@ -118,11 +139,10 @@ const STOP_TIMES = [
 const TRIPS = [
   { id: "T1", route: "34", direction: "Aquincum", vehicle: "BUS-1001" },
   { id: "T2", route: "134", direction: "Újpest", vehicle: "BUS-1002" }
-  // T3 HIÁNYZIK → TESZT FAIL SAFE
 ];
 
 // =====================
-// 🔍 STOP FIND
+// STOP FIND
 // =====================
 function findStop(name) {
   return STOPS.find(s =>
@@ -131,114 +151,111 @@ function findStop(name) {
 }
 
 // =====================
-// 🚏 BUILD DEPARTURES (SAFE)
+// TIME DIFF ENGINE
+// =====================
+function calcStatus(timeStr) {
+
+  const now = new Date();
+  const [h, m, s] = timeStr.split(":").map(Number);
+
+  const target = new Date();
+  target.setHours(h, m, s, 0);
+
+  const diffMin = Math.round((target - now) / 60000);
+
+  // 🔴 SIETÉS (korai)
+  if (diffMin < -1) {
+    return { text: "SIET " + Math.abs(diffMin) + "p", cls: "fast" };
+  }
+
+  // 🟡 IDŐBEN
+  if (diffMin <= 2) {
+    return { text: "IDŐBEN", cls: "ok" };
+  }
+
+  // 🔵 KÉSÉS
+  return { text: "KÉSÉS +" + diffMin + "p", cls: "delay" };
+}
+
+// =====================
+// BUILD DEPARTURES
 // =====================
 function buildDepartures(stopId) {
 
-  log("⚙️ building departures for " + stopId);
+  log("⚙️ building for " + stopId);
 
   return STOP_TIMES
     .filter(st => st.stop_id === stopId)
     .map(st => {
 
-      const trip = TRIPS.find(t => t.id === st.trip_id);
+      const trip = TRIPS.find(t => t.id === st.trip_id) || {
+        route: "??",
+        direction: "ISMERETLEN",
+        vehicle: "N/A"
+      };
 
-      // 🧯 SAFE FALLBACK
-      if (!trip) {
-        log("⚠️ missing trip: " + st.trip_id);
-
-        return {
-          route: "??",
-          direction: "UNKNOWN",
-          time: st.time,
-          vehicle: "N/A",
-          delay: 0,
-          status: "HIÁNYZÓ ADAT"
-        };
-      }
-
-      const delay = Math.floor(Math.random() * 5) - 1;
+      const status = calcStatus(st.time);
 
       return {
         route: trip.route,
         direction: trip.direction,
         time: st.time,
         vehicle: trip.vehicle,
-        delay,
-        status:
-          delay > 0 ? "KÉSÉS +" + delay :
-          delay < 0 ? "SIET " + delay :
-          "OK"
+        statusText: status.text,
+        cls: status.cls
       };
     })
     .slice(0, 15);
 }
 
 // =====================
-// 🖥 RENDER ENGINE (CRASH-PROOF)
+// RENDER
 // =====================
 function renderBoard(data) {
 
   const board = document.getElementById("board");
   board.innerHTML = "";
 
-  try {
+  data.forEach(d => {
 
-    data.forEach(d => {
+    const row = document.createElement("div");
+    row.className = "row " + d.cls;
 
-      const row = document.createElement("div");
+    row.innerHTML = `
+      <div><b>${d.route}</b></div>
+      <div>${d.direction}</div>
+      <div>${d.time}</div>
+      <div>${d.statusText}</div>
+      <div><small>${d.vehicle}</small></div>
+    `;
 
-      let cls = "ok";
-      if (d.status.includes("KÉSÉS")) cls = "bad";
-      if (d.status.includes("SIET")) cls = "warn";
-
-      row.className = "row " + cls;
-
-      row.innerHTML = `
-        <div>${d.route}</div>
-        <div>${d.direction}</div>
-        <div>${d.time}</div>
-        <div>${d.status}</div>
-        <div><small>${d.vehicle}</small></div>
-      `;
-
-      board.appendChild(row);
-    });
-
-  } catch (e) {
-    log("❌ render crash: " + e.message);
-  }
+    board.appendChild(row);
+  });
 }
 
 // =====================
-// 🚀 MAIN LOAD
+// MAIN
 // =====================
 function loadStop() {
 
-  try {
+  const val = document.getElementById("stopInput").value;
 
-    const val = document.getElementById("stopInput").value;
+  log("🔎 " + val);
 
-    log("🔎 searching: " + val);
+  const stop = findStop(val);
 
-    const stop = findStop(val);
-
-    if (!stop) {
-      log("❌ stop not found");
-      return;
-    }
-
-    const data = buildDepartures(stop.id);
-
-    renderBoard(data);
-
-  } catch (e) {
-    log("❌ loadStop crash: " + e.message);
+  if (!stop) {
+    log("❌ stop not found");
+    return;
   }
+
+  const data = buildDepartures(stop.id);
+
+  renderBoard(data);
 }
 
-// auto start
-log("🟢 system ready");
+// INIT
+log("🟢 V3 FULL READY");
 
 </script>
 
