@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 GTFS MINI ENGINE</title>
+<title>FUTÁR V5 GTFS PRO MINI</title>
 
 <style>
 body{
@@ -33,7 +33,7 @@ background:#0b1220;
 border:1px solid #00ffcc;
 border-radius:6px;
 padding:10px;
-min-height:400px;
+min-height:420px;
 }
 
 input{
@@ -73,57 +73,40 @@ border:1px solid #00ffcc;
 font-size:11px;
 }
 
-.siet{
-background:red;
-color:white;
-padding:2px 6px;
-font-size:11px;
-}
-
-.keses{
-background:deepskyblue;
-color:white;
-padding:2px 6px;
-font-size:11px;
-}
-
-.ok{
-background:green;
-color:white;
-padding:2px 6px;
-font-size:11px;
-}
+.ok{background:green;color:white;padding:2px 6px}
+.siet{background:red;color:white;padding:2px 6px}
+.keses{background:deepskyblue;color:white;padding:2px 6px}
 </style>
 </head>
 
 <body>
 
 <header>
-🚍 FUTÁR V5 GTFS MINI ENGINE // REAL DATA MODEL SIM
+🚍 FUTÁR V5 GTFS PRO MINI IMPORT ENGINE
 </header>
 
 <div class="container">
 
-<!-- KERESŐ -->
+<!-- STOP SEARCH -->
 <div class="panel">
-<h3>🚏 Megálló kereső</h3>
+<h3>🚏 Megálló kereső (GTFS)</h3>
 
 <input id="stop" placeholder="pl. Deák tér">
-<button onclick="search()">KERESÉS</button>
+<button onclick="searchStop()">KERESÉS</button>
 
 <div id="result"></div>
 </div>
 
-<!-- INDULÁSOK -->
+<!-- TABLE -->
 <div class="panel">
-<h3>🛰 Valós indulások + fordák + státusz</h3>
+<h3>🛰 GTFS indulások (PRO MODEL)</h3>
 
 <table>
 <thead>
 <tr>
 <th>Járat</th>
-<th>Irány</th>
-<th>Ford/ID</th>
+<th>Megálló</th>
+<th>Forda</th>
 <th>Indul</th>
 <th>Státusz</th>
 </tr>
@@ -139,83 +122,80 @@ font-size:11px;
 <script>
 
 /*
-========================
-GTFS MINI DATA MODEL
-========================
+=====================================
+GTFS PRO MINI DATA MODEL
+=====================================
+stops.txt + trips.txt + stop_times.txt kombináció
+=====================================
 */
-const departures = [
-{
-route:"7E",
-dir:"Blaha Lujza tér",
-vehicle:"F-102 | RZ-778",
-time:{min:2,sec:15},
-status:"SIET"
-},
-{
-route:"9",
-dir:"Óbuda",
-vehicle:"F-205 | BPO-441",
-time:{min:4,sec:40},
-status:"OK"
-},
-{
-route:"47",
-dir:"Deák tér",
-vehicle:"F-311 | JLN-229",
-time:{min:1,sec:10},
-status:"SIET"
-},
-{
-route:"M2",
-dir:"Déli pályaudvar",
-vehicle:"METRO-02 | M-002",
-time:{min:6,sec:55},
-status:"KESÉS"
-},
-{
-route:"M4",
-dir:"Kelenföld",
-vehicle:"METRO-04 | M-014",
-time:{min:3,sec:20},
-status:"OK"
-}
-];
+
+const GTFS = {
+stops: [
+  {id:"S1", name:"Deák tér"},
+  {id:"S2", name:"Blaha Lujza tér"},
+  {id:"S3", name:"Óbuda"},
+  {id:"S4", name:"Kelenföld"},
+  {id:"S5", name:"Déli pályaudvar"}
+],
+
+trips: [
+  {tripId:"T100", route:"7E", vehicle:"F-102 / BPO-778"},
+  {tripId:"T101", route:"9", vehicle:"F-205 / BPO-441"},
+  {tripId:"T102", route:"47", vehicle:"F-311 / JLN-229"},
+  {tripId:"T103", route:"M2", vehicle:"METRO-02"},
+  {tripId:"T104", route:"M4", vehicle:"METRO-04"}
+],
+
+stop_times: [
+  {tripId:"T100", stopId:"S2", min:2, sec:15, status:"SIET"},
+  {tripId:"T101", stopId:"S3", min:4, sec:40, status:"OK"},
+  {tripId:"T102", stopId:"S1", min:1, sec:10, status:"SIET"},
+  {tripId:"T103", stopId:"S5", min:6, sec:55, status:"KESÉS"},
+  {tripId:"T104", stopId:"S4", min:3, sec:20, status:"OK"}
+]
+};
 
 /*
-========================
+=====================================
 RENDER ENGINE
-========================
+=====================================
 */
-function load(){
-let t = document.getElementById("table");
+
+function loadTable(filterStop=null){
+
+let t=document.getElementById("table");
 t.innerHTML="";
 
-departures.forEach(d=>{
+GTFS.stop_times.forEach(st=>{
 
-let badge = "";
+let stop = GTFS.stops.find(s=>s.id===st.stopId);
+let trip = GTFS.trips.find(t=>t.tripId===st.tripId);
 
-if(d.status==="SIET") badge = `<span class="siet">SIET</span>`;
-if(d.status==="KESÉS") badge = `<span class="keses">KÉSÉS</span>`;
-if(d.status==="OK") badge = `<span class="ok">OK</span>`;
+if(filterStop && !stop.name.toLowerCase().includes(filterStop.toLowerCase())) return;
+
+let statusClass =
+st.status==="SIET"?"siet":
+st.status==="KESÉS"?"keses":"ok";
 
 t.innerHTML += `
 <tr>
-<td><span class="badge">${d.route}</span></td>
-<td>${d.dir}</td>
-<td>${d.vehicle}</td>
-<td>${d.time.min}p ${d.time.sec}s</td>
-<td>${badge}</td>
+<td><span class="badge">${trip.route}</span></td>
+<td>${stop.name}</td>
+<td>${trip.vehicle}</td>
+<td>${st.min}p ${st.sec}s</td>
+<td><span class="${statusClass}">${st.status}</span></td>
 </tr>
 `;
 });
 }
 
 /*
-========================
-STOP SEARCH
-========================
+=====================================
+SEARCH ENGINE
+=====================================
 */
-function search(){
+
+function searchStop(){
 let v=document.getElementById("stop").value;
 
 if(!v){
@@ -223,9 +203,8 @@ document.getElementById("result").innerHTML="❌ nincs megálló";
 return;
 }
 
-// simple match simulation
-let found = departures.filter(d =>
-d.dir.toLowerCase().includes(v.toLowerCase())
+let found = GTFS.stops.filter(s =>
+s.name.toLowerCase().includes(v.toLowerCase())
 );
 
 if(found.length===0){
@@ -234,10 +213,12 @@ return;
 }
 
 document.getElementById("result").innerHTML =
-"🚏 Találat: <b>"+v+"</b><br>🟢 járatok: "+found.length;
+"🚏 Találatok: "+found.map(f=>f.name).join(", ");
+
+loadTable(v);
 }
 
-load();
+loadTable();
 
 </script>
 
