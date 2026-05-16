@@ -3,48 +3,41 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V5 REAL BUDAPEST OPS SYSTEM</title>
+<title>FUTÁR V5 SAFE RECOVERY BUILD</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body{margin:0;font-family:Arial;background:#0b0f14;color:#e6f1ff;}
-header{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#111826;border-bottom:1px solid #1f2a3a;}
-.container{display:grid;grid-template-columns:390px 1fr;height:calc(100vh - 50px);}
-.sidebar{padding:10px;background:#0f1622;overflow:auto;border-right:1px solid #1f2a3a;}
+header{padding:10px;background:#111826;display:flex;justify-content:space-between;}
+.container{display:grid;grid-template-columns:360px 1fr;height:calc(100vh - 50px);}
+.sidebar{padding:10px;overflow:auto;background:#0f1622;}
 .main{display:flex;flex-direction:column;}
-#map{height:55%;}
-.board{height:45%;overflow:auto;padding:10px;border-top:1px solid #1f2a3a;}
-input,button{width:100%;padding:10px;margin:5px 0;border-radius:6px;border:none;}
-button{background:#1f6feb;color:#fff;cursor:pointer;}
-button:hover{background:#388bfd;}
-.card{background:#1a2433;padding:10px;margin-top:10px;border-radius:8px;font-size:12px;}
-.row{display:grid;grid-template-columns:90px 1fr 80px 120px 120px;padding:8px;border-bottom:1px solid #1f2a3a;font-size:12px;}
-.ok{color:#2ecc71;}
-.warn{color:#ffcc00;}
-.bad{color:#ff4d4d;}
+#map{height:60%;}
+.board{height:40%;overflow:auto;padding:10px;}
+button,input{width:100%;padding:10px;margin:5px 0;}
+button{background:#1f6feb;color:white;border:none;}
+.row{display:grid;grid-template-columns:80px 1fr 80px 100px 80px;padding:6px;border-bottom:1px solid #222;font-size:12px;}
+.ok{color:#2ecc71}.warn{color:#ffcc00}.bad{color:#ff4d4d}
+.card{background:#1a2433;padding:10px;margin-top:10px;font-size:12px;}
 </style>
 </head>
 
 <body>
 
 <header>
-<div>🚇 FUTÁR V5 REAL BUDAPEST OPS SYSTEM</div>
+<div>🚇 FUTÁR V5 SAFE RECOVERY</div>
 <div id="clock"></div>
 </header>
 
 <div class="container">
 
 <div class="sidebar">
-<input type="file" id="gtfsFile"/>
-<button onclick="loadGTFS()">📦 GTFS IMPORT</button>
-<button onclick="addIncident('HEV_CLOSURE')">🚨 HÉV INCIDENT</button>
-<button onclick="addIncident('DELAY_CLUSTER')">⏱ DELAY CLUSTER</button>
+<input type="file" id="file"/>
+<button onclick="load()">GTFS LOAD</button>
 
-<div class="card" id="brainBox"></div>
-<div class="card" id="opsBox"></div>
-<div class="card" id="routeBox"></div>
-
+<div class="card" id="brain"></div>
+<div class="card" id="ops"></div>
 </div>
 
 <div class="main">
@@ -60,163 +53,75 @@ button:hover{background:#388bfd;}
 
 <script>
 
-setInterval(function(){
-document.getElementById("clock").innerText = new Date().toLocaleTimeString();
-},1000);
+setInterval(()=>document.getElementById("clock").innerText=new Date().toLocaleTimeString(),1000);
 
-var map = L.map("map").setView([47.4979,19.0402],12);
+const map=L.map("map").setView([47.4979,19.0402],12);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
-var STATE = {
-gtfs:null,
-vehicles:[],
-incidents:[],
-stops:[],
-network:{hev:"active",volan:"active",bkk:"active"}
-};
-
-var markers = {};
-
-function dist(a,b){
-var R=6371000;
-var dLat=(b.lat-a.lat)*Math.PI/180;
-var dLon=(b.lng-a.lng)*Math.PI/180;
-var x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
-return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-async function loadGTFS(){
-var file=document.getElementById("gtfsFile").files[0];
-if(!file)return;
-
-var zip=await JSZip.loadAsync(file);
-
-var read=async function(f){
-return Papa.parse(await zip.file(f).async("string"),{header:true}).data;
-};
-
-STATE.gtfs={
-stops:await read("stops.txt"),
-trips:await read("trips.txt"),
-stopTimes:await read("stop_times.txt")
-};
-
-STATE.stops = STATE.gtfs.stops.slice(0,30).map(function(s){
-return {
-id:s.stop_id,
-name:s.stop_name,
-lat:parseFloat(s.stop_lat),
-lng:parseFloat(s.stop_lon)
-};
-});
-
-STATE.vehicles = STATE.gtfs.trips.slice(0,10).map(function(t){
-return {
-id:t.trip_id,
-lat:47.5+Math.random()*0.1,
-lng:19+Math.random()*0.1,
-speed:20+Math.random()*40
-};
-});
-
-render();
-}
-
-function addIncident(type){
-STATE.incidents.push({type:type,time:Date.now()});
-
-if(type==="HEV_CLOSURE"){
-STATE.network.hev="partial_closed";
-}
-
-if(type==="DELAY_CLUSTER"){
-STATE.vehicles.forEach(function(v){v.speed=v.speed*0.7;});
-}
-
-render();
-}
+let STATE={gtfs:null,vehicles:[],stops:[]};
+let markers={};
 
 function brain(){
-if(STATE.network.hev!=="active"){
-return {
-mode:"DISRUPTION",
-advice:[
-"BKK HÉV korlátozás",
-"Pótlóbusz aktív",
-"VOLÁN / MÁV backup"
-]
-};
-}
-return {mode:"NORMAL",advice:["Budapest hálózat stabil"]};
+return {mode:"SAFE",msg:"Recovery mode active"};
 }
 
-function update(){
-STATE.vehicles.forEach(function(v){
+function render(){
+document.getElementById("brain").innerHTML="BRAIN: "+brain().mode;
+
+document.getElementById("ops").innerHTML=
+"VEHICLES: "+STATE.vehicles.length;
+
+let b=document.getElementById("board");
+b.innerHTML="";
+
+STATE.vehicles.forEach(v=>{
+b.innerHTML+=`
+<div class="row">
+<div>${v.id}</div>
+<div>LIVE</div>
+<div>${Math.round(v.speed)}</div>
+<div class="ok">OK</div>
+<div>ETA</div>
+</div>`;
+});
+}
+
+function move(){
+STATE.vehicles.forEach(v=>{
 v.lat+=(Math.random()-0.5)*0.002;
 v.lng+=(Math.random()-0.5)*0.002;
 
 if(!markers[v.id]){
 markers[v.id]=L.marker([v.lat,v.lng]).addTo(map);
-}else{
-markers[v.id].setLatLng([v.lat,v.lng]);
-}
+}else markers[v.id].setLatLng([v.lat,v.lng]);
 });
 }
 
-function route(){
-if(!STATE.stops.length)return[];
+async function load(){
+const f=document.getElementById("file").files[0];
+if(!f)return alert("no file");
 
-var from=STATE.stops[0];
+const zip=await JSZip.loadAsync(f);
+const read=async n=>Papa.parse(await zip.file(n).async("string"),{header:true}).data;
 
-return STATE.stops.slice(1,6).map(function(s){
-return {
-to:s.name,
-cost:Math.round(dist(from,s))
-};
-}).sort(function(a,b){return a.cost-b.cost;});
-}
+const trips=await read("trips.txt");
 
-function render(){
+STATE.vehicles=trips.slice(0,10).map(t=>({
+id:t.trip_id,
+lat:47.5+Math.random()*0.1,
+lng:19+Math.random()*0.1,
+speed:20+Math.random()*40
+}));
 
-var b=brain();
-document.getElementById("brainBox").innerHTML=
-"<b>AI BRAIN</b><br>"+b.advice.join("<br>");
-
-document.getElementById("opsBox").innerHTML=
-"<b>OPS</b><br>HÉV:"+STATE.network.hev+"<br>INC:"+STATE.incidents.length;
-
-var r=route();
-document.getElementById("routeBox").innerHTML=
-"<b>ROUTING</b><br>"+r.map(function(x){
-return x.to+" : "+x.cost+" m";
-}).join("<br>");
-
-var board=document.getElementById("board");
-board.innerHTML="";
-
-STATE.vehicles.forEach(function(v){
-var eta=Math.round(Math.random()*200+30);
-var c="ok";
-if(eta<60)c="warn";
-if(eta>200)c="bad";
-
-board.innerHTML+=
-"<div class='row'>"+
-"<div>"+v.id+"</div>"+
-"<div>LIVE</div>"+
-"<div>"+Math.round(v.speed)+" km/h</div>"+
-"<div>"+Math.round(eta*8)+" m</div>"+
-"<div class='"+c+"'>"+eta+" s</div>"+
-"</div>";
-});
-}
-
-setInterval(function(){
-if(STATE.gtfs){
-update();
 render();
 }
-},2000);
+
+setInterval(()=>{
+if(STATE.vehicles.length){
+move();
+render();
+}
+},1500);
 
 </script>
 
