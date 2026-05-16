@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FUTÁR V5 Dashboard</title>
+  <title>FUTÁR V5 REAL GTFS CORE</title>
   <style>
     body {
       margin: 0;
@@ -82,52 +82,46 @@
 
     .row {
       display: grid;
-      grid-template-columns: 80px 1fr 120px 120px;
+      grid-template-columns: 70px 140px 70px 120px 80px 80px;
       padding: 10px;
       border-bottom: 1px solid #1f2a3a;
-      font-size: 14px;
+      font-size: 13px;
     }
 
-    .status-green { color: #2ecc71; }
-    .status-red { color: #ff4d4d; }
-    .status-gray { color: #aaa; }
+    .early { color: red; }
+    .late { color: #4aa3ff; }
+    .ok { color: #2ecc71; }
 
     .small {
-      font-size: 12px;
-      opacity: 0.8;
+      font-size: 11px;
+      opacity: 0.7;
     }
 
-    .title {
-      font-size: 14px;
-      margin-bottom: 8px;
-      color: #6cc0ff;
+    #clock {
+      font-family: monospace;
     }
   </style>
 </head>
 <body>
 
 <header>
-  <h1>🚍 FUTÁR V5 LIVE DASHBOARD</h1>
+  <h1>🚍 FUTÁR V5 REAL GTFS CORE</h1>
   <div id="clock"></div>
 </header>
 
 <div class="container">
 
   <div class="sidebar">
-    <div class="title">Megálló kereső</div>
-    <input id="stopInput" placeholder="Pl: Deák Ferenc tér" />
+    <input id="stopInput" placeholder="Megálló (pl. Deák Ferenc tér)" />
     <button onclick="loadDepartures()">Keresés</button>
 
     <div class="panel small">
-      GTFS DEMO MODE ACTIVE<br/>
-      (szimulált adatok)
+      GTFS DEMO MODE ACTIVE (LOGICAL SIMULATION)
     </div>
   </div>
 
   <div class="main">
-    <div class="panel">
-      <b>Valós indulási tábla (15 sor)</b>
-    </div>
+    <div class="panel"><b>Indulási tábla</b></div>
     <div class="board" id="board"></div>
   </div>
 
@@ -135,69 +129,83 @@
 
 <script>
 
-// ------------------------------
-// DEMO GTFS ADATOK (SZIMULÁLT)
-// ------------------------------
+// ---------------- VEHICLES ----------------
+const vehicles = [
+  { id: "bus_12", plate: "BKK-123", ford: "F12" },
+  { id: "m3_01", plate: "MTR-301", ford: "M3-01" },
+  { id: "hev_5", plate: "HEV-005", ford: "H5-7" }
+];
 
-const stops = {
-  "deak": "Deák Ferenc tér",
-  "batthyany": "Batthyány tér",
-  "bikas": "Bikás park"
-};
+function randomVehicle() {
+  return vehicles[Math.floor(Math.random() * vehicles.length)];
+}
 
+// ---------------- GTFS SIM ----------------
 function generateDepartures() {
-  const routes = ["M1", "M2", "M3", "4-6", "7", "9", "17"];
+  const routes = ["M1", "M2", "M3", "4-6", "7", "9", "H5"];
   const list = [];
 
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 25; i++) {
+    const v = randomVehicle();
     const route = routes[Math.floor(Math.random() * routes.length)];
-    const min = Math.floor(Math.random() * 60);
-    const hour = new Date().getHours();
 
-    const delay = Math.floor(Math.random() * 20 - 5);
+    const now = new Date();
+    const sec = now.getSeconds();
+    const min = (now.getMinutes() + i) % 60;
+
+    const delaySec = Math.floor(Math.random() * 120 - 40);
 
     list.push({
       route,
-      headsign: "Központ felé",
-      time: `${hour}:${String(min).padStart(2, "0")}`,
-      delay
+      vehicle: v.plate,
+      internal: v.id,
+      ford: v.ford,
+      time: `${String(now.getHours()).padStart(2,"0")}:${String(min).padStart(2,"0")}:${String(sec).padStart(2,"0")}`,
+      delaySec
     });
   }
 
-  return list.sort((a, b) => a.delay - b.delay);
+  return list;
 }
 
-let currentData = [];
+let data = [];
 
-function renderBoard(data) {
+function formatDelay(sec) {
+  const abs = Math.abs(sec);
+  const m = Math.floor(abs / 60);
+  const s = abs % 60;
+  return `${m}p ${s}mp`;
+}
+
+function renderBoard(list) {
   const board = document.getElementById("board");
   board.innerHTML = "";
 
-  data.slice(0, 15).forEach(d => {
-    let cls = "status-gray";
-    if (d.delay <= 0) cls = "status-red";
-    else if (d.delay < 5) cls = "status-green";
+  list.slice(0, 15).forEach(d => {
+
+    let cls = "ok";
+    if (d.delaySec < 0) cls = "early";
+    else if (d.delaySec > 60) cls = "late";
 
     board.innerHTML += `
       <div class="row">
         <div><b>${d.route}</b></div>
-        <div>${d.headsign}</div>
+        <div>${d.vehicle}<br><span class='small'>${d.internal}</span></div>
+        <div>${d.ford}</div>
         <div>${d.time}</div>
-        <div class="${cls}">${d.delay} perc</div>
+        <div class="${cls}">${formatDelay(d.delaySec)}</div>
+        <div class="${cls}">${d.delaySec} mp</div>
       </div>
     `;
   });
 }
 
 function loadDepartures() {
-  const stop = document.getElementById("stopInput").value;
-  if (!stop) return;
-
-  currentData = generateDepartures();
-  renderBoard(currentData);
+  data = generateDepartures();
+  renderBoard(data);
 }
 
-// clock
+// CLOCK
 function updateClock() {
   const now = new Date();
   document.getElementById("clock").innerText = now.toLocaleTimeString();
@@ -205,13 +213,12 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
-// auto refresh demo
 setInterval(() => {
-  if (currentData.length > 0) {
-    currentData = generateDepartures();
-    renderBoard(currentData);
+  if (data.length) {
+    data = generateDepartures();
+    renderBoard(data);
   }
-}, 8000);
+}, 7000);
 
 </script>
 
