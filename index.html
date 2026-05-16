@@ -1,467 +1,219 @@
-# FUTÁR V5 ROUTE ENGINE + LIVE GTFS
-
-```html
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<title>FUTÁR V5 ROUTE ENGINE</title>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>FUTÁR V5 Dashboard</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #0b0f14;
+      color: #e6f1ff;
+    }
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+    header {
+      padding: 16px;
+      background: #111826;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1f2a3a;
+    }
 
-<style>
-body{
-  margin:0;
-  font-family:Arial;
-  background:#05070d;
-  color:#00ffcc;
-  overflow:hidden;
-}
+    header h1 {
+      font-size: 18px;
+      margin: 0;
+      color: #6cc0ff;
+    }
 
-header{
-  height:50px;
-  line-height:50px;
-  text-align:center;
-  background:#0b1220;
-  border-bottom:2px solid #00ffcc;
-  font-weight:bold;
-  font-size:18px;
-}
+    .container {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      height: calc(100vh - 60px);
+    }
 
-.container{
-  display:grid;
-  grid-template-columns:320px 1fr 320px;
-  height:calc(100vh - 50px);
-}
+    .sidebar {
+      background: #0f1622;
+      padding: 12px;
+      border-right: 1px solid #1f2a3a;
+      overflow-y: auto;
+    }
 
-.panel{
-  background:#0b1220;
-  padding:10px;
-  overflow:auto;
-  border-right:1px solid #00ffcc33;
-}
+    .main {
+      display: flex;
+      flex-direction: column;
+    }
 
-#map{
-  width:100%;
-  height:100%;
-}
+    .panel {
+      padding: 12px;
+      border-bottom: 1px solid #1f2a3a;
+    }
 
-input{
-  width:100%;
-  padding:10px;
-  background:#05070d;
-  border:1px solid #00ffcc;
-  color:#00ffcc;
-  margin-bottom:10px;
-  box-sizing:border-box;
-}
+    input {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      background: #1a2433;
+      color: white;
+      margin-bottom: 10px;
+    }
 
-button{
-  width:100%;
-  padding:10px;
-  background:#00ffcc;
-  border:none;
-  font-weight:bold;
-  cursor:pointer;
-}
+    button {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 6px;
+      background: #1f6feb;
+      color: white;
+      cursor: pointer;
+    }
 
-.result{
-  padding:6px;
-  border-bottom:1px solid #00ffcc22;
-  cursor:pointer;
-}
+    button:hover {
+      background: #388bfd;
+    }
 
-.result:hover{
-  background:#00ffcc22;
-}
+    .board {
+      padding: 12px;
+      overflow-y: auto;
+      flex: 1;
+    }
 
-table{
-  width:100%;
-  border-collapse:collapse;
-  font-size:12px;
-}
+    .row {
+      display: grid;
+      grid-template-columns: 80px 1fr 120px 120px;
+      padding: 10px;
+      border-bottom: 1px solid #1f2a3a;
+      font-size: 14px;
+    }
 
-th,td{
-  border-bottom:1px solid #00ffcc33;
-  padding:6px;
-  text-align:left;
-}
+    .status-green { color: #2ecc71; }
+    .status-red { color: #ff4d4d; }
+    .status-gray { color: #aaa; }
 
-.tag{
-  padding:2px 6px;
-  border-radius:4px;
-  font-size:11px;
-}
+    .small {
+      font-size: 12px;
+      opacity: 0.8;
+    }
 
-.ok{
-  background:green;
-  color:white;
-}
-
-.delay{
-  background:orange;
-  color:black;
-}
-
-.live{
-  background:red;
-  color:white;
-}
-
-.vehicleRow{
-  padding:6px;
-  border-bottom:1px solid #00ffcc22;
-}
-
-.statusBox{
-  margin-top:10px;
-  padding:10px;
-  background:#05070d;
-  border:1px solid #00ffcc44;
-}
-</style>
+    .title {
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #6cc0ff;
+    }
+  </style>
 </head>
-
 <body>
 
 <header>
-🚇 FUTÁR V5 LIVE GTFS + ROUTE ENGINE
+  <h1>🚍 FUTÁR V5 LIVE DASHBOARD</h1>
+  <div id="clock"></div>
 </header>
 
 <div class="container">
 
-  <!-- LEFT -->
-  <div class="panel">
+  <div class="sidebar">
+    <div class="title">Megálló kereső</div>
+    <input id="stopInput" placeholder="Pl: Deák Ferenc tér" />
+    <button onclick="loadDepartures()">Keresés</button>
 
-    <h3>🚏 STOP SEARCH</h3>
-
-    <input id="searchInput" placeholder="Megálló keresése...">
-
-    <button id="searchBtn">
-      SEARCH
-    </button>
-
-    <div id="results"></div>
-
-    <div class="statusBox">
-      <b>📡 ENGINE STATUS</b>
-      <p>🟢 GTFS ONLINE</p>
-      <p>🛰️ LIVE TRACKING ACTIVE</p>
-      <p>🚍 ROUTE ENGINE ACTIVE</p>
+    <div class="panel small">
+      GTFS DEMO MODE ACTIVE<br/>
+      (szimulált adatok)
     </div>
-
   </div>
 
-  <!-- MAP -->
-  <div id="map"></div>
-
-  <!-- RIGHT -->
-  <div class="panel">
-
-    <h3>🚍 LIVE VEHICLES</h3>
-
-    <div id="vehicleList"></div>
-
-    <hr style="border-color:#00ffcc33;">
-
-    <h3>⏱ LIVE DEPARTURES</h3>
-
-    <table>
-      <tr>
-        <th>Line</th>
-        <th>Direction</th>
-        <th>Status</th>
-      </tr>
-
-      <tbody id="departuresBody"></tbody>
-    </table>
-
+  <div class="main">
+    <div class="panel">
+      <b>Valós indulási tábla (15 sor)</b>
+    </div>
+    <div class="board" id="board"></div>
   </div>
 
 </div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
 <script>
 
-// =====================
-// MAP
-// =====================
+// ------------------------------
+// DEMO GTFS ADATOK (SZIMULÁLT)
+// ------------------------------
 
-const map = L.map('map').setView([47.4979, 19.0402], 13);
+const stops = {
+  "deak": "Deák Ferenc tér",
+  "batthyany": "Batthyány tér",
+  "bikas": "Bikás park"
+};
 
-L.tileLayer(
-  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-  {
-    attribution:'FUTÁR V5'
-  }
-).addTo(map);
+function generateDepartures() {
+  const routes = ["M1", "M2", "M3", "4-6", "7", "9", "17"];
+  const list = [];
 
-// =====================
-// DEMO ROUTES
-// =====================
+  for (let i = 0; i < 30; i++) {
+    const route = routes[Math.floor(Math.random() * routes.length)];
+    const min = Math.floor(Math.random() * 60);
+    const hour = new Date().getHours();
 
-const routes = [
-  {
-    line:'16',
-    color:'#00ffcc',
-    points:[
-      [47.4979,19.0402],
-      [47.5000,19.0450],
-      [47.5030,19.0500],
-      [47.5060,19.0550]
-    ]
-  },
-  {
-    line:'105',
-    color:'orange',
-    points:[
-      [47.4890,19.0300],
-      [47.4920,19.0400],
-      [47.4950,19.0500],
-      [47.4980,19.0600]
-    ]
-  }
-];
+    const delay = Math.floor(Math.random() * 20 - 5);
 
-// =====================
-// DRAW ROUTES
-// =====================
-
-routes.forEach(r=>{
-
-  L.polyline(r.points,{
-    color:r.color,
-    weight:5
-  })
-  .addTo(map)
-  .bindPopup('🚍 Route ' + r.line);
-
-});
-
-// =====================
-// STOPS
-// =====================
-
-const stops = [
-  {name:'Deák Ferenc tér',lat:47.4979,lng:19.0500},
-  {name:'Kálvin tér',lat:47.4890,lng:19.0610},
-  {name:'Nyugati pályaudvar',lat:47.5050,lng:19.0620},
-  {name:'Blaha Lujza tér',lat:47.4970,lng:19.0730},
-  {name:'Móricz Zsigmond körtér',lat:47.4770,lng:19.0470}
-];
-
-stops.forEach(s=>{
-
-  L.circleMarker([s.lat,s.lng],{
-    radius:6,
-    color:'#00ffcc'
-  })
-  .addTo(map)
-  .bindPopup('🚏 ' + s.name);
-
-});
-
-// =====================
-// SEARCH ENGINE
-// =====================
-
-const input = document.getElementById('searchInput');
-const btn = document.getElementById('searchBtn');
-const results = document.getElementById('results');
-
-function runSearch(){
-
-  const q = input.value.toLowerCase();
-
-  results.innerHTML = '';
-
-  const found = stops.filter(s=>
-    s.name.toLowerCase().includes(q)
-  );
-
-  if(found.length === 0){
-    results.innerHTML = '❌ No results';
-    return;
+    list.push({
+      route,
+      headsign: "Központ felé",
+      time: `${hour}:${String(min).padStart(2, "0")}`,
+      delay
+    });
   }
 
-  found.forEach(s=>{
-
-    const div = document.createElement('div');
-
-    div.className = 'result';
-
-    div.innerHTML = '🚏 ' + s.name;
-
-    div.onclick = ()=>{
-
-      map.setView([s.lat,s.lng],16);
-
-      L.popup()
-        .setLatLng([s.lat,s.lng])
-        .setContent('🚏 ' + s.name)
-        .openOn(map);
-
-    };
-
-    results.appendChild(div);
-
-  });
-
+  return list.sort((a, b) => a.delay - b.delay);
 }
 
-btn.addEventListener('click', runSearch);
+let currentData = [];
 
-input.addEventListener('keypress',(e)=>{
+function renderBoard(data) {
+  const board = document.getElementById("board");
+  board.innerHTML = "";
 
-  if(e.key === 'Enter'){
-    runSearch();
-  }
+  data.slice(0, 15).forEach(d => {
+    let cls = "status-gray";
+    if (d.delay <= 0) cls = "status-red";
+    else if (d.delay < 5) cls = "status-green";
 
-});
-
-// =====================
-// LIVE VEHICLES
-// =====================
-
-const vehicles = [
-  {
-    line:'16',
-    direction:'Széll Kálmán tér',
-    status:'ON TIME',
-    routeIndex:0,
-    pointIndex:0
-  },
-  {
-    line:'105',
-    direction:'Gyöngyösi utca',
-    status:'+3 MIN',
-    routeIndex:1,
-    pointIndex:0
-  }
-];
-
-const vehicleMarkers = [];
-
-vehicles.forEach(v=>{
-
-  const route = routes[v.routeIndex];
-
-  const p = route.points[0];
-
-  const marker = L.marker(p)
-    .addTo(map)
-    .bindPopup(
-      '🚍 Line ' + v.line +
-      '<br>' + v.direction
-    );
-
-  vehicleMarkers.push(marker);
-
-});
-
-// =====================
-// ROUTE ENGINE
-// =====================
-
-function moveVehicles(){
-
-  vehicles.forEach((v,index)=>{
-
-    const route = routes[v.routeIndex];
-
-    v.pointIndex++;
-
-    if(v.pointIndex >= route.points.length){
-      v.pointIndex = 0;
-    }
-
-    const nextPoint = route.points[v.pointIndex];
-
-    vehicleMarkers[index]
-      .setLatLng(nextPoint);
-
-  });
-
-  renderVehicles();
-
-}
-
-setInterval(moveVehicles,2000);
-
-// =====================
-// RIGHT PANEL
-// =====================
-
-function renderVehicles(){
-
-  const list = document.getElementById('vehicleList');
-
-  list.innerHTML = '';
-
-  vehicles.forEach(v=>{
-
-    const div = document.createElement('div');
-
-    div.className = 'vehicleRow';
-
-    div.innerHTML = `
-      🚍 <b>${v.line}</b><br>
-      ${v.direction}<br>
-      <span class="tag live">${v.status}</span>
+    board.innerHTML += `
+      <div class="row">
+        <div><b>${d.route}</b></div>
+        <div>${d.headsign}</div>
+        <div>${d.time}</div>
+        <div class="${cls}">${d.delay} perc</div>
+      </div>
     `;
-
-    list.appendChild(div);
-
   });
-
 }
 
-renderVehicles();
+function loadDepartures() {
+  const stop = document.getElementById("stopInput").value;
+  if (!stop) return;
 
-// =====================
-// LIVE DEPARTURES
-// =====================
-
-const departures = [
-  ['16','Széll Kálmán tér','ON TIME'],
-  ['105','Gyöngyösi utca','+3 MIN'],
-  ['4-6','Móricz Zs. körtér','ON TIME'],
-  ['7','Albertfalva','DELAY']
-];
-
-const tbody = document.getElementById('departuresBody');
-
-function renderDepartures(){
-
-  tbody.innerHTML = '';
-
-  departures.forEach(d=>{
-
-    const tr = document.createElement('tr');
-
-    let cls = 'ok';
-
-    if(d[2].includes('+')) cls = 'delay';
-    if(d[2].includes('DELAY')) cls = 'live';
-
-    tr.innerHTML = `
-      <td>${d[0]}</td>
-      <td>${d[1]}</td>
-      <td><span class="tag ${cls}">${d[2]}</span></td>
-    `;
-
-    tbody.appendChild(tr);
-
-  });
-
+  currentData = generateDepartures();
+  renderBoard(currentData);
 }
 
-renderDepartures();
+// clock
+function updateClock() {
+  const now = new Date();
+  document.getElementById("clock").innerText = now.toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// auto refresh demo
+setInterval(() => {
+  if (currentData.length > 0) {
+    currentData = generateDepartures();
+    renderBoard(currentData);
+  }
+}, 8000);
 
 </script>
 
 </body>
 </html>
-```
-
