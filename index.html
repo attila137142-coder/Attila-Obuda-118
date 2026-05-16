@@ -1,83 +1,91 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V5 GTFS PRO SIM CORE</title>
+Futár V3 Gtfs Control Room
+· html
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
-<style>
-body{margin:0;font-family:Arial;background:#0b0f14;color:#e6f1ff;}
-header{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#111826;}
-.container{display:grid;grid-template-columns:360px 1fr;height:calc(100vh - 50px);}
-.sidebar{padding:10px;background:#0f1622;overflow:auto;}
-#map{height:60%;}
-.board{height:40%;overflow:auto;padding:10px;border-top:1px solid #1f2a3a;}
-button,input{width:100%;padding:10px;margin:5px 0;}
-button{background:#1f6feb;color:white;border:none;}
-.row{display:grid;grid-template-columns:120px 1fr 80px 80px 100px;padding:6px;border-bottom:1px solid #1f2a3a;font-size:12px;}
-.ok{color:#2ecc71}.warn{color:#ffcc00}.bad{color:#ff4d4d}
-.small{opacity:0.7;font-size:11px;}
-</style>
-</head>
-<body>
-
-<header>
-<div>🚇 FUTÁR V5 GTFS PRO SIM CORE</div>
-<div id="clock"></div>
-</header>
-
-<div class="container">
-
-<div class="sidebar">
-<input type="file" id="gtfsFile" />
-<button onclick="loadGTFS()">GTFS LOAD</button>
-<div id="ops"></div>
-</div>
-
-<div>
-<div id="map"></div>
-<div class="board" id="board"></div>
-</div>
-
-</div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-
-<script>
-setInterval(()=>document.getElementById('clock').innerText=new Date().toLocaleTimeString(),1000);
-
-const map=L.map('map').setView([47.4979,19.0402],12);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
-
-let STATE={vehicles:[],routes:{},stops:{}};
-let markers={};
-let polylines={};
-
-function parseStops(data){
-  let stops={};
-  data.forEach(s=>{
-    if(s.stop_lat){
-      stops[s.stop_id]={
-        id:s.stop_id,
-        name:s.stop_name,
-        lat:parseFloat(s.stop_lat),
-        lng:parseFloat(s.stop_lon)
-      };
-    }
-  });
-  return stops;
 }
 
-function buildRoutes(stopTimes,stops){
-  let routes={};
-  stopTimes.sort((a,b)=>+a.stop_sequence-+b.stop_sequence);
-  stopTimes.forEach(st=>{
-    if(!routes[st.trip_id]) routes[st.trip_id]=[];
-    const s=stops[st.stop_id];
-    if(s) routes[st.trip_id].push(s);
+
+// ---------- RENDER ----------
+function render(){
+
+
+  document.getElementById("brain").innerHTML = "STATUS: "+brain();
+
+
+  document.getElementById("ops").innerHTML = "VEHICLES: "+STATE.vehicles.length;
+
+
+  let vbox="";
+  STATE.vehicles.forEach(v=>{
+
+
+    let cls = v.delay>30?"bad":v.delay<-15?"warn":"ok";
+
+
+    vbox += `
+    <div class="row">
+      <div>${v.line}</div>
+      <div>${v.type}</div>
+      <div class="${cls}">${v.delay}s</div>
+      <div>${v.i}</div>
+    </div>`;
   });
 
+
+  document.getElementById("vehicles").innerHTML = vbox;
+
+
+  let lbox="";
+  Object.keys(STATE.routes).slice(0,5).forEach(k=>{
+    lbox += `<div class='small'>${k} → ${STATE.routes[k].length} stops</div>`;
+  });
+
+
+  document.getElementById("lines").innerHTML = lbox;
+}
+
+
+// ---------- LOAD GTFS ----------
+async function loadGTFS(){
+
+
+  const file=document.getElementById("gtfsFile").files[0];
+  if(!file) return;
+
+
+  const zip=await JSZip.loadAsync(file);
+
+
+  const read=async f=>Papa.parse(await zip.file(f).async("string"),{header:true}).data;
+
+
+  const stops=await read("stops.txt");
+  const trips=await read("trips.txt");
+  const stopTimes=await read("stop_times.txt");
+
+
+  STATE.stops=parseStops(stops);
+  STATE.routes=buildRoutes(stopTimes,STATE.stops);
+
+
+  initVehicles(trips);
+
+
+  render();
+}
+
+
+// ---------- LOOP ----------
+setInterval(()=>{
+  if(STATE.vehicles.length){
+    move();
+    render();
+  }
+},1200);
+
+
+</script>
+
+
+</body>
+</html>
