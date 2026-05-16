@@ -3,41 +3,57 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V5 SAFE RECOVERY BUILD</title>
+<title>FUTÁR V5 FULL OPS + VEHICLE INTELLIGENCE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body{margin:0;font-family:Arial;background:#0b0f14;color:#e6f1ff;}
-header{padding:10px;background:#111826;display:flex;justify-content:space-between;}
-.container{display:grid;grid-template-columns:360px 1fr;height:calc(100vh - 50px);}
-.sidebar{padding:10px;overflow:auto;background:#0f1622;}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#111826;border-bottom:1px solid #1f2a3a;}
+.container{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 50px);}
+.sidebar{padding:10px;background:#0f1622;overflow:auto;border-right:1px solid #1f2a3a;}
 .main{display:flex;flex-direction:column;}
-#map{height:60%;}
-.board{height:40%;overflow:auto;padding:10px;}
-button,input{width:100%;padding:10px;margin:5px 0;}
-button{background:#1f6feb;color:white;border:none;}
-.row{display:grid;grid-template-columns:80px 1fr 80px 100px 80px;padding:6px;border-bottom:1px solid #222;font-size:12px;}
-.ok{color:#2ecc71}.warn{color:#ffcc00}.bad{color:#ff4d4d}
-.card{background:#1a2433;padding:10px;margin-top:10px;font-size:12px;}
+#map{height:55%;}
+.board{height:45%;overflow:auto;padding:10px;border-top:1px solid #1f2a3a;}
+
+input,button{width:100%;padding:10px;margin:5px 0;border-radius:6px;border:none;}
+button{background:#1f6feb;color:white;cursor:pointer;}
+button:hover{background:#388bfd;}
+
+.card{background:#1a2433;padding:10px;margin-top:10px;border-radius:8px;font-size:12px;}
+
+.row{
+display:grid;
+grid-template-columns:110px 90px 80px 120px 100px;
+padding:8px;
+border-bottom:1px solid #1f2a3a;
+font-size:12px;
+}
+
+.ok{color:#2ecc71;}
+.warn{color:#ffcc00;}
+.bad{color:#ff4d4d;}
+.small{opacity:0.7;font-size:11px;}
 </style>
 </head>
 
 <body>
 
 <header>
-<div>🚇 FUTÁR V5 SAFE RECOVERY</div>
+<div>🚇 FUTÁR V5 FULL OPS + VEHICLE INTELLIGENCE</div>
 <div id="clock"></div>
 </header>
 
 <div class="container">
 
 <div class="sidebar">
-<input type="file" id="file"/>
-<button onclick="load()">GTFS LOAD</button>
+
+<input type="file" id="gtfsFile"/>
+<button onclick="loadGTFS()">📦 GTFS LOAD</button>
 
 <div class="card" id="brain"></div>
 <div class="card" id="ops"></div>
+
 </div>
 
 <div class="main">
@@ -53,69 +69,149 @@ button{background:#1f6feb;color:white;border:none;}
 
 <script>
 
-setInterval(()=>document.getElementById("clock").innerText=new Date().toLocaleTimeString(),1000);
+// ================= CLOCK =================
+setInterval(()=>{
+document.getElementById("clock").innerText = new Date().toLocaleTimeString();
+},1000);
 
-const map=L.map("map").setView([47.4979,19.0402],12);
+// ================= MAP =================
+const map = L.map("map").setView([47.4979,19.0402],12);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
-let STATE={gtfs:null,vehicles:[],stops:[]};
-let markers={};
+let markers = {};
 
-function brain(){
-return {mode:"SAFE",msg:"Recovery mode active"};
+// ================= STATE =================
+const STATE = {
+gtfs:null,
+vehicles:[],
+stops:[],
+incidents:[]
+};
+
+// ================= DIST =================
+function dist(a,b){
+const R=6371000;
+const dLat=(b.lat-a.lat)*Math.PI/180;
+const dLon=(b.lng-a.lng)*Math.PI/180;
+const x=Math.sin(dLat/2)**2+
+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)**2;
+return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-function render(){
-document.getElementById("brain").innerHTML="BRAIN: "+brain().mode;
+// ================= VEHICLE ENRICH =================
+function enrich(v,i){
 
-document.getElementById("ops").innerHTML=
-"VEHICLES: "+STATE.vehicles.length;
+const types = ["BUS","HÉV","TRAM"];
+const type = types[i % types.length];
 
-let b=document.getElementById("board");
-b.innerHTML="";
+const fleetId = type + "-" + (1000 + i);
 
-STATE.vehicles.forEach(v=>{
-b.innerHTML+=`
-<div class="row">
-<div>${v.id}</div>
-<div>LIVE</div>
-<div>${Math.round(v.speed)}</div>
-<div class="ok">OK</div>
-<div>ETA</div>
-</div>`;
-});
+// delay model
+const delay = Math.round((Math.random()-0.4)*120);
+
+// speed model
+const speed = 20 + Math.random()*40;
+
+return {
+...v,
+type,
+fleetId,
+delay,
+speed
+};
 }
 
-function move(){
-STATE.vehicles.forEach(v=>{
-v.lat+=(Math.random()-0.5)*0.002;
-v.lng+=(Math.random()-0.5)*0.002;
-
-if(!markers[v.id]){
-markers[v.id]=L.marker([v.lat,v.lng]).addTo(map);
-}else markers[v.id].setLatLng([v.lat,v.lng]);
-});
+// ================= COLOR =================
+function color(d){
+if(d > 40) return "bad";
+if(d < -20) return "warn";
+return "ok";
 }
 
-async function load(){
-const f=document.getElementById("file").files[0];
-if(!f)return alert("no file");
+// ================= LOAD GTFS =================
+async function loadGTFS(){
 
-const zip=await JSZip.loadAsync(f);
-const read=async n=>Papa.parse(await zip.file(n).async("string"),{header:true}).data;
+const file = document.getElementById("gtfsFile").files[0];
+if(!file) return alert("No GTFS ZIP");
 
-const trips=await read("trips.txt");
+const zip = await JSZip.loadAsync(file);
 
-STATE.vehicles=trips.slice(0,10).map(t=>({
-id:t.trip_id,
-lat:47.5+Math.random()*0.1,
-lng:19+Math.random()*0.1,
-speed:20+Math.random()*40
+const read = async f =>
+Papa.parse(await zip.file(f).async("string"),{header:true}).data;
+
+const trips = await read("trips.txt");
+
+STATE.vehicles = trips.slice(0,12).map((t,i)=>({
+
+id: t.trip_id,
+lat: 47.5 + Math.random()*0.1,
+lng: 19 + Math.random()*0.1,
+angle: Math.random()*Math.PI*2
+
 }));
 
 render();
 }
 
+// ================= MOVE =================
+function move(){
+
+STATE.vehicles.forEach(v=>{
+
+v.lat += (Math.random()-0.5)*0.002;
+v.lng += (Math.random()-0.5)*0.002;
+
+if(!markers[v.id]){
+markers[v.id] = L.marker([v.lat,v.lng]).addTo(map);
+}else{
+markers[v.id].setLatLng([v.lat,v.lng]);
+}
+
+});
+
+}
+
+// ================= BRAIN =================
+function brain(){
+return {
+mode:"OPS ACTIVE",
+msg:"Vehicle intelligence layer running"
+};
+}
+
+// ================= RENDER =================
+function render(){
+
+document.getElementById("brain").innerHTML =
+"<b>AI BRAIN</b><br>"+brain().msg;
+
+document.getElementById("ops").innerHTML =
+"VEHICLES: "+STATE.vehicles.length;
+
+let board = document.getElementById("board");
+board.innerHTML = "";
+
+STATE.vehicles.forEach((v,i)=>{
+
+const ev = enrich(v,i);
+const cls = color(ev.delay);
+
+board.innerHTML += `
+<div class="row">
+<div>${ev.fleetId}</div>
+<div>${ev.type}</div>
+<div>${Math.round(ev.speed)} km/h</div>
+<div class="${cls}">
+${ev.delay > 0 ? "+" : ""}${ev.delay}s
+</div>
+<div>LIVE</div>
+</div>
+`;
+});
+
+}
+
+// ================= LOOP =================
 setInterval(()=>{
 if(STATE.vehicles.length){
 move();
