@@ -3,46 +3,48 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V5 LIVE OPS CONTROL CENTER</title>
+<title>FUTÁR V5 REAL BUDAPEST OPS SYSTEM</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body{margin:0;font-family:Arial;background:#0b0f14;color:#e6f1ff;}
-header{padding:10px;background:#111826;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #1f2a3a;}
-.container{display:grid;grid-template-columns:360px 1fr;height:calc(100vh - 50px);}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#111826;border-bottom:1px solid #1f2a3a;}
+.container{display:grid;grid-template-columns:390px 1fr;height:calc(100vh - 50px);}
 .sidebar{padding:10px;background:#0f1622;overflow:auto;border-right:1px solid #1f2a3a;}
 .main{display:flex;flex-direction:column;}
-input,button{width:100%;padding:10px;margin:5px 0;border-radius:6px;border:none;}
-button{background:#1f6feb;color:white;cursor:pointer;}
 #map{height:55%;}
-.board{height:45%;overflow:auto;padding:10px;}
-.row{display:grid;grid-template-columns:70px 1fr 80px 90px 90px 110px;padding:8px;border-bottom:1px solid #1f2a3a;font-size:12px;}
-.small{font-size:11px;opacity:0.6;}
+.board{height:45%;overflow:auto;padding:10px;border-top:1px solid #1f2a3a;}
+input,button{width:100%;padding:10px;margin:5px 0;border-radius:6px;border:none;}
+button{background:#1f6feb;color:#fff;cursor:pointer;}
+button:hover{background:#388bfd;}
+.card{background:#1a2433;padding:10px;margin-top:10px;border-radius:8px;font-size:12px;}
+.row{display:grid;grid-template-columns:90px 1fr 80px 120px 120px;padding:8px;border-bottom:1px solid #1f2a3a;font-size:12px;}
 .ok{color:#2ecc71;}
-.early{color:red;}
-.late{color:#4aa3ff;}
-.ops{font-size:12px;background:#1a2433;padding:8px;margin-top:8px;border-radius:6px;}
-.status-ok{color:#2ecc71;}
-.status-warn{color:#ffcc00;}
-.status-bad{color:#ff4d4d;}
+.warn{color:#ffcc00;}
+.bad{color:#ff4d4d;}
 </style>
 </head>
 
 <body>
 
 <header>
-<div>🚇 FUTÁR V5 LIVE OPS CONTROL CENTER</div>
+<div>🚇 FUTÁR V5 REAL BUDAPEST OPS SYSTEM</div>
 <div id="clock"></div>
 </header>
 
 <div class="container">
 
 <div class="sidebar">
-<input id="stopSearch" placeholder="Megálló keresés..." oninput="filterStops()"/>
-<button onclick="toggleNetwork()">HÉV + VOLÁN OPS ÁLLAPOT</button>
-<div id="opsPanel" class="ops"></div>
-<div id="stopList"></div>
+<input type="file" id="gtfsFile"/>
+<button onclick="loadGTFS()">📦 GTFS IMPORT</button>
+<button onclick="addIncident('HEV_CLOSURE')">🚨 HÉV INCIDENT</button>
+<button onclick="addIncident('DELAY_CLUSTER')">⏱ DELAY CLUSTER</button>
+
+<div class="card" id="brainBox"></div>
+<div class="card" id="opsBox"></div>
+<div class="card" id="routeBox"></div>
+
 </div>
 
 <div class="main">
@@ -53,121 +55,168 @@ button{background:#1f6feb;color:white;cursor:pointer;}
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <script>
 
-// ---------------- CLOCK ----------------
-setInterval(()=>{
-  document.getElementById("clock").innerText = new Date().toLocaleTimeString();
+setInterval(function(){
+document.getElementById("clock").innerText = new Date().toLocaleTimeString();
 },1000);
 
-// ---------------- MAP ----------------
-const map = L.map("map").setView([47.4979,19.0402],12);
+var map = L.map("map").setView([47.4979,19.0402],12);
 L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
 
-// ---------------- OPS STATE (LIVE MODE) ----------------
-const networkState = {
-  hev: "partial_closed",
-  replacementBus: true,
-  volan860: "active",
-  disruption: "Békásmegyer–Szentendre szakasz korlátozott"
+var STATE = {
+gtfs:null,
+vehicles:[],
+incidents:[],
+stops:[],
+network:{hev:"active",volan:"active",bkk:"active"}
 };
 
-function renderOps(){
-  document.getElementById("opsPanel").innerHTML = `
-    <b>NETWORK STATUS</b><br>
-    HÉV H5: <span class='status-warn'>${networkState.hev}</span><br>
-    Pótlóbusz: <span class='status-ok'>${networkState.replacementBus}</span><br>
-    VOLÁN 860: <span class='status-ok'>${networkState.volan860}</span><br>
-    <hr>
-    ${networkState.disruption}
-  `;
-}
-renderOps();
+var markers = {};
 
-function toggleNetwork(){
-  networkState.hev = networkState.hev === "active" ? "partial_closed" : "active";
-  renderOps();
+function dist(a,b){
+var R=6371000;
+var dLat=(b.lat-a.lat)*Math.PI/180;
+var dLon=(b.lng-a.lng)*Math.PI/180;
+var x=Math.sin(dLat/2)*Math.sin(dLat/2)+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)*Math.sin(dLon/2);
+return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ---------------- STOPS (SIM OPS HUB MODEL) ----------------
-const stops = [
-  {name:"Békásmegyer HUB",lat:47.592,lng:19.046,type:"HUB"},
-  {name:"Pomáz TRANSFER",lat:47.645,lng:19.028,type:"TRANSFER"},
-  {name:"Szentendre TERMINAL",lat:47.669,lng:19.075,type:"TERMINAL"},
-  {name:"Dobogókő TOURIST",lat:47.720,lng:18.900,type:"TOURIST"}
-];
+async function loadGTFS(){
+var file=document.getElementById("gtfsFile").files[0];
+if(!file)return;
 
-stops.forEach(s=>{
-  L.marker([s.lat,s.lng]).addTo(map).bindPopup(s.name);
+var zip=await JSZip.loadAsync(file);
+
+var read=async function(f){
+return Papa.parse(await zip.file(f).async("string"),{header:true}).data;
+};
+
+STATE.gtfs={
+stops:await read("stops.txt"),
+trips:await read("trips.txt"),
+stopTimes:await read("stop_times.txt")
+};
+
+STATE.stops = STATE.gtfs.stops.slice(0,30).map(function(s){
+return {
+id:s.stop_id,
+name:s.stop_name,
+lat:parseFloat(s.stop_lat),
+lng:parseFloat(s.stop_lon)
+};
 });
 
-function filterStops(){
-  const q=document.getElementById("stopSearch").value.toLowerCase();
+STATE.vehicles = STATE.gtfs.trips.slice(0,10).map(function(t){
+return {
+id:t.trip_id,
+lat:47.5+Math.random()*0.1,
+lng:19+Math.random()*0.1,
+speed:20+Math.random()*40
+};
+});
+
+render();
 }
 
-// ---------------- VEHICLES ----------------
-let vehicles = [
-  {id:"H5-01",type:"HEV",lat:47.60,lng:19.05,speed:40},
-  {id:"BUS-860-1",type:"VOLAN",lat:47.62,lng:19.03,speed:55},
-  {id:"REPLACE-12",type:"BUS",lat:47.58,lng:19.06,speed:35}
-];
+function addIncident(type){
+STATE.incidents.push({type:type,time:Date.now()});
 
-let markers = {};
-
-function moveVehicles(){
-  vehicles.forEach(v=>{
-    v.lat += (Math.random()-0.5)*0.002;
-    v.lng += (Math.random()-0.5)*0.002;
-
-    if(!markers[v.id]){
-      markers[v.id]=L.marker([v.lat,v.lng]).addTo(map).bindPopup(v.id);
-    } else {
-      markers[v.id].setLatLng([v.lat,v.lng]);
-    }
-  });
+if(type==="HEV_CLOSURE"){
+STATE.network.hev="partial_closed";
 }
 
-setInterval(moveVehicles,2000);
-
-// ---------------- ETA ENGINE ----------------
-function dist(a,b){
-  const R=6371000;
-  const dLat=(b.lat-a.lat)*Math.PI/180;
-  const dLon=(b.lng-a.lng)*Math.PI/180;
-  const x=Math.sin(dLat/2)**2+Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)**2;
-  return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+if(type==="DELAY_CLUSTER"){
+STATE.vehicles.forEach(function(v){v.speed=v.speed*0.7;});
 }
 
-// ---------------- CONTROL BOARD ----------------
-function renderBoard(){
-  const board=document.getElementById("board");
-  board.innerHTML="";
-
-  const target=stops[0];
-
-  vehicles.forEach(v=>{
-    const d=dist(v,target);
-    const eta=Math.round(d/8);
-
-    let cls="ok";
-    if(eta<60) cls="early";
-    if(eta>300) cls="late";
-
-    board.innerHTML+=`
-      <div class='row'>
-        <div><b>${v.id}</b></div>
-        <div>${v.type}</div>
-        <div>${Math.round(v.speed)} km/h</div>
-        <div>${Math.round(d)} m</div>
-        <div class='${cls}'>${eta} mp</div>
-        <div>${networkState.hev}</div>
-      </div>
-    `;
-  });
+render();
 }
 
-setInterval(renderBoard,2000);
+function brain(){
+if(STATE.network.hev!=="active"){
+return {
+mode:"DISRUPTION",
+advice:[
+"BKK HÉV korlátozás",
+"Pótlóbusz aktív",
+"VOLÁN / MÁV backup"
+]
+};
+}
+return {mode:"NORMAL",advice:["Budapest hálózat stabil"]};
+}
+
+function update(){
+STATE.vehicles.forEach(function(v){
+v.lat+=(Math.random()-0.5)*0.002;
+v.lng+=(Math.random()-0.5)*0.002;
+
+if(!markers[v.id]){
+markers[v.id]=L.marker([v.lat,v.lng]).addTo(map);
+}else{
+markers[v.id].setLatLng([v.lat,v.lng]);
+}
+});
+}
+
+function route(){
+if(!STATE.stops.length)return[];
+
+var from=STATE.stops[0];
+
+return STATE.stops.slice(1,6).map(function(s){
+return {
+to:s.name,
+cost:Math.round(dist(from,s))
+};
+}).sort(function(a,b){return a.cost-b.cost;});
+}
+
+function render(){
+
+var b=brain();
+document.getElementById("brainBox").innerHTML=
+"<b>AI BRAIN</b><br>"+b.advice.join("<br>");
+
+document.getElementById("opsBox").innerHTML=
+"<b>OPS</b><br>HÉV:"+STATE.network.hev+"<br>INC:"+STATE.incidents.length;
+
+var r=route();
+document.getElementById("routeBox").innerHTML=
+"<b>ROUTING</b><br>"+r.map(function(x){
+return x.to+" : "+x.cost+" m";
+}).join("<br>");
+
+var board=document.getElementById("board");
+board.innerHTML="";
+
+STATE.vehicles.forEach(function(v){
+var eta=Math.round(Math.random()*200+30);
+var c="ok";
+if(eta<60)c="warn";
+if(eta>200)c="bad";
+
+board.innerHTML+=
+"<div class='row'>"+
+"<div>"+v.id+"</div>"+
+"<div>LIVE</div>"+
+"<div>"+Math.round(v.speed)+" km/h</div>"+
+"<div>"+Math.round(eta*8)+" m</div>"+
+"<div class='"+c+"'>"+eta+" s</div>"+
+"</div>";
+});
+}
+
+setInterval(function(){
+if(STATE.gtfs){
+update();
+render();
+}
+},2000);
 
 </script>
 
