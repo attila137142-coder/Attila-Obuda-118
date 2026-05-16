@@ -3,29 +3,28 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V5 FULL OPS + VEHICLE INTELLIGENCE</title>
+<title>FUTÁR V5 DISPATCH BRAIN UPGRADE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body{margin:0;font-family:Arial;background:#0b0f14;color:#e6f1ff;}
-header{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#111826;border-bottom:1px solid #1f2a3a;}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#111826;}
 .container{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 50px);}
-.sidebar{padding:10px;background:#0f1622;overflow:auto;border-right:1px solid #1f2a3a;}
+.sidebar{padding:10px;background:#0f1622;overflow:auto;}
 .main{display:flex;flex-direction:column;}
 #map{height:55%;}
-.board{height:45%;overflow:auto;padding:10px;border-top:1px solid #1f2a3a;}
+.board{height:45%;overflow:auto;padding:10px;}
 
-input,button{width:100%;padding:10px;margin:5px 0;border-radius:6px;border:none;}
-button{background:#1f6feb;color:white;cursor:pointer;}
-button:hover{background:#388bfd;}
+input,button{width:100%;padding:10px;margin:5px 0;}
+button{background:#1f6feb;color:white;border:none;}
 
-.card{background:#1a2433;padding:10px;margin-top:10px;border-radius:8px;font-size:12px;}
+.card{background:#1a2433;padding:10px;margin-top:10px;font-size:12px;border-radius:8px;}
 
 .row{
 display:grid;
-grid-template-columns:110px 90px 80px 120px 100px;
-padding:8px;
+grid-template-columns:110px 80px 80px 120px 120px;
+padding:6px;
 border-bottom:1px solid #1f2a3a;
 font-size:12px;
 }
@@ -33,14 +32,14 @@ font-size:12px;
 .ok{color:#2ecc71;}
 .warn{color:#ffcc00;}
 .bad{color:#ff4d4d;}
-.small{opacity:0.7;font-size:11px;}
+.small{opacity:0.7;}
 </style>
 </head>
 
 <body>
 
 <header>
-<div>🚇 FUTÁR V5 FULL OPS + VEHICLE INTELLIGENCE</div>
+<div>🚇 FUTÁR V5 DISPATCH BRAIN UPGRADE</div>
 <div id="clock"></div>
 </header>
 
@@ -52,6 +51,7 @@ font-size:12px;
 <button onclick="loadGTFS()">📦 GTFS LOAD</button>
 
 <div class="card" id="brain"></div>
+<div class="card" id="dispatch"></div>
 <div class="card" id="ops"></div>
 
 </div>
@@ -82,42 +82,28 @@ let markers = {};
 
 // ================= STATE =================
 const STATE = {
-gtfs:null,
 vehicles:[],
-stops:[],
-incidents:[]
+incidents:[],
+lines:{}
 };
 
-// ================= DIST =================
-function dist(a,b){
-const R=6371000;
-const dLat=(b.lat-a.lat)*Math.PI/180;
-const dLon=(b.lng-a.lng)*Math.PI/180;
-const x=Math.sin(dLat/2)**2+
-Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*Math.sin(dLon/2)**2;
-return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-// ================= VEHICLE ENRICH =================
+// ================= VEHICLE MODEL =================
 function enrich(v,i){
 
-const types = ["BUS","HÉV","TRAM"];
+const types=["BUS","HÉV","TRAM"];
 const type = types[i % types.length];
 
-const fleetId = type + "-" + (1000 + i);
-
-// delay model
-const delay = Math.round((Math.random()-0.4)*120);
-
-// speed model
+const delay = Math.round((Math.random()-0.45)*140);
 const speed = 20 + Math.random()*40;
+
+const line = "LINE-" + (i%5);
 
 return {
 ...v,
 type,
-fleetId,
 delay,
-speed
+speed,
+line
 };
 }
 
@@ -128,11 +114,40 @@ if(d < -20) return "warn";
 return "ok";
 }
 
-// ================= LOAD GTFS =================
+// ================= DISPATCH BRAIN =================
+function dispatchBrain(){
+
+let lines = {};
+
+STATE.vehicles.forEach((v,i)=>{
+const ev = enrich(v,i);
+
+if(!lines[ev.line]) lines[ev.line]={total:0,count:0};
+
+lines[ev.line].total += ev.delay;
+lines[ev.line].count++;
+});
+
+let summary = [];
+
+Object.keys(lines).forEach(l=>{
+const avg = lines[l].total / lines[l].count;
+
+let status = "OK";
+if(avg > 30) status = "CRITICAL";
+else if(avg < -15) status = "EARLY";
+
+summary.push({line:l,avg:avg,status});
+});
+
+return summary;
+}
+
+// ================= LOAD =================
 async function loadGTFS(){
 
 const file = document.getElementById("gtfsFile").files[0];
-if(!file) return alert("No GTFS ZIP");
+if(!file) return alert("GTFS ZIP kell");
 
 const zip = await JSZip.loadAsync(file);
 
@@ -141,13 +156,10 @@ Papa.parse(await zip.file(f).async("string"),{header:true}).data;
 
 const trips = await read("trips.txt");
 
-STATE.vehicles = trips.slice(0,12).map((t,i)=>({
-
-id: t.trip_id,
-lat: 47.5 + Math.random()*0.1,
-lng: 19 + Math.random()*0.1,
-angle: Math.random()*Math.PI*2
-
+STATE.vehicles = trips.slice(0,15).map(t=>({
+id:t.trip_id,
+lat:47.5+Math.random()*0.1,
+lng:19+Math.random()*0.1
 }));
 
 render();
@@ -157,37 +169,39 @@ render();
 function move(){
 
 STATE.vehicles.forEach(v=>{
-
 v.lat += (Math.random()-0.5)*0.002;
 v.lng += (Math.random()-0.5)*0.002;
 
 if(!markers[v.id]){
-markers[v.id] = L.marker([v.lat,v.lng]).addTo(map);
+markers[v.id]=L.marker([v.lat,v.lng]).addTo(map);
 }else{
 markers[v.id].setLatLng([v.lat,v.lng]);
 }
-
 });
 
-}
-
-// ================= BRAIN =================
-function brain(){
-return {
-mode:"OPS ACTIVE",
-msg:"Vehicle intelligence layer running"
-};
 }
 
 // ================= RENDER =================
 function render(){
 
+// BRAIN
 document.getElementById("brain").innerHTML =
-"<b>AI BRAIN</b><br>"+brain().msg;
+"<b>AI BRAIN</b><br>Dispatch system active";
 
+// DISPATCH
+const d = dispatchBrain();
+
+document.getElementById("dispatch").innerHTML =
+"<b>DISPATCH SUMMARY</b><br>" +
+d.map(x =>
+`${x.line} → ${x.status} (${x.avg.toFixed(1)}s)`
+).join("<br>");
+
+// OPS
 document.getElementById("ops").innerHTML =
-"VEHICLES: "+STATE.vehicles.length;
+"VEHICLES: " + STATE.vehicles.length;
 
+// BOARD
 let board = document.getElementById("board");
 board.innerHTML = "";
 
@@ -198,15 +212,14 @@ const cls = color(ev.delay);
 
 board.innerHTML += `
 <div class="row">
-<div>${ev.fleetId}</div>
+<div>${ev.line}</div>
 <div>${ev.type}</div>
-<div>${Math.round(ev.speed)} km/h</div>
+<div>${Math.round(ev.speed)}</div>
 <div class="${cls}">
-${ev.delay > 0 ? "+" : ""}${ev.delay}s
+${ev.delay>0?"+":""}${ev.delay}s
 </div>
-<div>LIVE</div>
-</div>
-`;
+<div>${ev.id.slice(0,6)}</div>
+</div>`;
 });
 
 }
