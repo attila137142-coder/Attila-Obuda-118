@@ -1,3 +1,202 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>FUTÁR V5 LIVE GTFS ENGINE</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+
+<style>
+body{
+  margin:0;
+  font-family:Arial;
+  background:#05070d;
+  color:#00ffcc;
+  overflow:hidden;
+}
+
+header{
+  height:50px;
+  line-height:50px;
+  text-align:center;
+  background:#0b1220;
+  border-bottom:2px solid #00ffcc;
+  font-weight:bold;
+  font-size:18px;
+}
+
+.container{
+  display:grid;
+  grid-template-columns:320px 1fr 320px;
+  height:calc(100vh - 50px);
+}
+
+.panel{
+  background:#0b1220;
+  padding:10px;
+  overflow:auto;
+  border-right:1px solid #00ffcc33;
+}
+
+#map{
+  width:100%;
+  height:100%;
+}
+
+input{
+  width:100%;
+  padding:10px;
+  background:#05070d;
+  border:1px solid #00ffcc;
+  color:#00ffcc;
+  margin-bottom:10px;
+  box-sizing:border-box;
+}
+
+button{
+  width:100%;
+  padding:10px;
+  background:#00ffcc;
+  border:none;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+.result{
+  padding:6px;
+  border-bottom:1px solid #00ffcc22;
+  cursor:pointer;
+}
+
+.result:hover{
+  background:#00ffcc22;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:12px;
+}
+
+td,th{
+  border-bottom:1px solid #00ffcc33;
+  padding:6px;
+  text-align:left;
+}
+
+.tag{
+  padding:2px 6px;
+  border-radius:4px;
+  font-size:11px;
+}
+
+.ok{
+  background:green;
+  color:white;
+}
+
+.delay{
+  background:orange;
+  color:black;
+}
+
+.live{
+  background:red;
+  color:white;
+}
+
+.statusbox{
+  margin-top:10px;
+  padding:10px;
+  border:1px solid #00ffcc44;
+  background:#05070d;
+}
+
+.vehicleRow{
+  padding:6px;
+  border-bottom:1px solid #00ffcc22;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+🚇 FUTÁR V5 LIVE GTFS ENGINE
+</header>
+
+<div class="container">
+
+  <!-- LEFT -->
+  <div class="panel">
+
+    <h3>🚏 STOP SEARCH</h3>
+
+    <input id="searchInput" placeholder="Megálló keresése...">
+
+    <button id="searchBtn">
+      SEARCH
+    </button>
+
+    <div id="results"></div>
+
+    <div class="statusbox">
+      <b>📡 GTFS STATUS</b>
+      <p>🟢 Engine Online</p>
+      <p>🛰️ Tracking Active</p>
+      <p>📍 Budapest Demo Feed</p>
+    </div>
+
+  </div>
+
+  <!-- CENTER -->
+  <div id="map"></div>
+
+  <!-- RIGHT -->
+  <div class="panel">
+
+    <h3>🚍 LIVE VEHICLES</h3>
+
+    <div id="vehicleList"></div>
+
+    <hr style="border-color:#00ffcc33;">
+
+    <h3>⏱ LIVE DEPARTURES</h3>
+
+    <table>
+      <tr>
+        <th>Line</th>
+        <th>Direction</th>
+        <th>Status</th>
+      </tr>
+
+      <tbody id="departuresBody"></tbody>
+    </table>
+
+  </div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script>
+
+// =========================
+// MAP
+// =========================
+
+const map = L.map('map').setView([47.4979, 19.0402], 13);
+
+L.tileLayer(
+  'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+{
+  attribution:'FUTÁR V5'
+}).addTo(map);
+
+// =========================
+// STOPS
+// =========================
+
 const stops = [
   {name:"Deák Ferenc tér", lat:47.4979, lng:19.0500},
   {name:"Kálvin tér", lat:47.4890, lng:19.0610},
@@ -6,19 +205,36 @@ const stops = [
   {name:"Móricz Zsigmond körtér", lat:47.4770, lng:19.0470}
 ];
 
+// =========================
+// STOP MARKERS
+// =========================
+
+stops.forEach(s=>{
+  L.circleMarker([s.lat,s.lng],{
+    radius:6,
+    color:"#00ffcc"
+  })
+  .addTo(map)
+  .bindPopup("🚏 " + s.name);
+});
+
+// =========================
+// SEARCH ENGINE
+// =========================
+
 const input = document.getElementById("searchInput");
 const btn = document.getElementById("searchBtn");
 const results = document.getElementById("results");
 
-// SEARCH FUNCTION
 function runSearch(){
+
   const q = input.value.toLowerCase();
+
+  results.innerHTML = "";
 
   const found = stops.filter(s =>
     s.name.toLowerCase().includes(q)
   );
-
-  results.innerHTML = "";
 
   if(found.length === 0){
     results.innerHTML = "❌ No results";
@@ -26,29 +242,168 @@ function runSearch(){
   }
 
   found.forEach(s=>{
-    const div = document.createElement("div");
-    div.innerHTML = "🚏 " + s.name;
-    div.style.cursor = "pointer";
-    div.style.padding = "4px";
 
-    div.onclick = () => {
-      map.setView([s.lat, s.lng], 16);
+    const div = document.createElement("div");
+    div.className = "result";
+    div.innerHTML = "🚏 " + s.name;
+
+    div.onclick = ()=>{
+
+      map.setView([s.lat,s.lng],16);
+
       L.popup()
-        .setLatLng([s.lat, s.lng])
+        .setLatLng([s.lat,s.lng])
         .setContent("🚏 " + s.name)
         .openOn(map);
     };
 
     results.appendChild(div);
+
   });
+
 }
 
-// CLICK
 btn.addEventListener("click", runSearch);
 
-// ENTER KEY
-input.addEventListener("keypress", (e)=>{
+input.addEventListener("keypress",(e)=>{
   if(e.key === "Enter"){
     runSearch();
   }
 });
+
+// =========================
+// LIVE VEHICLES
+// =========================
+
+const vehicles = [
+  {
+    line:"16",
+    lat:47.4979,
+    lng:19.0500,
+    direction:"Széll Kálmán tér",
+    status:"ON TIME"
+  },
+  {
+    line:"105",
+    lat:47.4890,
+    lng:19.0610,
+    direction:"Gyöngyösi utca",
+    status:"+3 MIN"
+  },
+  {
+    line:"7",
+    lat:47.5050,
+    lng:19.0620,
+    direction:"Albertfalva",
+    status:"DELAY"
+  }
+];
+
+// =========================
+// VEHICLE MARKERS
+// =========================
+
+const vehicleMarkers = [];
+
+vehicles.forEach(v=>{
+
+  const marker = L.marker([v.lat,v.lng])
+    .addTo(map)
+    .bindPopup(
+      "🚍 Line " + v.line +
+      "<br>" + v.direction
+    );
+
+  vehicleMarkers.push(marker);
+
+});
+
+// =========================
+// LIVE SIMULATION
+// =========================
+
+setInterval(()=>{
+
+  vehicles.forEach((v,index)=>{
+
+    v.lat += (Math.random()-0.5) * 0.002;
+    v.lng += (Math.random()-0.5) * 0.002;
+
+    vehicleMarkers[index]
+      .setLatLng([v.lat,v.lng]);
+
+  });
+
+  renderVehicles();
+
+},2000);
+
+// =========================
+// RIGHT PANEL RENDER
+// =========================
+
+function renderVehicles(){
+
+  const list =
+    document.getElementById("vehicleList");
+
+  list.innerHTML = "";
+
+  vehicles.forEach(v=>{
+
+    const div = document.createElement("div");
+
+    div.className = "vehicleRow";
+
+    div.innerHTML = `
+      🚍 <b>${v.line}</b><br>
+      ${v.direction}<br>
+      <span class="tag live">${v.status}</span>
+    `;
+
+    list.appendChild(div);
+
+  });
+
+}
+
+renderVehicles();
+
+// =========================
+// LIVE DEPARTURES
+// =========================
+
+const departures = [
+  ["16","Széll Kálmán tér","ON TIME"],
+  ["105","Gyöngyösi utca","+3 MIN"],
+  ["7","Albertfalva","DELAY"],
+  ["4-6","Móricz Zs. körtér","ON TIME"],
+  ["9","Óbuda","ON TIME"]
+];
+
+const tbody =
+  document.getElementById("departuresBody");
+
+departures.forEach(d=>{
+
+  const tr = document.createElement("tr");
+
+  let cls = "ok";
+
+  if(d[2].includes("+")) cls = "delay";
+  if(d[2].includes("DELAY")) cls = "live";
+
+  tr.innerHTML = `
+    <td>${d[0]}</td>
+    <td>${d[1]}</td>
+    <td><span class="tag ${cls}">${d[2]}</span></td>
+  `;
+
+  tbody.appendChild(tr);
+
+});
+
+</script>
+
+</body>
+</html>
