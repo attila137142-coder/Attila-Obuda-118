@@ -1,26 +1,168 @@
-Futár V3 Gtfs Control Room
-· html
 
+</style>
+</head>
+<body>
 
+<header>
+<div>🚇 FUTÁR V3 GTFS CONTROL ROOM</div>
+<div id="clock"></div>
+</header>
+
+<div class="container">
+
+<!-- LEFT PANEL -->
+<div class="panel">
+
+<div class="card">
+<div class="big">LIVE OPS</div>
+<div id="ops">Waiting GTFS...</div>
+</div>
+
+<div class="card">
+<input type="file" id="gtfsFile" />
+<button onclick="loadGTFS()">GTFS IMPORT</button>
+</div>
+
+<div class="card">
+<div class="big">DISPATCH BRAIN</div>
+<div id="brain">Idle</div>
+</div>
+
+</div>
+
+<!-- MAP -->
+<div id="map"></div>
+
+<!-- RIGHT PANEL -->
+<div class="panel">
+
+<div class="card">
+<div class="big">VEHICLES</div>
+<div id="vehicles"></div>
+</div>
+
+<div class="card">
+<div class="big">LINE STATUS</div>
+<div id="lines"></div>
+</div>
+
+</div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
+<script>
+
+setInterval(()=>{
+  document.getElementById("clock").innerText = new Date().toLocaleTimeString();
+},1000);
+
+const map = L.map("map").setView([47.4979,19.0402],12);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+let STATE = {
+  vehicles:[],
+  routes:{},
+  stops:{},
+  lines:{},
+  markers:{},
+  polylines:{},
+};
+
+// ---------- STOP PARSE ----------
+function parseStops(data){
+  let stops={};
+  data.forEach(s=>{
+    if(s.stop_lat){
+      stops[s.stop_id]={
+        id:s.stop_id,
+        name:s.stop_name,
+        lat:+s.stop_lat,
+        lng:+s.stop_lon
+      };
+    }
+  });
+  return stops;
 }
 
+// ---------- ROUTE BUILD ----------
+function buildRoutes(stopTimes,stops){
+  let routes={};
+
+  stopTimes.sort((a,b)=>+a.stop_sequence-+b.stop_sequence);
+
+  stopTimes.forEach(st=>{
+    if(!routes[st.trip_id]) routes[st.trip_id]=[];
+    let s=stops[st.stop_id];
+    if(s) routes[st.trip_id].push(s);
+  });
+
+  return routes;
+}
+
+// ---------- VEHICLES ----------
+function initVehicles(trips){
+  STATE.vehicles = trips.slice(0,12).map((t,i)=>({
+    id:t.trip_id,
+    i:0,
+    p:Math.random(),
+    speed:0.008+Math.random()*0.01,
+    delay:Math.round((Math.random()-0.4)*120),
+    type:["BUS","HÉV","TRAM"][i%3],
+    line:"L"+(i%6)
+  }));
+}
+
+// ---------- MOVE ENGINE ----------
+function move(){
+  STATE.vehicles.forEach(v=>{
+
+    let route = STATE.routes[v.id];
+    if(!route || route.length<2) return;
+
+    let a = route[v.i];
+    let b = route[v.i+1];
+
+    v.p += v.speed;
+
+    if(v.p>=1){
+      v.p=0;
+      v.i=(v.i+1)%(route.length-1);
+    }
+
+    let lat = a.lat + (b.lat-a.lat)*v.p;
+    let lng = a.lng + (b.lng-a.lng)*v.p;
+
+    if(!STATE.markers[v.id]){
+      STATE.markers[v.id]=L.marker([lat,lng]).addTo(map);
+    } else {
+      STATE.markers[v.id].setLatLng([lat,lng]);
+    }
+
+    v.lat=lat;v.lng=lng;
+  });
+}
+
+// ---------- BRAIN ----------
+function brain(){
+  let avg = STATE.vehicles.reduce((a,b)=>a+(b.delay||0),0)/STATE.vehicles.length;
+  return avg>30?"CRITICAL":avg<-15?"EARLY":"NORMAL";
+}
 
 // ---------- RENDER ----------
 function render(){
 
-
   document.getElementById("brain").innerHTML = "STATUS: "+brain();
 
-
   document.getElementById("ops").innerHTML = "VEHICLES: "+STATE.vehicles.length;
-
 
   let vbox="";
   STATE.vehicles.forEach(v=>{
 
-
     let cls = v.delay>30?"bad":v.delay<-15?"warn":"ok";
-
 
     vbox += `
     <div class="row">
@@ -31,49 +173,37 @@ function render(){
     </div>`;
   });
 
-
   document.getElementById("vehicles").innerHTML = vbox;
-
 
   let lbox="";
   Object.keys(STATE.routes).slice(0,5).forEach(k=>{
     lbox += `<div class='small'>${k} → ${STATE.routes[k].length} stops</div>`;
   });
 
-
   document.getElementById("lines").innerHTML = lbox;
 }
-
 
 // ---------- LOAD GTFS ----------
 async function loadGTFS(){
 
-
   const file=document.getElementById("gtfsFile").files[0];
   if(!file) return;
 
-
   const zip=await JSZip.loadAsync(file);
 
-
   const read=async f=>Papa.parse(await zip.file(f).async("string"),{header:true}).data;
-
 
   const stops=await read("stops.txt");
   const trips=await read("trips.txt");
   const stopTimes=await read("stop_times.txt");
 
-
   STATE.stops=parseStops(stops);
   STATE.routes=buildRoutes(stopTimes,STATE.stops);
 
-
   initVehicles(trips);
-
 
   render();
 }
-
 
 // ---------- LOOP ----------
 setInterval(()=>{
@@ -83,9 +213,80 @@ setInterval(()=>{
   }
 },1200);
 
-
 </script>
 
+</body>
+</html>
+<!DOCTYPE html>
+
+// ---------- BRAIN ----------
+function brain(){
+  let avg = STATE.vehicles.reduce((a,b)=>a+(b.delay||0),0)/STATE.vehicles.length;
+  return avg>30?"CRITICAL":avg<-15?"EARLY":"NORMAL";
+}
+
+// ---------- RENDER ----------
+function render(){
+
+  document.getElementById("brain").innerHTML = "STATUS: "+brain();
+
+  document.getElementById("ops").innerHTML = "VEHICLES: "+STATE.vehicles.length;
+
+  let vbox="";
+  STATE.vehicles.forEach(v=>{
+
+    let cls = v.delay>30?"bad":v.delay<-15?"warn":"ok";
+
+    vbox += `
+    <div class="row">
+      <div>${v.line}</div>
+      <div>${v.type}</div>
+      <div class="${cls}">${v.delay}s</div>
+      <div>${v.i}</div>
+    </div>`;
+  });
+
+  document.getElementById("vehicles").innerHTML = vbox;
+
+  let lbox="";
+  Object.keys(STATE.routes).slice(0,5).forEach(k=>{
+    lbox += `<div class='small'>${k} → ${STATE.routes[k].length} stops</div>`;
+  });
+
+  document.getElementById("lines").innerHTML = lbox;
+}
+
+// ---------- LOAD GTFS ----------
+async function loadGTFS(){
+
+  const file=document.getElementById("gtfsFile").files[0];
+  if(!file) return;
+
+  const zip=await JSZip.loadAsync(file);
+
+  const read=async f=>Papa.parse(await zip.file(f).async("string"),{header:true}).data;
+
+  const stops=await read("stops.txt");
+  const trips=await read("trips.txt");
+  const stopTimes=await read("stop_times.txt");
+
+  STATE.stops=parseStops(stops);
+  STATE.routes=buildRoutes(stopTimes,STATE.stops);
+
+  initVehicles(trips);
+
+  render();
+}
+
+// ---------- LOOP ----------
+setInterval(()=>{
+  if(STATE.vehicles.length){
+    move();
+    render();
+  }
+},1200);
+
+</script>
 
 </body>
 </html>
