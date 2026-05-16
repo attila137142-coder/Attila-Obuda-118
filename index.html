@@ -1,224 +1,237 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>FUTÁR V5 REAL GTFS CORE</title>
-  <style>
-    body {
-      margin: 0;
-      font-family: Arial, sans-serif;
-      background: #0b0f14;
-      color: #e6f1ff;
-    }
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FUTÁR V5 FULL GTFS ENGINE</title>
 
-    header {
-      padding: 16px;
-      background: #111826;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      border-bottom: 1px solid #1f2a3a;
-    }
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
-    header h1 {
-      font-size: 18px;
-      margin: 0;
-      color: #6cc0ff;
-    }
+<style>
+body { margin:0; font-family:Arial; background:#0b0f14; color:#e6f1ff; }
+header { padding:12px; background:#111826; display:flex; justify-content:space-between; }
+.container { display:grid; grid-template-columns:340px 1fr; height:calc(100vh - 50px); }
 
-    .container {
-      display: grid;
-      grid-template-columns: 320px 1fr;
-      height: calc(100vh - 60px);
-    }
+.sidebar { padding:10px; background:#0f1622; overflow:auto; border-right:1px solid #1f2a3a; }
+.main { display:flex; flex-direction:column; }
 
-    .sidebar {
-      background: #0f1622;
-      padding: 12px;
-      border-right: 1px solid #1f2a3a;
-      overflow-y: auto;
-    }
+input, button {
+  width:100%; padding:10px; margin:5px 0;
+  border-radius:6px; border:none;
+}
 
-    .main {
-      display: flex;
-      flex-direction: column;
-    }
+button { background:#1f6feb; color:white; cursor:pointer; }
 
-    .panel {
-      padding: 12px;
-      border-bottom: 1px solid #1f2a3a;
-    }
+.board { flex:1; overflow:auto; padding:10px; }
 
-    input {
-      width: 100%;
-      padding: 10px;
-      border: none;
-      border-radius: 6px;
-      background: #1a2433;
-      color: white;
-      margin-bottom: 10px;
-    }
+.row {
+  display:grid;
+  grid-template-columns:60px 1fr 80px 120px 120px;
+  padding:8px;
+  border-bottom:1px solid #1f2a3a;
+  font-size:13px;
+}
 
-    button {
-      width: 100%;
-      padding: 10px;
-      border: none;
-      border-radius: 6px;
-      background: #1f6feb;
-      color: white;
-      cursor: pointer;
-    }
+.small { font-size:11px; opacity:0.6; }
 
-    button:hover {
-      background: #388bfd;
-    }
+#map { height:100%; }
 
-    .board {
-      padding: 12px;
-      overflow-y: auto;
-      flex: 1;
-    }
-
-    .row {
-      display: grid;
-      grid-template-columns: 70px 140px 70px 120px 80px 80px;
-      padding: 10px;
-      border-bottom: 1px solid #1f2a3a;
-      font-size: 13px;
-    }
-
-    .early { color: red; }
-    .late { color: #4aa3ff; }
-    .ok { color: #2ecc71; }
-
-    .small {
-      font-size: 11px;
-      opacity: 0.7;
-    }
-
-    #clock {
-      font-family: monospace;
-    }
-  </style>
+.ok { color:#2ecc71; }
+.early { color:red; }
+.late { color:#4aa3ff; }
+</style>
 </head>
+
 <body>
 
 <header>
-  <h1>🚍 FUTÁR V5 REAL GTFS CORE</h1>
+  <div>🚍 FUTÁR V5 FULL GTFS ENGINE</div>
   <div id="clock"></div>
 </header>
 
 <div class="container">
 
-  <div class="sidebar">
-    <input id="stopInput" placeholder="Megálló (pl. Deák Ferenc tér)" />
-    <button onclick="loadDepartures()">Keresés</button>
+<!-- SIDEBAR -->
+<div class="sidebar">
 
-    <div class="panel small">
-      GTFS DEMO MODE ACTIVE (LOGICAL SIMULATION)
-    </div>
-  </div>
+  <input type="file" id="gtfsFile"/>
+  <button onclick="loadGTFS()">GTFS ZIP BETÖLTÉS</button>
 
-  <div class="main">
-    <div class="panel"><b>Indulási tábla</b></div>
-    <div class="board" id="board"></div>
-  </div>
+  <input id="stopSearch" placeholder="Megálló keresés..." oninput="filterStops()"/>
+
+  <div id="stopList"></div>
 
 </div>
 
+<!-- MAIN -->
+<div class="main">
+  <div id="map"></div>
+  <div class="board" id="board"></div>
+</div>
+
+</div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+
 <script>
 
+// ---------------- MAP ----------------
+const map = L.map("map").setView([47.4979,19.0402], 12);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
+
+// ---------------- DATA ----------------
+let GTFS = {stops:[], trips:[], stopTimes:[]};
+let vehicles = [];
+let markers = {};
+let selectedStop = null;
+
+// ---------------- CLOCK ----------------
+setInterval(()=>{
+  document.getElementById("clock").innerText = new Date().toLocaleTimeString();
+},1000);
+
+// ---------------- DISTANCE ----------------
+function distanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = (lat2-lat1)*Math.PI/180;
+  const dLon = (lon2-lon1)*Math.PI/180;
+
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180) *
+    Math.cos(lat2*Math.PI/180) *
+    Math.sin(dLon/2)**2;
+
+  return R * (2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a)));
+}
+
+// ---------------- GTFS LOAD ----------------
+async function loadGTFS(){
+  const file = document.getElementById("gtfsFile").files[0];
+  if(!file) return alert("Nincs ZIP");
+
+  const zip = await JSZip.loadAsync(file);
+
+  const stopsTxt = await zip.file("stops.txt").async("string");
+  const tripsTxt = await zip.file("trips.txt").async("string");
+  const stopTimesTxt = await zip.file("stop_times.txt").async("string");
+
+  GTFS.stops = Papa.parse(stopsTxt,{header:true}).data;
+  GTFS.trips = Papa.parse(tripsTxt,{header:true}).data;
+  GTFS.stopTimes = Papa.parse(stopTimesTxt,{header:true}).data;
+
+  renderStops();
+  initVehicles();
+}
+
+// ---------------- STOPS ----------------
+function renderStops(){
+  const div = document.getElementById("stopList");
+  div.innerHTML = "";
+
+  GTFS.stops.slice(0,50).forEach(s=>{
+    if(!s.stop_name) return;
+
+    const el = document.createElement("div");
+    el.style.padding="6px";
+    el.style.borderBottom="1px solid #1f2a3a";
+    el.style.cursor="pointer";
+
+    el.innerHTML = `
+      <b>${s.stop_name}</b><br>
+      <span class="small">${s.stop_id} | ${s.stop_lat}, ${s.stop_lon}</span>
+    `;
+
+    el.onclick = ()=>selectStop(s);
+    div.appendChild(el);
+  });
+}
+
+// ---------------- STOP SELECT ----------------
+function selectStop(stop){
+  selectedStop = stop;
+
+  map.setView([stop.stop_lat, stop.stop_lon], 14);
+
+  L.marker([stop.stop_lat, stop.stop_lon]).addTo(map);
+
+  renderBoard();
+}
+
 // ---------------- VEHICLES ----------------
-const vehicles = [
-  { id: "bus_12", plate: "BKK-123", ford: "F12" },
-  { id: "m3_01", plate: "MTR-301", ford: "M3-01" },
-  { id: "hev_5", plate: "HEV-005", ford: "H5-7" }
-];
-
-function randomVehicle() {
-  return vehicles[Math.floor(Math.random() * vehicles.length)];
+function initVehicles(){
+  vehicles = GTFS.trips.slice(0,10).map((t,i)=>({
+    id: t.trip_id,
+    lat: 47.49 + Math.random()*0.1,
+    lng: 19.04 + Math.random()*0.1,
+    speed: 20 + Math.random()*40
+  }));
 }
 
-// ---------------- GTFS SIM ----------------
-function generateDepartures() {
-  const routes = ["M1", "M2", "M3", "4-6", "7", "9", "H5"];
-  const list = [];
+// ---------------- LIVE UPDATE ----------------
+setInterval(()=>{
 
-  for (let i = 0; i < 25; i++) {
-    const v = randomVehicle();
-    const route = routes[Math.floor(Math.random() * routes.length)];
+  vehicles.forEach(v=>{
+    v.lat += (Math.random()-0.5)*0.002;
+    v.lng += (Math.random()-0.5)*0.002;
 
-    const now = new Date();
-    const sec = now.getSeconds();
-    const min = (now.getMinutes() + i) % 60;
+    if(!markers[v.id]){
+      markers[v.id] = L.marker([v.lat,v.lng]).addTo(map);
+    } else {
+      markers[v.id].setLatLng([v.lat,v.lng]);
+    }
+  });
 
-    const delaySec = Math.floor(Math.random() * 120 - 40);
+  renderBoard();
 
-    list.push({
-      route,
-      vehicle: v.plate,
-      internal: v.id,
-      ford: v.ford,
-      time: `${String(now.getHours()).padStart(2,"0")}:${String(min).padStart(2,"0")}:${String(sec).padStart(2,"0")}`,
-      delaySec
-    });
-  }
+},2000);
 
-  return list;
+// ---------------- ETA ----------------
+function ETA(stop, vehicle){
+  const d = distanceMeters(stop.stop_lat, stop.stop_lon, vehicle.lat, vehicle.lng);
+  return {
+    meters: Math.round(d),
+    sec: Math.round(d / 8) // ~30 km/h
+  };
 }
 
-let data = [];
+// ---------------- BOARD ----------------
+function renderBoard(){
+  if(!selectedStop) return;
 
-function formatDelay(sec) {
-  const abs = Math.abs(sec);
-  const m = Math.floor(abs / 60);
-  const s = abs % 60;
-  return `${m}p ${s}mp`;
-}
-
-function renderBoard(list) {
   const board = document.getElementById("board");
   board.innerHTML = "";
 
-  list.slice(0, 15).forEach(d => {
+  vehicles.forEach(v=>{
+
+    const eta = ETA(selectedStop, v);
 
     let cls = "ok";
-    if (d.delaySec < 0) cls = "early";
-    else if (d.delaySec > 60) cls = "late";
+    if(eta.sec < 60) cls="early";
+    if(eta.sec > 300) cls="late";
 
     board.innerHTML += `
       <div class="row">
-        <div><b>${d.route}</b></div>
-        <div>${d.vehicle}<br><span class='small'>${d.internal}</span></div>
-        <div>${d.ford}</div>
-        <div>${d.time}</div>
-        <div class="${cls}">${formatDelay(d.delaySec)}</div>
-        <div class="${cls}">${d.delaySec} mp</div>
+        <div>${v.id}</div>
+        <div>LIVE VEHICLE</div>
+        <div>${Math.round(v.speed)} km/h</div>
+        <div class="${cls}">${eta.meters} m</div>
+        <div class="${cls}">${eta.sec} mp</div>
       </div>
     `;
   });
 }
 
-function loadDepartures() {
-  data = generateDepartures();
-  renderBoard(data);
-}
+// ---------------- SEARCH ----------------
+function filterStops(){
+  const q = document.getElementById("stopSearch").value.toLowerCase();
 
-// CLOCK
-function updateClock() {
-  const now = new Date();
-  document.getElementById("clock").innerText = now.toLocaleTimeString();
+  document.querySelectorAll("#stopList div").forEach(el=>{
+    el.style.display = el.innerText.toLowerCase().includes(q) ? "block":"none";
+  });
 }
-setInterval(updateClock, 1000);
-updateClock();
-
-setInterval(() => {
-  if (data.length) {
-    data = generateDepartures();
-    renderBoard(data);
-  }
-}, 7000);
 
 </script>
 
