@@ -1,67 +1,44 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<title>FUTÁR V5 VISUAL MATCH REBUILD</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FUTÁR V5 GTFS PRO SIM CORE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body{margin:0;font-family:Arial;background:#0b0f14;color:#e6f1ff;}
-header{padding:10px;background:#111826;display:flex;justify-content:space-between;}
+header{display:flex;justify-content:space-between;align-items:center;padding:10px;background:#111826;}
 .container{display:grid;grid-template-columns:360px 1fr;height:calc(100vh - 50px);}
 .sidebar{padding:10px;background:#0f1622;overflow:auto;}
 #map{height:60%;}
-.board{height:40%;overflow:auto;padding:10px;}
-
-input,button{width:100%;padding:10px;margin:5px 0;}
-button{background:#1f6feb;color:white;border:none;cursor:pointer;}
-
-.row{
-display:grid;
-grid-template-columns:100px 80px 80px 120px;
-padding:6px;
-border-bottom:1px solid #222;
-font-size:12px;
-}
-
-.ok{color:#2ecc71;}
-.warn{color:#ffcc00;}
-.bad{color:#ff4d4d;}
-
-.label{
-background:#1f6feb;
-color:white;
-padding:2px 6px;
-border-radius:4px;
-font-size:11px;
-}
+.board{height:40%;overflow:auto;padding:10px;border-top:1px solid #1f2a3a;}
+button,input{width:100%;padding:10px;margin:5px 0;}
+button{background:#1f6feb;color:white;border:none;}
+.row{display:grid;grid-template-columns:120px 1fr 80px 80px 100px;padding:6px;border-bottom:1px solid #1f2a3a;font-size:12px;}
+.ok{color:#2ecc71}.warn{color:#ffcc00}.bad{color:#ff4d4d}
+.small{opacity:0.7;font-size:11px;}
 </style>
 </head>
-
 <body>
 
 <header>
-<div>🚇 FUTÁR V5 VISUAL MATCH REBUILD</div>
+<div>🚇 FUTÁR V5 GTFS PRO SIM CORE</div>
 <div id="clock"></div>
 </header>
 
 <div class="container">
 
 <div class="sidebar">
-
-<input type="file" id="gtfsFile">
+<input type="file" id="gtfsFile" />
 <button onclick="loadGTFS()">GTFS LOAD</button>
-
 <div id="ops"></div>
-
 </div>
 
 <div>
-
 <div id="map"></div>
 <div class="board" id="board"></div>
-
 </div>
 
 </div>
@@ -71,124 +48,36 @@ font-size:11px;
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 <script>
+setInterval(()=>document.getElementById('clock').innerText=new Date().toLocaleTimeString(),1000);
 
-setInterval(()=>document.getElementById("clock").innerText=new Date().toLocaleTimeString(),1000);
+const map=L.map('map').setView([47.4979,19.0402],12);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
-const map=L.map("map").setView([47.4979,19.0402],12);
-L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png").addTo(map);
-
+let STATE={vehicles:[],routes:{},stops:{}};
 let markers={};
-let STATE={vehicles:[]};
+let polylines={};
 
-// ---------------- VEHICLE ENRICH ----------------
-function enrich(v,i){
-
-const types=["BUS","HÉV","TRAM"];
-const type=types[i%3];
-
-const delay=Math.round((Math.random()-0.4)*120);
-
-return{
-...v,
-type,
-fleet:"FLEET-"+(1000+i),
-delay
-};
+function parseStops(data){
+  let stops={};
+  data.forEach(s=>{
+    if(s.stop_lat){
+      stops[s.stop_id]={
+        id:s.stop_id,
+        name:s.stop_name,
+        lat:parseFloat(s.stop_lat),
+        lng:parseFloat(s.stop_lon)
+      };
+    }
+  });
+  return stops;
 }
 
-// ---------------- COLOR ----------------
-function col(d){
-if(d>30)return"bad";
-if(d<-15)return"warn";
-return"ok";
-}
+function buildRoutes(stopTimes,stops){
+  let routes={};
+  stopTimes.sort((a,b)=>+a.stop_sequence-+b.stop_sequence);
+  stopTimes.forEach(st=>{
+    if(!routes[st.trip_id]) routes[st.trip_id]=[];
+    const s=stops[st.stop_id];
+    if(s) routes[st.trip_id].push(s);
+  });
 
-// ---------------- LOAD ----------------
-async function loadGTFS(){
-
-const f=document.getElementById("gtfsFile").files[0];
-if(!f)return;
-
-const zip=await JSZip.loadAsync(f);
-const read=async x=>Papa.parse(await zip.file(x).async("string"),{header:true}).data;
-
-const trips=await read("trips.txt");
-
-STATE.vehicles=trips.slice(0,12).map(t=>({
-id:t.trip_id,
-lat:47.5+Math.random()*0.1,
-lng:19+Math.random()*0.1
-}));
-
-render();
-}
-
-// ---------------- MOVE ----------------
-function move(){
-
-STATE.vehicles.forEach(v=>{
-
-v.lat+=(Math.random()-0.5)*0.002;
-v.lng+=(Math.random()-0.5)*0.002;
-
-const ev=enrich(v,STATE.vehicles.indexOf(v));
-
-const html=`
-<div class="label">
-${ev.fleet} | ${ev.type}<br>
-${ev.delay>0?"+":""}${ev.delay}s
-</div>`;
-
-// marker
-if(!markers[v.id]){
-markers[v.id]=L.marker([v.lat,v.lng]).addTo(map)
-.bindPopup(html);
-}else{
-markers[v.id].setLatLng([v.lat,v.lng]).setPopupContent(html);
-}
-
-v.ev=ev;
-
-});
-
-}
-
-// ---------------- RENDER ----------------
-function render(){
-
-document.getElementById("ops").innerHTML=
-"<h3>OPS PANEL</h3>VEHICLES: "+STATE.vehicles.length;
-
-let b=document.getElementById("board");
-b.innerHTML="";
-
-STATE.vehicles.forEach(v=>{
-
-const ev=enrich(v,STATE.vehicles.indexOf(v));
-const c=col(ev.delay);
-
-b.innerHTML+=`
-<div class="row">
-<div>${ev.fleet}</div>
-<div>${ev.type}</div>
-<div class="${c}">
-${ev.delay>0?"+":""}${ev.delay}s
-</div>
-<div>LIVE</div>
-</div>`;
-});
-
-}
-
-// ---------------- LOOP ----------------
-setInterval(()=>{
-if(STATE.vehicles.length){
-move();
-render();
-}
-},1200);
-
-</script>
-
-</body>
-</html>
