@@ -1,30 +1,228 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>FUTÁR V3 GTFS LIVE CONTROL</title>
+
+<style>
+body {
+  margin: 0;
+  font-family: Arial;
+  background: #070b12;
+  color: white;
+}
+
+.header {
+  padding: 14px;
+  background: #0f172a;
+  font-weight: bold;
+  font-size: 18px;
+}
+
+.container {
+  display: flex;
+  height: calc(100vh - 52px);
+}
+
+.left {
+  width: 40%;
+  background: #0b1220;
+  border-right: 1px solid #1f2a3a;
+  display: flex;
+  flex-direction: column;
+}
+
+.search {
+  padding: 10px;
+  border-bottom: 1px solid #1f2a3a;
+}
+
+input {
+  width: 100%;
+  padding: 10px;
+  border-radius: 8px;
+  border: none;
+  font-size: 15px;
+  box-sizing: border-box;
+  margin-bottom: 8px;
+}
+
+button {
+  width: 100%;
+  padding: 10px;
+  border: none;
+  border-radius: 8px;
+  background: #1f2937;
+  color: white;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+.list {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 70px 1fr 90px 70px;
+  padding: 10px;
+  border-bottom: 1px solid #162235;
+  align-items: center;
+  font-size: 13px;
+}
+
+.line {
+  background: #1f2937;
+  padding: 5px;
+  text-align: center;
+  border-radius: 6px;
+  font-weight: bold;
+}
+
+.green { color: #22c55e; }
+.yellow { color: #facc15; }
+.red { color: #ef4444; }
+
+.right {
+  flex: 1;
+  background: #05080f;
+}
+</style>
+</head>
+
+<body>
+
+<div class="header" id="header">
+🚍 FUTÁR V3 – GTFS STOP LIVE CONTROL
+</div>
+
+<div class="container">
+
+  <!-- LEFT -->
+  <div class="left">
+
+    <div class="search">
+      <input id="searchBox" placeholder="Írd be: Nád utca / Batthyány tér / BKK_002..." />
+      <button onclick="handleSearch()">🔎 KERESÉS + LIVE INDÍTÁS</button>
+    </div>
+
+    <div class="list" id="list"></div>
+
+  </div>
+
+  <!-- RIGHT -->
+  <div class="right"></div>
+
+</div>
+
 <script>
 
-/* 📦 GTFS STOP DATABASE (mini Budapest slice) */
+# 📦 GTFS STOP DATABASE (BUDAPEST MINI CORE)
 const GTFS_STOPS = [
-  {id:"BKK_001", name:"Nád utca", lat:47.4979, lon:19.0632},
-  {id:"BKK_002", name:"Batthyány tér", lat:47.5067, lon:19.0399},
-  {id:"BKK_003", name:"Árpád híd", lat:47.5375, lon:19.0550},
-  {id:"BKK_004", name:"Bécsi út / Vörösvári út", lat:47.5412, lon:19.0281},
-  {id:"BKK_005", name:"Kálvin tér", lat:47.4891, lon:19.0614},
-  {id:"BKK_006", name:"Deák Ferenc tér", lat:47.4973, lon:19.0540},
-  {id:"BKK_007", name:"Blaha Lujza tér", lat:47.4970, lon:19.0706}
+  {id:"BKK_001", name:"Nád utca", routes:["134","5","7E"]},
+  {id:"BKK_002", name:"Batthyány tér", routes:["H5","19","41"]},
+  {id:"BKK_003", name:"Árpád híd", routes:["1","1M","134"]},
+  {id:"BKK_004", name:"Bécsi út / Vörösvári út", routes:["17","19"]},
+  {id:"BKK_005", name:"Kálvin tér", routes:["M3","47","49"]},
+  {id:"BKK_006", name:"Deák Ferenc tér", routes:["M1","M2","M3"]},
+  {id:"BKK_007", name:"Blaha Lujza tér", routes:["4","6","7E"]}
 ];
 
-/* 🔎 GTFS SEARCH ENGINE */
-function searchGTFSStops(query) {
+let currentStop = null;
+let liveInterval = null;
 
+/* 🔎 GTFS SEARCH */
+function searchStops(query) {
   const q = query.toLowerCase();
 
   return GTFS_STOPS.filter(s =>
     s.name.toLowerCase().includes(q) ||
-    s.id.toLowerCase().includes(q)
+    s.id.toLowerCase().includes(q) ||
+    s.routes.some(r => r.toLowerCase().includes(q))
   );
 }
 
-/* 🚏 SELECT STOP */
-function getStopById(id) {
-  return GTFS_STOPS.find(s => s.id === id);
+/* 🔎 HANDLE SEARCH */
+function handleSearch() {
+  const value = document.getElementById("searchBox").value.trim();
+  if (!value) return;
+
+  const results = searchStops(value);
+
+  if (results.length === 0) {
+    document.getElementById("header").innerText =
+      "❌ Nincs találat: " + value;
+    document.getElementById("list").innerHTML = "";
+    return;
+  }
+
+  selectStop(results[0]);
 }
 
+/* 🚏 SELECT STOP */
+function selectStop(stop) {
+
+  currentStop = stop;
+
+  document.getElementById("header").innerText =
+    "🚏 " + stop.name + " LIVE (GTFS)";
+
+  loadLive(stop);
+
+  if (liveInterval) clearInterval(liveInterval);
+  liveInterval = setInterval(() => loadLive(stop), 5000);
+}
+
+/* 📡 LIVE GENERATOR (GTFS-READY MOCK) */
+function loadLive(stop) {
+
+  const data = stop.routes.map(r => ({
+    route: r,
+    headsign: stop.name + " irány",
+    delay: Math.floor(Math.random() * 6) - 1,
+    eta: Math.floor(Math.random() * 10) + 1
+  }));
+
+  render(data);
+}
+
+/* 📊 RENDER */
+function render(data) {
+
+  const list = document.getElementById("list");
+  list.innerHTML = "";
+
+  data.slice(0, 15).forEach(d => {
+
+    const status =
+      d.delay > 2 ? "red" :
+      d.delay > 0 ? "yellow" : "green";
+
+    const row = document.createElement("div");
+    row.className = "row";
+
+    row.innerHTML = `
+      <div class="line">${d.route}</div>
+      <div>${d.headsign}</div>
+      <div class="${status}">
+        ${d.delay > 0 ? "+" + d.delay + " min" : "on time"}
+      </div>
+      <div>${d.eta} min</div>
+    `;
+
+    list.appendChild(row);
+  });
+}
+
+/* ⌨️ ENTER SUPPORT */
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") {
+    handleSearch();
+  }
+});
+
 </script>
+
+</body>
+</html>
