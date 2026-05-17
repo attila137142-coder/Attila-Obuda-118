@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5 DISPATCH CORE</title>
+<title>FUTÁR V5 LIVE DISPATCH</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -52,13 +52,14 @@ button{
  padding:4px 8px;
  border-radius:6px;
  font-size:12px;
+ background:#38bdf8;
+ color:black;
 }
 
-.bkk{background:#38bdf8;color:black;}
-.volan{background:#f59e0b;color:black;}
-.mav{background:#a78bfa;color:black;}
-.tour{background:#22c55e;color:black;}
-.hev{background:#60a5fa;color:black;}
+.vehicle{
+ font-weight:bold;
+ color:#22c55e;
+}
 </style>
 </head>
 
@@ -68,10 +69,10 @@ button{
 
 <div class="container">
 
-<h2>🚍 FUTÁR V5 DISPATCH CORE</h2>
+<h2>🚍 FUTÁR V5 LIVE DISPATCH</h2>
 
-<input id="input" placeholder="Stop ID (BKK / VOLÁN / MÁV / ERDŐ)">
-<button onclick="run()">DISPATCH</button>
+<input id="input" placeholder="keresés (BKK / VOLÁN / MÁV / stop)">
+<button onclick="run()">LIVE INDÍTÁS</button>
 
 <div id="out"></div>
 
@@ -90,7 +91,7 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
 
 let marker;
 
-// ---------------- USER ----------------
+// ---------------- USER GPS ----------------
 let userLat=47.4979;
 let userLon=19.0402;
 
@@ -99,52 +100,22 @@ navigator.geolocation?.getCurrentPosition(p=>{
  userLon=p.coords.longitude;
 });
 
-// ---------------- RAW DATA ----------------
-const RAW=[
- {name:"Nád utca", gtfs:"BKK-F00457", lat:47.594072, lon:19.048469},
- {name:"Flórián tér", gtfs:"BKK-F00611", lat:47.542896, lon:19.042252},
- {name:"Batthyány tér", gtfs:"BKK-F00057", lat:47.506002, lon:19.039456},
+// ---------------- STOP DATA ----------------
+const STOPS=[
+ {name:"Nád utca", type:"BKK", lat:47.594072, lon:19.048469},
+ {name:"Flórián tér", type:"BKK", lat:47.542896, lon:19.042252},
+ {name:"Batthyány tér", type:"BKK", lat:47.506002, lon:19.039456},
 
- {name:"Szentendre, autóbusz-állomás", gtfs:"VOLÁN-778806-99", lat:47.660403, lon:19.075408},
- {name:"Vác, autóbusz-állomás", gtfs:"VOLÁN-779365_99", lat:47.781930, lon:19.129643},
+ {name:"Szentendre", type:"VOLÁN", lat:47.660403, lon:19.075408},
+ {name:"Vác", type:"VOLÁN", lat:47.781930, lon:19.129643},
 
- {name:"Szob", mav_id:"005546862", lat:47.821319, lon:18.862602},
+ {name:"Szob", type:"MÁV", lat:47.821319, lon:18.862602},
 
- {name:"Dobogókő", gtfs:"VOLÁN-778561", lat:47.719118, lon:18.897577},
-
- {name:"Magas Tax", gtfs:"ERDŐ-001", lat:47.92842, lon:18.92997}
+ {name:"Dobogókő", type:"TOUR", lat:47.719118, lon:18.897577}
 ];
 
-// ---------------- NORMALIZER ----------------
-function normalize(list){
-
- return list.map(s=>{
-
-  let id=s.gtfs||s.mav_id||"UNKNOWN";
-
-  let type="UNKNOWN";
-
-  if(id.includes("BKK")) type="BKK";
-  else if(id.includes("VOLÁN")||id.includes("VOLAN")) type="VOLÁN";
-  else if(id.includes("mav")||id==="005546862") type="MÁV";
-  else if(id.includes("ERDŐ")) type="TOUR";
-  else if(id.includes("HÉV")||id.includes("HEV")) type="HEV";
-
-  return {
-   id,
-   name:s.name,
-   type,
-   lat:Number(s.lat),
-   lon:Number(s.lon)
-  };
-
- }).filter(s=>!isNaN(s.lat)&&!isNaN(s.lon));
-
-}
-
-// ---------------- DISTANCE ----------------
+// ---------------- DIST ----------------
 function dist(a,b,c,d){
-
  const R=6371;
  const dLat=(c-a)*Math.PI/180;
  const dLon=(d-b)*Math.PI/180;
@@ -158,18 +129,38 @@ function dist(a,b,c,d){
  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
+// ---------------- VEHICLE SIMULATION ----------------
+function simulateVehicles(){
+
+ return STOPS.map((s,i)=>{
+
+  let offset = (Date.now()/10000 + i*10) % 1;
+
+  return {
+   name:s.name,
+   type:s.type,
+   lat:s.lat + offset*0.01,
+   lon:s.lon + offset*0.01,
+   speed:30 + Math.random()*40
+  };
+
+ });
+
+}
+
 // ---------------- MATRIX ----------------
-function matrix(stops){
+function matrix(data){
 
- return stops.map(s=>{
+ return data.map(v=>{
 
-  let d=dist(userLat,userLon,s.lat,s.lon).toFixed(2);
+  let d=dist(userLat,userLon,v.lat,v.lon).toFixed(2);
 
   return `
   <div class="row">
-  🚍 ${s.name}
-  | ${s.type}
+  🚍 <span class="vehicle">${v.type}</span>
+  | ${v.name}
   | ${d} km
+  | ${v.speed.toFixed(0)} km/h
   </div>
   `;
 
@@ -177,22 +168,21 @@ function matrix(stops){
 
 }
 
-// ---------------- DISPATCH ----------------
+// ---------------- MAIN ----------------
 function run(){
-
- const stops=normalize(RAW);
 
  let input=document.getElementById("input").value.toUpperCase();
 
- let filtered=stops.filter(s=>
-  s.id.toUpperCase().includes(input) ||
-  s.name.toUpperCase().includes(input) ||
-  s.type.toUpperCase().includes(input)
- );
+ let vehicles=simulateVehicles();
 
- if(filtered.length===0) filtered=stops;
+ if(input){
+  vehicles=vehicles.filter(v=>
+   v.name.toUpperCase().includes(input) ||
+   v.type.toUpperCase().includes(input)
+  );
+ }
 
- let center=filtered[0];
+ let center=vehicles[0];
 
  if(marker) map.removeLayer(marker);
 
@@ -206,26 +196,29 @@ function run(){
  let html=`
 
  <div class="card">
- <h3>🧠 DISPATCH MATRIX</h3>
- ${matrix(filtered)}
+ <h3>🚍 LIVE MATRIX</h3>
+ ${matrix(vehicles)}
  </div>
 
  <div class="card">
  📍 CENTER: ${center.name}<br>
  TYPE: ${center.type}<br>
- LAT: ${center.lat.toFixed(6)}<br>
- LON: ${center.lon.toFixed(6)}
+ SPEED MODE: LIVE SIMULATION
  </div>
 
  <div class="card">
- 🚍 ENGINE: DISPATCH CORE V5 ACTIVE<br>
- 🧠 MODE: NORMALIZED GTFS + SMART RADAR READY
+ 🧠 ENGINE STATUS:<br>
+ LIVE DISPATCH V5 ACTIVE<br>
+ SMART RADAR + MOVING VEHICLES
  </div>
 
  `;
 
  document.getElementById("out").innerHTML=html;
 }
+
+// auto refresh
+setInterval(()=>run(),5000);
 
 </script>
 
