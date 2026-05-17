@@ -2,266 +2,271 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila NAVI PRO+++</title>
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ROXY V4 FULL</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body { margin:0; background:#111; color:#fff; font-family:Arial; }
-#map { height: 40vh; }
-#chart { height:120px; background:#000; }
-.panel { padding:8px; }
-button { margin:3px; padding:8px; border-radius:6px; border:0; font-weight:bold; }
-.box { background:#1e1e1e; padding:8px; border-radius:8px; font-size:12px; }
-#segments { max-height:120px; overflow:auto; font-size:11px; }
-#searchResults { max-height:120px; overflow:auto; font-size:12px; }
-input { width:95%; padding:6px; border-radius:6px; border:0; margin-bottom:5px; }
-.result { padding:5px; border-bottom:1px solid #333; cursor:pointer; }
+body{margin:0;font-family:Arial}
+#map{height:100vh}
+
+#panel{
+ position:absolute;
+ top:10px;
+ left:10px;
+ z-index:9999;
+ background:#000c;
+ color:#0f0;
+ padding:10px;
+ width:340px;
+ border:1px solid #0f0;
+ max-height:90vh;
+ overflow:auto;
+}
+
+.stop{
+ cursor:pointer;
+ padding:4px;
+ margin-bottom:5px;
+ border-bottom:1px solid #0f0;
+}
+.stop:hover{
+ background:#0f0;
+ color:#000;
+}
+.small{opacity:0.8;font-size:12px}
 </style>
 </head>
 
 <body>
 
-<div class="panel">
-
-<input id="searchInput" placeholder="Keresés: utca, házszám, erdő..." />
-<button onclick="searchPlace()">🔎 Keresés</button>
-
-<br>
-
-<button onclick="toggleElevation()">⛰️ Magasság</button>
-<button onclick="resetTrack()">🔄 Reset</button>
-<button onclick="searchPOI()">📍 Közeli helyek</button><br>
-
-<button onclick="setLayer('street')">UTCAI</button>
-<button onclick="setLayer('topo')">TOPO</button>
-<button onclick="toggleRail()">VASÚTI</button>
-<button onclick="toggleHike()">TURISTA</button>
-
-<div id="info" class="box">Indítás...</div>
-<div id="searchResults" class="box"></div>
-
+<div id="panel">
+<h3>🚆 ROXY V4</h3>
+<div id="info">📍 Helyzet betöltése...</div>
 </div>
 
 <div id="map"></div>
-<canvas id="chart"></canvas>
-<div id="segments" class="box"></div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-// ---------- MAP
-let map = L.map('map').setView([47.49,19.04],13);
+// ================= MAP =================
+let map = L.map('map').setView([47.4979,19.0402],13);
 
-let baseLayers = {
-  street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'),
-  topo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png')
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let stopLayer = L.layerGroup().addTo(map);
+
+// ================= USER GPS =================
+let userLat=null,userLon=null;
+let userAddress="📍 ismeretlen hely";
+
+function formatDistance(m){
+ if(m<1000) return `${m} m`;
+ return `${(m/1000).toFixed(2)} km`;
+}
+
+// ================= DIST =================
+function getDistance(lat1,lon1,lat2,lon2){
+ let R=6371000;
+ let dLat=(lat2-lat1)*Math.PI/180;
+ let dLon=(lon2-lon1)*Math.PI/180;
+
+ let a=Math.sin(dLat/2)**2+
+  Math.cos(lat1*Math.PI/180)*
+  Math.cos(lat2*Math.PI/180)*
+  Math.sin(dLon/2)**2;
+
+ let c=2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+ return Math.round(R*c);
+}
+
+// ================= ADDRESS =================
+async function getAddress(lat,lon){
+ try{
+  let res=await fetch(
+   `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
+  );
+  let d=await res.json();
+  let a=d.address;
+
+  return `${a.city || a.town || a.village || ""} 
+  ${a.road || ""} 
+  ${a.house_number || ""}`;
+ }catch(e){
+  return "nincs adat";
+ }
+}
+
+// ================= USER LOCATION =================
+navigator.geolocation.getCurrentPosition(async pos=>{
+ userLat=pos.coords.latitude;
+ userLon=pos.coords.longitude;
+
+ userAddress = await getAddress(userLat,userLon);
+
+ document.getElementById("info").innerHTML=`
+ <b>📍 Saját helyzeted</b><br>
+ ${userAddress}<br><br>
+ Térképre kattints 🚏
+ `;
+});
+
+// ================= OVERPASS =================
+async function fetchOverpass(query){
+ let urls=[
+  "https://overpass-api.de/api/interpreter",
+  "https://lz4.overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter"
+ ];
+
+ for(let url of urls){
+  try{
+   let res=await fetch(url,{method:"POST",body:query});
+   if(res.ok) return await res.json();
+  }catch(e){}
+ }
+ throw "no server";
+}
+
+// ================= GTFS =================
+let GTFS={stopTimes:[]};
+
+async function loadGTFS(){
+ try{
+  let res=await fetch("stop_times.txt");
+  let text=await res.text();
+  let lines=text.split("\n");
+
+  for(let i=1;i<lines.length;i++){
+   let c=lines[i].split(",");
+
+   GTFS.stopTimes.push({
+    trip_id:c[0],
+    arr:c[1],
+    dep:c[2],
+    stop_id:c[3]
+   });
+  }
+
+ }catch(e){
+  console.log("GTFS hiba");
+ }
+}
+
+// ================= NEXT DEPARTURES =================
+function getNextDepartures(stopId){
+ let now=new Date();
+ let current=
+  now.getHours().toString().padStart(2,'0')+":"+
+  now.getMinutes().toString().padStart(2,'0');
+
+ let res=[];
+
+ GTFS.stopTimes.forEach(s=>{
+  if(s.stop_id===stopId && s.dep>=current){
+   res.push(s.dep);
+  }
+ });
+
+ return res.sort().slice(0,10);
+}
+
+// ================= MAP CLICK =================
+map.on("click",async e=>{
+
+ let lat=e.latlng.lat;
+ let lon=e.latlng.lng;
+
+ document.getElementById("info").innerHTML="🔍 keresés...";
+
+ let query=`
+ [out:json];
+ (
+  node(around:600,${lat},${lon})["highway"="bus_stop"];
+  node(around:600,${lat},${lon})["public_transport"="platform"];
+  node(around:600,${lat},${lon})["railway"="tram_stop"];
+  node(around:600,${lat},${lon})["railway"="station"];
+ );
+ out;
+ `;
+
+ try{
+
+  let data=await fetchOverpass(query);
+
+  stopLayer.clearLayers();
+
+  let used={};
+  let html="<b>🚏 Közeli megállók:</b><br><br>";
+
+  data.elements.forEach(s=>{
+
+   let name=s.tags?.name;
+   if(!name) return;
+   if(used[name]) return;
+   used[name]=true;
+
+   let dist=userLat
+    ? getDistance(userLat,userLon,s.lat,s.lon)
+    : null;
+
+   L.circleMarker([s.lat,s.lon],{
+    radius:8,color:"yellow",fillColor:"yellow",fillOpacity:1
+   }).addTo(stopLayer);
+
+   html+=`
+   <div class="stop"
+   onclick="selectStop('${name}',${s.lat},${s.lon},'${s.id}')">
+
+   🚏 ${name}<br>
+   <span class="small">
+   📏 ${dist ? formatDistance(dist) : "?"}
+   </span><br>
+   🆔 ${s.id}
+
+   </div>`;
+  });
+
+  document.getElementById("info").innerHTML=html;
+
+ }catch(e){
+  document.getElementById("info").innerHTML="⚠️ hálózati hiba";
+ }
+
+});
+
+// ================= SELECT STOP =================
+async function selectStop(name,lat,lon,id){
+
+ map.setView([lat,lon],16);
+
+ let addr=await getAddress(lat,lon);
+ let times=getNextDepartures(id);
+
+ let html=`<b>🚏 ${name}</b><br><br>`;
+ html+=`📍 ${addr}<br><br>`;
+ html+=`🆔 ${id}<br><br>`;
+
+ html+="<b>🕒 Indulások:</b><br>";
+
+ if(times.length===0){
+  html+="❌ nincs adat";
+ }else{
+  times.forEach(t=>html+="🕒 "+t+"<br>");
+ }
+
+ document.getElementById("info").innerHTML=html;
+}
+
+// ================= INIT =================
+window.onload=()=>{
+ loadGTFS();
 };
 
-let railLayer = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.8});
-let hikeLayer = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',{opacity:0.9});
-
-let currentBase = baseLayers.street;
-currentBase.addTo(map);
-
-function setLayer(type){
-  map.removeLayer(currentBase);
-  currentBase = baseLayers[type];
-  map.addLayer(currentBase);
-}
-
-function toggleRail(){
-  map.hasLayer(railLayer) ? map.removeLayer(railLayer) : map.addLayer(railLayer);
-}
-
-function toggleHike(){
-  map.hasLayer(hikeLayer) ? map.removeLayer(hikeLayer) : map.addLayer(hikeLayer);
-}
-
-// ---------- DATA
-let track=[], marker, polyline, poiLayer;
-let totalDist=0, totalUp=0;
-let lastTime=null, speedKmh=0, speedMs=0;
-let ctx=document.getElementById("chart").getContext("2d");
-
-// ---------- DIST
-function dist(a,b,c,d){
-  let R=6371e3;
-  let φ1=a*Math.PI/180, φ2=c*Math.PI/180;
-  let Δφ=(c-a)*Math.PI/180;
-  let Δλ=(d-b)*Math.PI/180;
-  let x=Math.sin(Δφ/2)**2+
-    Math.cos(φ1)*Math.cos(φ2)*Math.sin(Δλ/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
-}
-
-// ---------- UPDATE
-function updatePosition(lat,lng,ele,acc){
-
-  let now=Date.now();
-
-  if(track.length){
-    let last=track[track.length-1];
-    let d=dist(last.lat,last.lng,lat,lng);
-    if(d<2) return;
-
-    if(lastTime){
-      let dt=(now-lastTime)/1000;
-      if(dt>0.5){
-        speedMs=d/dt;
-        speedKmh = speedKmh*0.7 + (speedMs*3.6)*0.3;
-      }
-    }
-
-    totalDist+=d;
-
-    let diff=ele-(last.ele||0);
-    if(diff>0) totalUp+=diff;
-  }
-
-  lastTime=now;
-  track.push({lat,lng,ele});
-
-  if(!marker){
-    marker=L.marker([lat,lng]).addTo(map);
-    map.setView([lat,lng],15);
-  }else{
-    marker.setLatLng([lat,lng]);
-    map.panTo([lat,lng]);
-  }
-
-  let latlngs=track.map(p=>[p.lat,p.lng]);
-  if(polyline) polyline.setLatLngs(latlngs);
-  else polyline=L.polyline(latlngs,{color:'red'}).addTo(map);
-
-  renderUI(lat,lng,ele,acc);
-  drawChart();
-  drawSegments();
-}
-
-// ---------- SEGMENTS
-function drawSegments(){
-  let html="";
-  for(let i=1;i<track.length;i++){
-    let a=track[i-1], b=track[i];
-    let d=dist(a.lat,a.lng,b.lat,b.lng);
-    let slope=((b.ele-a.ele)/d)*100;
-    html+=`${i}. szakasz: ${Math.round(d)} m | ${slope.toFixed(1)}%<br>`;
-  }
-  document.getElementById("segments").innerHTML=html;
-}
-
-// ---------- CHART
-function drawChart(){
-  ctx.clearRect(0,0,800,120);
-  if(track.length<2) return;
-
-  let max=Math.max(...track.map(p=>p.ele));
-  let min=Math.min(...track.map(p=>p.ele));
-
-  ctx.beginPath();
-  track.forEach((p,i)=>{
-    let x=i*(800/track.length);
-    let y=120-((p.ele-min)/(max-min+1))*120;
-    i===0?ctx.moveTo(x,y):ctx.lineTo(x,y);
-  });
-  ctx.strokeStyle="lime";
-  ctx.stroke();
-}
-
-// ---------- UI
-function renderUI(lat,lng,ele,acc){
-  document.getElementById("info").innerHTML=`
-  📍 ${lat.toFixed(5)}, ${lng.toFixed(5)}<br>
-  📏 ${Math.round(acc)} m<br>
-  🚀 ${speedKmh.toFixed(1)} km/h<br>
-  ⚡ ${speedMs.toFixed(2)} m/s<br>
-  ⛰️ ${Math.round(ele)} m<br><br>
-  📊 ${Math.round(totalDist)} m<br>
-  ⛰️ ${Math.round(totalUp)} m
-  `;
-}
-
-// ---------- SEARCH
-async function searchPlace(){
-  let q=document.getElementById("searchInput").value;
-
-  let url=`https://nominatim.openstreetmap.org/search?format=json&q=${q}`;
-  let res=await fetch(url);
-  let data=await res.json();
-
-  let html="";
-
-  data.forEach(p=>{
-    html+=`<div class="result" onclick="goToPlace(${p.lat},${p.lon})">
-      ${p.display_name}
-    </div>`;
-  });
-
-  document.getElementById("searchResults").innerHTML=html;
-}
-
-async function goToPlace(lat,lng){
-
-  map.setView([lat,lng],15);
-  L.marker([lat,lng]).addTo(map);
-
-  if(!track.length) return;
-
-  let last=track[track.length-1];
-
-  let d=dist(last.lat,last.lng,lat,lng);
-
-  let route=await fetch(`https://router.project-osrm.org/route/v1/driving/${last.lng},${last.lat};${lng},${lat}?overview=false`);
-  let r=await route.json();
-
-  let road = r.routes?.[0]?.distance || 0;
-
-  alert(`
-Légvonal: ${Math.round(d)} m
-Úton: ${Math.round(road)} m
-Turista: ~${Math.round(d*1.4)} m
-  `);
-}
-
-// ---------- POI
-async function searchPOI(){
-  if(!track.length) return;
-  let last=track[track.length-1];
-
-  let query=`[out:json];node(around:500,${last.lat},${last.lng})["amenity"];out;`;
-  let url="https://overpass-api.de/api/interpreter?data="+encodeURIComponent(query);
-
-  let res=await fetch(url);
-  let data=await res.json();
-
-  if(poiLayer) map.removeLayer(poiLayer);
-  poiLayer=L.layerGroup().addTo(map);
-
-  data.elements.forEach(p=>{
-    let d=dist(last.lat,last.lng,p.lat,p.lon);
-    let m=L.marker([p.lat,p.lon]).addTo(poiLayer);
-    m.bindPopup(`${p.tags.name||"POI"}<br>${Math.round(d)} m`);
-  });
-}
-
-// ---------- GPS
-navigator.geolocation.watchPosition(pos=>{
-  updatePosition(
-    pos.coords.latitude,
-    pos.coords.longitude,
-    pos.coords.altitude||0,
-    pos.coords.accuracy
-  );
-},{enableHighAccuracy:true});
-
-function resetTrack(){
-  track=[]; totalDist=0; totalUp=0;
-  if(polyline) map.removeLayer(polyline);
-}
-
 </script>
+
 </body>
 </html>
 
