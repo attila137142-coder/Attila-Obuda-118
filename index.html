@@ -1,201 +1,226 @@
-Több térképes, pontos helyadatok is
+Zöld kiirásu, több térkép, gombok, részletes helyadatok
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚍 Attila PRO FUTÁR+</title>
+<title>Attila PRO NAV v1</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body{margin:0;background:#000;color:#FFD700;font-family:Arial;}
-#map{height:50vh;}
-.panel{padding:10px;}
-.card{background:#111;padding:10px;margin-top:10px;border-radius:10px;}
-button{padding:10px;margin:5px;border-radius:10px;}
-input{padding:10px;width:100%;margin-top:5px;border-radius:10px;}
-iframe{width:100%;height:300px;border:0;margin-top:10px;}
-.red{color:#ff4d4d;}
+body{margin:0;background:#000;color:#0f0;font-family:Arial}
+#map{height:60vh;}
+#panel{padding:10px}
+button{padding:10px;margin:5px;background:#111;color:#0f0;border:1px solid #0f0}
+input{padding:10px;width:70%}
+.card{background:#111;margin-top:10px;padding:10px;border-radius:10px}
 </style>
 </head>
 
 <body>
 
-<h2 style="text-align:center;">🚍 PRO FUTÁR+</h2>
-
 <div id="map"></div>
 
-<div class="panel">
+<div id="panel">
+<button onclick="getLocation()">📍 Helyzet</button>
+<input id="search" placeholder="Keresés...">
+<button onclick="search()">🔎</button>
 
-<button onclick="getLocation()">📍 GPS</button>
-<button onclick="exportPDF()">📄 PDF</button>
-
-<input id="search" placeholder="Cím / hely keresés...">
-
-<!-- külső rendszerek -->
-<button onclick="openMap('bkk')">🚍 BKK FUTÁR</button>
-<button onclick="openMap('mav')">🚆 Vonat térkép</button>
-<button onclick="openMap('rt')">🌍 RealTime</button>
-<button onclick="openMap('volan')">🚌 Utas.hu</button>
-
-<div id="info" class="card"></div>
-<div id="places" class="card"></div>
-<div id="stops" class="card"></div>
-
+<div id="info"></div>
+<div id="stops"></div>
 </div>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 
 <script>
 
-// ===== MAP
-var map = L.map('map').setView([47.4979,19.0402],13);
+let map = L.map('map').setView([47.5,19.0],13);
 
-var osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
-var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
-
-var rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:0.9});
-var tourist = L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
-var road = L.tileLayer('https://{s}.tile.openstreetmap.fr/hot/{z}/{x}/{y}.png');
+let osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+let topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+let rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',{opacity:1});
 
 osm.addTo(map);
 
-L.control.layers(
- {"OSM":osm,"Topo":topo},
- {"Vasút":rail,"Turista":tourist,"Közút":road}
-).addTo(map);
+L.control.layers({
+ "Alap": osm,
+ "Topo": topo
+},{
+ "Vasút": rail
+}).addTo(map);
 
-// ===== GLOBAL
-let marker,path=[];
-let minAcc=9999,maxAcc=0;
+let marker;
+let userLat, userLon;
+
+let stopLayer = L.layerGroup().addTo(map);
+let routeLayer = L.layerGroup().addTo(map);
+
+// ==== MEGÁLLÓK (rövid lista – bővíthető)
+let stops = [
+{name:"Békásmegyer HÉV",lat:47.598091,lon:19.054599},
+{name:"Nád utca",lat:47.594072,lon:19.048469},
+{name:"Flórián tér",lat:47.542896,lon:19.042252},
+{name:"Batthyány tér",lat:47.506002,lon:19.039456},
+{name:"Pomáz HÉV",lat:47.642749,lon:19.032657},
+{name:"Szentendre",lat:47.661038,lon:19.075607}
+];
 
 // ===== GPS
-function getLocation(){
- navigator.geolocation.watchPosition(async pos=>{
+async function getLocation(){
 
-  let lat=pos.coords.latitude;
-  let lon=pos.coords.longitude;
-  let acc=pos.coords.accuracy;
-  let speed=(pos.coords.speed||0)*3.6;
-  let alt=pos.coords.altitude||0;
+ navigator.geolocation.getCurrentPosition(async pos=>{
 
-  minAcc=Math.min(minAcc,acc);
-  maxAcc=Math.max(maxAcc,acc);
+  userLat = pos.coords.latitude;
+  userLon = pos.coords.longitude;
 
   if(marker) map.removeLayer(marker);
-  marker=L.circleMarker([lat,lon],{radius:8,color:'red'}).addTo(map);
 
-  map.setView([lat,lon],15);
+  marker = L.circleMarker([userLat,userLon],{
+   radius:8,color:'red'
+  }).addTo(map);
 
-  path.push([lat,lon]);
-  if(path.length>1){
-   L.polyline(path,{color:'yellow'}).addTo(map);
-  }
+  map.setView([userLat,userLon],15);
 
-  let addr = await getAddress(lat,lon);
+  let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLat}&lon=${userLon}`);
+  let d = await res.json();
+  let a = d.address || {};
 
   document.getElementById("info").innerHTML=`
-  📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>
-  🏠 ${addr}<br>
-  ⛰️ ${alt.toFixed(1)} m<br>
-  🎯 ±${Math.round(acc)} m<br>
-  📉 Min:${Math.round(minAcc)} | 📈 Max:${Math.round(maxAcc)} m<br>
-  🚶 ${speed.toFixed(1)} km/h (${(speed/3.6).toFixed(2)} m/s)
+  🌍 ${a.country||""}<br>
+  🏙️ ${a.city||a.town||""}<br>
+  🛣️ ${a.road||""} ${a.house_number||""}<br>
+  🎯 ±${Math.round(pos.coords.accuracy)} m
   `;
 
-  loadNearby(lat,lon);
-  loadStops(lat,lon);
-
+  showStops();
  });
 }
 
-// ===== cím
-async function getAddress(lat,lon){
- try{
-  let res=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-  let d=await res.json();
-  let a=d.address||{};
-  return `${a.country||""} → ${a.city||a.town||""} → ${a.road||""} ${a.house_number||""}`;
- }catch{return "Cím hiba";}
+// ===== KÖZÚTI ÚTVONAL (VALÓDI)
+async function routeTo(lat,lon){
+
+ routeLayer.clearLayers();
+
+ let url = `https://router.project-osrm.org/route/v1/driving/${userLon},${userLat};${lon},${lat}?overview=full&geometries=geojson`;
+
+ let res = await fetch(url);
+ let data = await res.json();
+
+ let route = data.routes[0];
+
+ let coords = route.geometry.coordinates.map(c=>[c[1],c[0]]);
+
+ L.polyline(coords,{color:'lime'}).addTo(routeLayer);
+
+ let dist = (route.distance/1000).toFixed(2);
+ let time = Math.round(route.duration/60);
+
+ alert(`🚗 ${dist} km | ⏱ ${time} perc`);
 }
 
-// ===== kereső
-document.getElementById("search").addEventListener("change", async function(){
- let q=this.value;
- let res=await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
- let data=await res.json();
+// ===== MEGÁLLÓK
+function showStops(){
+function showDepartures(stopName){
 
- if(data.length){
-  let lat=data[0].lat;
-  let lon=data[0].lon;
-  map.setView([lat,lon],15);
-  L.marker([lat,lon]).addTo(map);
+ let stop = GTFS.stops.find(s=>s.stop_name === stopName);
+
+ if(!stop){
+  alert("Nincs GTFS megálló");
+  return;
  }
-});
 
-// ===== közeli helyek
-async function loadNearby(lat,lon){
+ let now = new Date();
+ let nowSec = now.getHours()*3600 + now.getMinutes()*60;
 
- const query=`
- [out:json];
- node(around:1000,${lat},${lon})["amenity"];
- out;
- `;
+ let times = GTFS.stopTimes
+  .filter(t=>t.stop_id === stop.stop_id)
+  .map(t=>{
+    let parts = t.departure_time.split(":");
+    let sec = parts[0]*3600 + parts[1]*60;
+    return {...t,sec};
+  })
+  .filter(t=>t.sec > nowSec)
+  .sort((a,b)=>a.sec-b.sec)
+  .slice(0,5);
 
- let res=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:query});
- let data=await res.json();
+ let html = `<h3>🕒 ${stopName}</h3>`;
 
- let html="<b>Közeli helyek:</b><br>";
+ times.forEach(t=>{
 
- data.elements.slice(0,10).forEach(e=>{
-  let d=map.distance([lat,lon],[e.lat,e.lon]);
-  html+=`📍 ${e.tags.name||"hely"} - ${Math.round(d)} m<br>`;
- });
+  let min = Math.round((t.sec - nowSec)/60);
 
- document.getElementById("places").innerHTML=html;
-}
-
-// ===== MEGÁLLÓK + MENETREND
-async function loadStops(lat,lon){
-
- const query=`
- [out:json];
- node(around:1500,${lat},${lon})["highway"="bus_stop"];
- node(around:1500,${lat},${lon})["railway"="tram_stop"];
- node(around:1500,${lat},${lon})["railway"="station"];
- out;
- `;
-
- let res=await fetch("https://overpass-api.de/api/interpreter",{method:"POST",body:query});
- let data=await res.json();
-
- let html="<b>Közeli megállók:</b><br>";
-
- data.elements.slice(0,8).forEach(s=>{
-  let d=map.distance([lat,lon],[s.lat,s.lon]);
+  let trip = GTFS.trips.find(tr=>tr.trip_id === t.trip_id);
 
   html+=`
-  🚏 ${s.tags.name||"megálló"}<br>
-  📏 ${Math.round(d)} m<br>
-  ⏱️ menetrend: közel (GTFS bővítés alatt)<br><br>
+  <div>
+   🚍 ${trip.route_id || "?"}
+   → ${trip.trip_headsign || ""}
+   | ${min} perc
+  </div>
   `;
  });
 
- document.getElementById("stops").innerHTML=html;
+ document.getElementById("stops").innerHTML = html;
+}
+ 
+ stopLayer.clearLayers();
+
+ let arr = stops.map(s=>{
+  let d = map.distance([userLat,userLon],[s.lat,s.lon]);
+  return {...s,dist:d};
+ });
+
+ arr.sort((a,b)=>a.dist-b.dist);
+
+ let html="<h3>🚏 Megállók</h3>";
+
+ arr.slice(0,10).forEach(s=>{
+
+  let air = s.dist<1000 ? Math.round(s.dist)+" m" : (s.dist/1000).toFixed(2)+" km";
+
+  html+=`
+  <div class="card">
+   <b>${s.name}</b><br>
+   📏 ${air}<br>
+   <button onclick="routeTo(${s.lat},${s.lon})">Útvonal</button>
+  </div>
+  `;
+
+  L.marker([s.lat,s.lon]).addTo(stopLayer)
+   .bindPopup(`<b>${s.name}</b><br><button onclick="routeTo(${s.lat},${s.lon})">Menj ide</button>`);
+ });
+
+ document.getElementById("stops").innerHTML = html;
 }
 
-// ===== külső térképek
-function openMap(type){
- if(type==="bkk") window.open("https://futar.bkk.hu/");
- if(type==="mav") window.open("https://vonatterkep.info/");
- if(type==="rt") window.open("https://map.realtimenext.hu/");
- if(type==="volan") window.open("https://utas.hu/");
-}
+// ===== OKOS KERESŐ
+async function search(){
 
-// ===== PDF
-function exportPDF(){
- html2pdf().from(document.body).save("futar_plus.pdf");
+ let q = document.getElementById("search").value;
+
+ let found = stops.find(s=>s.name.toLowerCase().includes(q.toLowerCase()));
+
+ if(found){
+  map.setView([found.lat,found.lon],16);
+  L.marker([found.lat,found.lon]).addTo(stopLayer)
+   .bindPopup(found.name).openPopup();
+  return;
+ }
+
+ let res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`);
+ let data = await res.json();
+
+ if(data.length>0){
+
+  let p = data[0];
+
+  map.setView([p.lat,p.lon],16);
+
+  L.marker([p.lat,p.lon]).addTo(stopLayer)
+   .bindPopup(p.display_name).openPopup();
+
+ }else{
+  alert("Nincs találat");
+ }
 }
 
 </script>
