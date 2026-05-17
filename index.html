@@ -1,13 +1,15 @@
+mentsd el: futar-v5-full-engine.html
+
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5 Stable Wrapper Engine</title>
+<title>FUTÁR V5 Full Engine</title>
 
 <style>
 body {
   margin:0;
-  font-family: Arial, sans-serif;
+  font-family: Arial;
   background:#0b1220;
   color:#e2e8f0;
 }
@@ -18,9 +20,7 @@ body {
   padding:20px;
 }
 
-h1 {
-  color:#38bdf8;
-}
+h1 { color:#38bdf8; }
 
 input {
   width:100%;
@@ -42,10 +42,15 @@ button {
 }
 
 .card {
-  margin-top:20px;
+  margin-top:15px;
   background:#1e293b;
   padding:15px;
   border-radius:10px;
+}
+
+.row {
+  padding:5px 0;
+  border-bottom:1px solid #334155;
 }
 
 .badge {
@@ -60,14 +65,8 @@ button {
 .volan { background:#f59e0b; color:black; }
 .mav { background:#a78bfa; color:black; }
 
-.row {
-  padding:6px 0;
-  border-bottom:1px solid #334155;
-}
-
 .fallback {
   color:#f87171;
-  font-weight:bold;
 }
 </style>
 </head>
@@ -76,11 +75,9 @@ button {
 
 <div class="container">
 
-<h1>🚍 FUTÁR V5 Stable Wrapper Engine</h1>
+<h1>🚍 FUTÁR V5 Full Stable Engine</h1>
 
-<p>Írj be egy GTFS stop ID-t:</p>
-
-<input id="stopId" placeholder="pl: 049892 / 773012_4 / 005546862" />
+<input id="stopId" placeholder="Stop ID (pl: 049892 / 773012_4 / 005546862)" />
 <button onclick="run()">Lekérdezés</button>
 
 <div id="out"></div>
@@ -89,62 +86,146 @@ button {
 
 <script>
 
+// ---------------- USER LOCATION ----------------
+let userLat = 47.4979;
+let userLon = 19.0402;
+
+navigator.geolocation?.getCurrentPosition(pos=>{
+  userLat = pos.coords.latitude;
+  userLon = pos.coords.longitude;
+});
+
+// ---------------- NETWORK DETECTION ----------------
 function detectNetwork(id){
   if(id.includes("_")) return "VOLAN";
   if(id.length > 6) return "MAV";
   return "BKK";
 }
 
-function fakeRealtime(network, id){
-  // szimulált fallback indulások
-  let base = Math.floor(Math.random()*10)+1;
+// ---------------- STOP DATABASE (DEMO) ----------------
+function getStopData(id){
 
+  const db = {
+    "049892": {
+      name: "Május 9. park",
+      lines: ["226", "34", "106"],
+      lat: 47.541231,
+      lon: 19.047812
+    },
+    "049898": {
+      name: "Árpád híd (Népfürdő utca)",
+      lines: ["226", "34"],
+      lat: 47.538900,
+      lon: 19.050100
+    },
+    "773012": {
+      name: "VOLÁN megálló",
+      lines: ["1010", "1012"],
+      lat: 47.650120,
+      lon: 19.120300
+    },
+    "005546862": {
+      name: "MÁV állomás",
+      lines: ["IC 745", "S80"],
+      lat: 47.500120,
+      lon: 19.080900
+    }
+  };
+
+  return db[id.split("_")[0]] || {
+    name: "Ismeretlen megálló",
+    lines: ["Nincs adat"],
+    lat: 47.4979,
+    lon: 19.0402
+  };
+}
+
+// ---------------- DISTANCE (HAVERSINE) ----------------
+function distance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180) *
+    Math.cos(lat2*Math.PI/180) *
+    Math.sin(dLon/2)**2;
+
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return R * c;
+}
+
+// ---------------- REALTIME FALLBACK ----------------
+function fakeRealtime(){
   return [
-    { line: "Busz", time: base + " perc", status: "ON TIME" },
-    { line: "Busz", time: (base+5) + " perc", status: "SLIGHT DELAY" },
-    { line: "Busz", time: (base+12) + " perc", status: "ON TIME" }
+    {line:"Busz", time:"3p", status:"ON TIME"},
+    {line:"Busz", time:"9p", status:"DELAY +1"},
+    {line:"Busz", time:"15p", status:"ON TIME"}
   ];
 }
 
+// ---------------- MATRIX ----------------
+function buildMatrix(lines){
+  let html = "";
+  lines.forEach(l=>{
+    let t = Math.floor(Math.random()*15)+1;
+    let st = Math.random()>0.7 ? "DELAY" : "ON TIME";
+
+    html += `
+      <div class="row">🚍 ${l} | → | ${t}p | ${st}</div>
+    `;
+  });
+  return html;
+}
+
+// ---------------- MAIN ----------------
 function run(){
+
   const id = document.getElementById("stopId").value.trim();
   if(!id) return;
 
   const net = detectNetwork(id);
+  const stop = getStopData(id);
+  const realtime = fakeRealtime();
 
-  let badgeClass = net==="BKK"?"bkk":net==="VOLAN"?"volan":"mav";
+  const dist = distance(userLat, userLon, stop.lat, stop.lon);
+  const hundredth = Math.round(dist * 100);
 
-  let realtime = fakeRealtime(net,id);
+  let badge = net==="BKK"?"bkk":net==="VOLAN"?"volan":"mav";
 
   let html = `
     <div class="card">
+      <span class="badge ${badge}">${net}</span>
+      <span class="badge">STOP: ${id}</span>
 
-      <div>
-        <span class="badge ${badgeClass}">${net}</span>
-        <span class="badge">STOP: ${id}</span>
-      </div>
-
-      <h3>🧠 Normalizált állapot</h3>
-
-      <div class="row">Raw ID: ${id}</div>
-      <div class="row">Network: ${net}</div>
-      <div class="row">Mode: STABLE WRAPPER</div>
-
-      <h3>⏱ Következő indulások</h3>
+      <h3>⏱ Indulások</h3>
   `;
 
   realtime.forEach(r=>{
-    html += `
-      <div class="row">
-        🚍 ${r.line} — ${r.time} — ${r.status}
-      </div>
-    `;
+    html += `<div class="row">🚍 ${r.line} — ${r.time} — ${r.status}</div>`;
   });
 
   html += `
-      <h3>⚠️ Realtime állapot</h3>
+      <h3>📊 FUTÁR MÁTRIX</h3>
+      <div class="card">${buildMatrix(stop.lines)}</div>
+
+      <h3>📍 Megálló</h3>
+      <div class="card">
+        <b>${stop.name}</b><br>
+        Lat: ${stop.lat.toFixed(6)}<br>
+        Lon: ${stop.lon.toFixed(6)}
+      </div>
+
+      <h3>📏 Távolság tőled</h3>
+      <div class="card">
+        🚶 ${dist.toFixed(2)} km<br>
+        📐 ${hundredth} század km<br>
+        📍 ~${Math.round(dist*1000)} m
+      </div>
+
       <div class="fallback">
-        Ha nincs valódi GTFS adat → fallback generálva (V5 STABLE MODE)
+        STABLE MODE: ha nincs GTFS adat → fallback generálva
       </div>
 
     </div>
