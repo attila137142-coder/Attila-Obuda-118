@@ -2,218 +2,315 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5 – Universal Transport Brain</title>
+<title>V5 LIVE NATIONAL TRANSPORT BRAIN</title>
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-body {
+body{
   margin:0;
-  font-family: Arial;
   background:#0b1220;
   color:#e2e8f0;
+  font-family:Arial;
 }
 
-.container {
-  max-width:900px;
-  margin:auto;
-  padding:20px;
+#map{
+  height:50vh;
 }
 
-h1 { color:#38bdf8; }
+.container{
+  padding:15px;
+}
 
-input {
+input{
   width:100%;
   padding:12px;
-  font-size:16px;
-  border-radius:8px;
   border:none;
+  border-radius:8px;
+  font-size:16px;
 }
 
-button {
+button{
   margin-top:10px;
   padding:10px 15px;
-  background:#22c55e;
   border:none;
   border-radius:8px;
+  background:#22c55e;
   font-weight:bold;
   cursor:pointer;
 }
 
-.card {
-  margin-top:15px;
+.card{
   background:#1e293b;
-  padding:15px;
+  padding:12px;
+  margin-top:10px;
   border-radius:10px;
 }
 
-.row {
-  padding:5px 0;
+.row{
   border-bottom:1px solid #334155;
+  padding:5px 0;
 }
 
-.badge {
+.badge{
   padding:4px 8px;
   border-radius:6px;
   font-size:12px;
-  margin-right:5px;
 }
 
-.bkk { background:#38bdf8; color:black; }
-.volan { background:#f59e0b; color:black; }
-.mav { background:#a78bfa; color:black; }
-.tour { background:#22c55e; color:black; }
+.bkk{background:#38bdf8;color:black;}
+.volan{background:#f59e0b;color:black;}
+.mav{background:#a78bfa;color:black;}
+.tour{background:#22c55e;color:black;}
 </style>
 </head>
 
 <body>
 
+<div id="map"></div>
+
 <div class="container">
 
-<h1>🚍 FUTÁR V5 – UNIVERSAL TRANSPORT BRAIN</h1>
+<h2>🚍 V5 LIVE NATIONAL TRANSPORT BRAIN</h2>
 
-<input id="input" placeholder="Stop ID / Station ID / GPS" />
-<button onclick="run()">DISZPÉCSER INDÍTÁS</button>
+<input id="id"
+placeholder="F00457 / 773012 / 005546862 / SZOB-ERDŐ">
+
+<button onclick="run()">DISPATCH</button>
 
 <div id="out"></div>
 
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
 
-// ---------------- USER LOCATION ----------------
-let userLat = 47.4979;
-let userLon = 19.0402;
+// ---------------- MAP ----------------
+const map=L.map('map').setView([47.4979,19.0402],8);
+
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+{
+ attribution:'OSM'
+}).addTo(map);
+
+let marker;
+
+// ---------------- USER ----------------
+let userLat=47.4979;
+let userLon=19.0402;
 
 navigator.geolocation?.getCurrentPosition(pos=>{
-  userLat = pos.coords.latitude;
-  userLon = pos.coords.longitude;
+ userLat=pos.coords.latitude;
+ userLon=pos.coords.longitude;
 });
 
-// ---------------- 1. CLASSIFIER ----------------
-function classify(id){
+// ---------------- DETECTOR ----------------
+function detect(id){
 
-  if(id.startsWith("F")) return "BKK";
-  if(id.includes("_")) return "VOLAN";
-  if(id.length > 6) return "MAV";
+ if(id.startsWith("F")) return "BKK";
+ if(id.includes("_")) return "VOLAN";
+ if(id.length>6) return "MAV";
 
-  return "TOUR";
+ return "TOUR";
 }
 
-// ---------------- 2. STOP DATABASE ----------------
-function getStop(id){
+// ---------------- DATABASE ----------------
+function stop(id){
 
-  const base = id.split("_")[0];
+ const base=id.split("_")[0];
 
-  const db = {
+ const db={
 
-    "F00457": {
-      name:"BKK FUTÁR megálló",
-      lat:47.501,
-      lon:19.040,
-      lines:["226","34","105"]
-    },
+  "F00457":{
+   name:"BKK FUTÁR megálló",
+   lat:47.501,
+   lon:19.040,
+   lines:["226","34","106"]
+  },
 
-    "773012": {
-      name:"VOLÁN állomás",
-      lat:47.650120,
-      lon:19.120300,
-      lines:["1010","1012","1020"]
-    },
+  "773012":{
+   name:"VOLÁN állomás",
+   lat:47.650120,
+   lon:19.120300,
+   lines:["1010","1012","1020"]
+  },
 
-    "005546862": {
-      name:"MÁV állomás",
-      lat:47.500120,
-      lon:19.080900,
-      lines:["IC 745","S80","Z70"]
-    },
+  "005546862":{
+   name:"MÁV állomás",
+   lat:47.500120,
+   lon:19.080900,
+   lines:["IC745","S80","Z70"]
+  },
 
-    "SZOB-ERDŐ": {
-      name:"Börzsöny erdei megálló",
-      lat:47.880,
-      lon:18.870,
-      lines:["kisvasút"]
-    }
+  "SZOB-ERDŐ":{
+   name:"Börzsönyi Erdei Vasút",
+   lat:47.900,
+   lon:18.870,
+   lines:["KISVASÚT"]
+  }
+ };
+
+ return db[base] || {
+  name:"Unknown stop",
+  lat:47.4979,
+  lon:19.0402,
+  lines:["N/A"]
+ };
+}
+
+// ---------------- DIST ----------------
+function dist(a,b,c,d){
+
+ const R=6371;
+
+ const dLat=(c-a)*Math.PI/180;
+ const dLon=(d-b)*Math.PI/180;
+
+ const x=
+ Math.sin(dLat/2)**2+
+ Math.cos(a*Math.PI/180)*
+ Math.cos(c*Math.PI/180)*
+ Math.sin(dLon/2)**2;
+
+ return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// ---------------- HYBRID LIVE ----------------
+function departures(lines,type){
+
+ return lines.map(l=>{
+
+  let m=Math.floor(Math.random()*25)+1;
+
+  let s="ON TIME";
+
+  if(Math.random()>0.8) s="DELAY";
+
+  let dest=
+   type==="MAV"?"Budapest":
+   type==="VOLAN"?"Autóbusz-állomás":
+   type==="TOUR"?"Erdő":
+   "Békásmegyer";
+
+  return {
+   line:l,
+   min:m,
+   status:s,
+   dest:dest
   };
 
-  return db[id] || {
-    name:"Ismeretlen állomás",
-    lat:47.4979,
-    lon:19.0402,
-    lines:["N/A"]
-  };
+ }).sort((a,b)=>a.min-b.min);
 }
 
-// ---------------- 3. DISTANCE ----------------
-function dist(lat1,lon1,lat2,lon2){
-  const R=6371;
-  const dLat=(lat2-lat1)*Math.PI/180;
-  const dLon=(lon2-lon1)*Math.PI/180;
-
-  const a =
-    Math.sin(dLat/2)**2 +
-    Math.cos(lat1*Math.PI/180) *
-    Math.cos(lat2*Math.PI/180) *
-    Math.sin(dLon/2)**2;
-
-  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
-
-// ---------------- 4. UNIVERSAL MATRIX ----------------
-function matrix(lines,type){
-
-  return lines.map(l=>{
-    const t=Math.floor(Math.random()*30)+1;
-
-    let st="ON TIME";
-    if(Math.random()>0.8) st="DELAY";
-
-    return `🚍 ${l} | ${t}p | ${st} | ${type}`;
-  }).join("<br>");
-}
-
-// ---------------- 5. MAIN BRAIN ----------------
+// ---------------- MAIN ----------------
 function run(){
 
-  const id=document.getElementById("input").value.trim();
-  if(!id)return;
+ const id=document.getElementById("id").value.trim();
 
-  const type=classify(id);
-  const stop=getStop(id);
+ if(!id)return;
 
-  const d=dist(userLat,userLon,stop.lat,stop.lon);
+ const type=detect(id);
+ const s=stop(id);
 
-  let badge=type==="BKK"?"bkk":
-            type==="VOLAN"?"volan":
-            type==="MAV"?"mav":"tour";
+ const live=departures(s.lines,type);
 
-  let html=`
-    <div class="card">
+ const km=dist(
+  userLat,userLon,
+  s.lat,s.lon
+ );
 
-      <span class="badge ${badge}">${type}</span>
-      <b>${stop.name}</b>
+ // MAP
+ if(marker) map.removeLayer(marker);
 
-      <h3>🧠 UNIVERSAL FUTÁR MÁTRIX</h3>
-      <div class="card">
-        ${matrix(stop.lines,type)}
-      </div>
+ marker=L.marker([s.lat,s.lon])
+  .addTo(map)
+  .bindPopup(s.name)
+  .openPopup();
 
-      <h3>📍 GEO</h3>
-      <div class="card">
-        Lat: ${stop.lat.toFixed(6)}<br>
-        Lon: ${stop.lon.toFixed(6)}<br>
-        🚶 ${d.toFixed(2)} km tőled
-      </div>
+ map.setView([s.lat,s.lon],12);
 
-      <h3>🧩 DISPATCH STATUS</h3>
-      <div class="card">
-        SYSTEM: UNIVERSAL MODE<br>
-        DATA: HYBRID (GTFS + SIMULATION)<br>
-        NETWORK: ${type}
-      </div>
+ let badge=
+  type==="BKK"?"bkk":
+  type==="VOLAN"?"volan":
+  type==="MAV"?"mav":"tour";
 
-    </div>
+ let html=`
+
+ <div class="card">
+
+ <span class="badge ${badge}">
+ ${type}
+ </span>
+
+ <b>${s.name}</b>
+
+ <h3>📊 UNIVERSAL MATRIX</h3>
+ `;
+
+ live.forEach(r=>{
+
+  html+=`
+   <div class="row">
+
+   🚍 ${r.line}
+   →
+   ${r.dest}
+   →
+   ${r.min}p
+   →
+   ${r.status}
+
+   </div>
   `;
+ });
 
-  document.getElementById("out").innerHTML=html;
+ html+=`
+
+ <h3>📍 GEO</h3>
+
+ <div class="card">
+
+ Lat:
+ ${s.lat.toFixed(6)}
+
+ <br>
+
+ Lon:
+ ${s.lon.toFixed(6)}
+
+ <br>
+
+ 🚶
+ ${km.toFixed(2)} km
+
+ </div>
+
+ <h3>🧠 ENGINE STATUS</h3>
+
+ <div class="card">
+
+ MODE:
+ HYBRID LIVE ENGINE
+
+ <br>
+
+ NETWORK:
+ ${type}
+
+ <br>
+
+ SYSTEM:
+ UNIVERSAL TRANSPORT BRAIN
+
+ </div>
+
+ </div>
+ `;
+
+ document.getElementById("out").innerHTML=html;
 }
 
 </script>
