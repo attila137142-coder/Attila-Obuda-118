@@ -1,78 +1,204 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>Attila Közlekedés PRO</title>
+<meta charset="utf-8">
+<title>🚀 Attila Ultra PRO</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body { font-family: Arial; margin: 0; }
-
-nav {
-  background: #222;
-  padding: 10px;
+body{
+  margin:0;
+  background:black;
+  color:#0f0;
+  font-family:Arial;
 }
 
-nav button {
-  margin: 5px;
-  padding: 10px;
-  cursor: pointer;
-  color: white;
-  background: #444;
-  border: 0;
-  border-radius: 6px;
+#map{height:70vh;}
+
+#panel{
+  padding:10px;
 }
 
-.section {
-  display: none;
-  padding: 20px;
+button{
+  padding:8px;
+  margin:5px;
+  background:black;
+  color:#0f0;
+  border:2px solid #0f0;
 }
 
-.active {
-  display: block;
+.box{
+  background:black;
+  color:yellow;
+  border:1px solid yellow;
+  padding:3px;
+  font-size:11px;
+}
+
+canvas{
+  width:100%;
+  height:150px;
+  background:#111;
 }
 </style>
 </head>
 
 <body>
 
-<nav>
-  <button onclick="show('tavolsag')">📏 Távolság</button>
-  <button onclick="show('menetrend')">🚍 Menetrend</button>
-  <button onclick="show('terkep')">🗺️ Térkép</button>
-  <button onclick="show('egyeb')">⚙️ Egyéb</button>
-</nav>
+<div id="panel">
+<button onclick="reset()">🧹 Törlés</button>
 
-<!-- SZEKCIÓK -->
+<div>📏 Hossz: <span id="dist">-</span></div>
+<div>⬆️ Emelkedés: <span id="up">-</span></div>
+<div>⬇️ Lejtés: <span id="down">-</span></div>
+<div>📊 Átlag: <span id="avg">-</span></div>
+<div>⚠️ MAX: <span id="max">-</span></div>
+<div>⚠️ MIN: <span id="min">-</span></div>
 
-<div id="tavolsag" class="section active">
-  <h2>Távolság adatok</h2>
-  <p>Itt lesznek a számítások, lejtések, stb.</p>
 </div>
 
-<div id="menetrend" class="section">
-  <h2>Közlekedési menetrendek</h2>
-  <p>Itt lesz BKK / MÁV / Volán logika.</p>
-</div>
+<canvas id="chart"></canvas>
 
-<div id="terkep" class="section">
-  <h2>Térképek</h2>
-  <p>Itt jönnek a térképes modulok.</p>
-</div>
+<div id="map"></div>
 
-<div id="egyeb" class="section">
-  <h2>Egyéb modulok</h2>
-  <p>Extra funkciók.</p>
-</div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-function show(id) {
-  let sections = document.querySelectorAll(".section");
-  sections.forEach(s => s.classList.remove("active"));
 
-  document.getElementById(id).classList.add("active");
+let map = L.map('map').setView([47.55,19.03],13);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+
+let pts=[];
+let line;
+let markers=[];
+
+map.on("click", e=>{
+  pts.push([e.latlng.lng,e.latlng.lat]);
+  if(pts.length===2) route();
+});
+
+// ===== ROUTE
+async function route(){
+
+  let url=`https://router.project-osrm.org/route/v1/foot/${pts[0][0]},${pts[0][1]};${pts[1][0]},${pts[1][1]}?overview=full&geometries=geojson`;
+
+  let r=await fetch(url);
+  let d=await r.json();
+
+  let coords=d.routes[0].geometry.coordinates;
+
+  if(line) map.removeLayer(line);
+  markers.forEach(m=>map.removeLayer(m));
+  markers=[];
+
+  line=L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
+
+  let elevRes=await fetch("https://api.opentopodata.org/v1/test-dataset?locations="+coords.map(c=>c[1]+","+c[0]).join("|"));
+  let elevData=await elevRes.json();
+  let elev=elevData.results.map(r=>r.elevation);
+
+  calc(coords,elev);
+  drawChart(elev);
+  loadStops(coords);
 }
+
+// ===== CALC
+function calc(coords,elev){
+
+  let total=0,up=0,down=0,max=-999,min=999;
+
+  for(let i=0;i<coords.length-1;i++){
+
+    let a=coords[i],b=coords[i+1];
+
+    let d=map.distance([a[1],a[0]],[b[1],b[0]]);
+    let h=elev[i+1]-elev[i];
+
+    if(d<2) continue;
+
+    let slope=(h/d)*100;
+
+    total+=d;
+    if(h>0) up+=h; else down+=Math.abs(h);
+
+    if(slope>max) max=slope;
+    if(slope<min) min=slope;
+
+    let mid=[(a[1]+b[1])/2,(a[0]+b[0])/2];
+
+    let m=L.marker(mid,{
+      icon:L.divIcon({
+        html:`<div class="box">${slope.toFixed(1)}%<br>${Math.round(d)}m</div>`
+      })
+    }).addTo(map);
+
+    markers.push(m);
+  }
+
+  dist.innerText=(total/1000).toFixed(2)+" km";
+  up.innerText=Math.round(up)+" m";
+  down.innerText=Math.round(down)+" m";
+  avg.innerText=((up-down)/total*100).toFixed(1)+" %";
+  max.innerText=max.toFixed(1)+" %";
+  min.innerText=min.toFixed(1)+" %";
+}
+
+// ===== CHART
+function drawChart(elev){
+
+  let c=document.getElementById("chart");
+  let ctx=c.getContext("2d");
+
+  ctx.clearRect(0,0,c.width,c.height);
+
+  let max=Math.max(...elev);
+  let min=Math.min(...elev);
+
+  for(let i=0;i<elev.length-1;i++){
+
+    let x1=i*(c.width/elev.length);
+    let y1=c.height-(elev[i]-min)/(max-min)*c.height;
+
+    let x2=(i+1)*(c.width/elev.length);
+    let y2=c.height-(elev[i+1]-min)/(max-min)*c.height;
+
+    ctx.beginPath();
+    ctx.moveTo(x1,y1);
+    ctx.lineTo(x2,y2);
+    ctx.strokeStyle="lime";
+    ctx.stroke();
+  }
+}
+
+// ===== MEGÁLLÓK
+async function loadStops(coords){
+
+  let mid=coords[Math.floor(coords.length/2)];
+
+  let url=`https://overpass-api.de/api/interpreter?data=[out:json];node(around:500,${mid[1]},${mid[0]})["highway"="bus_stop"];out;`;
+
+  let r=await fetch(url);
+  let d=await r.json();
+
+  d.elements.forEach(s=>{
+    L.marker([s.lat,s.lon])
+      .addTo(map)
+      .bindPopup("🚌 "+(s.tags.name||"Megálló"));
+  });
+}
+
+// ===== RESET
+function reset(){
+  pts=[];
+  if(line) map.removeLayer(line);
+  markers.forEach(m=>map.removeLayer(m));
+  markers=[];
+  document.getElementById("chart").getContext("2d").clearRect(0,0,1000,200);
+}
+
 </script>
 
 </body>
 </html>
-
