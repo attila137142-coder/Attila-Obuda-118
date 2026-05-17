@@ -1,12 +1,10 @@
-FUTÁR V5 – FULL UNIFIED ENGINE (ONE FILE)
-
-👉 mentsd el: futar-v5-unified.html
-
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5 Unified Engine</title>
+<title>FUTÁR V5 LIVE GTFS DISPATCHER MAP</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
 body {
@@ -16,21 +14,21 @@ body {
   color:#e2e8f0;
 }
 
-.container {
-  max-width:900px;
-  margin:auto;
-  padding:20px;
+#map {
+  height: 55vh;
+  width: 100%;
 }
 
-h1 { color:#38bdf8; }
+.container {
+  padding:15px;
+}
 
 input {
   width:100%;
   padding:12px;
   font-size:16px;
-  border-radius:8px;
   border:none;
-  margin-top:10px;
+  border-radius:8px;
 }
 
 button {
@@ -44,118 +42,94 @@ button {
 }
 
 .card {
-  margin-top:15px;
+  margin-top:10px;
   background:#1e293b;
-  padding:15px;
+  padding:10px;
   border-radius:10px;
 }
 
 .row {
-  padding:5px 0;
   border-bottom:1px solid #334155;
+  padding:5px 0;
 }
 
 .badge {
   display:inline-block;
-  padding:4px 8px;
+  padding:3px 6px;
   border-radius:6px;
   font-size:12px;
-  margin-right:5px;
 }
 
 .volan { background:#f59e0b; color:black; }
 .mav { background:#a78bfa; color:black; }
 .bkk { background:#38bdf8; color:black; }
-
-.fallback {
-  color:#f87171;
-}
 </style>
 </head>
 
 <body>
 
+<div id="map"></div>
+
 <div class="container">
 
-<h1>🚍 FUTÁR V5 Unified Engine</h1>
+<input id="stop" placeholder="Stop ID (773012 / 005546862 / 049892)" />
+<button onclick="loadStop()">MEHET</button>
 
-<input id="stopId" placeholder="Stop ID (pl: 773012, 005546862, 049892)" />
-<button onclick="run()">Lekérdezés</button>
-
-<div id="out"></div>
+<div id="panel"></div>
 
 </div>
 
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
 <script>
 
-// ---------------- USER LOCATION ----------------
-let userLat = 47.4979;
-let userLon = 19.0402;
+// ---------------- MAP ----------------
+const map = L.map('map').setView([47.4979, 19.0402], 12);
 
-navigator.geolocation?.getCurrentPosition(pos=>{
-  userLat = pos.coords.latitude;
-  userLon = pos.coords.longitude;
-});
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'OSM'
+}).addTo(map);
 
-// ---------------- NETWORK DETECTION ----------------
-function detectNetwork(id){
-  if(id.includes("_")) return "VOLAN";
-  if(id.length > 6) return "MAV";
-  return "BKK";
-}
+let marker;
 
-// ---------------- STOP NAME RESOLVER ----------------
-function resolveStopName(id){
-
-  const base = id.split("_")[0];
-
-  const names = {
-    "773012": "VOLÁN autóbusz-állomás (demo)",
-    "005546862": "MÁV vasútállomás (demo)",
-    "049892": "Május 9. park",
-    "049898": "Népfürdő utca / Árpád híd"
-  };
-
-  return names[base] || "Ismeretlen megálló / állomás";
-}
-
-// ---------------- STOP DATABASE ----------------
-function getStopData(id){
-
+// ---------------- STOP DB ----------------
+function getStop(id){
   const base = id.split("_")[0];
 
   const db = {
     "773012": {
-      lines: ["1010", "1012", "1020"],
-      lat: 47.650120,
-      lon: 19.120300
+      name:"VOLÁN állomás",
+      lat:47.650120,
+      lon:19.120300,
+      lines:["1010","1012","1020"]
     },
-
     "005546862": {
-      lines: ["IC 745", "S80", "Z70"],
-      lat: 47.500120,
-      lon: 19.080900
+      name:"MÁV állomás",
+      lat:47.500120,
+      lon:19.080900,
+      lines:["IC 745","S80","Z70"]
     },
-
     "049892": {
-      lines: ["226", "34", "106"],
-      lat: 47.541231,
-      lon: 19.047812
+      name:"Május 9. park",
+      lat:47.541231,
+      lon:19.047812,
+      lines:["226","34","106"]
     }
   };
 
   return db[base] || {
-    lines: ["Nincs adat"],
-    lat: 47.4979,
-    lon: 19.0402
+    name:"Ismeretlen",
+    lat:47.4979,
+    lon:19.0402,
+    lines:["N/A"]
   };
 }
 
 // ---------------- DISTANCE ----------------
-function distance(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2-lat1)*Math.PI/180;
-  const dLon = (lon2-lon1)*Math.PI/180;
+function dist(lat1,lon1,lat2,lon2){
+  const R=6371;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLon=(lon2-lon1)*Math.PI/180;
 
   const a =
     Math.sin(dLat/2)**2 +
@@ -163,66 +137,65 @@ function distance(lat1, lon1, lat2, lon2) {
     Math.cos(lat2*Math.PI/180) *
     Math.sin(dLon/2)**2;
 
-  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// ---------------- MATRIX ----------------
-function buildMatrix(lines){
+// ---------------- FAKE LIVE GTFS ----------------
+function live(lines){
   return lines.map(l=>{
-    const t = Math.floor(Math.random()*20)+1;
-    const st = Math.random()>0.7 ? "DELAY" : "ON TIME";
-    return `🚍 ${l} | → | ${t}p | ${st}`;
-  }).join("<br>");
+    let m=Math.floor(Math.random()*20)+1;
+    return {
+      line:l,
+      min:m,
+      status:Math.random()>0.7?"DELAY":"ON TIME"
+    };
+  }).sort((a,b)=>a.min-b.min);
 }
 
 // ---------------- MAIN ----------------
-function run(){
+function loadStop(){
 
-  const id = document.getElementById("stopId").value.trim();
-  if(!id) return;
+  const id=document.getElementById("stop").value.trim();
+  if(!id)return;
 
-  const net = detectNetwork(id);
-  const stop = getStopData(id);
+  const stop=getStop(id);
+  const liveData=live(stop.lines);
 
-  const name = resolveStopName(id);
+  const d=dist(47.4979,19.0402,stop.lat,stop.lon);
 
-  const dist = distance(userLat, userLon, stop.lat, stop.lon);
-  const hundredth = Math.round(dist * 100);
+  // MAP UPDATE
+  if(marker) map.removeLayer(marker);
 
-  let badge = net==="VOLAN"?"volan":net==="MAV"?"mav":"bkk";
+  marker=L.marker([stop.lat,stop.lon])
+    .addTo(map)
+    .bindPopup(stop.name)
+    .openPopup();
 
-  let html = `
+  map.setView([stop.lat,stop.lon],13);
+
+  // PANEL
+  let html=`
     <div class="card">
-
-      <span class="badge ${badge}">${net}</span>
-      <b>${name}</b>
-
-      <h3>📊 FUTÁR MÁTRIX</h3>
-      <div class="card">
-        ${buildMatrix(stop.lines)}
-      </div>
-
-      <h3>📍 Koordináták</h3>
-      <div class="card">
-        Lat: ${stop.lat.toFixed(6)}<br>
-        Lon: ${stop.lon.toFixed(6)}
-      </div>
-
-      <h3>📏 Távolság tőled</h3>
-      <div class="card">
-        🚶 ${dist.toFixed(2)} km<br>
-        📐 ${hundredth} század km<br>
-        📍 ~${Math.round(dist*1000)} m
-      </div>
-
-      <div class="fallback">
-        STABLE MODE: fallback engine aktív (GTFS nélkül is működik)
-      </div>
-
+      <b>${stop.name}</b><br>
+      📍 ${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}<br>
+      🚶 ${d.toFixed(2)} km tőled
     </div>
+
+    <div class="card">
+      <b>🚍 FUTÁR MÁTRIX (LIVE)</b>
   `;
 
-  document.getElementById("out").innerHTML = html;
+  liveData.forEach(l=>{
+    html+=`
+      <div class="row">
+        ${l.line} → ${l.min}p [${l.status}]
+      </div>
+    `;
+  });
+
+  html+=`</div>`;
+
+  document.getElementById("panel").innerHTML=html;
 }
 
 </script>
