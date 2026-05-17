@@ -1,9 +1,12 @@
-FULL COPY-PASTE HTML (V5 MATRIX ENGINE)
+FUTÁR V5 – FULL UNIFIED ENGINE (ONE FILE)
+
+👉 mentsd el: futar-v5-unified.html
+
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5 Matrix Engine</title>
+<title>FUTÁR V5 Unified Engine</title>
 
 <style>
 body {
@@ -25,8 +28,9 @@ input {
   width:100%;
   padding:12px;
   font-size:16px;
-  border:none;
   border-radius:8px;
+  border:none;
+  margin-top:10px;
 }
 
 button {
@@ -47,20 +51,25 @@ button {
 }
 
 .row {
-  padding:6px 0;
+  padding:5px 0;
   border-bottom:1px solid #334155;
 }
 
 .badge {
+  display:inline-block;
   padding:4px 8px;
   border-radius:6px;
   font-size:12px;
   margin-right:5px;
-  display:inline-block;
 }
 
 .volan { background:#f59e0b; color:black; }
 .mav { background:#a78bfa; color:black; }
+.bkk { background:#38bdf8; color:black; }
+
+.fallback {
+  color:#f87171;
+}
 </style>
 </head>
 
@@ -68,10 +77,10 @@ button {
 
 <div class="container">
 
-<h1>🚍 FUTÁR V5 – IDŐRENDEZETT MÁTRIX</h1>
+<h1>🚍 FUTÁR V5 Unified Engine</h1>
 
-<input id="input" placeholder="Írd be: 773012, 005546862" />
-<button onclick="run()">Indítás</button>
+<input id="stopId" placeholder="Stop ID (pl: 773012, 005546862, 049892)" />
+<button onclick="run()">Lekérdezés</button>
 
 <div id="out"></div>
 
@@ -79,93 +88,137 @@ button {
 
 <script>
 
-// ---------------- STOP DATA (DEMO) ----------------
-function getData(id){
+// ---------------- USER LOCATION ----------------
+let userLat = 47.4979;
+let userLon = 19.0402;
+
+navigator.geolocation?.getCurrentPosition(pos=>{
+  userLat = pos.coords.latitude;
+  userLon = pos.coords.longitude;
+});
+
+// ---------------- NETWORK DETECTION ----------------
+function detectNetwork(id){
+  if(id.includes("_")) return "VOLAN";
+  if(id.length > 6) return "MAV";
+  return "BKK";
+}
+
+// ---------------- STOP NAME RESOLVER ----------------
+function resolveStopName(id){
+
+  const base = id.split("_")[0];
+
+  const names = {
+    "773012": "VOLÁN autóbusz-állomás (demo)",
+    "005546862": "MÁV vasútállomás (demo)",
+    "049892": "Május 9. park",
+    "049898": "Népfürdő utca / Árpád híd"
+  };
+
+  return names[base] || "Ismeretlen megálló / állomás";
+}
+
+// ---------------- STOP DATABASE ----------------
+function getStopData(id){
+
+  const base = id.split("_")[0];
 
   const db = {
     "773012": {
-      name: "VOLÁN megálló",
-      type: "VOLAN",
-      lines: ["1010", "1012", "1020"]
+      lines: ["1010", "1012", "1020"],
+      lat: 47.650120,
+      lon: 19.120300
     },
+
     "005546862": {
-      name: "MÁV állomás",
-      type: "MAV",
-      lines: ["IC 745", "S80", "Z70", "EC 142"]
+      lines: ["IC 745", "S80", "Z70"],
+      lat: 47.500120,
+      lon: 19.080900
+    },
+
+    "049892": {
+      lines: ["226", "34", "106"],
+      lat: 47.541231,
+      lon: 19.047812
     }
   };
 
-  return db[id] || {
-    name: "Ismeretlen",
-    type: "UNKNOWN",
-    lines: ["Nincs adat"]
+  return db[base] || {
+    lines: ["Nincs adat"],
+    lat: 47.4979,
+    lon: 19.0402
   };
 }
 
-// ---------------- TIME GENERATOR ----------------
-function genTimes(lines){
-  let now = new Date();
-  let list = [];
+// ---------------- DISTANCE ----------------
+function distance(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2-lat1)*Math.PI/180;
+  const dLon = (lon2-lon1)*Math.PI/180;
 
-  lines.forEach(l=>{
-    let add = Math.floor(Math.random()*60)+1;
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(lat1*Math.PI/180) *
+    Math.cos(lat2*Math.PI/180) *
+    Math.sin(dLon/2)**2;
 
-    let t = new Date(now.getTime() + add*60000);
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
 
-    list.push({
-      line: l,
-      time: t,
-      mins: add
-    });
-  });
-
-  // SORT by time
-  list.sort((a,b)=>a.mins - b.mins);
-
-  return list;
+// ---------------- MATRIX ----------------
+function buildMatrix(lines){
+  return lines.map(l=>{
+    const t = Math.floor(Math.random()*20)+1;
+    const st = Math.random()>0.7 ? "DELAY" : "ON TIME";
+    return `🚍 ${l} | → | ${t}p | ${st}`;
+  }).join("<br>");
 }
 
 // ---------------- MAIN ----------------
 function run(){
 
-  const id = document.getElementById("input").value.trim();
+  const id = document.getElementById("stopId").value.trim();
   if(!id) return;
 
-  const data = getData(id);
-  const times = genTimes(data.lines);
+  const net = detectNetwork(id);
+  const stop = getStopData(id);
 
-  let badge = data.type==="VOLAN"?"volan":"mav";
+  const name = resolveStopName(id);
+
+  const dist = distance(userLat, userLon, stop.lat, stop.lon);
+  const hundredth = Math.round(dist * 100);
+
+  let badge = net==="VOLAN"?"volan":net==="MAV"?"mav":"bkk";
 
   let html = `
     <div class="card">
-      <span class="badge ${badge}">${data.type}</span>
-      <b>${data.name}</b>
 
-      <h3>⏱ FUTÁR MÁTRIX (időrend)</h3>
-  `;
+      <span class="badge ${badge}">${net}</span>
+      <b>${name}</b>
 
-  times.forEach(t=>{
-    html += `
-      <div class="row">
-        🚍 ${t.line}
-        → ${t.time.toLocaleTimeString().slice(0,5)}
-        <b>(${t.mins}p)</b>
-      </div>
-    `;
-  });
-
-  html += `
-      <h3>📊 RAW MATRIX VIEW</h3>
+      <h3>📊 FUTÁR MÁTRIX</h3>
       <div class="card">
-        LINE | TIME | MIN<br>
-  `;
-
-  times.forEach(t=>{
-    html += `${t.line} | ${t.time.toLocaleTimeString().slice(0,5)} | ${t.mins}p<br>`;
-  });
-
-  html += `
+        ${buildMatrix(stop.lines)}
       </div>
+
+      <h3>📍 Koordináták</h3>
+      <div class="card">
+        Lat: ${stop.lat.toFixed(6)}<br>
+        Lon: ${stop.lon.toFixed(6)}
+      </div>
+
+      <h3>📏 Távolság tőled</h3>
+      <div class="card">
+        🚶 ${dist.toFixed(2)} km<br>
+        📐 ${hundredth} század km<br>
+        📍 ~${Math.round(dist*1000)} m
+      </div>
+
+      <div class="fallback">
+        STABLE MODE: fallback engine aktív (GTFS nélkül is működik)
+      </div>
+
     </div>
   `;
 
