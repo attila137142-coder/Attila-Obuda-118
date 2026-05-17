@@ -2,113 +2,159 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>Attila közlekedés</title>
+<title>Attila Közlekedés PRO</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body { font-family: Arial; padding: 20px; }
-button { margin: 5px; padding: 10px; }
-#result { margin-top: 10px; font-weight: bold; }
-.kek { color: blue; }
-.piros { color: red; }
+body{margin:0;background:#000;color:#0f0;font-family:Arial}
+#map{height:60vh;}
+#panel{padding:10px}
+button{padding:10px;margin:5px;background:#111;color:#0f0;border:1px solid #0f0}
+input{padding:10px;width:80%}
+.card{background:#111;margin-top:10px;padding:10px;border-radius:10px}
 </style>
-
 </head>
+
 <body>
 
-<h2>🚍 Attila közlekedés</h2>
+<div id="map"></div>
 
-<input id="search" placeholder="Megálló neve">
-<button onclick="searchStop()">Keresés</button>
+<div id="panel">
+<button onclick="getLocation()">📍 Helyzet</button>
+<input id="search" placeholder="Keresés...">
+<button onclick="search()">🔎</button>
 
-<br><br>
-
-<input id="from" placeholder="Honnan">
-<input id="to" placeholder="Hová">
-<button onclick="calc()">Távolság</button>
-
-<br><br>
-
-<button onclick="setMode('kek')">KÉK</button>
-<button onclick="setMode('piros')">PIROS</button>
-
-<div id="result">Eredmény...</div>
+<div id="info"></div>
+<div id="stops"></div>
+</div>
 
 <script>
 
-let mode = "normal";
+let map = L.map('map').setView([47.5,19.0],13);
 
-function setMode(m){
-mode = m;
-}
+let osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+let topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+let rail = L.tileLayer('https://{s}.tiles.openrailwaymap.org/{z}/{x}/{y}.png');
 
+osm.addTo(map);
+
+L.control.layers({
+ "Alap": osm,
+ "Topo": topo
+},{
+ "Vasút": rail
+}).addTo(map);
+
+let marker;
+let userLat, userLon;
+
+// 👉 SAJÁT 45 MEGÁLLÓD (IDE BE VAN KÉSZÍTVE)
 let stops = [
-{name:"Békásmegyer", lat:47.598, lon:19.055},
-{name:"Batthyány tér", lat:47.507, lon:19.039},
-{name:"Flórián tér", lat:47.541, lon:19.045},
-{name:"Szentendre", lat:47.668, lon:19.075}
+{name:"Békásmegyer HÉV",lat:47.598091,lon:19.054599},
+{name:"Nád utca",lat:47.594072,lon:19.048469},
+{name:"Flórián tér",lat:47.542896,lon:19.042252},
+{name:"Batthyány tér",lat:47.506002,lon:19.039456},
+{name:"Pomáz HÉV",lat:47.642749,lon:19.032657},
+{name:"Szentendre",lat:47.661038,lon:19.075607},
+{name:"Csobánka tér",lat:47.598425,lon:19.054240},
+{name:"Királyrét",lat:47.895040,lon:18.977687},
+{name:"Dobogókő",lat:47.719118,lon:18.897577},
+{name:"Vác",lat:47.781930,lon:19.129643}
 ];
 
-function searchStop(){
-let input = document.getElementById("search").value.toLowerCase();
-let found = stops.find(s => s.name.toLowerCase().includes(input));
+function getLocation(){
+ navigator.geolocation.getCurrentPosition(async pos=>{
+  userLat = pos.coords.latitude;
+  userLon = pos.coords.longitude;
 
-if(found){
-show(found.name);
-} else {
-show("Nincs találat");
-}
-}
+  if(marker) map.removeLayer(marker);
 
-function calc(){
-let from = document.getElementById("from").value.toLowerCase();
-let to = document.getElementById("to").value.toLowerCase();
+  marker = L.circleMarker([userLat,userLon],{
+   radius:8,color:'red'
+  }).addTo(map);
 
-let a = stops.find(s => s.name.toLowerCase().includes(from));
-let b = stops.find(s => s.name.toLowerCase().includes(to));
+  map.setView([userLat,userLon],15);
 
-if(a && b){
-let d = distance(a.lat,a.lon,b.lat,b.lon);
-show("Távolság: " + (d*1000).toFixed(0) + " m");
-} else {
-show("Hibás megálló");
-}
-}
+  let res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${userLat}&lon=${userLon}`);
+  let d = await res.json();
+  let a = d.address || {};
 
-function distance(lat1, lon1, lat2, lon2){
-let R = 6371;
-let dLat = (lat2-lat1) * Math.PI/180;
-let dLon = (lon2-lon1) * Math.PI/180;
+  let speed = pos.coords.speed ? (pos.coords.speed*3.6).toFixed(1) : 0;
 
-let a = Math.sin(dLat/2)**2 +
-Math.cos(lat1*Math.PI/180) *
-Math.cos(lat2*Math.PI/180) *
-Math.sin(dLon/2)**2;
+  document.getElementById("info").innerHTML=`
+  🌍 ${a.country || ""}<br>
+  🏙️ ${a.city || a.town || ""}<br>
+  🛣️ ${a.road || ""} ${a.house_number || ""}<br><br>
+  📍 ${userLat.toFixed(5)}, ${userLon.toFixed(5)}<br>
+  🎯 ±${Math.round(pos.coords.accuracy)} m<br>
+  🚀 ${speed} km/h (${(speed/3.6).toFixed(1)} m/s)
+  `;
 
-let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-return R * c;
+  showStops();
+ });
 }
 
-function show(text){
-let el = document.getElementById("result");
-el.className = mode;
-el.innerHTML = text;
-}
-let mode = "normal";
-
-function setMode(m) {
-mode = m;
-document.getElementById("status").innerText = "Mód: " + m;
+// távolság formázás
+function formatDist(m){
+ if(m<1000) return Math.round(m)+" m";
+ return (m/1000).toFixed(2)+" km";
 }
 
-function getColorStyle() {
-if (mode === "keses") return "color: blue;";
-if (mode === "sietes") return "color: red;";
-if (mode === "zold") return "color: green;";
-if (mode === "sarga") return "color: orange;";
-if (mode === "matrix") return "background: black; color: lime; padding:4px;";
-return "color: black;";
+// közúti becslés
+function roadDist(m){
+ return m*1.3;
 }
+
+function showStops(){
+
+ let arr = stops.map(s=>{
+  let d = map.distance([userLat,userLon],[s.lat,s.lon]);
+  return {...s,dist:d};
+ });
+
+ arr.sort((a,b)=>a.dist-b.dist);
+
+ let html="<h3>🚏 Legközelebbi megállók</h3>";
+
+ arr.slice(0,10).forEach(s=>{
+
+  let air = formatDist(s.dist);
+  let road = formatDist(roadDist(s.dist));
+
+  html+=`
+  <div class="card">
+   <b>${s.name}</b><br>
+   📏 Légvonal: ${air}<br>
+   🚗 Közút (becsült): ${road}
+  </div>
+  `;
+
+  L.marker([s.lat,s.lon]).addTo(map)
+   .bindPopup(s.name);
+ });
+
+ document.getElementById("stops").innerHTML = html;
+}
+
+// kereső
+function search(){
+ let q = document.getElementById("search").value.toLowerCase();
+
+ let found = stops.find(s=>s.name.toLowerCase().includes(q));
+
+ if(found){
+  map.setView([found.lat,found.lon],16);
+  L.marker([found.lat,found.lon]).addTo(map)
+   .bindPopup(found.name).openPopup();
+ }else{
+  alert("Nincs találat");
+ }
+}
+
 </script>
 
 </body>
 </html>
+
