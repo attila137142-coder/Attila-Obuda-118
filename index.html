@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5 LIVE DISPATCH</title>
+<title>FUTÁR V5 HYBRID CORE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
@@ -52,14 +52,12 @@ button{
  padding:4px 8px;
  border-radius:6px;
  font-size:12px;
- background:#38bdf8;
- color:black;
 }
 
-.vehicle{
- font-weight:bold;
- color:#22c55e;
-}
+.city{background:#38bdf8;color:black;}
+.region{background:#f59e0b;color:black;}
+.nature{background:#22c55e;color:black;}
+.live{background:#a78bfa;color:black;}
 </style>
 </head>
 
@@ -69,10 +67,10 @@ button{
 
 <div class="container">
 
-<h2>🚍 FUTÁR V5 LIVE DISPATCH</h2>
+<h2>🚍 FUTÁR V5 HYBRID CORE</h2>
 
-<input id="input" placeholder="keresés (BKK / VOLÁN / MÁV / stop)">
-<button onclick="run()">LIVE INDÍTÁS</button>
+<input id="input" placeholder="keresés (BKK / VOLÁN / MÁV / stop / természet)">
+<button onclick="run()">HYBRID DISPATCH</button>
 
 <div id="out"></div>
 
@@ -100,7 +98,7 @@ navigator.geolocation?.getCurrentPosition(p=>{
  userLon=p.coords.longitude;
 });
 
-// ---------------- STOP DATA ----------------
+// ---------------- STOP DATABASE ----------------
 const STOPS=[
  {name:"Nád utca", type:"BKK", lat:47.594072, lon:19.048469},
  {name:"Flórián tér", type:"BKK", lat:47.542896, lon:19.042252},
@@ -111,7 +109,7 @@ const STOPS=[
 
  {name:"Szob", type:"MÁV", lat:47.821319, lon:18.862602},
 
- {name:"Dobogókő", type:"TOUR", lat:47.719118, lon:18.897577}
+ {name:"Dobogókő", type:"NATURE", lat:47.719118, lon:18.897577}
 ];
 
 // ---------------- DIST ----------------
@@ -129,19 +127,27 @@ function dist(a,b,c,d){
  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ---------------- VEHICLE SIMULATION ----------------
-function simulateVehicles(){
+// ---------------- SMART RADIUS ----------------
+function radius(n){
 
- return STOPS.map((s,i)=>{
+ if(n<2) return 10;
+ if(n<4) return 25;
+ return 40;
+}
 
-  let offset = (Date.now()/10000 + i*10) % 1;
+// ---------------- LIVE SIMULATION ----------------
+function live(stops){
+
+ return stops.map((s,i)=>{
+
+  let t = (Date.now()/8000 + i*0.2);
 
   return {
-   name:s.name,
-   type:s.type,
-   lat:s.lat + offset*0.01,
-   lon:s.lon + offset*0.01,
-   speed:30 + Math.random()*40
+   ...s,
+   lat: s.lat + Math.sin(t)*0.002,
+   lon: s.lon + Math.cos(t)*0.002,
+   speed: 25 + Math.random()*50,
+   mode:"LIVE"
   };
 
  });
@@ -151,16 +157,16 @@ function simulateVehicles(){
 // ---------------- MATRIX ----------------
 function matrix(data){
 
- return data.map(v=>{
+ return data.map(s=>{
 
-  let d=dist(userLat,userLon,v.lat,v.lon).toFixed(2);
+  let d=dist(userLat,userLon,s.lat,s.lon).toFixed(2);
 
   return `
   <div class="row">
-  🚍 <span class="vehicle">${v.type}</span>
-  | ${v.name}
+  🚍 ${s.name}
+  | ${s.type}
   | ${d} km
-  | ${v.speed.toFixed(0)} km/h
+  | ${s.speed.toFixed(0)} km/h
   </div>
   `;
 
@@ -173,16 +179,18 @@ function run(){
 
  let input=document.getElementById("input").value.toUpperCase();
 
- let vehicles=simulateVehicles();
+ let data=live(STOPS);
 
  if(input){
-  vehicles=vehicles.filter(v=>
-   v.name.toUpperCase().includes(input) ||
-   v.type.toUpperCase().includes(input)
+  data=data.filter(s=>
+   s.name.toUpperCase().includes(input) ||
+   s.type.toUpperCase().includes(input)
   );
  }
 
- let center=vehicles[0];
+ if(data.length===0) data=live(STOPS);
+
+ let center=data[0];
 
  if(marker) map.removeLayer(marker);
 
@@ -196,20 +204,22 @@ function run(){
  let html=`
 
  <div class="card">
- <h3>🚍 LIVE MATRIX</h3>
- ${matrix(vehicles)}
+ <span class="badge live">HYBRID LIVE</span>
+ <h3>🧠 FUTÁR MATRIX</h3>
+ ${matrix(data)}
  </div>
 
  <div class="card">
  📍 CENTER: ${center.name}<br>
  TYPE: ${center.type}<br>
- SPEED MODE: LIVE SIMULATION
+ MODE: HYBRID CORE (STATIC + LIVE SIM)
  </div>
 
  <div class="card">
- 🧠 ENGINE STATUS:<br>
- LIVE DISPATCH V5 ACTIVE<br>
- SMART RADAR + MOVING VEHICLES
+ 🚍 ENGINE STATUS:<br>
+ SMART RADAR ACTIVE<br>
+ LIVE SIMULATION ACTIVE<br>
+ GTFS READY STRUCTURE
  </div>
 
  `;
@@ -217,8 +227,7 @@ function run(){
  document.getElementById("out").innerHTML=html;
 }
 
-// auto refresh
-setInterval(()=>run(),5000);
+setInterval(run,5000);
 
 </script>
 
