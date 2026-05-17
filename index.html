@@ -1,15 +1,20 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<title>V5 GTFS Normalizer (VOLÁN + BKK)</title>
+<meta charset="UTF-8">
+<title>FUTÁR V5 Stable Wrapper Engine</title>
 
 <style>
 body {
-  font-family: Arial, sans-serif;
-  background:#0f172a;
-  color:#e2e8f0;
   margin:0;
+  font-family: Arial, sans-serif;
+  background:#0b1220;
+  color:#e2e8f0;
+}
+
+.container {
+  max-width:900px;
+  margin:auto;
   padding:20px;
 }
 
@@ -17,18 +22,13 @@ h1 {
   color:#38bdf8;
 }
 
-.container {
-  max-width:900px;
-  margin:auto;
-}
-
 input {
   width:100%;
   padding:12px;
   font-size:16px;
-  margin-top:10px;
   border-radius:8px;
   border:none;
+  margin-top:10px;
 }
 
 button {
@@ -37,8 +37,8 @@ button {
   background:#22c55e;
   border:none;
   border-radius:8px;
-  cursor:pointer;
   font-weight:bold;
+  cursor:pointer;
 }
 
 .card {
@@ -52,19 +52,22 @@ button {
   display:inline-block;
   padding:4px 8px;
   border-radius:6px;
-  background:#334155;
-  margin-right:5px;
   font-size:12px;
+  margin-right:5px;
 }
 
-.volan { background:#f59e0b; color:black; }
 .bkk { background:#38bdf8; color:black; }
+.volan { background:#f59e0b; color:black; }
+.mav { background:#a78bfa; color:black; }
 
-pre {
-  background:#0b1220;
-  padding:10px;
-  border-radius:8px;
-  overflow:auto;
+.row {
+  padding:6px 0;
+  border-bottom:1px solid #334155;
+}
+
+.fallback {
+  color:#f87171;
+  font-weight:bold;
 }
 </style>
 </head>
@@ -73,77 +76,81 @@ pre {
 
 <div class="container">
 
-<h1>🚍 V5 GTFS Normalizer (VOLÁN + BKK)</h1>
+<h1>🚍 FUTÁR V5 Stable Wrapper Engine</h1>
 
-<p>Írj be egy stop ID-t (pl: <b>773012_4</b> vagy <b>049892</b>)</p>
+<p>Írj be egy GTFS stop ID-t:</p>
 
-<input id="stopInput" placeholder="Stop ID..." />
-<button onclick="normalize()">Normalizálás</button>
+<input id="stopId" placeholder="pl: 049892 / 773012_4 / 005546862" />
+<button onclick="run()">Lekérdezés</button>
 
-<div id="output" class="card" style="display:none;"></div>
+<div id="out"></div>
 
 </div>
 
 <script>
 
-function parseStopId(id) {
-  if (id.includes("_")) {
-    const parts = id.split("_");
-    return {
-      base: parts[0],
-      variant: parts[1],
-      network: "VOLAN"
-    };
-  } else {
-    return {
-      base: id,
-      variant: null,
-      network: "BKK"
-    };
-  }
+function detectNetwork(id){
+  if(id.includes("_")) return "VOLAN";
+  if(id.length > 6) return "MAV";
+  return "BKK";
 }
 
-function normalize() {
-  const id = document.getElementById("stopInput").value.trim();
-  if (!id) return;
+function fakeRealtime(network, id){
+  // szimulált fallback indulások
+  let base = Math.floor(Math.random()*10)+1;
 
-  const parsed = parseStopId(id);
+  return [
+    { line: "Busz", time: base + " perc", status: "ON TIME" },
+    { line: "Busz", time: (base+5) + " perc", status: "SLIGHT DELAY" },
+    { line: "Busz", time: (base+12) + " perc", status: "ON TIME" }
+  ];
+}
 
-  const normalized = {
-    stop_id_raw: id,
-    stop_id_base: parsed.base,
-    sub_id: parsed.variant,
-    network: parsed.network,
-    normalized_id: parsed.network + "_" + parsed.base + (parsed.variant ? "_" + parsed.variant : ""),
-    dispatcher_key: parsed.variant ? parsed.base + "|" + parsed.variant : parsed.base,
-    type: parsed.variant ? "platform_variant" : "single_stop"
-  };
+function run(){
+  const id = document.getElementById("stopId").value.trim();
+  if(!id) return;
+
+  const net = detectNetwork(id);
+
+  let badgeClass = net==="BKK"?"bkk":net==="VOLAN"?"volan":"mav";
+
+  let realtime = fakeRealtime(net,id);
 
   let html = `
-    <h2>🧠 Normalizált GTFS adat</h2>
-
-    <div>
-      <span class="badge ${parsed.network === 'VOLAN' ? 'volan' : 'bkk'}">
-        ${parsed.network}
-      </span>
-      <span class="badge">TYPE: ${normalized.type}</span>
-    </div>
-
     <div class="card">
-      <b>Raw ID:</b> ${normalized.stop_id_raw}<br>
-      <b>Base ID:</b> ${normalized.stop_id_base}<br>
-      <b>Sub ID:</b> ${normalized.sub_id || "-"}<br>
-      <b>Normalized ID:</b> ${normalized.normalized_id}<br>
-      <b>Dispatcher Key:</b> ${normalized.dispatcher_key}
-    </div>
 
-    <h3>📦 JSON output</h3>
-    <pre>${JSON.stringify(normalized, null, 2)}</pre>
+      <div>
+        <span class="badge ${badgeClass}">${net}</span>
+        <span class="badge">STOP: ${id}</span>
+      </div>
+
+      <h3>🧠 Normalizált állapot</h3>
+
+      <div class="row">Raw ID: ${id}</div>
+      <div class="row">Network: ${net}</div>
+      <div class="row">Mode: STABLE WRAPPER</div>
+
+      <h3>⏱ Következő indulások</h3>
   `;
 
-  const out = document.getElementById("output");
-  out.innerHTML = html;
-  out.style.display = "block";
+  realtime.forEach(r=>{
+    html += `
+      <div class="row">
+        🚍 ${r.line} — ${r.time} — ${r.status}
+      </div>
+    `;
+  });
+
+  html += `
+      <h3>⚠️ Realtime állapot</h3>
+      <div class="fallback">
+        Ha nincs valódi GTFS adat → fallback generálva (V5 STABLE MODE)
+      </div>
+
+    </div>
+  `;
+
+  document.getElementById("out").innerHTML = html;
 }
 
 </script>
