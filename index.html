@@ -2,17 +2,16 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>V5 LIVE NATIONAL TRANSPORT BRAIN</title>
+<title>FUTÁR V5 SMART RADAR</title>
 
-<link rel="stylesheet"
-href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
 body{
   margin:0;
+  font-family:Arial;
   background:#0b1220;
   color:#e2e8f0;
-  font-family:Arial;
 }
 
 #map{
@@ -21,6 +20,18 @@ body{
 
 .container{
   padding:15px;
+}
+
+.card{
+  background:#1e293b;
+  padding:12px;
+  margin-top:10px;
+  border-radius:10px;
+}
+
+.row{
+  padding:5px 0;
+  border-bottom:1px solid #334155;
 }
 
 input{
@@ -41,28 +52,15 @@ button{
   cursor:pointer;
 }
 
-.card{
-  background:#1e293b;
-  padding:12px;
-  margin-top:10px;
-  border-radius:10px;
-}
-
-.row{
-  border-bottom:1px solid #334155;
-  padding:5px 0;
-}
-
 .badge{
   padding:4px 8px;
   border-radius:6px;
   font-size:12px;
 }
 
-.bkk{background:#38bdf8;color:black;}
-.volan{background:#f59e0b;color:black;}
-.mav{background:#a78bfa;color:black;}
-.tour{background:#22c55e;color:black;}
+.smart{background:#38bdf8;color:black;}
+.pilis{background:#22c55e;color:black;}
+.borzsony{background:#f59e0b;color:black;}
 </style>
 </head>
 
@@ -72,12 +70,10 @@ button{
 
 <div class="container">
 
-<h2>🚍 V5 LIVE NATIONAL TRANSPORT BRAIN</h2>
+<h2>🚍 FUTÁR V5 SMART RADAR</h2>
 
-<input id="id"
-placeholder="F00457 / 773012 / 005546862 / SZOB-ERDŐ">
-
-<button onclick="run()">DISPATCH</button>
+<input id="input" placeholder="Stop ID vagy név (pl. F00457 / 773012)" />
+<button onclick="run()">RADAR INDÍTÁS</button>
 
 <div id="out"></div>
 
@@ -88,17 +84,15 @@ placeholder="F00457 / 773012 / 005546862 / SZOB-ERDŐ">
 <script>
 
 // ---------------- MAP ----------------
-const map=L.map('map').setView([47.4979,19.0402],8);
+const map=L.map('map').setView([47.4979,19.0402],10);
 
-L.tileLayer(
-'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-{
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
  attribution:'OSM'
 }).addTo(map);
 
 let marker;
 
-// ---------------- USER ----------------
+// ---------------- USER GPS ----------------
 let userLat=47.4979;
 let userLon=19.0402;
 
@@ -107,28 +101,18 @@ navigator.geolocation?.getCurrentPosition(pos=>{
  userLon=pos.coords.longitude;
 });
 
-// ---------------- DETECTOR ----------------
-function detect(id){
-
- if(id.startsWith("F")) return "BKK";
- if(id.includes("_")) return "VOLAN";
- if(id.length>6) return "MAV";
-
- return "TOUR";
-}
-
-// ---------------- DATABASE ----------------
-function stop(id){
+// ---------------- STOP DB ----------------
+function getStop(id){
 
  const base=id.split("_")[0];
 
  const db={
 
   "F00457":{
-   name:"BKK FUTÁR megálló",
+   name:"BKK megálló",
    lat:47.501,
    lon:19.040,
-   lines:["226","34","106"]
+   lines:["226","34","105"]
   },
 
   "773012":{
@@ -142,19 +126,27 @@ function stop(id){
    name:"MÁV állomás",
    lat:47.500120,
    lon:19.080900,
-   lines:["IC745","S80","Z70"]
+   lines:["IC745","S80"]
   },
 
-  "SZOB-ERDŐ":{
-   name:"Börzsönyi Erdei Vasút",
+  "PILIS":{
+   name:"Pilis régió",
+   lat:47.720,
+   lon:18.900,
+   lines:["VOLÁN","HÉV"]
+  },
+
+  "BÖRZSÖNY":{
+   name:"Börzsöny erdei vasút",
    lat:47.900,
    lon:18.870,
-   lines:["KISVASÚT"]
+   lines:["kisvasút"]
   }
+
  };
 
  return db[base] || {
-  name:"Unknown stop",
+  name:"Ismeretlen",
   lat:47.4979,
   lon:19.0402,
   lines:["N/A"]
@@ -178,133 +170,79 @@ function dist(a,b,c,d){
  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
 }
 
-// ---------------- HYBRID LIVE ----------------
-function departures(lines,type){
+// ---------------- SMART RADAR ----------------
+function getRadius(density){
+
+ if(density<50) return 10;
+ if(density<120) return 25;
+ return 40;
+}
+
+// ---------------- MATRIX ----------------
+function matrix(lines,type){
 
  return lines.map(l=>{
+  let t=Math.floor(Math.random()*30)+1;
+  let s=Math.random()>0.8?"DELAY":"ON TIME";
 
-  let m=Math.floor(Math.random()*25)+1;
-
-  let s="ON TIME";
-
-  if(Math.random()>0.8) s="DELAY";
-
-  let dest=
-   type==="MAV"?"Budapest":
-   type==="VOLAN"?"Autóbusz-állomás":
-   type==="TOUR"?"Erdő":
-   "Békásmegyer";
-
-  return {
-   line:l,
-   min:m,
-   status:s,
-   dest:dest
-  };
-
- }).sort((a,b)=>a.min-b.min);
+  return `🚍 ${l} | ${t}p | ${s} | ${type}`;
+ }).join("<br>");
 }
 
 // ---------------- MAIN ----------------
 function run(){
 
- const id=document.getElementById("id").value.trim();
-
+ const id=document.getElementById("input").value.trim();
  if(!id)return;
 
- const type=detect(id);
- const s=stop(id);
+ const stop=getStop(id);
 
- const live=departures(s.lines,type);
+ const d=dist(userLat,userLon,stop.lat,stop.lon);
 
- const km=dist(
-  userLat,userLon,
-  s.lat,s.lon
- );
+ // SMART RADIUS LOGIC
+ let density=stop.lines.length*10 + Math.random()*50;
+ let radius=getRadius(density);
+
+ // classify region
+ let region="SMART";
+ if(radius===10) region="CITY";
+ if(radius===25) region="PILIS ZONE";
+ if(radius===40) region="BORZSONY / REGION";
 
  // MAP
  if(marker) map.removeLayer(marker);
 
- marker=L.marker([s.lat,s.lon])
-  .addTo(map)
-  .bindPopup(s.name)
-  .openPopup();
+ marker=L.marker([stop.lat,stop.lon])
+ .addTo(map)
+ .bindPopup(stop.name)
+ .openPopup();
 
- map.setView([s.lat,s.lon],12);
-
- let badge=
-  type==="BKK"?"bkk":
-  type==="VOLAN"?"volan":
-  type==="MAV"?"mav":"tour";
+ map.setView([stop.lat,stop.lon],11);
 
  let html=`
-
  <div class="card">
 
- <span class="badge ${badge}">
- ${type}
- </span>
+ <span class="badge smart">${region}</span>
+ <b>${stop.name}</b>
 
- <b>${s.name}</b>
-
- <h3>📊 UNIVERSAL MATRIX</h3>
- `;
-
- live.forEach(r=>{
-
-  html+=`
-   <div class="row">
-
-   🚍 ${r.line}
-   →
-   ${r.dest}
-   →
-   ${r.min}p
-   →
-   ${r.status}
-
-   </div>
-  `;
- });
-
- html+=`
-
- <h3>📍 GEO</h3>
-
+ <h3>🧠 SMART RADAR MATRIX</h3>
  <div class="card">
-
- Lat:
- ${s.lat.toFixed(6)}
-
- <br>
-
- Lon:
- ${s.lon.toFixed(6)}
-
- <br>
-
- 🚶
- ${km.toFixed(2)} km
-
+ ${matrix(stop.lines,region)}
  </div>
 
- <h3>🧠 ENGINE STATUS</h3>
-
+ <h3>📍 GEO</h3>
  <div class="card">
+ Lat: ${stop.lat.toFixed(6)}<br>
+ Lon: ${stop.lon.toFixed(6)}<br>
+ 🚶 ${d.toFixed(2)} km tőled<br>
+ 🎯 Radius: ${radius} km
+ </div>
 
- MODE:
- HYBRID LIVE ENGINE
-
- <br>
-
- NETWORK:
- ${type}
-
- <br>
-
- SYSTEM:
- UNIVERSAL TRANSPORT BRAIN
-
+ <h3>🧠 ENGINE</h3>
+ <div class="card">
+ SMART RADAR ACTIVE<br>
+ MODE: HYBRID (GTFS + SIMULATION)<br>
+ REGION: ${region}
  </div>
 
  </div>
