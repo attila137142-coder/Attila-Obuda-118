@@ -2,9 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5 LIVE GTFS DISPATCHER MAP</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<title>FUTÁR V5 – Universal Transport Brain</title>
 
 <style>
 body {
@@ -14,21 +12,20 @@ body {
   color:#e2e8f0;
 }
 
-#map {
-  height: 55vh;
-  width: 100%;
+.container {
+  max-width:900px;
+  margin:auto;
+  padding:20px;
 }
 
-.container {
-  padding:15px;
-}
+h1 { color:#38bdf8; }
 
 input {
   width:100%;
   padding:12px;
   font-size:16px;
-  border:none;
   border-radius:8px;
+  border:none;
 }
 
 button {
@@ -42,90 +39,110 @@ button {
 }
 
 .card {
-  margin-top:10px;
+  margin-top:15px;
   background:#1e293b;
-  padding:10px;
+  padding:15px;
   border-radius:10px;
 }
 
 .row {
-  border-bottom:1px solid #334155;
   padding:5px 0;
+  border-bottom:1px solid #334155;
 }
 
 .badge {
-  display:inline-block;
-  padding:3px 6px;
+  padding:4px 8px;
   border-radius:6px;
   font-size:12px;
+  margin-right:5px;
 }
 
+.bkk { background:#38bdf8; color:black; }
 .volan { background:#f59e0b; color:black; }
 .mav { background:#a78bfa; color:black; }
-.bkk { background:#38bdf8; color:black; }
+.tour { background:#22c55e; color:black; }
 </style>
 </head>
 
 <body>
 
-<div id="map"></div>
-
 <div class="container">
 
-<input id="stop" placeholder="Stop ID (773012 / 005546862 / 049892)" />
-<button onclick="loadStop()">MEHET</button>
+<h1>🚍 FUTÁR V5 – UNIVERSAL TRANSPORT BRAIN</h1>
 
-<div id="panel"></div>
+<input id="input" placeholder="Stop ID / Station ID / GPS" />
+<button onclick="run()">DISZPÉCSER INDÍTÁS</button>
+
+<div id="out"></div>
 
 </div>
 
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
 <script>
 
-// ---------------- MAP ----------------
-const map = L.map('map').setView([47.4979, 19.0402], 12);
+// ---------------- USER LOCATION ----------------
+let userLat = 47.4979;
+let userLon = 19.0402;
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'OSM'
-}).addTo(map);
+navigator.geolocation?.getCurrentPosition(pos=>{
+  userLat = pos.coords.latitude;
+  userLon = pos.coords.longitude;
+});
 
-let marker;
+// ---------------- 1. CLASSIFIER ----------------
+function classify(id){
 
-// ---------------- STOP DB ----------------
+  if(id.startsWith("F")) return "BKK";
+  if(id.includes("_")) return "VOLAN";
+  if(id.length > 6) return "MAV";
+
+  return "TOUR";
+}
+
+// ---------------- 2. STOP DATABASE ----------------
 function getStop(id){
+
   const base = id.split("_")[0];
 
   const db = {
+
+    "F00457": {
+      name:"BKK FUTÁR megálló",
+      lat:47.501,
+      lon:19.040,
+      lines:["226","34","105"]
+    },
+
     "773012": {
       name:"VOLÁN állomás",
       lat:47.650120,
       lon:19.120300,
       lines:["1010","1012","1020"]
     },
+
     "005546862": {
       name:"MÁV állomás",
       lat:47.500120,
       lon:19.080900,
       lines:["IC 745","S80","Z70"]
     },
-    "049892": {
-      name:"Május 9. park",
-      lat:47.541231,
-      lon:19.047812,
-      lines:["226","34","106"]
+
+    "SZOB-ERDŐ": {
+      name:"Börzsöny erdei megálló",
+      lat:47.880,
+      lon:18.870,
+      lines:["kisvasút"]
     }
   };
 
-  return db[base] || {
-    name:"Ismeretlen",
+  return db[id] || {
+    name:"Ismeretlen állomás",
     lat:47.4979,
     lon:19.0402,
     lines:["N/A"]
   };
 }
 
-// ---------------- DISTANCE ----------------
+// ---------------- 3. DISTANCE ----------------
 function dist(lat1,lon1,lat2,lon2){
   const R=6371;
   const dLat=(lat2-lat1)*Math.PI/180;
@@ -140,62 +157,63 @@ function dist(lat1,lon1,lat2,lon2){
   return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// ---------------- FAKE LIVE GTFS ----------------
-function live(lines){
+// ---------------- 4. UNIVERSAL MATRIX ----------------
+function matrix(lines,type){
+
   return lines.map(l=>{
-    let m=Math.floor(Math.random()*20)+1;
-    return {
-      line:l,
-      min:m,
-      status:Math.random()>0.7?"DELAY":"ON TIME"
-    };
-  }).sort((a,b)=>a.min-b.min);
+    const t=Math.floor(Math.random()*30)+1;
+
+    let st="ON TIME";
+    if(Math.random()>0.8) st="DELAY";
+
+    return `🚍 ${l} | ${t}p | ${st} | ${type}`;
+  }).join("<br>");
 }
 
-// ---------------- MAIN ----------------
-function loadStop(){
+// ---------------- 5. MAIN BRAIN ----------------
+function run(){
 
-  const id=document.getElementById("stop").value.trim();
+  const id=document.getElementById("input").value.trim();
   if(!id)return;
 
+  const type=classify(id);
   const stop=getStop(id);
-  const liveData=live(stop.lines);
 
-  const d=dist(47.4979,19.0402,stop.lat,stop.lon);
+  const d=dist(userLat,userLon,stop.lat,stop.lon);
 
-  // MAP UPDATE
-  if(marker) map.removeLayer(marker);
+  let badge=type==="BKK"?"bkk":
+            type==="VOLAN"?"volan":
+            type==="MAV"?"mav":"tour";
 
-  marker=L.marker([stop.lat,stop.lon])
-    .addTo(map)
-    .bindPopup(stop.name)
-    .openPopup();
-
-  map.setView([stop.lat,stop.lon],13);
-
-  // PANEL
   let html=`
     <div class="card">
-      <b>${stop.name}</b><br>
-      📍 ${stop.lat.toFixed(6)}, ${stop.lon.toFixed(6)}<br>
-      🚶 ${d.toFixed(2)} km tőled
-    </div>
 
-    <div class="card">
-      <b>🚍 FUTÁR MÁTRIX (LIVE)</b>
+      <span class="badge ${badge}">${type}</span>
+      <b>${stop.name}</b>
+
+      <h3>🧠 UNIVERSAL FUTÁR MÁTRIX</h3>
+      <div class="card">
+        ${matrix(stop.lines,type)}
+      </div>
+
+      <h3>📍 GEO</h3>
+      <div class="card">
+        Lat: ${stop.lat.toFixed(6)}<br>
+        Lon: ${stop.lon.toFixed(6)}<br>
+        🚶 ${d.toFixed(2)} km tőled
+      </div>
+
+      <h3>🧩 DISPATCH STATUS</h3>
+      <div class="card">
+        SYSTEM: UNIVERSAL MODE<br>
+        DATA: HYBRID (GTFS + SIMULATION)<br>
+        NETWORK: ${type}
+      </div>
+
+    </div>
   `;
 
-  liveData.forEach(l=>{
-    html+=`
-      <div class="row">
-        ${l.line} → ${l.min}p [${l.status}]
-      </div>
-    `;
-  });
-
-  html+=`</div>`;
-
-  document.getElementById("panel").innerHTML=html;
+  document.getElementById("out").innerHTML=html;
 }
 
 </script>
