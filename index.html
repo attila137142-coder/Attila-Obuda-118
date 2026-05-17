@@ -2,226 +2,112 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V3 GTFS LIVE CONTROL</title>
+<title>Attila közlekedés</title>
 
 <style>
-body {
-  margin: 0;
-  font-family: Arial;
-  background: #070b12;
-  color: white;
-}
-
-.header {
-  padding: 14px;
-  background: #0f172a;
-  font-weight: bold;
-  font-size: 18px;
-}
-
-.container {
-  display: flex;
-  height: calc(100vh - 52px);
-}
-
-.left {
-  width: 40%;
-  background: #0b1220;
-  border-right: 1px solid #1f2a3a;
-  display: flex;
-  flex-direction: column;
-}
-
-.search {
-  padding: 10px;
-  border-bottom: 1px solid #1f2a3a;
-}
-
-input {
-  width: 100%;
-  padding: 10px;
-  border-radius: 8px;
-  border: none;
-  font-size: 15px;
-  box-sizing: border-box;
-  margin-bottom: 8px;
-}
-
-button {
-  width: 100%;
-  padding: 10px;
-  border: none;
-  border-radius: 8px;
-  background: #1f2937;
-  color: white;
-  font-weight: bold;
-  cursor: pointer;
-}
-
-.list {
-  overflow-y: auto;
-  flex: 1;
-}
-
-.row {
-  display: grid;
-  grid-template-columns: 70px 1fr 90px 70px;
-  padding: 10px;
-  border-bottom: 1px solid #162235;
-  align-items: center;
-  font-size: 13px;
-}
-
-.line {
-  background: #1f2937;
-  padding: 5px;
-  text-align: center;
-  border-radius: 6px;
-  font-weight: bold;
-}
-
-.green { color: #22c55e; }
-.yellow { color: #facc15; }
-.red { color: #ef4444; }
-
-.right {
-  flex: 1;
-  background: #05080f;
-}
+body { font-family: Arial; padding: 20px; }
+button { margin: 5px; padding: 10px; }
+#result { margin-top: 10px; font-weight: bold; }
+.kek { color: blue; }
+.piros { color: red; }
 </style>
-</head>
 
+</head>
 <body>
 
-<div class="header" id="header">
-🚍 FUTÁR V3 – GTFS STOP LIVE CONTROL
-</div>
+<h2>🚍 Attila közlekedés</h2>
 
-<div class="container">
+<input id="search" placeholder="Megálló neve">
+<button onclick="searchStop()">Keresés</button>
 
-  <!-- LEFT -->
-  <div class="left">
+<br><br>
 
-    <div class="search">
-      <input id="searchBox" placeholder="Írd be: Nád utca / Batthyány tér / BKK_002..." />
-      <button onclick="handleSearch()">🔎 KERESÉS + LIVE INDÍTÁS</button>
-    </div>
+<input id="from" placeholder="Honnan">
+<input id="to" placeholder="Hová">
+<button onclick="calc()">Távolság</button>
 
-    <div class="list" id="list"></div>
+<br><br>
 
-  </div>
+<button onclick="setMode('kek')">KÉK</button>
+<button onclick="setMode('piros')">PIROS</button>
 
-  <!-- RIGHT -->
-  <div class="right"></div>
-
-</div>
+<div id="result">Eredmény...</div>
 
 <script>
 
-# 📦 GTFS STOP DATABASE (BUDAPEST MINI CORE)
-const GTFS_STOPS = [
-  {id:"BKK_001", name:"Nád utca", routes:["134","5","7E"]},
-  {id:"BKK_002", name:"Batthyány tér", routes:["H5","19","41"]},
-  {id:"BKK_003", name:"Árpád híd", routes:["1","1M","134"]},
-  {id:"BKK_004", name:"Bécsi út / Vörösvári út", routes:["17","19"]},
-  {id:"BKK_005", name:"Kálvin tér", routes:["M3","47","49"]},
-  {id:"BKK_006", name:"Deák Ferenc tér", routes:["M1","M2","M3"]},
-  {id:"BKK_007", name:"Blaha Lujza tér", routes:["4","6","7E"]}
+let mode = "normal";
+
+function setMode(m){
+mode = m;
+}
+
+let stops = [
+{name:"Békásmegyer", lat:47.598, lon:19.055},
+{name:"Batthyány tér", lat:47.507, lon:19.039},
+{name:"Flórián tér", lat:47.541, lon:19.045},
+{name:"Szentendre", lat:47.668, lon:19.075}
 ];
 
-let currentStop = null;
-let liveInterval = null;
+function searchStop(){
+let input = document.getElementById("search").value.toLowerCase();
+let found = stops.find(s => s.name.toLowerCase().includes(input));
 
-/* 🔎 GTFS SEARCH */
-function searchStops(query) {
-  const q = query.toLowerCase();
-
-  return GTFS_STOPS.filter(s =>
-    s.name.toLowerCase().includes(q) ||
-    s.id.toLowerCase().includes(q) ||
-    s.routes.some(r => r.toLowerCase().includes(q))
-  );
+if(found){
+show(found.name);
+} else {
+show("Nincs találat");
+}
 }
 
-/* 🔎 HANDLE SEARCH */
-function handleSearch() {
-  const value = document.getElementById("searchBox").value.trim();
-  if (!value) return;
+function calc(){
+let from = document.getElementById("from").value.toLowerCase();
+let to = document.getElementById("to").value.toLowerCase();
 
-  const results = searchStops(value);
+let a = stops.find(s => s.name.toLowerCase().includes(from));
+let b = stops.find(s => s.name.toLowerCase().includes(to));
 
-  if (results.length === 0) {
-    document.getElementById("header").innerText =
-      "❌ Nincs találat: " + value;
-    document.getElementById("list").innerHTML = "";
-    return;
-  }
-
-  selectStop(results[0]);
+if(a && b){
+let d = distance(a.lat,a.lon,b.lat,b.lon);
+show("Távolság: " + (d*1000).toFixed(0) + " m");
+} else {
+show("Hibás megálló");
+}
 }
 
-/* 🚏 SELECT STOP */
-function selectStop(stop) {
+function distance(lat1, lon1, lat2, lon2){
+let R = 6371;
+let dLat = (lat2-lat1) * Math.PI/180;
+let dLon = (lon2-lon1) * Math.PI/180;
 
-  currentStop = stop;
+let a = Math.sin(dLat/2)**2 +
+Math.cos(lat1*Math.PI/180) *
+Math.cos(lat2*Math.PI/180) *
+Math.sin(dLon/2)**2;
 
-  document.getElementById("header").innerText =
-    "🚏 " + stop.name + " LIVE (GTFS)";
-
-  loadLive(stop);
-
-  if (liveInterval) clearInterval(liveInterval);
-  liveInterval = setInterval(() => loadLive(stop), 5000);
+let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+return R * c;
 }
 
-/* 📡 LIVE GENERATOR (GTFS-READY MOCK) */
-function loadLive(stop) {
+function show(text){
+let el = document.getElementById("result");
+el.className = mode;
+el.innerHTML = text;
+}
+let mode = "normal";
 
-  const data = stop.routes.map(r => ({
-    route: r,
-    headsign: stop.name + " irány",
-    delay: Math.floor(Math.random() * 6) - 1,
-    eta: Math.floor(Math.random() * 10) + 1
-  }));
-
-  render(data);
+function setMode(m) {
+mode = m;
+document.getElementById("status").innerText = "Mód: " + m;
 }
 
-/* 📊 RENDER */
-function render(data) {
-
-  const list = document.getElementById("list");
-  list.innerHTML = "";
-
-  data.slice(0, 15).forEach(d => {
-
-    const status =
-      d.delay > 2 ? "red" :
-      d.delay > 0 ? "yellow" : "green";
-
-    const row = document.createElement("div");
-    row.className = "row";
-
-    row.innerHTML = `
-      <div class="line">${d.route}</div>
-      <div>${d.headsign}</div>
-      <div class="${status}">
-        ${d.delay > 0 ? "+" + d.delay + " min" : "on time"}
-      </div>
-      <div>${d.eta} min</div>
-    `;
-
-    list.appendChild(row);
-  });
+function getColorStyle() {
+if (mode === "keses") return "color: blue;";
+if (mode === "sietes") return "color: red;";
+if (mode === "zold") return "color: green;";
+if (mode === "sarga") return "color: orange;";
+if (mode === "matrix") return "background: black; color: lime; padding:4px;";
+return "color: black;";
 }
-
-/* ⌨️ ENTER SUPPORT */
-document.addEventListener("keydown", (e) => {
-  if (e.key === "Enter") {
-    handleSearch();
-  }
-});
-
 </script>
 
 </body>
