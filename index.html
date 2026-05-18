@@ -1,141 +1,123 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<title>FUTÁR V5 TURISTA – MAP CORE</title>
+<meta charset="UTF-8">
+<title>FUTÁR V5 OSM TURISTA LOADER</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body {
-    margin: 0;
+    margin:0;
     font-family: Arial;
-    background: #0b0f14;
-    color: white;
+    background:#0b0f14;
+    color:white;
 }
 
 header {
-    padding: 10px;
-    background: #111827;
-    font-weight: bold;
+    padding:10px;
+    background:#111827;
+    font-weight:bold;
 }
 
 #map {
-    height: 90vh;
-    width: 100%;
+    height:90vh;
 }
 
-/* popup stílus */
-.leaflet-popup-content {
-    font-size: 13px;
+/* UI panel */
+.panel {
+    position:absolute;
+    top:60px;
+    left:10px;
+    z-index:999;
+    background:#111827;
+    padding:10px;
+    border-radius:8px;
+    width:260px;
+}
+button {
+    width:100%;
+    padding:8px;
+    margin-top:5px;
+    cursor:pointer;
 }
 </style>
 </head>
 
 <body>
 
-<header>🗺️ FUTÁR V5 TURISTA – Budai / Pilis / Börzsöny ELÁGAZÁS TÉRKÉP</header>
+<header>🗺️ FUTÁR V5 – OSM TURISTAÚT LOADER (Budai / Pilis)</header>
+
+<div class="panel">
+<b>Control</b><br>
+<button onclick="loadHiking()">🚶‍♂️ Turistaút betöltése (Budai-hegység)</button>
+<div id="status">Status: idle</div>
+</div>
 
 <div id="map"></div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-// -----------------------------
-// TÉRKÉP
-// -----------------------------
-const map = L.map('map').setView([47.52, 19.03], 11);
+
+// -------------------- MAP --------------------
+const map = L.map('map').setView([47.52, 19.03], 12);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: 'OpenStreetMap'
+    attribution: "OSM"
 }).addTo(map);
 
-// -----------------------------
-// SZÍNLOGIKA (EMELKEDŐ %)
-// -----------------------------
-function getColor(grade) {
-    if (grade <= 4) return "green";
-    if (grade <= 9) return "yellow";
-    if (grade <= 15) return "orange";
-    if (grade <= 20) return "darkred";
-    if (grade <= 30) return "red";
-    if (grade <= 50) return "purple";
-    return "black";
+// -------------------- COLOR LOGIC --------------------
+function getColor(len) {
+    if (len < 500) return "green";
+    if (len < 1500) return "yellow";
+    if (len < 3000) return "orange";
+    return "red";
 }
 
-// -----------------------------
-// CSOMÓPONTOK (ELÁGAZÁSOK)
-// -----------------------------
-const nodes = [
-    { id:"CS", name:"Csillaghegy", lat:47.569, lon:19.045, elev:140 },
-    { id:"HHH", name:"Hármashatár-hegy", lat:47.539, lon:19.034, elev:495 },
-    { id:"AK", name:"Árpád-kilátó", lat:47.534, lon:19.028, elev:380 },
-    { id:"NF", name:"Normafa", lat:47.500, lon:18.966, elev:477 },
-    { id:"EKT", name:"Erzsébet-kilátó", lat:47.518, lon:18.962, elev:527 },
-    { id:"PK", name:"Pilis-tető", lat:47.693, lon:18.887, elev:756 },
-    { id:"DK", name:"Dobogókő", lat:47.719, lon:18.895, elev:699 },
-    { id:"KR", name:"Királyrét", lat:47.937, lon:18.984, elev:220 }
-];
+// -------------------- OVERPASS QUERY --------------------
+async function loadHiking() {
 
-// -----------------------------
-// SEGMENTEK (ELÁGAZÁSOK KÖZÖTT)
-// -----------------------------
-const segments = [
-    { from:"CS", to:"HHH", dist:0.85, elevGain:120 },
-    { from:"HHH", to:"AK", dist:2.1, elevGain:80 },
-    { from:"NF", to:"EKT", dist:1.2, elevGain:150 },
-    { from:"DK", to:"PK", dist:5.8, elevGain:320 },
-    { from:"KR", to:"DK", dist:6.0, elevGain:350 },
-    { from:"HHH", to:"NF", dist:8.5, elevGain:300 }
-];
+    document.getElementById("status").innerText = "Loading OSM data...";
 
-// -----------------------------
-// NODE INDEX
-// -----------------------------
-const nodeMap = {};
-nodes.forEach(n => nodeMap[n.id] = n);
-
-// -----------------------------
-// NODEK FELRAJZOLÁSA
-// -----------------------------
-nodes.forEach(n => {
-    L.circleMarker([n.lat, n.lon], {
-        radius: 6,
-        color: "white",
-        fillColor: "#38bdf8",
-        fillOpacity: 0.8
-    }).addTo(map)
-    .bindPopup(
-        `<b>${n.name}</b><br>
-        ⛰️ ${n.elev} m`
+    // Budai-hegység bounding box
+    const query = `
+    [out:json];
+    (
+      way["highway"="path"](47.45,18.90,47.60,19.20);
+      way["highway"="footway"](47.45,18.90,47.60,19.20);
+      way["highway"="track"](47.45,18.90,47.60,19.20);
     );
-});
+    out geom;
+    `;
 
-// -----------------------------
-// SZAKASZOK RAJZOLÁSA
-// -----------------------------
-segments.forEach(s => {
-    const a = nodeMap[s.from];
-    const b = nodeMap[s.to];
+    const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
 
-    const grade = (s.elevGain / (s.dist * 1000)) * 100;
-    const color = getColor(grade);
+    const res = await fetch(url);
+    const data = await res.json();
 
-    const line = L.polyline(
-        [[a.lat, a.lon], [b.lat, b.lon]],
-        {
+    document.getElementById("status").innerText = "Rendering...";
+
+    data.elements.forEach(el => {
+
+        if (!el.geometry) return;
+
+        const latlngs = el.geometry.map(p => [p.lat, p.lon]);
+
+        const color = getColor(latlngs.length * 200); // egyszerű becslés
+
+        L.polyline(latlngs, {
             color: color,
-            weight: 5
-        }
-    ).addTo(map);
+            weight: 3
+        }).addTo(map)
+        .bindPopup(
+            "🚶‍♂️ Turistaút<br>" +
+            "Node count: " + latlngs.length
+        );
+    });
 
-    line.bindPopup(
-        `<b>${a.name} → ${b.name}</b><br>
-        📏 ${s.dist} km<br>
-        ⛰️ +${s.elevGain} m<br>
-        📊 ${grade.toFixed(1)} %`
-    );
-});
+    document.getElementById("status").innerText = "Ready ✔️";
+}
 
 </script>
 
