@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5 – OSM TURISTA FIX</title>
+<title>FUTÁR V5 – OSM DEBUG FIX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -18,19 +18,24 @@ header { padding:10px; background:#111827; font-weight:bold; }
     z-index:999;
     background:#111827;
     padding:10px;
-    width:300px;
+    width:320px;
     border-radius:8px;
 }
 
 button { width:100%; padding:8px; margin-top:5px; cursor:pointer; }
 
-#status { font-size:12px; margin-top:8px; color:#93c5fd; }
+#status {
+    font-size:12px;
+    margin-top:8px;
+    color:#93c5fd;
+    white-space:pre-line;
+}
 </style>
 </head>
 
 <body>
 
-<header>🧭 FUTÁR V5 – OSM TURISTA FIX (WORKING VERSION)</header>
+<header>🧭 FUTÁR V5 – OSM DEBUG FIX VERSION</header>
 
 <div class="panel">
 <button onclick="load()">🚶‍♂️ Turistaút betöltése</button>
@@ -49,53 +54,89 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution:"OSM"
 }).addTo(map);
 
-function color(len){
-    if(len < 10) return "green";
-    if(len < 30) return "yellow";
-    if(len < 60) return "orange";
-    return "red";
+// ------------------------------
+function log(msg){
+    document.getElementById("status").innerText = msg;
 }
 
+// ------------------------------
+// FALLBACK DEMO (ha API halott)
+const fallback = [
+    [[47.57,19.04],[47.55,19.03],[47.54,19.02]],
+    [[47.50,18.96],[47.51,18.97],[47.52,18.98]]
+];
+
+// ------------------------------
 async function load(){
 
-    document.getElementById("status").innerText = "Loading...";
+    log("Loading Overpass API...");
 
-    const query = `
-    [out:json];
-    (
-      way["highway"~"path|footway|track"](47.45,18.85,47.60,19.20);
-    );
-    out geom;
-    `;
+    try {
 
-    const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
+        const query = `
+        [out:json][timeout:10];
+        (
+          way["highway"~"path|footway|track"](47.45,18.85,47.60,19.20);
+        );
+        out geom;
+        `;
 
-    const res = await fetch(url);
-    const data = await res.json();
+        const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
 
-    document.getElementById("status").innerText =
-        "Elements: " + data.elements.length;
+        const res = await fetch(url);
 
-    console.log(data);
+        log("Response received... parsing JSON");
 
-    let count = 0;
+        const data = await res.json();
 
-    data.elements.forEach(el => {
+        log(
+            "OK\nElements: " + (data.elements?.length || 0)
+        );
 
-        if(!el.geometry) return;
+        if(!data.elements || data.elements.length === 0){
+            throw new Error("EMPTY DATA");
+        }
 
-        const line = el.geometry.map(p => [p.lat, p.lon]);
+        let count = 0;
 
-        L.polyline(line,{
-            color: "green",
-            weight: 3
-        }).addTo(map);
+        data.elements.forEach(el => {
 
-        count++;
-    });
+            if(!el.geometry) return;
 
-    document.getElementById("status").innerText =
-        "Rendered: " + count + " paths ✔️";
+            const line = el.geometry.map(p => [p.lat, p.lon]);
+
+            L.polyline(line, {
+                color: "green",
+                weight: 3
+            }).addTo(map);
+
+            count++;
+        });
+
+        log("Rendered OSM paths: " + count);
+
+    } catch(e){
+
+        console.error(e);
+
+        log(
+`ERROR ❌ Overpass failed
+
+Reason: ${e.message}
+
+→ switching to FALLBACK DEMO`
+        );
+
+        // fallback rajz
+        fallback.forEach(line => {
+            L.polyline(line, {
+                color:"orange",
+                weight:3
+            }).addTo(map);
+        });
+
+        log("FALLBACK MAP LOADED ✔️ (demo paths)");
+    }
 }
 
 </script>
