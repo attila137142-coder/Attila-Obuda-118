@@ -1,30 +1,15 @@
-turistaút SZŰRT OSM loader
-
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5 – TURISTA ENGINE (B VERZIÓ)</title>
+<title>FUTÁR V5 – OSM TURISTA FIX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body {
-    margin:0;
-    font-family: Arial;
-    background:#0b0f14;
-    color:white;
-}
-
-header {
-    padding:10px;
-    background:#111827;
-    font-weight:bold;
-}
-
-#map {
-    height:90vh;
-}
+body { margin:0; font-family:Arial; background:#0b0f14; color:white; }
+header { padding:10px; background:#111827; font-weight:bold; }
+#map { height:90vh; }
 
 .panel {
     position:absolute;
@@ -33,33 +18,23 @@ header {
     z-index:999;
     background:#111827;
     padding:10px;
+    width:300px;
     border-radius:8px;
-    width:280px;
 }
 
-button {
-    width:100%;
-    padding:8px;
-    margin-top:5px;
-    cursor:pointer;
-}
+button { width:100%; padding:8px; margin-top:5px; cursor:pointer; }
 
-.status {
-    margin-top:8px;
-    font-size:12px;
-    color:#93c5fd;
-}
+#status { font-size:12px; margin-top:8px; color:#93c5fd; }
 </style>
 </head>
 
 <body>
 
-<header>🧭 FUTÁR V5 – TURISTA ENGINE B (OSM ROUTE FILTER)</header>
+<header>🧭 FUTÁR V5 – OSM TURISTA FIX (WORKING VERSION)</header>
 
 <div class="panel">
-<b>Control Panel</b>
-<button onclick="loadRoutes()">🚶‍♂️ Turista háló betöltése</button>
-<div class="status" id="status">Idle</div>
+<button onclick="load()">🚶‍♂️ Turistaút betöltése</button>
+<div id="status">Idle</div>
 </div>
 
 <div id="map"></div>
@@ -68,33 +43,29 @@ button {
 
 <script>
 
-// ---------------- MAP ----------------
 const map = L.map('map').setView([47.52, 19.03], 12);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: "OSM"
+    attribution:"OSM"
 }).addTo(map);
 
-// ---------------- COLOR ----------------
-function colorByNetwork(tags) {
-    if (tags["route"] === "hiking") return "green";
-    if (tags["network"] === "lwn") return "yellow";
-    if (tags["network"] === "rwn") return "orange";
+function color(len){
+    if(len < 10) return "green";
+    if(len < 30) return "yellow";
+    if(len < 60) return "orange";
     return "red";
 }
 
-// ---------------- LOAD ----------------
-async function loadRoutes() {
+async function load(){
 
-    document.getElementById("status").innerText = "Loading hiking routes...";
+    document.getElementById("status").innerText = "Loading...";
 
     const query = `
     [out:json];
     (
-      relation["route"="hiking"](47.45,18.90,47.60,19.20);
-      way["osmc:symbol"](47.45,18.90,47.60,19.20);
+      way["highway"~"path|footway|track"](47.45,18.85,47.60,19.20);
     );
-    out geom tags;
+    out geom;
     `;
 
     const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
@@ -102,28 +73,29 @@ async function loadRoutes() {
     const res = await fetch(url);
     const data = await res.json();
 
-    document.getElementById("status").innerText = "Rendering routes...";
+    document.getElementById("status").innerText =
+        "Elements: " + data.elements.length;
+
+    console.log(data);
+
+    let count = 0;
 
     data.elements.forEach(el => {
 
-        if (!el.geometry) return;
+        if(!el.geometry) return;
 
-        const latlngs = el.geometry.map(p => [p.lat, p.lon]);
+        const line = el.geometry.map(p => [p.lat, p.lon]);
 
-        const color = colorByNetwork(el.tags || {});
+        L.polyline(line,{
+            color: "green",
+            weight: 3
+        }).addTo(map);
 
-        L.polyline(latlngs, {
-            color: color,
-            weight: 4
-        }).addTo(map)
-        .bindPopup(
-            "🚶‍♂️ Turistaút<br>" +
-            "Route: " + (el.tags?.route || "unknown") + "<br>" +
-            "Network: " + (el.tags?.network || "n/a")
-        );
+        count++;
     });
 
-    document.getElementById("status").innerText = "READY ✔️ (Turista háló betöltve)";
+    document.getElementById("status").innerText =
+        "Rendered: " + count + " paths ✔️";
 }
 
 </script>
