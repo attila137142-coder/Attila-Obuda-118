@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5 – DEBUG GRAPH</title>
+<title>FUTÁR V5 – REAL BUDAI TURISTA GRAPH</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -40,10 +40,10 @@ button {
 
 <body>
 
-<header>🧭 FUTÁR V5 – VISUAL DEBUG GRAPH (FOR REAL CHECK)</header>
+<header>🧭 FUTÁR V5 – REAL BUDAI OSM TURISTA GRAPH</header>
 
 <div class="panel">
-<button onclick="run()">🚶‍♂️ GRAPH RENDER DEBUG</button>
+<button onclick="loadOSM()">🚶‍♂️ Budai turista háló betöltése</button>
 <div id="status">Idle</div>
 </div>
 
@@ -53,68 +53,125 @@ button {
 
 <script>
 
-const map = L.map('map').setView([47.52, 19.03], 11);
+const map = L.map('map').setView([47.52, 19.03], 12);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution:"OSM"
+    attribution:"© OpenStreetMap"
 }).addTo(map);
 
 function log(t){
     document.getElementById("status").innerText = t;
 }
 
-// ---------------- GRAPH ----------------
-const nodes = {
-    A:{name:"Csillaghegy",lat:47.569,lon:19.045},
-    B:{name:"Hármashatár-hegy",lat:47.539,lon:19.034},
-    C:{name:"Árpád-kilátó",lat:47.534,lon:19.028},
-    D:{name:"Normafa",lat:47.500,lon:18.966},
-    E:{name:"János-hegy",lat:47.525,lon:18.963},
-};
+// ---------------- GRAPH STORAGE ----------------
+let nodeMap = {};
+let edges = [];
+let bounds = [];
 
-const edges = [
-    ["A","B"],
-    ["B","C"],
-    ["B","D"],
-    ["D","E"],
-    ["E","C"]
-];
+// ---------------- DISTANCE ----------------
+function dist(a,b){
+    const R = 6371000;
+    const dLat = (b.lat-a.lat)*Math.PI/180;
+    const dLon = (b.lon-a.lon)*Math.PI/180;
+    const lat1 = a.lat*Math.PI/180;
+    const lat2 = b.lat*Math.PI/180;
 
-function run(){
+    const x =
+        Math.sin(dLat/2)**2 +
+        Math.sin(dLon/2)**2 * Math.cos(lat1)*Math.cos(lat2);
 
-    log("Rendering nodes + edges...");
+    return 2*R*Math.asin(Math.sqrt(x));
+}
 
-    let bounds = [];
+// ---------------- KEY ----------------
+function key(p){
+    return `${p.lat.toFixed(5)}_${p.lon.toFixed(5)}`;
+}
 
-    // nodes
-    Object.keys(nodes).forEach(k=>{
-        const n = nodes[k];
+// ---------------- MAIN LOAD ----------------
+async function loadOSM(){
 
-        L.circleMarker([n.lat,n.lon],{
-            radius:10,
-            color:"#fff",
-            fillColor:"#38bdf8",
-            fillOpacity:1
-        }).addTo(map)
-        .bindPopup(n.name);
+    log("Loading REAL Budai hiking network...");
 
-        bounds.push([n.lat,n.lon]);
-    });
+    const query = `
+    [out:json][timeout:25];
+    (
+      way["highway"~"path|footway|track"](47.45,18.85,47.60,19.20);
+      relation["route"="hiking"](47.45,18.85,47.60,19.20);
+    );
+    out geom;
+    `;
 
-    // edges
-    edges.forEach(e=>{
-        const a = nodes[e[0]];
-        const b = nodes[e[1]];
+    const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
 
-        L.polyline(
-            [[a.lat,a.lon],[b.lat,b.lon]],
-            {color:"lime",weight:6}
-        ).addTo(map);
-    });
+    try {
 
-    map.fitBounds(bounds);
+        const res = await fetch(url);
+        const data = await res.json();
 
-    log("DONE ✔ GRAPH VISIBLE\nNodes: "+Object.keys(nodes).length+"\nEdges: "+edges.length);
+        log("Elements: " + data.elements.length + "\nProcessing graph...");
+
+        let edgeCount = 0;
+
+        data.elements.forEach(el => {
+
+            if(!el.geometry || el.geometry.length < 2) return;
+
+            const g = el.geometry;
+
+            for(let i=0;i<g.length-1;i++){
+
+                const A = {lat:g[i].lat, lon:g[i].lon};
+                const B = {lat:g[i+1].lat, lon:g[i+1].lon};
+
+                const idA = key(A);
+                const idB = key(B);
+
+                nodeMap[idA] = A;
+                nodeMap[idB] = B;
+
+                const d = dist(A,B);
+
+                edges.push({a:A,b:B,d});
+
+                bounds.push([A.lat,A.lon]);
+
+                L.polyline([[A.lat,A.lon],[B.lat,B.lon]],{
+                    color:"#22c55e",
+                    weight:3
+                }).addTo(map);
+
+                edgeCount++;
+            }
+        });
+
+        // nodes render
+        Object.values(nodeMap).forEach(n=>{
+            L.circleMarker([n.lat,n.lon],{
+                radius:4,
+                color:"#fff",
+                fillColor:"#38bdf8",
+                fillOpacity:0.8
+            }).addTo(map);
+        });
+
+        if(bounds.length > 0){
+            map.fitBounds(bounds);
+        }
+
+        log(
+`✔ REAL BUDAI GRAPH LOADED
+
+Nodes: ${Object.keys(nodeMap).length}
+Edges: ${edges.length}
+Status: LIVE OSM TURISTA NETWORK`
+        );
+
+    } catch(e){
+
+        console.error(e);
+        log("ERROR ❌ Overpass failed\n" + e.message);
+    }
 }
 
 </script>
