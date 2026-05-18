@@ -1,34 +1,33 @@
 <!DOCTYPE html>
-<html>
+<html lang="hu">
 <head>
-<meta charset="utf-8">
-<title>💎 MAPBOX PRO</title>
+<meta charset="UTF-8">
+<title>🚌 Attila Közlekedés PRO STABIL</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{margin:0;background:black;color:#0f0;font-family:Arial;}
-#map{height:75vh;}
-#panel{padding:10px;}
-button{padding:8px;margin:5px;background:black;color:#0f0;border:2px solid #0f0;}
-.box{background:black;color:yellow;border:1px solid yellow;padding:3px;font-size:11px;}
+body{background:black;color:yellow;font-family:Arial;text-align:center;}
+#map{height:70vh;margin-top:10px;}
+#kmh{font-size:60px;color:#0f0;}
+#coords,#tav,#slope{color:cyan;margin:5px;}
+button,input{padding:8px;margin:5px;}
+.box{background:black;color:yellow;border:1px solid yellow;font-size:10px;}
 </style>
 </head>
 
 <body>
 
-<div id="panel">
-<button onclick="reset()">🧹 Törlés</button><br>
+<h2>🚌 Attila Közlekedés PRO</h2>
 
-📏 Út: <span id="dist">-</span><br>
-📏 Légvonal: <span id="air">-</span><br>
+<div id="kmh">0 km/h</div>
+<div id="coords">GPS...</div>
+<div id="tav">Távolság: -</div>
+<div id="slope">Meredekség: -</div>
 
-⬆️ Emelkedés: <span id="up">-</span><br>
-⬇️ Lejtés: <span id="down">-</span><br>
-
-⚠️ MAX: <span id="max">-</span><br>
-⚠️ MIN: <span id="min">-</span>
-</div>
+<input id="search" placeholder="Keresés">
+<button onclick="keres()">Keres</button>
+<button onclick="reset()">Törlés</button>
 
 <div id="map"></div>
 
@@ -36,138 +35,161 @@ button{padding:8px;margin:5px;background:black;color:#0f0;border:2px solid #0f0;
 
 <script>
 
-const MAPBOX_TOKEN = "IDE_A_SAJÁT_KULCSOD";
+// ===== TÉRKÉP (STABIL)
+var map=L.map('map').setView([47.5,19.04],13);
 
-let map=L.map('map').setView([47.55,19.03],13);
+var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+var topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+var turistaut=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
 
-// 🌲 SZÉP TÉRKÉP
-L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`,{
-  tileSize:512,
-  zoomOffset:-1
-}).addTo(map);
+osm.addTo(map);
 
-let pts=[];
-let line;
-let markers=[];
-let airLine;
+function setLayer(l){
+ map.eachLayer(x=>map.removeLayer(x));
+ osm.addTo(map);
+ if(l==="topo") topo.addTo(map);
+ if(l==="turista") turistaut.addTo(map);
+}
 
-map.on("click",e=>{
-  pts.push([e.latlng.lng,e.latlng.lat]);
-  if(pts.length===2){
-    drawAir();
-    route();
-  }
+// ===== GPS
+let lastPos=null,lastTime=null;
+
+navigator.geolocation.watchPosition(pos=>{
+
+ let lat=pos.coords.latitude;
+ let lon=pos.coords.longitude;
+
+ document.getElementById("coords").innerText=
+ lat.toFixed(5)+","+lon.toFixed(5);
+
+ if(lastPos){
+   let d=map.distance(lastPos,[lat,lon]);
+   let t=(Date.now()-lastTime)/1000;
+   let speed=d/t*3.6;
+   document.getElementById("kmh").innerText=speed.toFixed(1)+" km/h";
+ }
+
+ lastPos=[lat,lon];
+ lastTime=Date.now();
+
 });
 
-// ===== LÉGVONAL
-function drawAir(){
-  let a=[pts[0][1],pts[0][0]];
-  let b=[pts[1][1],pts[1][0]];
+// ===== KERESŐ
+function keres(){
+ let q=document.getElementById("search").value;
 
-  let d=map.distance(a,b);
+ fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${q}`)
+ .then(r=>r.json())
+ .then(d=>{
+   if(d.length){
+     let lat=d[0].lat;
+     let lon=d[0].lon;
+     map.setView([lat,lon],15);
 
-  if(airLine) map.removeLayer(airLine);
-
-  airLine=L.polyline([a,b],{color:'cyan',dashArray:'5,10'}).addTo(map);
-
-  air.innerText=(d/1000).toFixed(2)+" km";
+     if(lastPos){
+       let t=map.distance(lastPos,[lat,lon]);
+       document.getElementById("tav").innerText=
+       "Légvonal: "+(t/1000).toFixed(2)+" km";
+     }
+   }
+ });
 }
 
-// ===== ROUTE
+// ===== ÚTVONAL + MEREDekség
+let pts=[],line,markers=[];
+
+map.on("click",e=>{
+ pts.push([e.latlng.lat,e.latlng.lng]);
+
+ if(pts.length===2){
+   route();
+ }
+});
+
 async function route(){
 
-  let url=`https://api.mapbox.com/directions/v5/mapbox/walking/${pts[0][0]},${pts[0][1]};${pts[1][0]},${pts[1][1]}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+ let url=`https://router.project-osrm.org/route/v1/foot/${pts[0][1]},${pts[0][0]};${pts[1][1]},${pts[1][0]}?overview=full&geometries=geojson`;
 
-  let r=await fetch(url);
-  let d=await r.json();
+ let r=await fetch(url);
+ let d=await r.json();
 
-  let coords=d.routes[0].geometry.coordinates;
+ let coords=d.routes[0].geometry.coordinates;
 
-  if(line) map.removeLayer(line);
-  markers.forEach(m=>map.removeLayer(m));
-  markers=[];
+ coords=coords.filter((c,i)=>i%10===0);
 
-  line=L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
+ if(line) map.removeLayer(line);
+ markers.forEach(m=>map.removeLayer(m));
+ markers=[];
 
-  await calc(coords);
+ line=L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
+
+ calc(coords);
 }
 
-// ===== MAGASSÁG MAPBOX
-async function getElevationBatch(coords){
+// ===== DEM
+async function getElevation(coords){
 
-  let result=[];
+ try{
+ let loc=coords.map(c=>c[1]+","+c[0]).join("|");
 
-  for(let i=0;i<coords.length;i+=50){
+ let r=await fetch("https://api.open-elevation.com/api/v1/lookup?locations="+loc);
+ let d=await r.json();
 
-    let batch=coords.slice(i,i+50);
+ return d.results.map(x=>x.elevation||0);
 
-    let query=batch.map(c=>c.join(",")).join(";");
-
-    let url=`https://api.mapbox.com/v4/mapbox.mapbox-terrain-v2/tilequery/${query}.json?layers=contour&limit=1&access_token=${MAPBOX_TOKEN}`;
-
-    let r=await fetch(url);
-    let d=await r.json();
-
-    batch.forEach(()=>result.push(0)); // fallback
-  }
-
-  return result;
+ }catch{
+   alert("DEM hiba!");
+   return coords.map(()=>0);
+ }
 }
 
 // ===== SZÁMOLÁS
 async function calc(coords){
 
-  let elev = await getElevationBatch(coords);
+ let elev=await getElevation(coords);
 
-  let total=0,up=0,down=0,max=-999,min=999;
+ let total=0,max=-999,min=999;
 
-  for(let i=0;i<coords.length-1;i++){
+ for(let i=0;i<coords.length-1;i++){
 
-    let a=coords[i],b=coords[i+1];
+  let a=coords[i],b=coords[i+1];
 
-    let d=map.distance([a[1],a[0]],[b[1],b[0]]);
+  let d=map.distance([a[1],a[0]],[b[1],b[0]]);
+  let h=elev[i+1]-elev[i];
 
-    let h = (Math.random()*6-3); // ⚠️ ide jön majd a valós DEM
+  if(d<2) continue;
 
-    if(d<2) continue;
+  let slope=(h/d)*100;
 
-    let slope=(h/d)*100;
+  total+=d;
 
-    total+=d;
+  if(slope>max) max=slope;
+  if(slope<min) min=slope;
 
-    if(h>0) up+=h;
-    else down+=Math.abs(h);
+  let mid=[(a[1]+b[1])/2,(a[0]+b[0])/2];
 
-    if(slope>max) max=slope;
-    if(slope<min) min=slope;
+  let m=L.marker(mid,{
+    icon:L.divIcon({
+      html:`<div class="box">${slope.toFixed(1)}%</div>`
+    })
+  }).addTo(map);
 
-    let mid=[(a[1]+b[1])/2,(a[0]+b[0])/2];
+  markers.push(m);
+ }
 
-    let m=L.marker(mid,{
-      icon:L.divIcon({
-        html:`<div class="box">
-        ${slope.toFixed(1)}%<br>${Math.round(d)}m
-        </div>`
-      })
-    }).addTo(map);
+ document.getElementById("tav").innerText=
+ "Út: "+(total/1000).toFixed(2)+" km";
 
-    markers.push(m);
-  }
-
-  dist.innerText=(total/1000).toFixed(2)+" km";
-  up.innerText=Math.round(up)+" m";
-  down.innerText=Math.round(down)+" m";
-  max.innerText=max.toFixed(1)+" %";
-  min.innerText=min.toFixed(1)+" %";
+ document.getElementById("slope").innerText=
+ "MAX: "+max.toFixed(1)+"% | MIN: "+min.toFixed(1)+"%";
 }
 
 // ===== RESET
 function reset(){
-  pts=[];
-  if(line) map.removeLayer(line);
-  if(airLine) map.removeLayer(airLine);
-  markers.forEach(m=>map.removeLayer(m));
-  markers=[];
+ pts=[];
+ if(line) map.removeLayer(line);
+ markers.forEach(m=>map.removeLayer(m));
+ markers=[];
 }
 
 </script>
