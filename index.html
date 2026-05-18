@@ -1,168 +1,143 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<title>FUTÁR V5 TURISTA DASHBOARD</title>
+<meta charset="UTF-8" />
+<title>FUTÁR V5 TURISTA – MAP CORE</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body {
     margin: 0;
-    font-family: Arial, sans-serif;
+    font-family: Arial;
     background: #0b0f14;
-    color: #d7e1ea;
+    color: white;
 }
 
 header {
-    background: #111827;
-    padding: 12px;
-    font-size: 18px;
-    font-weight: bold;
-    border-bottom: 2px solid #1f2937;
-}
-
-.container {
-    padding: 15px;
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 10px;
-    font-size: 14px;
-}
-
-th, td {
-    padding: 8px;
-    border-bottom: 1px solid #1f2937;
-    text-align: left;
-}
-
-th {
-    color: #93c5fd;
-}
-
-.badge {
-    padding: 4px 8px;
-    border-radius: 5px;
-    font-weight: bold;
-    color: #000;
-}
-
-/* ===== EMELKEDŐ SZÍNEK ===== */
-.green { background: #22c55e; }
-.yellow { background: #eab308; }
-.orange { background: #f97316; }
-.darkred { background: #b91c1c; color: white; }
-.red { background: #ef4444; color: white; }
-.extreme {
-    background: linear-gradient(90deg, #ef4444, #1d4ed8);
-    color: white;
-    font-weight: bold;
-}
-
-.cliff {
-    background: #000;
-    color: #ff0000;
-    font-weight: bold;
-}
-
-.livebox {
-    margin-top: 10px;
     padding: 10px;
     background: #111827;
-    border-left: 4px solid #22c55e;
+    font-weight: bold;
+}
+
+#map {
+    height: 90vh;
+    width: 100%;
+}
+
+/* popup stílus */
+.leaflet-popup-content {
+    font-size: 13px;
 }
 </style>
 </head>
 
 <body>
 
-<header>🚍 FUTÁR V5 TURISTA – Budai / Pilis / Börzsöny LIVE CORE</header>
+<header>🗺️ FUTÁR V5 TURISTA – Budai / Pilis / Börzsöny ELÁGAZÁS TÉRKÉP</header>
 
-<div class="container">
+<div id="map"></div>
 
-<div class="livebox">
-🧭 Aktív szimuláció: <b>Hármashatár-hegy zóna</b><br>
-⏱️ Idő: 12:34:58<br>
-📍 Rendszer: TURISTA EMELKEDŐ TRACKING
-</div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-<table>
-<tr>
-<th>Szakasz</th>
-<th>Hossz</th>
-<th>Emelkedés</th>
-<th>%</th>
-<th>Szint</th>
-</tr>
+<script>
+// -----------------------------
+// TÉRKÉP
+// -----------------------------
+const map = L.map('map').setView([47.52, 19.03], 11);
 
-<tr>
-<td>Csillaghegy → HHH</td>
-<td>850 m</td>
-<td>+120 m</td>
-<td>14%</td>
-<td><span class="badge orange">NARANCS</span></td>
-</tr>
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: 'OpenStreetMap'
+}).addTo(map);
 
-<tr>
-<td>HHH → Árpád-kilátó</td>
-<td>2100 m</td>
-<td>+80 m</td>
-<td>3.8%</td>
-<td><span class="badge green">ZÖLD</span></td>
-</tr>
+// -----------------------------
+// SZÍNLOGIKA (EMELKEDŐ %)
+// -----------------------------
+function getColor(grade) {
+    if (grade <= 4) return "green";
+    if (grade <= 9) return "yellow";
+    if (grade <= 15) return "orange";
+    if (grade <= 20) return "darkred";
+    if (grade <= 30) return "red";
+    if (grade <= 50) return "purple";
+    return "black";
+}
 
-<tr>
-<td>Normafa → Erzsébet-kilátó</td>
-<td>1200 m</td>
-<td>+150 m</td>
-<td>12.5%</td>
-<td><span class="badge orange">NARANCS</span></td>
-</tr>
+// -----------------------------
+// CSOMÓPONTOK (ELÁGAZÁSOK)
+// -----------------------------
+const nodes = [
+    { id:"CS", name:"Csillaghegy", lat:47.569, lon:19.045, elev:140 },
+    { id:"HHH", name:"Hármashatár-hegy", lat:47.539, lon:19.034, elev:495 },
+    { id:"AK", name:"Árpád-kilátó", lat:47.534, lon:19.028, elev:380 },
+    { id:"NF", name:"Normafa", lat:47.500, lon:18.966, elev:477 },
+    { id:"EKT", name:"Erzsébet-kilátó", lat:47.518, lon:18.962, elev:527 },
+    { id:"PK", name:"Pilis-tető", lat:47.693, lon:18.887, elev:756 },
+    { id:"DK", name:"Dobogókő", lat:47.719, lon:18.895, elev:699 },
+    { id:"KR", name:"Királyrét", lat:47.937, lon:18.984, elev:220 }
+];
 
-<tr>
-<td>Pilisszentkereszt → Pilis-nyereg</td>
-<td>4200 m</td>
-<td>+420 m</td>
-<td>10%</td>
-<td><span class="badge orange">NARANCS</span></td>
-</tr>
+// -----------------------------
+// SEGMENTEK (ELÁGAZÁSOK KÖZÖTT)
+// -----------------------------
+const segments = [
+    { from:"CS", to:"HHH", dist:0.85, elevGain:120 },
+    { from:"HHH", to:"AK", dist:2.1, elevGain:80 },
+    { from:"NF", to:"EKT", dist:1.2, elevGain:150 },
+    { from:"DK", to:"PK", dist:5.8, elevGain:320 },
+    { from:"KR", to:"DK", dist:6.0, elevGain:350 },
+    { from:"HHH", to:"NF", dist:8.5, elevGain:300 }
+];
 
-<tr>
-<td>Pilis-nyereg → Pilis-tető</td>
-<td>1800 m</td>
-<td>+220 m</td>
-<td>12%</td>
-<td><span class="badge orange">NARANCS</span></td>
-</tr>
+// -----------------------------
+// NODE INDEX
+// -----------------------------
+const nodeMap = {};
+nodes.forEach(n => nodeMap[n.id] = n);
 
-<tr>
-<td>Királyrét → Magas-Tax</td>
-<td>3500 m</td>
-<td>+350 m</td>
-<td>10%</td>
-<td><span class="badge orange">NARANCS</span></td>
-</tr>
+// -----------------------------
+// NODEK FELRAJZOLÁSA
+// -----------------------------
+nodes.forEach(n => {
+    L.circleMarker([n.lat, n.lon], {
+        radius: 6,
+        color: "white",
+        fillColor: "#38bdf8",
+        fillOpacity: 0.8
+    }).addTo(map)
+    .bindPopup(
+        `<b>${n.name}</b><br>
+        ⛰️ ${n.elev} m`
+    );
+});
 
-<tr>
-<td>Extrém teszt zóna</td>
-<td>500 m</td>
-<td>+200 m</td>
-<td>40%</td>
-<td><span class="badge extreme">EXTRÉM</span></td>
-</tr>
+// -----------------------------
+// SZAKASZOK RAJZOLÁSA
+// -----------------------------
+segments.forEach(s => {
+    const a = nodeMap[s.from];
+    const b = nodeMap[s.to];
 
-<tr>
-<td>Sziklafal (teszt)</td>
-<td>200 m</td>
-<td>+150 m</td>
-<td>75%</td>
-<td><span class="badge cliff">SZIKLA / INVALID</span></td>
-</tr>
+    const grade = (s.elevGain / (s.dist * 1000)) * 100;
+    const color = getColor(grade);
 
-</table>
+    const line = L.polyline(
+        [[a.lat, a.lon], [b.lat, b.lon]],
+        {
+            color: color,
+            weight: 5
+        }
+    ).addTo(map);
 
-</div>
+    line.bindPopup(
+        `<b>${a.name} → ${b.name}</b><br>
+        📏 ${s.dist} km<br>
+        ⛰️ +${s.elevGain} m<br>
+        📊 ${grade.toFixed(1)} %`
+    );
+});
+
+</script>
 
 </body>
 </html>
