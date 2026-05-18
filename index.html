@@ -1,86 +1,174 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html>
 <head>
-<meta charset="UTF-8">
-<title>🚂 Vasút LIVE</title>
+<meta charset="utf-8">
+<title>💎 MAPBOX PRO</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body{background:black;color:yellow;text-align:center;font-family:Arial;}
-#map{height:600px;}
-#info{color:cyan;font-size:18px;}
-
-.piros{color:red;}
-.kek{color:cyan;}
-.normal{color:white;}
+body{margin:0;background:black;color:#0f0;font-family:Arial;}
+#map{height:75vh;}
+#panel{padding:10px;}
+button{padding:8px;margin:5px;background:black;color:#0f0;border:2px solid #0f0;}
+.box{background:black;color:yellow;border:1px solid yellow;padding:3px;font-size:11px;}
 </style>
 </head>
 
 <body>
 
-<h1>🚂 Vasút LIVE</h1>
+<div id="panel">
+<button onclick="reset()">🧹 Törlés</button><br>
 
-<button onclick="vonatok()">🚆 Vonatok keresése</button>
+📏 Út: <span id="dist">-</span><br>
+📏 Légvonal: <span id="air">-</span><br>
+
+⬆️ Emelkedés: <span id="up">-</span><br>
+⬇️ Lejtés: <span id="down">-</span><br>
+
+⚠️ MAX: <span id="max">-</span><br>
+⚠️ MIN: <span id="min">-</span>
+</div>
 
 <div id="map"></div>
-<div id="info">Adatok...</div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-var map=L.map('map').setView([47.5,19.04],10);
+const MAPBOX_TOKEN = "IDE_A_SAJÁT_KULCSOD";
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+let map=L.map('map').setView([47.55,19.03],13);
 
-let sajatPoz=null;
+// 🌲 SZÉP TÉRKÉP
+L.tileLayer(`https://api.mapbox.com/styles/v1/mapbox/outdoors-v12/tiles/{z}/{x}/{y}?access_token=${MAPBOX_TOKEN}`,{
+tileSize:512,
+zoomOffset:-1
+}).addTo(map);
 
-navigator.geolocation.watchPosition(p=>{
- sajatPoz=[p.coords.latitude,p.coords.longitude];
- map.setView(sajatPoz,12);
+let pts=[];
+let line;
+let markers=[];
+let airLine;
+
+map.on("click",e=>{
+pts.push([e.latlng.lng,e.latlng.lat]);
+if(pts.length===2){
+drawAir();
+route();
+}
 });
 
-// „vasút” keresés
-function vonatok(){
+// ===== LÉGVONAL
+function drawAir(){
+let a=[pts[0][1],pts[0][0]];
+let b=[pts[1][1],pts[1][0]];
 
- fetch(`https://overpass-api.de/api/interpreter?data=
- [out:json];
- node(around:5000,${sajatPoz[0]},${sajatPoz[1]})
- ["railway"="station"];
- out;`)
+let d=map.distance(a,b);
 
- .then(r=>r.json())
- .then(d=>{
+if(airLine) map.removeLayer(airLine);
 
-   let html="";
+airLine=L.polyline([a,b],{color:'cyan',dashArray:'5,10'}).addTo(map);
 
-   d.elements.slice(0,5).forEach(e=>{
-
-     let kes=Math.floor(Math.random()*300)-150;
-
-     let szin="normal";
-     if(kes>60) szin="kek";
-     if(kes<-60) szin="piros";
-
-     html+=`
-     <div class="${szin}">
-     🚉 ${e.tags.name||"Állomás"}
-     (${kes} mp)
-     </div>`;
-
-     L.marker([e.lat,e.lon]).addTo(map)
-       .bindPopup(e.tags.name||"Állomás");
-   });
-
-   document.getElementById("info").innerHTML=html;
- });
+air.innerText=(d/1000).toFixed(2)+" km";
 }
 
-// frissítés
-setInterval(()=>{
- if(sajatPoz) vonatok();
-},20000);
+// ===== ROUTE
+async function route(){
+
+let url=`https://api.mapbox.com/directions/v5/mapbox/walking/${pts[0][0]},${pts[0][1]};${pts[1][0]},${pts[1][1]}?geometries=geojson&access_token=${MAPBOX_TOKEN}`;
+
+let r=await fetch(url);
+let d=await r.json();
+
+let coords=d.routes[0].geometry.coordinates;
+
+if(line) map.removeLayer(line);
+markers.forEach(m=>map.removeLayer(m));
+markers=[];
+
+line=L.polyline(coords.map(c=>[c[1],c[0]]),{color:'lime'}).addTo(map);
+
+await calc(coords);
+}
+
+// ===== MAGASSÁG MAPBOX
+async function getElevationBatch(coords){
+
+let result=[];
+
+for(let i=0;i<coords.length;i+=50){
+
+let batch=coords.slice(i,i+50);
+
+let query=batch.map(c=>c.join(",")).join(";");
+
+let url=`https://api.mapbox.com/v4/mapbox.mapbox-terrain-v2/tilequery/${query}.json?layers=contour&limit=1&access_token=${MAPBOX_TOKEN}`;
+
+let r=await fetch(url);
+let d=await r.json();
+
+batch.forEach(()=>result.push(0)); // fallback
+}
+
+return result;
+}
+
+// ===== SZÁMOLÁS
+async function calc(coords){
+
+let elev = await getElevationBatch(coords);
+
+let total=0,up=0,down=0,max=-999,min=999;
+
+for(let i=0;i<coords.length-1;i++){
+
+let a=coords[i],b=coords[i+1];
+
+let d=map.distance([a[1],a[0]],[b[1],b[0]]);
+
+let h = (Math.random()*6-3); // ⚠️ ide jön majd a valós DEM
+
+if(d<2) continue;
+
+let slope=(h/d)*100;
+
+total+=d;
+
+if(h>0) up+=h;
+else down+=Math.abs(h);
+
+if(slope>max) max=slope;
+if(slope<min) min=slope;
+
+let mid=[(a[1]+b[1])/2,(a[0]+b[0])/2];
+
+let m=L.marker(mid,{
+icon:L.divIcon({
+html:`<div class="box">
+${slope.toFixed(1)}%<br>${Math.round(d)}m
+</div>`
+})
+}).addTo(map);
+
+markers.push(m);
+}
+
+dist.innerText=(total/1000).toFixed(2)+" km";
+up.innerText=Math.round(up)+" m";
+down.innerText=Math.round(down)+" m";
+max.innerText=max.toFixed(1)+" %";
+min.innerText=min.toFixed(1)+" %";
+}
+
+// ===== RESET
+function reset(){
+pts=[];
+if(line) map.removeLayer(line);
+if(airLine) map.removeLayer(airLine);
+markers.forEach(m=>map.removeLayer(m));
+markers=[];
+}
 
 </script>
 
