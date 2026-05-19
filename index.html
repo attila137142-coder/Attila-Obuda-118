@@ -1,135 +1,81 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 DISPATCH TABLE</title>
+// 🚍 FUTÁR V5 LIGHT BRIDGE BUILD
+// Minimal REAL DATA bridge (Node.js + Express)
+// Goal: BKK-like GTFS → clean JSON for GitHub frontend
 
-<style>
-body {
-  margin:0;
-  font-family: Arial;
-  background:#0b0f14;
-  color:#e6e6e6;
-}
+import express from "express";
+import cors from "cors";
 
-header {
-  padding:10px;
-  background:#111826;
-  display:flex;
-  justify-content:space-between;
-}
+const app = express();
+app.use(cors());
+app.use(express.json());
 
-.clock { color:#4dd0e1; font-weight:bold; }
+// 🧠 MOCK REALISTIC DATA LAYER (replace later with real GTFS)
+function generateFakeDepartures() {
+  const routes = ["34", "106", "9", "4-6", "H5", "7"];
+  const stops = ["Békásmegyer", "Flórián tér", "Batthyány tér", "Deák tér"];
 
-table {
-  width:100%;
-  border-collapse:collapse;
-}
+  const list = [];
 
-th, td {
-  padding:10px;
-  border-bottom:1px solid #1f2a3a;
-  font-size:13px;
-}
+  for (let i = 0; i < 10; i++) {
+    const delay = Math.floor(Math.random() * 8) - 2; // -2 to +6 min
 
-th { color:#90caf9; text-align:left; }
-
-.ok { color:#b0bec5; }
-.late { color:#ff5252; }
-.early { color:#69f0ae; }
-
-.container {
-  padding:10px;
-}
-
-.map {
-  height:150px;
-  background:#0f1722;
-  display:flex;
-  align-items:center;
-  justify-content:center;
-  color:#666;
-  margin-bottom:10px;
-}
-</style>
-</head>
-
-<body>
-
-<header>
-  <div>🚍 FUTÁR V5 DISPATCH</div>
-  <div class="clock" id="clock">--:--:--</div>
-</header>
-
-<div class="container">
-
-  <div class="map">🗺️ LIVE MAP PLACEHOLDER</div>
-
-  <table>
-    <thead>
-      <tr>
-        <th>Járat</th>
-        <th>Megálló</th>
-        <th>Indulás</th>
-        <th>Késés</th>
-      </tr>
-    </thead>
-
-    <tbody id="table"></tbody>
-  </table>
-
-</div>
-
-<script>
-
-const API = "https://YOUR-BRIDGE-URL/api/departures";
-
-function setClock(){
-  document.getElementById("clock").innerText =
-    new Date().toLocaleTimeString();
-}
-
-async function load(){
-  try {
-    const res = await fetch(API);
-    const data = await res.json();
-
-    const table = document.getElementById("table");
-    table.innerHTML = "";
-
-    (data.departures || []).forEach(d => {
-
-      let delay = d.delay || 0;
-      let cls = "ok";
-
-      if(delay > 3) cls = "late";
-      if(delay < 0) cls = "early";
-
-      const row = document.createElement("tr");
-
-      row.innerHTML = `
-        <td>${d.routeId || "?"}</td>
-        <td>${d.stopName || d.stopId || "?"}</td>
-        <td>${d.time || "--"}</td>
-        <td class="${cls}">${delay}p</td>
-      `;
-
-      table.appendChild(row);
+    list.push({
+      routeId: routes[Math.floor(Math.random() * routes.length)],
+      stopName: stops[Math.floor(Math.random() * stops.length)],
+      departureTime: new Date(Date.now() + i * 60000).toLocaleTimeString(),
+      delayMin: delay,
+      status: delay <= 1 ? "OK" : delay <= 4 ? "LATE" : "CRITICAL",
+      vehicleId: "V" + Math.floor(Math.random() * 9000)
     });
-
-  } catch(e){
-    console.log("API error", e);
   }
+
+  return list;
 }
 
-setInterval(load, 15000);
-setInterval(setClock, 1000);
+// 🚍 MAIN API ENDPOINT
+app.get("/api/departures", (req, res) => {
+  res.json({
+    source: "FUTAR_V5_LIGHT_BRIDGE",
+    timestamp: Date.now(),
+    system: "mock_gtfs_ready",
+    departures: generateFakeDepartures()
+  });
+});
 
-load();
-setClock();
+// 🚍 STATUS ENDPOINT
+app.get("/api/status", (req, res) => {
+  res.json({
+    ok: true,
+    message: "FUTAR V5 LIGHT BRIDGE RUNNING",
+    uptime: process.uptime()
+  });
+});
 
-</script>
+// 🚀 START SERVER
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log("🚍 FUTAR V5 LIGHT BRIDGE RUNNING ON PORT", PORT);
+});
 
-</body>
-</html>
+/*
+=========================================
+🧠 HOW TO USE
+=========================================
+
+1. npm init -y
+2. npm install express cors
+3. node server.js
+
+API:
+- http://localhost:3000/api/departures
+- http://localhost:3000/api/status
+
+=========================================
+🚀 NEXT STEP (REAL DATA UPGRADE)
+=========================================
+Replace generateFakeDepartures() with:
+- BKK GTFS-RT fetch
+- protobuf decode
+- real vehicle positions
+=========================================
+*/
