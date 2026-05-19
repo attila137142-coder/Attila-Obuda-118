@@ -2,36 +2,49 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5 – REAL BUDAI TURISTA GRAPH</title>
+<title>FUTÁR V5 – VERCEL OSM GRAPH</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body { margin:0; font-family:Arial; background:#0b0f14; color:white; }
-header { padding:10px; background:#111827; font-weight:bold; }
-#map { height:90vh; }
+body{
+    margin:0;
+    font-family:Arial;
+    background:#0b0f14;
+    color:white;
+}
 
-.panel {
+header{
+    background:#111827;
+    padding:10px;
+    font-weight:bold;
+}
+
+#map{
+    height:90vh;
+}
+
+.panel{
     position:absolute;
     top:60px;
     left:10px;
     z-index:999;
     background:#111827;
     padding:10px;
-    width:360px;
     border-radius:8px;
+    width:320px;
 }
 
-button {
+button{
     width:100%;
     padding:8px;
-    margin-top:5px;
     cursor:pointer;
 }
 
-#status {
-    font-size:12px;
+#status{
     margin-top:8px;
+    font-size:12px;
     color:#93c5fd;
     white-space:pre-line;
 }
@@ -40,10 +53,12 @@ button {
 
 <body>
 
-<header>🧭 FUTÁR V5 – REAL BUDAI OSM TURISTA GRAPH</header>
+<header>
+🧭 FUTÁR V5 – VERCEL BACKEND OSM GRAPH
+</header>
 
 <div class="panel">
-<button onclick="loadOSM()">🚶‍♂️ Budai turista háló betöltése</button>
+<button onclick="load()">🚶‍♂️ Betöltés</button>
 <div id="status">Idle</div>
 </div>
 
@@ -53,124 +68,73 @@ button {
 
 <script>
 
-const map = L.map('map').setView([47.52, 19.03], 12);
+const map = L.map('map')
+.setView([47.52,19.03],12);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution:"© OpenStreetMap"
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+{
+    attribution:'OSM'
 }).addTo(map);
 
 function log(t){
-    document.getElementById("status").innerText = t;
+    document.getElementById("status").innerText=t;
 }
 
-// ---------------- GRAPH STORAGE ----------------
-let nodeMap = {};
-let edges = [];
-let bounds = [];
+async function load(){
 
-// ---------------- DISTANCE ----------------
-function dist(a,b){
-    const R = 6371000;
-    const dLat = (b.lat-a.lat)*Math.PI/180;
-    const dLon = (b.lon-a.lon)*Math.PI/180;
-    const lat1 = a.lat*Math.PI/180;
-    const lat2 = b.lat*Math.PI/180;
+    try{
 
-    const x =
-        Math.sin(dLat/2)**2 +
-        Math.sin(dLon/2)**2 * Math.cos(lat1)*Math.cos(lat2);
+        log("Loading from Vercel API...");
 
-    return 2*R*Math.asin(Math.sqrt(x));
-}
+        const res = await fetch('/api/osm');
 
-// ---------------- KEY ----------------
-function key(p){
-    return `${p.lat.toFixed(5)}_${p.lon.toFixed(5)}`;
-}
-
-// ---------------- MAIN LOAD ----------------
-async function loadOSM(){
-
-    log("Loading REAL Budai hiking network...");
-
-    const query = `
-    [out:json][timeout:25];
-    (
-      way["highway"~"path|footway|track"](47.45,18.85,47.60,19.20);
-      relation["route"="hiking"](47.45,18.85,47.60,19.20);
-    );
-    out geom;
-    `;
-
-    const url = "https://overpass-api.de/api/interpreter?data=" + encodeURIComponent(query);
-
-    try {
-
-        const res = await fetch(url);
         const data = await res.json();
 
-        log("Elements: " + data.elements.length + "\nProcessing graph...");
+        log(
+            "Elements: " +
+            (data.elements?.length || 0)
+        );
 
-        let edgeCount = 0;
+        let bounds=[];
 
-        data.elements.forEach(el => {
+        data.elements.forEach(el=>{
 
-            if(!el.geometry || el.geometry.length < 2) return;
+            if(!el.geometry) return;
 
-            const g = el.geometry;
+            const pts = el.geometry.map(p=>[
+                p.lat,
+                p.lon
+            ]);
 
-            for(let i=0;i<g.length-1;i++){
+            pts.forEach(p=>bounds.push(p));
 
-                const A = {lat:g[i].lat, lon:g[i].lon};
-                const B = {lat:g[i+1].lat, lon:g[i+1].lon};
-
-                const idA = key(A);
-                const idB = key(B);
-
-                nodeMap[idA] = A;
-                nodeMap[idB] = B;
-
-                const d = dist(A,B);
-
-                edges.push({a:A,b:B,d});
-
-                bounds.push([A.lat,A.lon]);
-
-                L.polyline([[A.lat,A.lon],[B.lat,B.lon]],{
-                    color:"#22c55e",
-                    weight:3
-                }).addTo(map);
-
-                edgeCount++;
-            }
-        });
-
-        // nodes render
-        Object.values(nodeMap).forEach(n=>{
-            L.circleMarker([n.lat,n.lon],{
-                radius:4,
-                color:"#fff",
-                fillColor:"#38bdf8",
-                fillOpacity:0.8
+            L.polyline(pts,{
+                color:'#22c55e',
+                weight:3
             }).addTo(map);
         });
 
-        if(bounds.length > 0){
+        if(bounds.length){
             map.fitBounds(bounds);
         }
 
         log(
-`✔ REAL BUDAI GRAPH LOADED
+`✔ NETWORK LOADED
 
-Nodes: ${Object.keys(nodeMap).length}
-Edges: ${edges.length}
-Status: LIVE OSM TURISTA NETWORK`
+Elements:
+${data.elements.length}`
         );
 
-    } catch(e){
+    }catch(e){
 
         console.error(e);
-        log("ERROR ❌ Overpass failed\n" + e.message);
+
+        log(
+`ERROR ❌
+
+${e.message}`
+        );
     }
 }
 
