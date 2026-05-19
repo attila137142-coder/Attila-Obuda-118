@@ -1,89 +1,54 @@
-<!DOCTYPE html>
-  }
+<script>
+const CONFIG = {
+  gtfsStaticUrl: "https://example.com/static",
+  gtfsRtUrl: "https://example.com/realtime",
+  refreshInterval: 15000
+};
+
+const state = {
+  stops: 0,
+  vehicles: 0,
+  departures: 0,
+  lastUpdate: null
+};
+
+function render() {
+  const el = document.getElementById("log");
+
+  el.innerHTML = `
+    🚍 FUTÁR V5 STATUS\n
+    ----------------------\n
+    🟦 Stops: ${state.stops}\n
+    🚍 Vehicles: ${state.vehicles}\n
+    ⏱ Departures: ${state.departures}\n
+    🕒 Last update: ${state.lastUpdate}\n
+  `;
 }
 
-/**
- * LOAD STATIC GTFS (stops, routes)
- */
-async function loadStatic() {
-  log("📦 Loading GTFS static...");
-
-  const data = await fetchJSON(CONFIG.gtfsStaticUrl);
-  if (!data) return;
-
-  state.stops = data.stops || [];
-
-  log("✔ Stops loaded: " + state.stops.length);
+async function fakeFetch() {
+  // később GTFS helyére kerül
+  return {
+    vehicles: Math.floor(Math.random() * 50),
+    departures: Math.floor(Math.random() * 120),
+    stops: 1500
+  };
 }
 
-/**
- * LOAD REALTIME GTFS (vehicles, delays)
- */
-async function loadRealtime() {
-  log("📡 Loading GTFS realtime...");
-
-  const data = await fetchJSON(CONFIG.gtfsRtUrl);
-  if (!data) return;
-
-  state.vehicles = data.vehicles || [];
-  state.departures = data.departures || [];
-
-  log("✔ Vehicles: " + state.vehicles.length);
-  log("✔ Departures: " + state.departures.length);
-}
-
-/**
- * DELAY ENGINE (CORE LOGIC)
- */
-function calculateDelay(scheduled, actual) {
-  if (!scheduled || !actual) return 0;
-
-  const s = new Date(scheduled).getTime();
-  const a = new Date(actual).getTime();
-
-  return Math.round((a - s) / 60000); // minutes
-}
-
-/**
- * STATUS CLASSIFIER
- */
-function getStatusColor(delayMin) {
-  if (delayMin <= 1) return "🟢";
-  if (delayMin <= 4) return "🟡";
-  return "🔴";
-}
-
-/**
- * ENGINE LOOP
- */
 async function tick() {
-  log("🔄 Engine tick...");
+  const data = await fakeFetch();
 
-  await loadRealtime();
+  state.stops = data.stops;
+  state.vehicles = data.vehicles;
+  state.departures = data.departures;
+  state.lastUpdate = new Date().toLocaleTimeString();
 
-  // Example processing
-  state.departures.forEach(d => {
-    const delay = calculateDelay(d.scheduled, d.actual);
-    const status = getStatusColor(delay);
-
-    log(`${status} ${d.route || "?"} delay=${delay}min`);
-  });
+  render();
 }
 
-/**
- * BOOT ENGINE
- */
-async function start() {
-  log("🚀 Starting FUTÁR V5 REAL ENGINE...");
-
-  await loadStatic();
-  await tick();
-
+function start() {
+  tick();
   setInterval(tick, CONFIG.refreshInterval);
 }
 
 start();
 </script>
-
-</body>
-</html>
