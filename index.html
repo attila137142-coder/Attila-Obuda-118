@@ -1,91 +1,89 @@
 <!DOCTYPE html>
-  <div>🚍 FUTÁR V5 STABLE CORE</div>
-  <div class="clock" id="clock">--:--:--</div>
-  <button class="btn" id="refreshBtn">🔄 Frissítés</button>
-</header>
-
-<div class="container">
-
-  <div class="panel map">
-    🗺️ LIVE TÉRKÉP HELYE (GTFS / BKK / MÁV / VOLÁN)
-  </div>
-
-  <div class="panel">
-    <h3>🚏 Élő indulások</h3>
-
-    <div id="errorBox" class="error"></div>
-
-    <table>
-      <thead>
-        <tr>
-          <th>Járat</th>
-          <th>Megálló</th>
-          <th>Indulás</th>
-          <th>Késés</th>
-        </tr>
-      </thead>
-      <tbody id="table">
-        <tr>
-          <td>🚌 34</td>
-          <td>Békásmegyer H</td>
-          <td>12:05</td>
-          <td class="ok">0p</td>
-        </tr>
-      </tbody>
-    </table>
-  </div>
-
-</div>
-
-<script>
-(function () {
-  "use strict";
-
-  function setClock() {
-    const el = document.getElementById("clock");
-    if (!el) return;
-    el.innerText = new Date().toLocaleTimeString();
   }
+}
 
-  function safeAppendRow() {
-    const table = document.getElementById("table");
-    const errorBox = document.getElementById("errorBox");
+/**
+ * LOAD STATIC GTFS (stops, routes)
+ */
+async function loadStatic() {
+  log("📦 Loading GTFS static...");
 
-    try {
-      if (!table) throw new Error("Table not found");
+  const data = await fetchJSON(CONFIG.gtfsStaticUrl);
+  if (!data) return;
 
-      const row = document.createElement("tr");
-      row.innerHTML = `
-        <td>🚍 TEST</td>
-        <td>Auto Update</td>
-        <td>--:--</td>
-        <td class="ok">0p</td>
-      `;
+  state.stops = data.stops || [];
 
-      table.appendChild(row);
+  log("✔ Stops loaded: " + state.stops.length);
+}
 
-      if (errorBox) errorBox.innerText = "";
+/**
+ * LOAD REALTIME GTFS (vehicles, delays)
+ */
+async function loadRealtime() {
+  log("📡 Loading GTFS realtime...");
 
-    } catch (err) {
-      if (errorBox) errorBox.innerText = "Hiba: " + err.message;
-    }
-  }
+  const data = await fetchJSON(CONFIG.gtfsRtUrl);
+  if (!data) return;
 
-  function init() {
-    setClock();
-    setInterval(setClock, 1000);
+  state.vehicles = data.vehicles || [];
+  state.departures = data.departures || [];
 
-    const btn = document.getElementById("refreshBtn");
-    if (btn) {
-      btn.addEventListener("click", safeAppendRow);
-    }
-  }
+  log("✔ Vehicles: " + state.vehicles.length);
+  log("✔ Departures: " + state.departures.length);
+}
 
-  document.addEventListener("DOMContentLoaded", init);
+/**
+ * DELAY ENGINE (CORE LOGIC)
+ */
+function calculateDelay(scheduled, actual) {
+  if (!scheduled || !actual) return 0;
 
-})();
+  const s = new Date(scheduled).getTime();
+  const a = new Date(actual).getTime();
+
+  return Math.round((a - s) / 60000); // minutes
+}
+
+/**
+ * STATUS CLASSIFIER
+ */
+function getStatusColor(delayMin) {
+  if (delayMin <= 1) return "🟢";
+  if (delayMin <= 4) return "🟡";
+  return "🔴";
+}
+
+/**
+ * ENGINE LOOP
+ */
+async function tick() {
+  log("🔄 Engine tick...");
+
+  await loadRealtime();
+
+  // Example processing
+  state.departures.forEach(d => {
+    const delay = calculateDelay(d.scheduled, d.actual);
+    const status = getStatusColor(delay);
+
+    log(`${status} ${d.route || "?"} delay=${delay}min`);
+  });
+}
+
+/**
+ * BOOT ENGINE
+ */
+async function start() {
+  log("🚀 Starting FUTÁR V5 REAL ENGINE...");
+
+  await loadStatic();
+  await tick();
+
+  setInterval(tick, CONFIG.refreshInterval);
+}
+
+start();
 </script>
 
 </body>
 </html>
-
