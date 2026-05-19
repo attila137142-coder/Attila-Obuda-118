@@ -3,9 +3,8 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>TURISTA V5 PRO MAP ENGINE</title>
+<title>🥾 SURVIVAL PRO MODE</title>
 
-<!-- Leaflet -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
@@ -21,24 +20,15 @@ header {
   background:#111826;
   display:flex;
   justify-content:space-between;
-  align-items:center;
-}
-
-.container {
-  display:grid;
-  grid-template-columns: 1fr 350px;
-  height: calc(100vh - 50px);
 }
 
 #map {
-  height:100%;
-  width:100%;
+  height: 60vh;
+  width: 100%;
 }
 
-.sidebar {
+.panel {
   padding:10px;
-  overflow:auto;
-  background:#0f1722;
 }
 
 .card {
@@ -46,16 +36,13 @@ header {
   padding:10px;
   margin-bottom:10px;
   border-left:3px solid #4dd0e1;
+}
+.small { font-size:12px; color:#aaa; }
+button {
+  padding:8px;
+  background:#4dd0e1;
+  border:none;
   cursor:pointer;
-}
-
-.card:hover {
-  background:#162033;
-}
-
-.small {
-  font-size:12px;
-  color:#aaa;
 }
 </style>
 </head>
@@ -63,158 +50,134 @@ header {
 <body>
 
 <header>
-  <div>🥾 TURISTA V5 PRO MAP ENGINE</div>
+  <div>🥾 SURVIVAL PRO MODE</div>
   <div id="status">READY</div>
 </header>
 
-<div class="container">
+<div id="map"></div>
 
-  <div id="map"></div>
-
-  <div class="sidebar">
-
-    <h3>⛰ Útvonalak</h3>
-
-    <div class="card" onclick="flyToRoute(0)">
-      <b>Hármashatár-hegy kör</b><br>
-      <span class="small">6.2 km · +420 m</span>
-    </div>
-
-    <div class="card" onclick="flyToRoute(1)">
-      <b>Dobogókő túra</b><br>
-      <span class="small">8.5 km · +510 m</span>
-    </div>
-
-    <div class="card" onclick="flyToRoute(2)">
-      <b>Prédikálószék útvonal</b><br>
-      <span class="small">11.3 km · +780 m</span>
-    </div>
-
-    <h3>📍 POI</h3>
-    <div id="poiList"></div>
-
-  </div>
-
+<div class="panel">
+  <button onclick="runSurvival()">📍 Saját helyzet + POI scan</button>
+  <div id="output"></div>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-// 🧠 MAP INIT (Budapest)
+// 🗺 MAP
 const map = L.map('map').setView([47.4979, 19.0402], 11);
 
-// OpenStreetMap layer
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OpenStreetMap'
+  attribution: '© OSM'
 }).addTo(map);
 
-// 🥾 ROUTES (mock but structured like real system)
-const routes = [
-  {
-    name: "Hármashatár-hegy",
-    coords: [
-      [47.5390, 18.9610],
-      [47.5450, 18.9700],
-      [47.5520, 18.9800]
-    ],
-    color: "#4dd0e1"
-  },
-  {
-    name: "Dobogókő",
-    coords: [
-      [47.7250, 18.9000],
-      [47.7300, 18.9200],
-      [47.7400, 18.9400]
-    ],
-    color: "#ffb74d"
-  },
-  {
-    name: "Prédikálószék",
-    coords: [
-      [47.7650, 18.9300],
-      [47.7700, 18.9500],
-      [47.7800, 18.9700]
-    ],
-    color: "#ef5350"
-  }
-];
-
-// draw routes
-routes.forEach(r => {
-  L.polyline(r.coords, {
-    color: r.color,
-    weight: 4
-  }).addTo(map).bindPopup(r.name);
-});
-
-// 🧭 POI SYSTEM
+// 🧭 POI DATABASE
 const pois = [
-  {
-    name: "Lajos-forrás",
-    coords: [47.7255, 18.9350]
-  },
-  {
-    name: "Julianus-kilátó",
-    coords: [47.5550, 18.9700]
-  },
-  {
-    name: "Dobogókő kilátó",
-    coords: [47.7250, 18.9000]
-  }
+  { name:"Budakeszi", type:"town", coords:[47.510,18.927] },
+  { name:"Normafa buszmegálló", type:"bus", coords:[47.503,19.012] },
+  { name:"Kaán Károly turistaház", type:"hut", coords:[47.518,18.960] },
+  { name:"János-hegy kilátó", type:"view", coords:[47.514,18.956] },
+  { name:"Anna-forrás", type:"water", coords:[47.520,18.940] }
 ];
 
-const poiMarkers = [];
+// 📏 DISTANCE (meter)
+function distance(a,b){
+  const R=6371000;
+  const dLat=(b[0]-a[0])*Math.PI/180;
+  const dLon=(b[1]-a[1])*Math.PI/180;
 
-pois.forEach(p => {
-  const m = L.marker(p.coords)
+  const x =
+    Math.sin(dLat/2)**2 +
+    Math.cos(a[0]*Math.PI/180) *
+    Math.cos(b[0]*Math.PI/180) *
+    Math.sin(dLon/2)**2;
+
+  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// 🧭 BEARING
+function bearing(a,b){
+  const dLon=(b[1]-a[1])*Math.PI/180;
+
+  const y=Math.sin(dLon)*Math.cos(b[0]*Math.PI/180);
+  const x=
+    Math.cos(a[0]*Math.PI/180)*Math.sin(b[0]*Math.PI/180)-
+    Math.sin(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.cos(dLon);
+
+  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+}
+
+// 📍 GET LOCATION
+function getUser(){
+  return new Promise((resolve,reject)=>{
+    navigator.geolocation.getCurrentPosition(pos=>{
+      resolve({
+        lat:pos.coords.latitude,
+        lon:pos.coords.longitude,
+        acc:pos.coords.accuracy
+      });
+    },reject);
+  });
+}
+
+// 🧠 SURVIVAL SCAN
+function scan(user){
+
+  return pois.map(p=>{
+
+    const dist = distance([user.lat,user.lon], p.coords);
+    const dir = bearing([user.lat,user.lon], p.coords);
+
+    return {...p, distance:dist, direction:dir};
+  }).sort((a,b)=>a.distance-b.distance);
+}
+
+// 🗺 MAIN ENGINE
+async function runSurvival(){
+
+  const user = await getUser();
+
+  map.setView([user.lat,user.lon],13);
+
+  L.marker([user.lat,user.lon])
     .addTo(map)
-    .bindPopup("📍 " + p.name);
+    .bindPopup("📍 TE VAGY ITT");
 
-  poiMarkers.push(m);
-});
+  const results = scan(user).slice(0,5);
 
-// 📍 5KM RADIUS ENGINE
-let radiusCircle = null;
+  document.getElementById("output").innerHTML = "";
 
-function showRadius(center) {
+  results.forEach(p=>{
 
-  if (radiusCircle) {
-    map.removeLayer(radiusCircle);
-  }
+    const icon =
+      p.type==="water" ? "💧" :
+      p.type==="town" ? "🏘" :
+      p.type==="bus" ? "🚌" :
+      p.type==="hut" ? "🏡" :
+      p.type==="view" ? "👀" : "📍";
 
-  radiusCircle = L.circle(center, {
-    radius: 5000,
-    color: "#4dd0e1",
-    fillOpacity: 0.1
-  }).addTo(map);
+    L.marker(p.coords)
+      .addTo(map)
+      .bindPopup(
+        `${icon} ${p.name}<br>
+        📏 ${Math.round(p.distance)} m<br>
+        🧭 ${Math.round(p.direction)}°`
+      );
+
+    const div = document.createElement("div");
+    div.className = "card";
+    div.innerHTML = `
+      ${icon} <b>${p.name}</b><br>
+      📏 ${Math.round(p.distance)} m<br>
+      🧭 ${Math.round(p.direction)}°
+    `;
+
+    document.getElementById("output").appendChild(div);
+  });
+
+  console.log("SURVIVAL DATA:", results);
 }
-
-// click map → POI radius
-map.on("click", e => {
-  showRadius(e.latlng);
-});
-
-// 🧭 FLY TO ROUTE
-function flyToRoute(index) {
-  const r = routes[index];
-  map.flyTo(r.coords[0], 13);
-  showRadius(r.coords[0]);
-}
-
-// 🧾 POI LIST UI
-const poiList = document.getElementById("poiList");
-
-pois.forEach(p => {
-  const div = document.createElement("div");
-  div.className = "card";
-  div.innerHTML = "📍 " + p.name;
-  div.onclick = () => {
-    map.flyTo(p.coords, 14);
-    showRadius(p.coords);
-  };
-  poiList.appendChild(div);
-});
 
 </script>
 
