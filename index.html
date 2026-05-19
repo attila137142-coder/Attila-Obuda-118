@@ -1,9 +1,9 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>🥾 SURVIVAL PRO MODE</title>
+<title>🆘 ESCAPE ROUTE SYSTEM</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -22,27 +22,22 @@ header {
   justify-content:space-between;
 }
 
-#map {
-  height: 60vh;
-  width: 100%;
-}
+#map { height:60vh; }
 
-.panel {
-  padding:10px;
-}
+.panel { padding:10px; }
 
 .card {
   background:#111826;
   padding:10px;
   margin-bottom:10px;
-  border-left:3px solid #4dd0e1;
+  border-left:3px solid #ff5252;
 }
-.small { font-size:12px; color:#aaa; }
 button {
-  padding:8px;
-  background:#4dd0e1;
+  padding:10px;
+  background:#ff5252;
   border:none;
   cursor:pointer;
+  color:white;
 }
 </style>
 </head>
@@ -50,14 +45,14 @@ button {
 <body>
 
 <header>
-  <div>🥾 SURVIVAL PRO MODE</div>
+  <div>🆘 ESCAPE ROUTE SYSTEM</div>
   <div id="status">READY</div>
 </header>
 
 <div id="map"></div>
 
 <div class="panel">
-  <button onclick="runSurvival()">📍 Saját helyzet + POI scan</button>
+  <button onclick="escapeRoute()">🧭 Find Escape Route</button>
   <div id="output"></div>
 </div>
 
@@ -68,20 +63,20 @@ button {
 // 🗺 MAP
 const map = L.map('map').setView([47.4979, 19.0402], 11);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '© OSM'
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'© OSM'
 }).addTo(map);
 
-// 🧭 POI DATABASE
-const pois = [
+// 🧭 SAFETY POI DATABASE
+const safePoints = [
   { name:"Budakeszi", type:"town", coords:[47.510,18.927] },
-  { name:"Normafa buszmegálló", type:"bus", coords:[47.503,19.012] },
+  { name:"Normafa busz", type:"bus", coords:[47.503,19.012] },
   { name:"Kaán Károly turistaház", type:"hut", coords:[47.518,18.960] },
-  { name:"János-hegy kilátó", type:"view", coords:[47.514,18.956] },
-  { name:"Anna-forrás", type:"water", coords:[47.520,18.940] }
+  { name:"Farkasrét", type:"town", coords:[47.482,19.002] },
+  { name:"Hűvösvölgy", type:"hub", coords:[47.541,18.956] }
 ];
 
-// 📏 DISTANCE (meter)
+// 📏 DISTANCE
 function distance(a,b){
   const R=6371000;
   const dLat=(b[0]-a[0])*Math.PI/180;
@@ -108,33 +103,20 @@ function bearing(a,b){
   return (Math.atan2(y,x)*180/Math.PI+360)%360;
 }
 
-// 📍 GET LOCATION
+// 📍 USER POSITION
 function getUser(){
   return new Promise((resolve,reject)=>{
     navigator.geolocation.getCurrentPosition(pos=>{
       resolve({
         lat:pos.coords.latitude,
-        lon:pos.coords.longitude,
-        acc:pos.coords.accuracy
+        lon:pos.coords.longitude
       });
     },reject);
   });
 }
 
-// 🧠 SURVIVAL SCAN
-function scan(user){
-
-  return pois.map(p=>{
-
-    const dist = distance([user.lat,user.lon], p.coords);
-    const dir = bearing([user.lat,user.lon], p.coords);
-
-    return {...p, distance:dist, direction:dir};
-  }).sort((a,b)=>a.distance-b.distance);
-}
-
-// 🗺 MAIN ENGINE
-async function runSurvival(){
+// 🆘 ESCAPE ENGINE
+async function escapeRoute(){
 
   const user = await getUser();
 
@@ -142,41 +124,55 @@ async function runSurvival(){
 
   L.marker([user.lat,user.lon])
     .addTo(map)
-    .bindPopup("📍 TE VAGY ITT");
+    .bindPopup("📍 YOU");
 
-  const results = scan(user).slice(0,5);
+  // find nearest safe point
+  let best = null;
+  let bestDist = Infinity;
 
-  document.getElementById("output").innerHTML = "";
+  safePoints.forEach(p=>{
 
-  results.forEach(p=>{
+    const d = distance(
+      [user.lat,user.lon],
+      p.coords
+    );
 
-    const icon =
-      p.type==="water" ? "💧" :
-      p.type==="town" ? "🏘" :
-      p.type==="bus" ? "🚌" :
-      p.type==="hut" ? "🏡" :
-      p.type==="view" ? "👀" : "📍";
-
-    L.marker(p.coords)
-      .addTo(map)
-      .bindPopup(
-        `${icon} ${p.name}<br>
-        📏 ${Math.round(p.distance)} m<br>
-        🧭 ${Math.round(p.direction)}°`
-      );
-
-    const div = document.createElement("div");
-    div.className = "card";
-    div.innerHTML = `
-      ${icon} <b>${p.name}</b><br>
-      📏 ${Math.round(p.distance)} m<br>
-      🧭 ${Math.round(p.direction)}°
-    `;
-
-    document.getElementById("output").appendChild(div);
+    if(d < bestDist){
+      bestDist = d;
+      best = p;
+    }
   });
 
-  console.log("SURVIVAL DATA:", results);
+  // draw escape line
+  const line = L.polyline([
+    [user.lat,user.lon],
+    best.coords
+  ],{
+    color:"#ff5252",
+    weight:4
+  }).addTo(map);
+
+  map.fitBounds(line.getBounds());
+
+  L.marker(best.coords)
+    .addTo(map)
+    .bindPopup("🆘 SAFE: " + best.name);
+
+  const dir = bearing(
+    [user.lat,user.lon],
+    best.coords
+  );
+
+  document.getElementById("output").innerHTML = `
+    <div class="card">
+      🆘 <b>SAFE DESTINATION FOUND</b><br><br>
+      📍 ${best.name}<br>
+      📏 ${Math.round(bestDist)} m<br>
+      🧭 ${Math.round(dir)}°
+    </div>
+  `;
+
+  console.log("ESCAPE TARGET:", best);
 }
 
 </script>
