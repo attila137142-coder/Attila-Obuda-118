@@ -3,73 +3,98 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 LIVE GTFS-RT</title>
+<title>FUTÁR V5 QUICK LIVE</title>
 
 <style>
-body{
+body {
     margin:0;
-    font-family:-apple-system, Arial;
+    font-family: Arial, Helvetica, sans-serif;
     background:#0b0f14;
-    color:white;
+    color:#00ff9d;
 }
 
-header{
+header {
     padding:12px;
-    background:#111a26;
-    text-align:center;
-    font-weight:bold;
-    border-bottom:2px solid #1f2b3a;
-}
-
-.status{
-    font-size:12px;
-    opacity:0.7;
-    margin-top:4px;
-}
-
-.container{
-    padding:10px;
-}
-
-.card{
-    background:#0f1622;
-    border:1px solid #1d2a3a;
-    border-radius:10px;
-    margin-bottom:10px;
-    padding:10px;
-}
-
-.row{
+    background:#111826;
     display:flex;
     justify-content:space-between;
-    padding:8px 0;
-    border-bottom:1px solid #1b2635;
+    align-items:center;
+    border-bottom:2px solid #00ff9d;
 }
 
-.badge{
-    font-size:11px;
-    padding:2px 6px;
-    border-radius:4px;
+#clock {
+    font-size:18px;
+    font-weight:bold;
 }
 
-.bkk{background:#1e88e5;}
-.mav{background:#43a047;}
-.volan{background:#fb8c00;}
+.container {
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:10px;
+    padding:10px;
+}
 
-.small{font-size:12px; opacity:0.7;}
+.panel {
+    background:#111826;
+    padding:10px;
+    border:1px solid #00ff9d;
+    border-radius:8px;
+}
 
-.good{color:#4caf50;}
-.mid{color:#ffb300;}
-.bad{color:#ef5350;}
+h2 {
+    margin:0 0 10px 0;
+    font-size:16px;
+    color:#00ff9d;
+}
 
-button{
+input, button {
     width:100%;
     padding:10px;
+    margin-top:5px;
     border:none;
-    border-radius:8px;
-    background:#2b7cff;
-    color:white;
+    border-radius:5px;
     font-size:14px;
+}
+
+input {
+    background:#0b0f14;
+    color:#00ff9d;
+    border:1px solid #00ff9d;
+}
+
+button {
+    background:#00ff9d;
+    color:#000;
+    font-weight:bold;
+    cursor:pointer;
+}
+
+table {
+    width:100%;
+    border-collapse:collapse;
+    font-size:13px;
+}
+
+td, th {
+    border-bottom:1px solid #1f2a38;
+    padding:6px;
+    text-align:left;
+}
+
+.badge {
+    padding:2px 6px;
+    border-radius:4px;
+    background:#00ff9d;
+    color:#000;
+    font-size:11px;
+}
+
+.red { background:#ff3b3b; color:#fff; }
+.yellow { background:#ffcc00; color:#000; }
+
+.small {
+    font-size:12px;
+    opacity:0.8;
 }
 </style>
 </head>
@@ -77,160 +102,93 @@ button{
 <body>
 
 <header>
-🚦 FUTÁR V5 LIVE GTFS-RT
-<div class="status" id="status">Inicializálás...</div>
+    <div>🚍 FUTÁR V5 QUICK LIVE</div>
+    <div id="clock">--:--:--</div>
 </header>
 
 <div class="container">
 
-<button onclick="refresh()">🔄 Live frissítés</button>
+    <!-- KERESŐ -->
+    <div class="panel">
+        <h2>🔎 Járat / Megálló kereső</h2>
+        <input id="search" placeholder="Pl: 7, M2, Deák tér, Volán, MÁV..." />
+        <button onclick="search()">KERESÉS</button>
+        <div id="result" class="small"></div>
+    </div>
 
-<div id="feed"></div>
+    <!-- LIVE JÁRAT TÁBLA -->
+    <div class="panel">
+        <h2>🚦 LIVE DISZPÉCSER TÁBLA</h2>
+        <table>
+            <tr><th>Járat</th><th>Operátor</th><th>Állapot</th></tr>
+            <tr><td>7</td><td>BKK</td><td><span class="badge">IDŐBEN</span></td></tr>
+            <tr><td>100E</td><td>BKK</td><td><span class="badge yellow">KÉSÉS +3</span></td></tr>
+            <tr><td>243</td><td>Volánbusz</td><td><span class="badge">INDUL</span></td></tr>
+            <tr><td>M2</td><td>Metró</td><td><span class="badge">FOLYAMATOS</span></td></tr>
+            <tr><td>S70</td><td>MÁV</td><td><span class="badge red">ZAVAR</span></td></tr>
+        </table>
+    </div>
+
+    <!-- RENDSZER INFO -->
+    <div class="panel">
+        <h2>🧠 Rendszer állapot</h2>
+        <p>✔ BKK feed: SIMULATED</p>
+        <p>✔ MÁV: STRUCTURE READY</p>
+        <p>✔ Volánbusz: STRUCTURE READY</p>
+        <p>✔ HÉV: ACTIVE LAYER</p>
+        <p class="small">Offline mode – no Vercel / no external API</p>
+    </div>
+
+    <!-- CONTROL -->
+    <div class="panel">
+        <h2>⚙️ Vezérlés</h2>
+        <button onclick="refresh()">FRISSÍTÉS</button>
+        <button onclick="toggleTheme()">FÉNY / DARK</button>
+    </div>
 
 </div>
 
 <script>
+function updateClock(){
+    const now = new Date();
+    document.getElementById("clock").innerText =
+        now.toLocaleTimeString("hu-HU");
+}
+setInterval(updateClock,1000);
+updateClock();
 
-//////////////////////////////////////////////////////
-// 🌐 GTFS-RT LIVE ENDPOINT KONFIG
-// IDE TESZED A VALÓS ADATFORRÁSOKAT
-//////////////////////////////////////////////////////
+function search(){
+    let q = document.getElementById("search").value.toLowerCase();
+    let out = document.getElementById("result");
 
-const GTFS_RT = {
-    bkk: "https://YOUR-BKK-GTFS-RT-ENDPOINT",
-    mav: "https://YOUR-MAV-GTFS-RT-ENDPOINT",
-    volan: "https://YOUR-VOLAN-GTFS-RT-ENDPOINT"
-};
+    let db = {
+        "7": "BKK → Erzsébet körút / Hungária",
+        "100e": "BKK Airport Express → Deák tér - Liszt Ferenc Airport",
+        "243": "Volánbusz → elővárosi járat",
+        "m2": "Metró → Déli pályaudvar - Örs vezér tere",
+        "s70": "MÁV → Budapest - Székesfehérvár"
+    };
 
-//////////////////////////////////////////////////////
-// 🧪 DEMO FALLBACK (ha nincs valós feed)
-//////////////////////////////////////////////////////
-
-const demoData = [
-    {
-        agency:"BKK",
-        line:"7E",
-        dest:"Blaha Lujza tér",
-        delay:1
-    },
-    {
-        agency:"MÁV",
-        line:"IC 210",
-        dest:"Debrecen",
-        delay:3
-    },
-    {
-        agency:"Volánbusz",
-        line:"105",
-        dest:"Érd",
-        delay:-1
-    }
-];
-
-//////////////////////////////////////////////////////
-// 📡 SIMULÁLT GTFS-RT FETCH (REAL READY STRUCTURE)
-//////////////////////////////////////////////////////
-
-async function fetchGTFS(url){
-    try{
-        const res = await fetch(url);
-        if(!res.ok) throw new Error("no feed");
-        const data = await res.json();
-        return data;
-    }catch(e){
-        return null;
+    if(db[q]){
+        out.innerHTML = "Találat: " + db[q];
+    } else {
+        out.innerHTML = "Nincs pontos adat (demo index).";
     }
 }
-
-//////////////////////////////////////////////////////
-// 🧠 LIVE MERGE ENGINE
-//////////////////////////////////////////////////////
-
-async function loadLive(){
-
-    document.getElementById("status").innerText = "Live adat betöltés...";
-
-    let all = [];
-
-    // 🚍 BKK
-    let bkk = await fetchGTFS(GTFS_RT.bkk);
-    if(bkk){
-        all = all.concat(bkk);
-    }
-
-    // 🚆 MÁV
-    let mav = await fetchGTFS(GTFS_RT.mav);
-    if(mav){
-        all = all.concat(mav);
-    }
-
-    // 🚌 VOLÁN
-    let volan = await fetchGTFS(GTFS_RT.volan);
-    if(volan){
-        all = all.concat(volan);
-    }
-
-    // fallback
-    if(all.length === 0){
-        all = demoData;
-        document.getElementById("status").innerText =
-            "DEMO MÓD (nincs GTFS-RT kapcsolat)";
-    }else{
-        document.getElementById("status").innerText =
-            "LIVE GTFS-RT AKTÍV";
-    }
-
-    render(all);
-}
-
-//////////////////////////////////////////////////////
-// 📊 UI RENDER
-//////////////////////////////////////////////////////
-
-function render(data){
-
-    const feed = document.getElementById("feed");
-    feed.innerHTML = "";
-
-    data.forEach(d=>{
-
-        let cls =
-            d.agency==="BKK"?"bkk":
-            d.agency==="MÁV"?"mav":"volan";
-
-        let status =
-            d.delay<=0?"good":
-            d.delay<=2?"mid":"bad";
-
-        feed.innerHTML += `
-        <div class="card">
-            <div class="row">
-                <div>
-                    <span class="badge ${cls}">${d.agency}</span>
-                    <b> ${d.line}</b>
-                    <div class="small">${d.dest}</div>
-                </div>
-                <div class="${status}">
-                    ${d.delay} min
-                </div>
-            </div>
-        </div>`;
-    });
-}
-
-//////////////////////////////////////////////////////
-// 🔄 REFRESH
-//////////////////////////////////////////////////////
 
 function refresh(){
-    loadLive();
+    alert("Rendszer frissítve (offline demo)");
 }
 
-loadLive();
-
-// auto refresh
-setInterval(loadLive, 10000);
-
+function toggleTheme(){
+    if(document.body.style.background == "white"){
+        document.body.style.background="#0b0f14";
+        document.body.style.color="#00ff9d";
+    } else {
+        document.body.style.background="white";
+        document.body.style.color="black";
+    }
+}
 </script>
 
 </body>
