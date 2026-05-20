@@ -1,2 +1,130 @@
-<!DOCTYPE html><html lang="hu"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>FUTÁR V5 PRO LIVE GTFS</title><link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/><script src="https://unpkg.com/leaflet/dist/leaflet.js"></script><style>body{    margin:0;    font-family: Arial, sans-serif;    background:#070b10;    color:#d7e2ea;}header{    display:flex;    justify-content:space-between;    padding:10px 15px;    background:#0f1722;    border-bottom:2px solid #1d2a3a;}.title{font-weight:bold; letter-spacing:1px;}.clock{color:#4dd0e1;}.grid{    display:grid;    grid-template-columns: 1.4fr 1fr;    height:calc(100vh - 50px);}#map{height:100%;}.panel{    display:flex;    flex-direction:column;    border-left:2px solid #1d2a3a;}.topbar{    padding:10px;    background:#0e1622;    border-bottom:1px solid #1d2a3a;}input{    width:95%;    padding:8px;    border-radius:6px;    border:none;    background:#1a2433;    color:white;}.table{    overflow:auto;    flex:1;}.row{    display:flex;    justify-content:space-between;    padding:10px;    border-bottom:1px solid #1b2635;    font-size:13px;}.badge{    padding:2px 6px;    border-radius:4px;    font-size:11px;}.bkk{background:#1e88e5;}.mav{background:#43a047;}.volan{background:#fb8c00;}.small{opacity:.7; font-size:11px;}.status{    font-size:11px;    margin-top:3px;}.good{color:#4caf50;}.mid{color:#ffb300;}.bad{color:#ef5350;}</style></head><body><header>    <div class="title">🚦 FUTÁR V5 PRO LIVE GTFS DISPATCH CENTER</div>    <div class="clock" id="clock"></div></header><div class="grid">    <div id="map"></div>    <div class="panel">        <div class="topbar">            <input id="search" placeholder="GTFS: járat / stop / agency / ID..." />        </div>        <div class="table" id="table"></div>    </div></div><script>// ---------------- CLOCK ----------------setInterval(()=>{    document.getElementById("clock").innerText = new Date().toLocaleTimeString();},1000);// ---------------- MAP ----------------const map = L.map('map').setView([47.4979,19.0402],12);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{    attribution:'FUTÁR V5 PRO'}).addTo(map);// ---------------- GTFS-LIKE NETWORK ----------------const vehicles = [    {        id:"BKK_7E_001",        agency:"BKK",        line:"7E",        lat:47.49,        lng:19.05,        dest:"Blaha Lujza tér",        delay:1    },    {        id:"MAV_M4_210",        agency:"MÁV",        line:"M4",        lat:47.47,        lng:19.04,        dest:"Keleti",        delay:3    },    {        id:"VOLAN_105_88",        agency:"Volánbusz",        line:"105",        lat:47.46,        lng:19.02,        dest:"Érd",        delay:-1    }];// ---------------- GTFS STOP NETWORK ----------------const stops = [    [47.4975,19.0540,"Deák Ferenc tér"],    [47.4963,19.0706,"Blaha Lujza tér"],    [47.4641,19.0227,"Kelenföld"]];stops.forEach(s=>{    L.circleMarker([s[0],s[1]],{        radius:5,        color:"#4dd0e1"    }).addTo(map).bindPopup(s[2]);});// ---------------- VEHICLE LAYERS ----------------let markers = {};function drawVehicles(){    for(let v of vehicles){        if(!markers[v.id]){            markers[v.id] = L.marker([v.lat,v.lng]).addTo(map);        }        markers[v.id].setLatLng([v.lat,v.lng]);        markers[v.id].bindPopup(            `<b>${v.agency} ${v.line}</b><br>${v.dest}<br>Delay: ${v.delay} min`        );    }}// ---------------- SIMULATED GTFS-RT STREAM ----------------function tick(){    for(let v of vehicles){        let moveLat = (Math.random()-0.5)*0.002;        let moveLng = (Math.random()-0.5)*0.002;        v.lat += moveLat;        v.lng += moveLng;        v.delay += Math.floor(Math.random()*3-1);        if(v.delay > 5) v.delay = 5;        if(v.delay < -2) v.delay = -2;    }    drawVehicles();    renderTable();}setInterval(tick, 2000);// ---------------- TABLE ----------------function renderTable(filter=""){    const table = document.getElementById("table");    table.innerHTML = "";    vehicles    .filter(v =>        v.line.includes(filter) ||        v.dest.toLowerCase().includes(filter.toLowerCase()) ||        v.agency.toLowerCase().includes(filter.toLowerCase())    )    .forEach(v=>{        let cls = v.agency==="BKK"?"bkk":v.agency==="MÁV"?"mav":"volan";        let status =            v.delay <= 0 ? "good" :            v.delay <= 2 ? "mid" : "bad";        table.innerHTML += `        <div class="row">            <div>                <span class="badge ${cls}">${v.agency}</span>                <b> ${v.line}</b>                <div class="small">${v.dest}</div>                <div class="status ${status}">                    ${v.delay} min eltérés                </div>            </div>            <div>🚍 LIVE</div>        </div>`;    });}// ---------------- SEARCH ----------------document.getElementById("search").addEventListener("input",(e)=>{    renderTable(e.target.value);});// INITdrawVehicles();renderTable();</script></body></html>
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Megállós LIVE Menetrend</title>
+
+<style>
+body{
+    margin:0;
+    font-family: -apple-system, Arial;
+    background:#0b0f14;
+    color:white;
+}
+
+header{
+    padding:12px;
+    background:#111a26;
+    font-size:18px;
+    font-weight:bold;
+    text-align:center;
+    border-bottom:2px solid #1f2b3a;
+}
+
+.stop{
+    padding:10px;
+    font-size:16px;
+    background:#0f1622;
+    border-bottom:1px solid #1d2a3a;
+}
+
+.meta{
+    font-size:12px;
+    opacity:0.7;
+}
+
+.list{
+    padding:10px;
+}
+
+.row{
+    display:flex;
+    justify-content:space-between;
+    padding:12px;
+    border-bottom:1px solid #1b2635;
+    font-size:18px;
+}
+
+.time{
+    font-weight:bold;
+}
+
+.green{color:#4caf50;}
+.gray{opacity:0.6;}
+.red{color:#ef5350;}
+
+.badge{
+    font-size:11px;
+    padding:2px 6px;
+    border-radius:4px;
+    background:#1e88e5;
+    margin-right:6px;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+🚏 Megállós LIVE Menetrend
+</header>
+
+<div class="stop">
+<b>32-es busz</b> → Örs vezér tere M+H<br>
+<div class="meta">FKU940 • Volvó 7700A • élő szimuláció</div>
+</div>
+
+<div class="list">
+
+<div class="row">
+<span><span class="badge">BKK</span>Kassai tér</span>
+<span class="time gray">13:48</span>
+</div>
+
+<div class="row">
+<span><span class="badge">BKK</span>Szögliget / Czobor</span>
+<span class="time gray">13:51</span>
+</div>
+
+<div class="row">
+<span><span class="badge">BKK</span>Bosnyák tér</span>
+<span class="time gray">13:52</span>
+</div>
+
+<div class="row">
+<span><span class="badge">BKK</span>Egressy tér</span>
+<span class="time green">13:56</span>
+<span class="time green">+2'</span>
+</div>
+
+<div class="row">
+<span><span class="badge">BKK</span>Jeszenák János utca</span>
+<span class="time green">13:58</span>
+<span class="time green">+4'</span>
+</div>
+
+<div class="row">
+<span><span class="badge">BKK</span>Pongrátz Gergely tér</span>
+<span class="time green">13:59</span>
+<span class="time green">+5'</span>
+</div>
+
+<div class="row">
+<span><span class="badge">BKK</span>Bánki Donát utca</span>
+<span class="time green">14:00</span>
+<span class="time green">+6'</span>
+</div>
+
+</div>
+
+<script>
+// LIVE clock feeling
+setInterval(()=>{
+    document.title = "LIVE " + new Date().toLocaleTimeString();
+},1000);
+</script>
+
+</body>
+</html>
 
