@@ -1,1 +1,584 @@
-<!DOCTYPE html><html lang="hu"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>FUTÁR V5 HYBRID GTFS CORE</title><link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/><script src="https://unpkg.com/leaflet/dist/leaflet.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script><style>body{    margin:0;    background:#071914;    color:#dff;    font-family:Arial;    overflow:hidden;}#topbar{    height:58px;    background:#0b2721;    border-bottom:2px solid #00ffb3;    display:flex;    align-items:center;    gap:10px;    padding:0 10px;    font-weight:bold;    flex-wrap:wrap;}#layout{    display:flex;    height:calc(100vh - 58px);}#panel{    width:430px;    background:#081f1b;    border-right:2px solid #00ffb3;    overflow:auto;    padding:10px;    font-family:monospace;}#map{    flex:1;}.box{    background:#102b25;    padding:6px;    border-radius:6px;    border:1px solid #17463d;}.row{    display:grid;    grid-template-columns:70px 1fr 90px;    gap:6px;    padding:5px 0;    border-bottom:1px solid #153d35;    font-size:12px;}.badge{    color:#ffe66d;    font-weight:bold;}.green{    color:#65ff8f;}.red{    color:#ff6b6b;}.blue{    color:#62b8ff;}.small{    font-size:11px;    opacity:0.8;}button{    cursor:pointer;    padding:6px 10px;}input[type=file]{    max-width:170px;}.title{    color:#00ffb3;    font-weight:bold;}</style></head><body><div id="topbar"><div class="title">🚍 FUTÁR V5 HYBRID GTFS</div><div class="box">VOLÁN:<input type="file" id="volanZip"></div><div class="box">BKK:<input type="file" id="bkkZip"></div><div class="box">MÁV:<input type="file" id="mavZip"></div><button onclick="resetPanel()">RESET</button><div id="status">READY ✔</div></div><div id="layout"><div id="panel">Tölts be GTFS ZIP fájlokat.<br><br>Utána kattints egy megállóra.</div><div id="map"></div></div><script>/* =========================================🧠 CORE DATABASE========================================= */let GTFS = {    stops: [],    stop_times: [],    trips: [],    routes: []};let INDEX = {    stop:{},    trip:{},    route:{}};/* =========================================🗺 MAP========================================= */const map = L.map('map').setView([47.52,19.05],11);L.tileLayer(    'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',    {        attribution:'OpenStreetMap'    }).addTo(map);const layer = L.layerGroup().addTo(map);/* =========================================🕒 TIME========================================= */function nowSec(){    const d = new Date();    return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();}function toSec(t){    if(!t) return 0;    const p = t.split(':');    return (+p[0])*3600+(+p[1])*60+(+p[2]||0);}/* =========================================📦 CSV PARSER========================================= */function parseCSVLine(line){    let r=[];    let c="";    let q=false;    for(let x of line){        if(x=='"'){            q=!q;        }        else if(x==',' && !q){            r.push(c);            c="";        }        else{            c+=x;        }    }    r.push(c);    return r;}/* =========================================📦 TABLE PARSER========================================= */function parseTable(txt){    let l = txt.split(/\r?\n/);    let h = parseCSVLine(l[0]);    let o = [];    for(let i=1;i<l.length;i++){        if(!l[i]) continue;        let r = parseCSVLine(l[i]);        let obj = {};        h.forEach((x,j)=>obj[x]=r[j]||"");        o.push(obj);    }    return o;}/* =========================================🚀 GTFS LOADER========================================= */async function loadGTFS(file,prefix,color){    document.getElementById("status").innerText =        "Loading "+prefix+"...";    const zip = await JSZip.loadAsync(file);    const stopsTxt =        await zip.file('stops.txt').async('string');    const stopTimesTxt =        await zip.file('stop_times.txt').async('string');    const tripsTxt =        await zip.file('trips.txt').async('string');    const routesTxt =        await zip.file('routes.txt').async('string');    const stops = parseTable(stopsTxt);    const stopTimes = parseTable(stopTimesTxt);    const trips = parseTable(tripsTxt);    const routes = parseTable(routesTxt);    /* =====================================    🧠 PREFIX IDs    ===================================== */    stops.forEach(s=>{        s.stop_id = prefix+"_"+s.stop_id;        s.__source = prefix;        s.__color = color;    });    trips.forEach(t=>{        t.trip_id = prefix+"_"+t.trip_id;        t.route_id = prefix+"_"+t.route_id;        t.__source = prefix;    });    routes.forEach(r=>{        r.route_id = prefix+"_"+r.route_id;        r.__source = prefix;    });    stopTimes.forEach(st=>{        st.stop_id = prefix+"_"+st.stop_id;        st.trip_id = prefix+"_"+st.trip_id;        st.__source = prefix;    });    /* =====================================    ➕ MERGE DATABASE    ===================================== */    GTFS.stops.push(...stops);    GTFS.stop_times.push(...stopTimes);    GTFS.trips.push(...trips);    GTFS.routes.push(...routes);    buildIndex();    renderMap();    document.getElementById("status").innerText =        prefix+" loaded ✔";}/* =========================================🧩 BUILD INDEX========================================= */function buildIndex(){    INDEX.stop = {};    INDEX.trip = {};    INDEX.route = {};    GTFS.trips.forEach(t=>{        INDEX.trip[t.trip_id]=t;    });    GTFS.routes.forEach(r=>{        INDEX.route[r.route_id]=r;    });    GTFS.stop_times.forEach(st=>{        if(!INDEX.stop[st.stop_id]){            INDEX.stop[st.stop_id]=[];        }        INDEX.stop[st.stop_id].push(st);    });}/* =========================================🗺 RENDER MAP========================================= */function renderMap(){    layer.clearLayers();    GTFS.stops.forEach(s=>{        const lat = parseFloat(s.stop_lat);        const lon = parseFloat(s.stop_lon);        if(!lat || !lon) return;        let color = "#00ff88";        if(s.__source==="VOLAN") color="#ffe600";        if(s.__source==="BKK") color="#00d0ff";        if(s.__source==="MAV") color="#ff7b7b";        const marker = L.circleMarker([lat,lon],{            radius:4,            color:color,            fillColor:color,            fillOpacity:0.8,            weight:1        }).addTo(layer);        marker.on('click',()=>{            renderPanel(s.stop_id);        });    });}/* =========================================⏱ NEXT DEPARTURES========================================= */function getNext(list){    let now = nowSec();    return list        .map(d=>({...d,sec:toSec(d.departure_time)}))        .filter(d=>d.sec>=now-300)        .sort((a,b)=>a.sec-b.sec);}function countdown(sec){    let now = nowSec();    let diff = Math.floor((sec-now)/60);    if(diff<0) return "DEPARTED";    if(diff===0) return "NOW";    return diff+" min";}/* =========================================📋 PANEL========================================= */function renderPanel(stop_id){    let list = INDEX.stop[stop_id] || [];    let meta =        GTFS.stops.find(s=>s.stop_id===stop_id)||{};    list = getNext(list);    let html="";    html+="<div style='font-size:18px;font-weight:bold'>";    html+=meta.stop_name||"STOP";    html+="</div>";    html+="<div class='small'>";    html+=meta.stop_id;    html+="</div>";    html+="<div class='small'>";    html+="SOURCE: "+(meta.__source||"?");    html+="</div><br>";    let seen = new Set();    list = list.filter(x=>{        if(seen.has(x.trip_id)) return false;        seen.add(x.trip_id);        return true;    });    for(let i=0;i<Math.min(list.length,25);i++){        const d = list[i];        const trip =            INDEX.trip[d.trip_id]||{};        const route =            INDEX.route[trip.route_id]||{};        let cls = "green";        if(countdown(d.sec)==="NOW"){            cls="red";        }        html +=        "<div class='row'>"+            "<div class='badge'>"+            (route.route_short_name||"?")+            "</div>"+            "<div>"+            (trip.trip_headsign||"route")+            "<br><span class='small'>"+            (meta.__source||"")+            "</span>"+            "</div>"+            "<div class='"+cls+"'>"+            d.departure_time+            "<br><span class='small'>"+            countdown(d.sec)+            "</span>"+            "</div>"+        "</div>";    }    document.getElementById("panel").innerHTML =        html;}/* =========================================🧹 RESET========================================= */function resetPanel(){    document.getElementById("panel").innerHTML =        "CLICK A STOP";}/* =========================================📂 INPUT EVENTS========================================= */document.getElementById('volanZip').addEventListener('change',e=>{    loadGTFS(        e.target.files[0],        "VOLAN",        "#ffe600"    );});document.getElementById('bkkZip').addEventListener('change',e=>{    loadGTFS(        e.target.files[0],        "BKK",        "#00d0ff"    );});document.getElementById('mavZip').addEventListener('change',e=>{    loadGTFS(        e.target.files[0],        "MAV",        "#ff7b7b"    );});</script></body></html>
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+
+<title>FUTÁR V5 REGION HYBRID</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<style>
+
+body{
+    margin:0;
+    overflow:hidden;
+    font-family:Arial;
+    background:#061712;
+    color:#dff;
+}
+
+#topbar{
+    height:64px;
+    background:#0b2721;
+    border-bottom:2px solid #00ffb3;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:0 10px;
+    flex-wrap:wrap;
+}
+
+#layout{
+    display:flex;
+    height:calc(100vh - 64px);
+}
+
+#panel{
+    width:420px;
+    background:#081f1b;
+    border-right:2px solid #00ffb3;
+    overflow:auto;
+    padding:10px;
+    font-family:monospace;
+}
+
+#map{
+    flex:1;
+}
+
+.box{
+    background:#102923;
+    padding:5px;
+    border-radius:6px;
+    border:1px solid #18453b;
+}
+
+.row{
+    display:grid;
+    grid-template-columns:70px 1fr 90px;
+    gap:5px;
+    border-bottom:1px solid #153c34;
+    padding:5px 0;
+    font-size:12px;
+}
+
+.badge{
+    color:#ffe600;
+    font-weight:bold;
+}
+
+.green{
+    color:#65ff8f;
+}
+
+.red{
+    color:#ff5b5b;
+}
+
+.small{
+    font-size:11px;
+    opacity:0.8;
+}
+
+button{
+    padding:6px 10px;
+    cursor:pointer;
+}
+
+.title{
+    color:#00ffb3;
+    font-weight:bold;
+    font-size:18px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="topbar">
+
+<div class="title">
+🚍 FUTÁR V5 REGION HYBRID
+</div>
+
+<div class="box">
+BKK ZIP:
+<input type="file" id="bkkZip">
+</div>
+
+<div class="box">
+VOLÁN ZIP:
+<input type="file" id="volanZip">
+</div>
+
+<button onclick="resetPanel()">RESET</button>
+
+<div id="status">READY ✔</div>
+
+</div>
+
+<div id="layout">
+
+<div id="panel">
+
+🧠 BKK:
+2 / 3 / 4 / 12 kerület<br><br>
+
+🚌 VOLÁN:
+Pest + Zala megye<br><br>
+
+Töltsd be a GTFS ZIP fájlokat.
+
+</div>
+
+<div id="map"></div>
+
+</div>
+
+<script>
+
+/* =========================================
+🧠 DATABASE
+========================================= */
+
+let GTFS = {
+    stops: [],
+    stop_times: [],
+    trips: [],
+    routes: []
+};
+
+let INDEX = {
+    stop:{},
+    trip:{},
+    route:{}
+};
+
+/* =========================================
+🗺 MAP
+========================================= */
+
+const map = L.map('map').setView([47.52,19.05],10);
+
+L.tileLayer(
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+{
+    attribution:'OpenStreetMap'
+}).addTo(map);
+
+const layer = L.layerGroup().addTo(map);
+
+/* =========================================
+🕒 TIME
+========================================= */
+
+function nowSec(){
+
+    const d = new Date();
+
+    return d.getHours()*3600+
+           d.getMinutes()*60+
+           d.getSeconds();
+}
+
+function toSec(t){
+
+    if(!t) return 0;
+
+    const p=t.split(':');
+
+    return (+p[0])*3600+
+           (+p[1])*60+
+           (+p[2]||0);
+}
+
+/* =========================================
+📦 CSV PARSER
+========================================= */
+
+function parseCSVLine(line){
+
+    let r=[];
+    let c="";
+    let q=false;
+
+    for(let x of line){
+
+        if(x=='"'){
+            q=!q;
+        }
+
+        else if(x==','&&!q){
+
+            r.push(c);
+            c="";
+        }
+
+        else{
+            c+=x;
+        }
+    }
+
+    r.push(c);
+
+    return r;
+}
+
+function parseTable(txt){
+
+    let l=txt.split(/\r?\n/);
+
+    let h=parseCSVLine(l[0]);
+
+    let o=[];
+
+    for(let i=1;i<l.length;i++){
+
+        if(!l[i]) continue;
+
+        let r=parseCSVLine(l[i]);
+
+        let obj={};
+
+        h.forEach((x,j)=>obj[x]=r[j]||"");
+
+        o.push(obj);
+    }
+
+    return o;
+}
+
+/* =========================================
+🚀 LOAD GTFS
+========================================= */
+
+async function loadGTFS(file,type){
+
+    document.getElementById("status").innerText =
+        "Loading "+type+"...";
+
+    const zip = await JSZip.loadAsync(file);
+
+    const stopsTxt =
+        await zip.file('stops.txt').async('string');
+
+    const stopTimesTxt =
+        await zip.file('stop_times.txt').async('string');
+
+    const tripsTxt =
+        await zip.file('trips.txt').async('string');
+
+    const routesTxt =
+        await zip.file('routes.txt').async('string');
+
+    let stops=parseTable(stopsTxt);
+    let stop_times=parseTable(stopTimesTxt);
+    let trips=parseTable(tripsTxt);
+    let routes=parseTable(routesTxt);
+
+    /* =====================================
+    🧠 FILTERS
+    ===================================== */
+
+    if(type==="BKK"){
+
+        stops = stops.filter(s=>{
+
+            let n=(s.stop_name||"").toLowerCase();
+
+            return (
+                n.includes("óbuda") ||
+                n.includes("békás") ||
+                n.includes("újpest") ||
+                n.includes("hegyvidék") ||
+                n.includes("buda") ||
+                n.includes("pasarét")
+            );
+        });
+    }
+
+    if(type==="VOLAN"){
+
+        stops = stops.filter(s=>{
+
+            let n=(s.stop_name||"").toLowerCase();
+
+            return (
+                n.includes("pest") ||
+                n.includes("zala")
+            );
+        });
+    }
+
+    /* =====================================
+    🧠 PREFIX IDS
+    ===================================== */
+
+    stops.forEach(s=>{
+
+        s.stop_id = type+"_"+s.stop_id;
+        s.__source = type;
+    });
+
+    trips.forEach(t=>{
+
+        t.trip_id = type+"_"+t.trip_id;
+        t.route_id = type+"_"+t.route_id;
+        t.__source = type;
+    });
+
+    routes.forEach(r=>{
+
+        r.route_id = type+"_"+r.route_id;
+        r.__source = type;
+    });
+
+    stop_times.forEach(st=>{
+
+        st.stop_id = type+"_"+st.stop_id;
+        st.trip_id = type+"_"+st.trip_id;
+        st.__source = type;
+    });
+
+    /* =====================================
+    ➕ MERGE
+    ===================================== */
+
+    GTFS.stops.push(...stops);
+    GTFS.stop_times.push(...stop_times);
+    GTFS.trips.push(...trips);
+    GTFS.routes.push(...routes);
+
+    buildIndex();
+
+    renderMap();
+
+    document.getElementById("status").innerText =
+        type+" loaded ✔";
+}
+
+/* =========================================
+🧩 INDEX
+========================================= */
+
+function buildIndex(){
+
+    INDEX.stop={};
+    INDEX.trip={};
+    INDEX.route={};
+
+    GTFS.trips.forEach(t=>{
+
+        INDEX.trip[t.trip_id]=t;
+    });
+
+    GTFS.routes.forEach(r=>{
+
+        INDEX.route[r.route_id]=r;
+    });
+
+    GTFS.stop_times.forEach(st=>{
+
+        if(!INDEX.stop[st.stop_id]){
+
+            INDEX.stop[st.stop_id]=[];
+        }
+
+        INDEX.stop[st.stop_id].push(st);
+    });
+}
+
+/* =========================================
+🗺 RENDER MAP
+========================================= */
+
+function renderMap(){
+
+    layer.clearLayers();
+
+    GTFS.stops.forEach(s=>{
+
+        const lat=parseFloat(s.stop_lat);
+        const lon=parseFloat(s.stop_lon);
+
+        if(!lat||!lon) return;
+
+        let color="#00ff88";
+
+        if(s.__source==="BKK"){
+            color="#00d0ff";
+        }
+
+        if(s.__source==="VOLAN"){
+            color="#ffe600";
+        }
+
+        const m=L.circleMarker([lat,lon],{
+
+            radius:4,
+            color:color,
+            fillColor:color,
+            fillOpacity:0.8,
+            weight:1
+
+        }).addTo(layer);
+
+        m.on('click',()=>{
+
+            renderPanel(s.stop_id);
+        });
+    });
+}
+
+/* =========================================
+⏱ NEXT
+========================================= */
+
+function getNext(list){
+
+    let now=nowSec();
+
+    return list
+        .map(d=>({...d,sec:toSec(d.departure_time)}))
+        .filter(d=>d.sec>=now-300)
+        .sort((a,b)=>a.sec-b.sec);
+}
+
+function countdown(sec){
+
+    let now=nowSec();
+
+    let diff=Math.floor((sec-now)/60);
+
+    if(diff<0) return "DEPARTED";
+
+    if(diff===0) return "NOW";
+
+    return diff+" min";
+}
+
+/* =========================================
+📋 PANEL
+========================================= */
+
+function renderPanel(stop_id){
+
+    let list=INDEX.stop[stop_id]||[];
+
+    let meta=
+        GTFS.stops.find(s=>s.stop_id===stop_id)||{};
+
+    list=getNext(list);
+
+    let html="";
+
+    html+="<b style='font-size:18px'>";
+    html+=(meta.stop_name||"STOP");
+    html+="</b><br>";
+
+    html+="<span class='small'>";
+    html+=meta.stop_id;
+    html+="</span><br>";
+
+    html+="<span class='small'>";
+    html+="SOURCE: "+(meta.__source||"?");
+    html+="</span><br><br>";
+
+    let seen=new Set();
+
+    list=list.filter(x=>{
+
+        if(seen.has(x.trip_id)) return false;
+
+        seen.add(x.trip_id);
+
+        return true;
+    });
+
+    for(let i=0;i<Math.min(list.length,25);i++){
+
+        let d=list[i];
+
+        let trip=
+            INDEX.trip[d.trip_id]||{};
+
+        let route=
+            INDEX.route[trip.route_id]||{};
+
+        let cls="green";
+
+        if(countdown(d.sec)==="NOW"){
+
+            cls="red";
+        }
+
+        html+=
+
+        "<div class='row'>"+
+
+            "<div class='badge'>"+
+            (route.route_short_name||"?")+
+            "</div>"+
+
+            "<div>"+
+            (trip.trip_headsign||"route")+
+            "<br><span class='small'>"+
+            (meta.__source||"")+
+            "</span>"+
+            "</div>"+
+
+            "<div class='"+cls+"'>"+
+            d.departure_time+
+            "<br><span class='small'>"+
+            countdown(d.sec)+
+            "</span>"+
+            "</div>"+
+
+        "</div>";
+    }
+
+    document.getElementById("panel").innerHTML =
+        html;
+}
+
+/* =========================================
+🧹 RESET
+========================================= */
+
+function resetPanel(){
+
+    document.getElementById("panel").innerHTML =
+        "RESET ✔";
+}
+
+/* =========================================
+📂 EVENTS
+========================================= */
+
+document.getElementById('bkkZip')
+.addEventListener('change',e=>{
+
+    loadGTFS(
+        e.target.files[0],
+        "BKK"
+    );
+});
+
+document.getElementById('volanZip')
+.addEventListener('change',e=>{
+
+    loadGTFS(
+        e.target.files[0],
+        "VOLAN"
+    );
+});
+
+</script>
+
+</body>
+</html>
