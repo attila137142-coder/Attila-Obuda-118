@@ -3,12 +3,12 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Megállós LIVE Menetrend</title>
+<title>FUTÁR V5 LIVE GTFS-RT</title>
 
 <style>
 body{
     margin:0;
-    font-family: -apple-system, Arial;
+    font-family:-apple-system, Arial;
     background:#0b0f14;
     color:white;
 }
@@ -16,50 +16,60 @@ body{
 header{
     padding:12px;
     background:#111a26;
-    font-size:18px;
-    font-weight:bold;
     text-align:center;
+    font-weight:bold;
     border-bottom:2px solid #1f2b3a;
 }
 
-.stop{
-    padding:10px;
-    font-size:16px;
-    background:#0f1622;
-    border-bottom:1px solid #1d2a3a;
-}
-
-.meta{
+.status{
     font-size:12px;
     opacity:0.7;
+    margin-top:4px;
 }
 
-.list{
+.container{
+    padding:10px;
+}
+
+.card{
+    background:#0f1622;
+    border:1px solid #1d2a3a;
+    border-radius:10px;
+    margin-bottom:10px;
     padding:10px;
 }
 
 .row{
     display:flex;
     justify-content:space-between;
-    padding:12px;
+    padding:8px 0;
     border-bottom:1px solid #1b2635;
-    font-size:18px;
 }
-
-.time{
-    font-weight:bold;
-}
-
-.green{color:#4caf50;}
-.gray{opacity:0.6;}
-.red{color:#ef5350;}
 
 .badge{
     font-size:11px;
     padding:2px 6px;
     border-radius:4px;
-    background:#1e88e5;
-    margin-right:6px;
+}
+
+.bkk{background:#1e88e5;}
+.mav{background:#43a047;}
+.volan{background:#fb8c00;}
+
+.small{font-size:12px; opacity:0.7;}
+
+.good{color:#4caf50;}
+.mid{color:#ffb300;}
+.bad{color:#ef5350;}
+
+button{
+    width:100%;
+    padding:10px;
+    border:none;
+    border-radius:8px;
+    background:#2b7cff;
+    color:white;
+    font-size:14px;
 }
 </style>
 </head>
@@ -67,64 +77,161 @@ header{
 <body>
 
 <header>
-🚏 Megállós LIVE Menetrend
+🚦 FUTÁR V5 LIVE GTFS-RT
+<div class="status" id="status">Inicializálás...</div>
 </header>
 
-<div class="stop">
-<b>32-es busz</b> → Örs vezér tere M+H<br>
-<div class="meta">FKU940 • Volvó 7700A • élő szimuláció</div>
-</div>
+<div class="container">
 
-<div class="list">
+<button onclick="refresh()">🔄 Live frissítés</button>
 
-<div class="row">
-<span><span class="badge">BKK</span>Kassai tér</span>
-<span class="time gray">13:48</span>
-</div>
-
-<div class="row">
-<span><span class="badge">BKK</span>Szögliget / Czobor</span>
-<span class="time gray">13:51</span>
-</div>
-
-<div class="row">
-<span><span class="badge">BKK</span>Bosnyák tér</span>
-<span class="time gray">13:52</span>
-</div>
-
-<div class="row">
-<span><span class="badge">BKK</span>Egressy tér</span>
-<span class="time green">13:56</span>
-<span class="time green">+2'</span>
-</div>
-
-<div class="row">
-<span><span class="badge">BKK</span>Jeszenák János utca</span>
-<span class="time green">13:58</span>
-<span class="time green">+4'</span>
-</div>
-
-<div class="row">
-<span><span class="badge">BKK</span>Pongrátz Gergely tér</span>
-<span class="time green">13:59</span>
-<span class="time green">+5'</span>
-</div>
-
-<div class="row">
-<span><span class="badge">BKK</span>Bánki Donát utca</span>
-<span class="time green">14:00</span>
-<span class="time green">+6'</span>
-</div>
+<div id="feed"></div>
 
 </div>
 
 <script>
-// LIVE clock feeling
-setInterval(()=>{
-    document.title = "LIVE " + new Date().toLocaleTimeString();
-},1000);
+
+//////////////////////////////////////////////////////
+// 🌐 GTFS-RT LIVE ENDPOINT KONFIG
+// IDE TESZED A VALÓS ADATFORRÁSOKAT
+//////////////////////////////////////////////////////
+
+const GTFS_RT = {
+    bkk: "https://YOUR-BKK-GTFS-RT-ENDPOINT",
+    mav: "https://YOUR-MAV-GTFS-RT-ENDPOINT",
+    volan: "https://YOUR-VOLAN-GTFS-RT-ENDPOINT"
+};
+
+//////////////////////////////////////////////////////
+// 🧪 DEMO FALLBACK (ha nincs valós feed)
+//////////////////////////////////////////////////////
+
+const demoData = [
+    {
+        agency:"BKK",
+        line:"7E",
+        dest:"Blaha Lujza tér",
+        delay:1
+    },
+    {
+        agency:"MÁV",
+        line:"IC 210",
+        dest:"Debrecen",
+        delay:3
+    },
+    {
+        agency:"Volánbusz",
+        line:"105",
+        dest:"Érd",
+        delay:-1
+    }
+];
+
+//////////////////////////////////////////////////////
+// 📡 SIMULÁLT GTFS-RT FETCH (REAL READY STRUCTURE)
+//////////////////////////////////////////////////////
+
+async function fetchGTFS(url){
+    try{
+        const res = await fetch(url);
+        if(!res.ok) throw new Error("no feed");
+        const data = await res.json();
+        return data;
+    }catch(e){
+        return null;
+    }
+}
+
+//////////////////////////////////////////////////////
+// 🧠 LIVE MERGE ENGINE
+//////////////////////////////////////////////////////
+
+async function loadLive(){
+
+    document.getElementById("status").innerText = "Live adat betöltés...";
+
+    let all = [];
+
+    // 🚍 BKK
+    let bkk = await fetchGTFS(GTFS_RT.bkk);
+    if(bkk){
+        all = all.concat(bkk);
+    }
+
+    // 🚆 MÁV
+    let mav = await fetchGTFS(GTFS_RT.mav);
+    if(mav){
+        all = all.concat(mav);
+    }
+
+    // 🚌 VOLÁN
+    let volan = await fetchGTFS(GTFS_RT.volan);
+    if(volan){
+        all = all.concat(volan);
+    }
+
+    // fallback
+    if(all.length === 0){
+        all = demoData;
+        document.getElementById("status").innerText =
+            "DEMO MÓD (nincs GTFS-RT kapcsolat)";
+    }else{
+        document.getElementById("status").innerText =
+            "LIVE GTFS-RT AKTÍV";
+    }
+
+    render(all);
+}
+
+//////////////////////////////////////////////////////
+// 📊 UI RENDER
+//////////////////////////////////////////////////////
+
+function render(data){
+
+    const feed = document.getElementById("feed");
+    feed.innerHTML = "";
+
+    data.forEach(d=>{
+
+        let cls =
+            d.agency==="BKK"?"bkk":
+            d.agency==="MÁV"?"mav":"volan";
+
+        let status =
+            d.delay<=0?"good":
+            d.delay<=2?"mid":"bad";
+
+        feed.innerHTML += `
+        <div class="card">
+            <div class="row">
+                <div>
+                    <span class="badge ${cls}">${d.agency}</span>
+                    <b> ${d.line}</b>
+                    <div class="small">${d.dest}</div>
+                </div>
+                <div class="${status}">
+                    ${d.delay} min
+                </div>
+            </div>
+        </div>`;
+    });
+}
+
+//////////////////////////////////////////////////////
+// 🔄 REFRESH
+//////////////////////////////////////////////////////
+
+function refresh(){
+    loadLive();
+}
+
+loadLive();
+
+// auto refresh
+setInterval(loadLive, 10000);
+
 </script>
 
 </body>
 </html>
-
