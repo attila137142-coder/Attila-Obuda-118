@@ -3,95 +3,117 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V6 LIVE DISPATCHER CORE</title>
+<title>FUTÁR CONTROL ROOM V7</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body{
     margin:0;
+    background:#070b10;
+    color:#d6e2ff;
     font-family: Arial, sans-serif;
-    background:#0a0f14;
-    color:#e6e6e6;
 }
 
+/* TOP BAR */
 header{
     display:flex;
     justify-content:space-between;
     align-items:center;
-    padding:10px;
-    background:#0f1722;
-    border-bottom:2px solid #1f2a3a;
+    padding:10px 14px;
+    background:#0e1624;
+    border-bottom:1px solid #1f2b3d;
 }
 
 #clock{
-    color:#00ff99;
+    color:#00ffb3;
     font-weight:bold;
 }
 
+/* GRID LAYOUT */
 .container{
     display:grid;
-    grid-template-columns: 1.2fr 1fr;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    grid-template-rows: 1fr 1fr;
     height:calc(100vh - 50px);
+    gap:6px;
+    padding:6px;
 }
 
-#map{
-    width:100%;
-    height:100%;
-}
-
+/* PANELS */
 .panel{
+    background:#0d1420;
+    border:1px solid #1b2a3f;
+    border-radius:8px;
     padding:10px;
     overflow:auto;
 }
 
+.panel h3{
+    margin:0 0 10px 0;
+    font-size:14px;
+    color:#9cc2ff;
+}
+
+/* MAP */
+#map{
+    width:100%;
+    height:100%;
+    border-radius:8px;
+}
+
+/* TABLE */
+table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
+}
+
+td, th{
+    border-bottom:1px solid #1b2a3f;
+    padding:6px;
+}
+
+/* STATUS BADGES */
+.badge{
+    padding:2px 6px;
+    border-radius:4px;
+    font-size:11px;
+}
+
+.live{background:#00ffb3;color:#000;}
+.ok{background:#4da3ff;}
+.delay{background:#ff4d4d;}
+
+/* CONTROL BUTTON */
 button{
     background:#1f6feb;
     color:white;
     border:none;
-    padding:8px 10px;
+    padding:6px 10px;
     border-radius:6px;
     cursor:pointer;
 }
 
-button.liveOn{
-    background:#00ff99;
-    color:#000;
+button:hover{
+    background:#2f81ff;
 }
 
-input{
-    width:100%;
-    padding:10px;
-    margin:10px 0;
-    border:none;
-    border-radius:6px;
-}
-
-.table{
-    width:100%;
-    border-collapse:collapse;
-    font-size:13px;
-}
-
-.table td, .table th{
-    border-bottom:1px solid #1f2a3a;
+/* ALERT STRIP */
+.alert{
+    background:#ff2d55;
+    color:white;
     padding:6px;
-}
-
-.badge{
-    padding:2px 6px;
-    border-radius:4px;
-}
-
-.ok{background:#2b7fff;}
-.delay{background:#ff3b3b;}
-.live{background:#00ff99; color:#000;}
-
-#statusBar{
-    padding:8px;
     font-size:12px;
-    background:#0f1722;
-    border-top:1px solid #1f2a3a;
+    border-radius:6px;
+    margin-bottom:8px;
+}
+
+/* SMALL STATUS FOOTER */
+.footer{
+    font-size:11px;
+    color:#7f9bbd;
+    margin-top:8px;
 }
 </style>
 </head>
@@ -99,35 +121,55 @@ input{
 <body>
 
 <header>
-    <div>🚍 FUTÁR V6 LIVE CORE DISPATCHER</div>
+    <div>🚦 FUTÁR CONTROL ROOM V7 — DISPATCH CENTER</div>
     <div id="clock"></div>
-    <button id="modeBtn" onclick="toggleMode()">LIVE MODE: OFF</button>
+    <button onclick="toggleMode()">LIVE MODE</button>
 </header>
 
 <div class="container">
 
-    <div id="map"></div>
+    <!-- MAP -->
+    <div class="panel" style="grid-row:1/3;">
+        <h3>🗺️ LIVE MAP — Budapest</h3>
+        <div id="map"></div>
+    </div>
 
+    <!-- VEHICLES -->
     <div class="panel">
+        <h3>🚍 JÁRMŰ LIVE FEED</h3>
 
-        <input placeholder="Járat / megálló keresés..." oninput="search(this.value)">
-
-        <table class="table">
-            <thead>
-                <tr>
-                    <th>Járat</th>
-                    <th>Hely</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody id="feed"></tbody>
+        <table>
+            <tr><th>Járat</th><th>Hely</th><th>Status</th></tr>
+            <tbody id="vehicles"></tbody>
         </table>
+    </div>
 
-        <div id="statusBar">
-            Engine: <span id="engineState">DEMO MODE</span> |
-            Feed: <span id="feedState">STATIC</span>
+    <!-- STOPS -->
+    <div class="panel">
+        <h3>🚏 MEGÁLLÓ MONITOR</h3>
+
+        <div class="alert">⚠ Késés detektálva: 178 — Flórián tér</div>
+
+        <table>
+            <tr><th>Megálló</th><th>Járat</th><th>Állapot</th></tr>
+            <tr><td>Nád utca</td><td>7E</td><td class="live">LIVE</td></tr>
+            <tr><td>Batthyány tér</td><td>105</td><td class="delay">+2p</td></tr>
+            <tr><td>Flórián tér</td><td>178</td><td class="delay">+6p</td></tr>
+        </table>
+    </div>
+
+    <!-- SYSTEM -->
+    <div class="panel">
+        <h3>🧠 SYSTEM STATUS</h3>
+
+        <p>Engine: <b id="engine">DEMO</b></p>
+        <p>Feed: <b id="feed">STATIC</b></p>
+        <p>Network: <b style="color:#00ffb3;">OK</b></p>
+        <p>Region: BKK / MÁV / VOLÁN / HÉV READY</p>
+
+        <div class="footer">
+            Dispatcher core simulation active • GTFS adapter ready
         </div>
-
     </div>
 
 </div>
@@ -135,17 +177,8 @@ input{
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-/* ---------------- MAP ---------------- */
-let map = L.map('map').setView([47.4979, 19.0402], 12);
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution:'OSM'
-}).addTo(map);
-
-let marker = L.marker([47.4979, 19.0402]).addTo(map)
-    .bindPopup("🚏 DISPATCH CENTER");
-
-/* ---------------- CLOCK ---------------- */
+/* CLOCK */
 function clock(){
     document.getElementById("clock").innerText =
         new Date().toLocaleTimeString();
@@ -153,72 +186,70 @@ function clock(){
 setInterval(clock,1000);
 clock();
 
-/* ---------------- LIVE ENGINE ---------------- */
+/* MAP */
+let map = L.map('map').setView([47.4979, 19.0402], 12);
 
-let LIVE_MODE = false;
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution:'OSM'
+}).addTo(map);
 
-/* szimulált GTFS-RT adat */
-function getFeed(){
-    if(!LIVE_MODE){
+L.marker([47.4979,19.0402]).addTo(map)
+    .bindPopup("🚦 DISPATCH CENTER");
+
+/* LIVE DATA */
+let LIVE = false;
+
+function toggleMode(){
+    LIVE = !LIVE;
+    document.getElementById("engine").innerText =
+        LIVE ? "LIVE ENGINE" : "DEMO";
+
+    document.getElementById("feed").innerText =
+        LIVE ? "STREAMING" : "STATIC";
+
+    renderVehicles();
+}
+
+/* VEHICLE FEED */
+function getData(){
+    if(!LIVE){
         return [
-            {route:"7E", stop:"Nád utca", status:"LIVE"},
-            {route:"105", stop:"Batthyány tér", status:"+2p"},
-            {route:"178", stop:"Flórián tér", status:"+6p"}
+            ["7E","Nád utca","LIVE"],
+            ["105","Batthyány tér","+2p"],
+            ["178","Flórián tér","+6p"]
         ];
     }
 
-    /* LIVE MODE (később API ide jön) */
     return [
-        {route:"7E", stop:"Nád utca", status:"RUN"},
-        {route:"105", stop:"Batthyány tér", status:"ON TIME"},
-        {route:"178", stop:"Flórián tér", status:"DELAY 4"}
+        ["7E","Nád utca","RUN"],
+        ["105","Batthyány tér","ON TIME"],
+        ["178","Flórián tér","DELAY 4"]
     ];
 }
 
-/* render feed */
-function render(){
-    let data = getFeed();
+function renderVehicles(){
+    let data = getData();
     let html = "";
 
-    data.forEach(d=>{
+    data.forEach(v=>{
         let cls = "ok";
-        if(d.status.includes("DELAY") || d.status.includes("+")) cls="delay";
-        if(d.status==="LIVE") cls="live";
+        if(v[2].includes("+") || v[2].includes("DELAY")) cls="delay";
+        if(v[2]==="LIVE") cls="live";
 
         html += `
         <tr>
-            <td>🚍 ${d.route}</td>
-            <td>${d.stop}</td>
-            <td><span class="badge ${cls}">${d.status}</span></td>
+            <td>🚍 ${v[0]}</td>
+            <td>${v[1]}</td>
+            <td class="${cls}">${v[2]}</td>
         </tr>`;
     });
 
-    document.getElementById("feed").innerHTML = html;
-}
-setInterval(render, 3000);
-render();
-
-/* ---------------- TOGGLE LIVE ---------------- */
-function toggleMode(){
-    LIVE_MODE = !LIVE_MODE;
-
-    document.getElementById("modeBtn").innerText =
-        LIVE_MODE ? "LIVE MODE: ON" : "LIVE MODE: OFF";
-
-    document.getElementById("modeBtn").className =
-        LIVE_MODE ? "liveOn" : "";
-
-    document.getElementById("engineState").innerText =
-        LIVE_MODE ? "LIVE ENGINE" : "DEMO MODE";
-
-    document.getElementById("feedState").innerText =
-        LIVE_MODE ? "STREAMING" : "STATIC";
+    document.getElementById("vehicles").innerHTML = html;
 }
 
-/* ---------------- SEARCH ---------------- */
-function search(q){
-    console.log("keresés:", q);
-}
+setInterval(renderVehicles, 2500);
+renderVehicles();
+
 </script>
 
 </body>
