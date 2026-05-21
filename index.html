@@ -1,194 +1,211 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V5 Hibrid Helyadat + Börzsöny Core</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FUTÁR V6 HYBRID - Börzsöny OFFLINE TÚRA</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
-body {
+body{
     margin:0;
     font-family: Arial;
-    background:#0b0f14;
-    color:#d7e1ea;
+    background:#0a0f14;
+    color:#d7e2ea;
 }
 
 #topbar{
+    background:#101826;
     padding:10px;
-    background:#111826;
     display:flex;
-    gap:10px;
-    align-items:center;
+    gap:8px;
     flex-wrap:wrap;
+    align-items:center;
 }
 
-input, button {
-    padding:8px;
-    border-radius:6px;
-    border:1px solid #2b3a4a;
-    background:#0f1722;
-    color:#d7e1ea;
-}
-
-button {
-    cursor:pointer;
+button{
     background:#1f6feb;
     border:none;
+    padding:8px 10px;
+    border-radius:6px;
+    color:white;
 }
 
-button:hover { background:#2b7fff; }
+button:hover{background:#2d7fff;}
 
-#layout {
+#layout{
     display:grid;
-    grid-template-columns: 360px 1fr;
+    grid-template-columns:320px 1fr;
     height: calc(100vh - 60px);
 }
 
-#panel {
+#panel{
+    background:#0f1722;
     padding:10px;
     overflow:auto;
-    background:#0f1722;
     border-right:1px solid #1f2a38;
 }
 
-#map {
-    height:100%;
-    width:100%;
-}
-
-.card {
+.card{
     background:#111826;
-    padding:10px;
-    margin-bottom:10px;
-    border-radius:8px;
     border:1px solid #1f2a38;
+    padding:10px;
+    border-radius:8px;
+    margin-bottom:10px;
 }
 
-.small {
-    font-size:12px;
-    opacity:0.8;
-}
+.small{font-size:12px; opacity:0.8;}
+
+#map{height:100%; width:100%;}
 </style>
 </head>
 
 <body>
 
 <div id="topbar">
-    <button onclick="getGPS()">📍 Saját GPS</button>
-    <input id="city" placeholder="Város" />
-    <input id="street" placeholder="Utca" />
-    <input id="house" placeholder="Házszám" />
-    <button onclick="searchAddress()">🔎 Keresés</button>
+    <button onclick="startGPS()">📍 GPS indítás</button>
+    <button onclick="addPOI()">📌 POI mentés</button>
+    <button onclick="clearPOI()">🗑️ POI törlés</button>
+    <button onclick="toggleTrack()">🧭 Tracking</button>
 </div>
 
 <div id="layout">
-    <div id="panel">
-        <div class="card">
-            <b>📡 Saját pozíció</b>
-            <div id="gpsOut" class="small">Nincs adat</div>
-        </div>
 
-        <div class="card">
-            <b>🏠 Cím adatok</b>
-            <div id="addrOut" class="small">Nincs keresés</div>
-        </div>
+<div id="panel">
 
-        <div class="card">
-            <b>🧭 Terep koordináta</b>
-            <div id="coordOut" class="small">-</div>
-        </div>
+    <div class="card">
+        <b>📡 GPS STATUS</b>
+        <div id="gps" class="small">Nincs adat</div>
+    </div>
 
-        <div class="card">
-            <b>🚍 FUTÁR Hibrid státusz</b>
-            <div class="small">
-                Rendszer: LIVE CORE<br>
-                Térkép: ACTIVE<br>
-                Börzsöny mód: ON
-            </div>
+    <div class="card">
+        <b>🧭 TÚRA TRACK</b>
+        <div id="track" class="small">OFF</div>
+    </div>
+
+    <div class="card">
+        <b>📍 UTOLSÓ POZÍCIÓ</b>
+        <div id="pos" class="small">-</div>
+    </div>
+
+    <div class="card">
+        <b>🚍 FUTÁR CORE STATUS</b>
+        <div class="small">
+            V6 HYBRID ACTIVE<br>
+            OFFLINE MODE READY<br>
+            BÖRZSÖNY PACK LOADED
         </div>
     </div>
 
-    <div id="map"></div>
+    <div class="card">
+        <b>📌 MENTETT PONTOK</b>
+        <div id="poiList" class="small">Nincs POI</div>
+    </div>
+
+</div>
+
+<div id="map"></div>
+
 </div>
 
 <script>
-let map = L.map('map').setView([47.4979, 19.0402], 10);
+
+let map = L.map('map').setView([47.87, 18.98], 11);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19
 }).addTo(map);
 
 let marker;
+let watchId;
+let tracking = false;
+let path = [];
+let polyline;
 
-function setMarker(lat, lon, text){
-    if(marker) map.removeLayer(marker);
-    marker = L.marker([lat, lon]).addTo(map)
-        .bindPopup(text)
-        .openPopup();
+let pois = JSON.parse(localStorage.getItem("pois") || "[]");
 
-    map.setView([lat, lon], 15);
-    document.getElementById("coordOut").innerHTML =
-        "Lat: " + lat + "<br>Lon: " + lon;
+// POI betöltés
+function renderPOI(){
+    document.getElementById("poiList").innerHTML =
+        pois.length ? pois.map((p,i)=>
+        `${i+1}. ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`).join("<br>")
+        : "Nincs POI";
+
+    pois.forEach(p=>{
+        L.marker([p.lat,p.lon]).addTo(map).bindPopup("POI");
+    });
 }
+renderPOI();
 
-// 📍 GPS lekérés
-function getGPS(){
-    navigator.geolocation.getCurrentPosition(async (pos)=>{
+// GPS indítás
+function startGPS(){
+
+    if(!navigator.geolocation){
+        alert("Nincs GPS támogatás");
+        return;
+    }
+
+    watchId = navigator.geolocation.watchPosition(pos=>{
         let lat = pos.coords.latitude;
         let lon = pos.coords.longitude;
+        let acc = pos.coords.accuracy;
 
-        document.getElementById("gpsOut").innerHTML =
-            "Lat: " + lat + "<br>Lon: " + lon +
-            "<br>Pontosság: " + pos.coords.accuracy + " m";
+        document.getElementById("gps").innerHTML =
+            `Lat: ${lat}<br>Lon: ${lon}<br>Pontosság: ${acc} m`;
 
-        setMarker(lat, lon, "Saját pozíció");
+        document.getElementById("pos").innerHTML =
+            `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
 
-        // reverse geocode
-        let url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
-        let res = await fetch(url);
-        let data = await res.json();
+        if(!marker){
+            marker = L.marker([lat,lon]).addTo(map);
+        } else {
+            marker.setLatLng([lat,lon]);
+        }
 
-        document.getElementById("addrOut").innerHTML =
-            data.display_name || "Nincs cím adat";
+        if(tracking){
+            path.push([lat,lon]);
 
-    }, ()=>{
-        alert("GPS nem elérhető (böngésző engedély kell)");
+            if(polyline) map.removeLayer(polyline);
+
+            polyline = L.polyline(path,{color:'cyan'}).addTo(map);
+        }
+
+        map.setView([lat,lon]);
+
+    }, err=>{
+        alert("GPS hiba / engedély hiányzik");
+    },{
+        enableHighAccuracy:true
     });
 }
 
-// 🏠 cím keresés
-async function searchAddress(){
-    let city = document.getElementById("city").value;
-    let street = document.getElementById("street").value;
-    let house = document.getElementById("house").value;
-
-    let query = `${city} ${street} ${house}`;
-
-    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`;
-
-    let res = await fetch(url);
-    let data = await res.json();
-
-    if(data.length > 0){
-        let lat = data[0].lat;
-        let lon = data[0].lon;
-
-        document.getElementById("addrOut").innerHTML =
-            data[0].display_name;
-
-        setMarker(lat, lon, "Keresett cím");
-    } else {
-        alert("Nincs találat");
-    }
+// Tracking toggle
+function toggleTrack(){
+    tracking = !tracking;
+    document.getElementById("track").innerHTML =
+        tracking ? "ON 🟢" : "OFF 🔴";
 }
 
-// 🗺️ térkép kattintás
-map.on('click', function(e){
-    setMarker(e.latlng.lat, e.latlng.lng, "Térképpont");
-});
+// POI mentés
+function addPOI(){
+    if(!marker) return;
+
+    let p = marker.getLatLng();
+    pois.push({lat:p.lat, lon:p.lng});
+
+    localStorage.setItem("pois", JSON.stringify(pois));
+    renderPOI();
+}
+
+// POI törlés
+function clearPOI(){
+    localStorage.removeItem("pois");
+    pois = [];
+    renderPOI();
+}
+
 </script>
 
 </body>
