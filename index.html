@@ -3,7 +3,16 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Börzsöny PRO OFFLINE NAVIGÁTOR V7</title>
+<title>FUTÁR V10 OFFLINE DISPATCHER</title>
+
+<link rel="manifest" href="data:application/manifest+json,{
+  \"name\":\"FUTÁR V10\",
+  \"short_name\":\"FUTARV10\",
+  \"start_url\":\".\",
+  \"display\":\"standalone\",
+  \"background_color\":\"#0b1017\",
+  \"theme_color\":\"#00ffaa\"
+}"/>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -11,224 +20,230 @@
 <style>
 body{
     margin:0;
-    font-family: Arial;
-    background:#0a0f14;
-    color:#d7e2ea;
+    font-family:Arial;
+    background:#0b1017;
+    color:#e6f2ff;
 }
 
-#topbar{
-    background:#101826;
-    padding:10px;
+header{
+    height:60px;
+    background:#111826;
+    border-bottom:2px solid #00ffaa;
     display:flex;
-    gap:8px;
-    flex-wrap:wrap;
+    align-items:center;
+    justify-content:space-between;
+    padding:0 15px;
 }
 
-button{
-    padding:8px 10px;
-    border:none;
-    border-radius:6px;
-    background:#1f6feb;
-    color:white;
-    cursor:pointer;
+.logo{
+    color:#00ffaa;
+    font-weight:bold;
 }
 
-button:hover{background:#2d7fff;}
-
-#layout{
+.main{
     display:grid;
-    grid-template-columns:340px 1fr;
-    height: calc(100vh - 60px);
+    grid-template-columns:360px 1fr;
+    height:calc(100vh - 60px);
 }
 
-#panel{
-    background:#0f1722;
+.panel{
+    background:#131d2b;
     padding:10px;
     overflow:auto;
-    border-right:1px solid #1f2a38;
 }
 
 .card{
     background:#111826;
-    border:1px solid #1f2a38;
-    border-radius:8px;
+    border:1px solid #1f2a3a;
     padding:10px;
     margin-bottom:10px;
+    border-radius:8px;
 }
 
-.small{font-size:12px; opacity:0.85;}
+button{
+    width:100%;
+    margin-top:6px;
+    padding:10px;
+    border:none;
+    border-radius:8px;
+    background:#1f6feb;
+    color:white;
+}
 
-#map{height:100%; width:100%;}
+button:hover{background:#2d7fff;}
 
 input{
     width:100%;
-    padding:8px;
-    margin-top:5px;
-    background:#0b1220;
-    border:1px solid #1f2a38;
+    padding:10px;
+    margin-top:6px;
+    border-radius:8px;
+    border:none;
+    background:#0f1722;
     color:white;
-    border-radius:6px;
 }
+
+#map{height:100%; width:100%;}
+.small{font-size:12px; opacity:0.85;}
 </style>
 </head>
 
 <body>
 
-<div id="topbar">
-    <button onclick="startGPS()">📍 GPS</button>
-    <button onclick="loadGPX()">📁 GPX betöltés</button>
-    <button onclick="exportSOS()">🚨 VÉSZ MÓD</button>
-    <button onclick="clearTrack()">🧹 Törlés</button>
-</div>
+<header>
+<div class="logo">🚦 FUTÁR V10 OFFLINE DISPATCHER</div>
+<div id="gpsinfo">GPS: OFF</div>
+</header>
 
-<div id="layout">
+<div class="main">
 
-<div id="panel">
-
-<div class="card">
-<b>📡 GPS</b>
-<div id="gps" class="small">nincs adat</div>
-</div>
+<!-- PANEL -->
+<div class="panel">
 
 <div class="card">
-<b>🧭 TRACK</b>
-<div id="trackInfo" class="small">OFF</div>
+<b>🧭 TÚRA QUICK</b>
+<button onclick="go([47.9270,18.9610],'Királyrét')">Királyrét</button>
+<button onclick="go([47.9370,18.8720],'Nagybörzsöny')">Nagybörzsöny</button>
+<button onclick="go([47.9167,18.9000],'Csóványos')">Csóványos</button>
 </div>
 
 <div class="card">
-<b>📏 TÁVOLSÁG</b>
-<div id="dist" class="small">0 m</div>
+<b>🚏 MEGÁLLÓ KERESŐ</b>
+<input id="q" placeholder="BKK / VOLÁN / MÁV / kisvasút">
+<button onclick="search()">Keresés</button>
+<div id="results" class="small"></div>
 </div>
 
 <div class="card">
-<b>⛰️ SZINT PROFIL</b>
-<div id="elev" class="small">nincs adat</div>
+<b>🚨 VÉSZ MÓD</b>
+<button onclick="sos()">SOS KOORDINÁTA</button>
+<div id="sos" class="small"></div>
 </div>
 
 <div class="card">
-<b>🚨 VÉSZ ADAT</b>
-<div id="sos" class="small">-</div>
-</div>
-
-<div class="card">
-<b>📁 GPX IMPORT</b>
-<input type="file" id="gpxFile" accept=".gpx"/>
+<b>📍 TRACK</b>
+<div id="dist">0 m</div>
+<button onclick="toggleTrack()">TRACK ON/OFF</button>
 </div>
 
 </div>
 
+<!-- MAP -->
 <div id="map"></div>
 
 </div>
 
 <script>
 
-let map = L.map('map').setView([47.87, 18.98], 11);
+/* =========================
+   🗺️ MAP INIT
+========================= */
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    maxZoom: 19
+let map = L.map('map').setView([47.5,19.0],10);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    maxZoom:19
 }).addTo(map);
 
-let marker;
-let track = [];
+let gpsMarker;
+let tracking=false;
+let track=[];
 let polyline;
-let watchId;
-let totalDist = 0;
-let lastPoint = null;
+let total=0;
 
-// GPS
-function startGPS(){
-    watchId = navigator.geolocation.watchPosition(pos=>{
-        let lat = pos.coords.latitude;
-        let lon = pos.coords.longitude;
+/* =========================
+   📡 GPS LIVE
+========================= */
 
-        document.getElementById("gps").innerHTML =
-            `Lat: ${lat}<br>Lon: ${lon}<br>Acc: ${pos.coords.accuracy} m`;
+navigator.geolocation.watchPosition(pos=>{
 
-        if(!marker){
-            marker = L.marker([lat,lon]).addTo(map);
-        } else {
-            marker.setLatLng([lat,lon]);
+    let lat=pos.coords.latitude;
+    let lon=pos.coords.longitude;
+
+    document.getElementById("gpsinfo").innerText=
+    `GPS: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+
+    if(!gpsMarker){
+        gpsMarker=L.marker([lat,lon]).addTo(map);
+    }else{
+        gpsMarker.setLatLng([lat,lon]);
+    }
+
+    if(tracking){
+        if(track.length>0){
+            total+=map.distance(track[track.length-1],[lat,lon]);
         }
-
         track.push([lat,lon]);
 
-        if(lastPoint){
-            totalDist += map.distance(lastPoint, [lat,lon]);
-            document.getElementById("dist").innerHTML =
-                totalDist.toFixed(0) + " m";
-        }
-
-        lastPoint = [lat,lon];
-
         if(polyline) map.removeLayer(polyline);
-        polyline = L.polyline(track,{color:"cyan"}).addTo(map);
+        polyline=L.polyline(track,{color:'cyan'}).addTo(map);
 
-        map.setView([lat,lon]);
+        document.getElementById("dist").innerText=
+        total.toFixed(0)+" m";
+    }
 
-    },{
-        enableHighAccuracy:true
-    });
+},()=>{},{
+    enableHighAccuracy:true
+});
+
+/* =========================
+   🧭 TÚRA UGRÁS
+========================= */
+
+function go(coord,name){
+    map.setView(coord,14);
+    L.marker(coord).addTo(map).bindPopup(name).openPopup();
 }
 
-// GPX import (basic parser)
-function loadGPX(){
-    let file = document.getElementById("gpxFile").files[0];
-    if(!file) return alert("Nincs GPX");
+/* =========================
+   🚏 MEGÁLLÓ DB (demo + bővíthető GTFS)
+========================= */
 
-    let reader = new FileReader();
+const stops=[
+ {n:"Batthyány tér (BKK)",c:[47.506,19.039]},
+ {n:"Vác (MÁV)",c:[47.777,19.136]},
+ {n:"Szob (VOLÁN)",c:[47.821,18.866]},
+ {n:"Királyrét kisvasút",c:[47.927,18.961]}
+];
 
-    reader.onload = function(e){
-        let parser = new DOMParser();
-        let xml = parser.parseFromString(e.target.result,"text/xml");
+function search(){
 
-        let trkpts = xml.getElementsByTagName("trkpt");
+ let q=document.getElementById("q").value.toLowerCase();
+ let res=stops.filter(s=>s.n.toLowerCase().includes(q));
 
-        track = [];
+ document.getElementById("results").innerHTML=
+ res.map(r=>`<div onclick="go(${r.c},'${r.n}')">🚏 ${r.n}</div>`).join("");
 
-        for(let p of trkpts){
-            let lat = parseFloat(p.getAttribute("lat"));
-            let lon = parseFloat(p.getAttribute("lon"));
-            track.push([lat,lon]);
-        }
-
-        if(polyline) map.removeLayer(polyline);
-
-        polyline = L.polyline(track,{color:"lime"}).addTo(map);
-
-        map.fitBounds(polyline.getBounds());
-    };
-
-    reader.readAsText(file);
 }
 
-// VÉSZ MÓD
-function exportSOS(){
-    if(!marker) return;
+/* =========================
+   🚨 SOS
+========================= */
 
-    let p = marker.getLatLng();
+function sos(){
 
-    let text =
-`🚨 BÖRZSÖNY SOS
-Lat: ${p.lat}
-Lon: ${p.lng}
-Google: https://maps.google.com/?q=${p.lat},${p.lng}`;
+ if(!gpsMarker) return;
 
-    document.getElementById("sos").innerText = text;
+ let p=gpsMarker.getLatLng();
 
-    navigator.clipboard.writeText(text);
-    alert("SOS kimásolva!");
+ let msg=
+`🚨 FUTÁR V10 SOS
+Lat:${p.lat}
+Lon:${p.lng}
+https://maps.google.com/?q=${p.lat},${p.lng}`;
+
+ navigator.clipboard.writeText(msg);
+
+ document.getElementById("sos").innerText=msg;
+
+ alert("SOS kimásolva!");
 }
 
-// törlés
-function clearTrack(){
-    track = [];
-    totalDist = 0;
-    lastPoint = null;
+/* =========================
+   🧭 TRACK
+========================= */
 
-    if(polyline) map.removeLayer(polyline);
-
-    document.getElementById("dist").innerHTML = "0 m";
+function toggleTrack(){
+ tracking=!tracking;
 }
 
 </script>
