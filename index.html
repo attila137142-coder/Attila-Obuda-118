@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V6 HYBRID MASTER DISPATCHER</title>
+<title>FUTÁR V6 LIVE DISPATCHER CORE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
@@ -11,46 +11,33 @@
 body{
     margin:0;
     font-family: Arial, sans-serif;
-    background:#0b0f14;
+    background:#0a0f14;
     color:#e6e6e6;
 }
 
 header{
-    padding:10px;
-    background:#111826;
     display:flex;
     justify-content:space-between;
     align-items:center;
+    padding:10px;
+    background:#0f1722;
     border-bottom:2px solid #1f2a3a;
 }
 
 #clock{
-    font-weight:bold;
     color:#00ff99;
-}
-
-button{
-    background:#1f6feb;
-    border:none;
-    padding:8px 12px;
-    color:white;
-    border-radius:6px;
-    cursor:pointer;
-}
-
-button:hover{
-    background:#2b7fff;
+    font-weight:bold;
 }
 
 .container{
     display:grid;
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: 1.2fr 1fr;
     height:calc(100vh - 50px);
 }
 
 #map{
-    height:100%;
     width:100%;
+    height:100%;
 }
 
 .panel{
@@ -58,48 +45,52 @@ button:hover{
     overflow:auto;
 }
 
+button{
+    background:#1f6feb;
+    color:white;
+    border:none;
+    padding:8px 10px;
+    border-radius:6px;
+    cursor:pointer;
+}
+
+button.liveOn{
+    background:#00ff99;
+    color:#000;
+}
+
 input{
     width:100%;
     padding:10px;
-    margin-bottom:10px;
-    border-radius:6px;
+    margin:10px 0;
     border:none;
+    border-radius:6px;
 }
 
 .table{
     width:100%;
     border-collapse:collapse;
+    font-size:13px;
 }
 
 .table td, .table th{
     border-bottom:1px solid #1f2a3a;
     padding:6px;
-    font-size:13px;
 }
 
 .badge{
     padding:2px 6px;
     border-radius:4px;
+}
+
+.ok{background:#2b7fff;}
+.delay{background:#ff3b3b;}
+.live{background:#00ff99; color:#000;}
+
+#statusBar{
+    padding:8px;
     font-size:12px;
-}
-
-.live{
-    background:#00ff99;
-    color:#000;
-}
-
-.delay{
-    background:#ff3b3b;
-}
-
-.ok{
-    background:#2b7fff;
-}
-
-#extraPanel{
-    display:none;
     background:#0f1722;
-    padding:10px;
     border-top:1px solid #1f2a3a;
 }
 </style>
@@ -108,9 +99,9 @@ input{
 <body>
 
 <header>
-    <div>🚍 FUTÁR V6 HYBRID MASTER</div>
+    <div>🚍 FUTÁR V6 LIVE CORE DISPATCHER</div>
     <div id="clock"></div>
-    <button onclick="togglePanel()">KÜLÖN GOMB ⚙️</button>
+    <button id="modeBtn" onclick="toggleMode()">LIVE MODE: OFF</button>
 </header>
 
 <div class="container">
@@ -119,55 +110,114 @@ input{
 
     <div class="panel">
 
-        <input placeholder="GTFS keresés (megálló / járat / CSV zóna)" oninput="search(this.value)">
+        <input placeholder="Járat / megálló keresés..." oninput="search(this.value)">
 
         <table class="table">
-            <tr><th>Járat</th><th>Hely</th><th>Késés</th></tr>
-            <tr><td>🚍 7E</td><td>Nád utca</td><td><span class="badge live">LIVE</span></td></tr>
-            <tr><td>🚍 105</td><td>Batthyány tér</td><td><span class="badge ok">+1p</span></td></tr>
-            <tr><td>🚍 178</td><td>Flórián tér</td><td><span class="badge delay">+6p</span></td></tr>
+            <thead>
+                <tr>
+                    <th>Járat</th>
+                    <th>Hely</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="feed"></tbody>
         </table>
 
-        <div id="extraPanel">
-            <h3>⚙️ EXTRA DISPATCH PANEL</h3>
-            <p>GTFS feed status: <b>CONNECTED (SIM)</b></p>
-            <p>MÁV / VOLÁN / HÉV integráció: READY</p>
-            <p>Realtime engine: OFFLINE DEMO MODE</p>
+        <div id="statusBar">
+            Engine: <span id="engineState">DEMO MODE</span> |
+            Feed: <span id="feedState">STATIC</span>
         </div>
 
     </div>
+
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
+/* ---------------- MAP ---------------- */
 let map = L.map('map').setView([47.4979, 19.0402], 12);
 
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: 'OSM'
+    attribution:'OSM'
 }).addTo(map);
 
-L.marker([47.4979, 19.0402]).addTo(map)
-    .bindPopup("🚏 Budapest központ DISPATCH")
-    .openPopup();
+let marker = L.marker([47.4979, 19.0402]).addTo(map)
+    .bindPopup("🚏 DISPATCH CENTER");
 
-// óra
-function updateClock(){
+/* ---------------- CLOCK ---------------- */
+function clock(){
     document.getElementById("clock").innerText =
         new Date().toLocaleTimeString();
 }
-setInterval(updateClock,1000);
-updateClock();
+setInterval(clock,1000);
+clock();
 
-// toggle panel
-function togglePanel(){
-    let p = document.getElementById("extraPanel");
-    p.style.display = (p.style.display === "block") ? "none" : "block";
+/* ---------------- LIVE ENGINE ---------------- */
+
+let LIVE_MODE = false;
+
+/* szimulált GTFS-RT adat */
+function getFeed(){
+    if(!LIVE_MODE){
+        return [
+            {route:"7E", stop:"Nád utca", status:"LIVE"},
+            {route:"105", stop:"Batthyány tér", status:"+2p"},
+            {route:"178", stop:"Flórián tér", status:"+6p"}
+        ];
+    }
+
+    /* LIVE MODE (később API ide jön) */
+    return [
+        {route:"7E", stop:"Nád utca", status:"RUN"},
+        {route:"105", stop:"Batthyány tér", status:"ON TIME"},
+        {route:"178", stop:"Flórián tér", status:"DELAY 4"}
+    ];
 }
 
-// fake search
+/* render feed */
+function render(){
+    let data = getFeed();
+    let html = "";
+
+    data.forEach(d=>{
+        let cls = "ok";
+        if(d.status.includes("DELAY") || d.status.includes("+")) cls="delay";
+        if(d.status==="LIVE") cls="live";
+
+        html += `
+        <tr>
+            <td>🚍 ${d.route}</td>
+            <td>${d.stop}</td>
+            <td><span class="badge ${cls}">${d.status}</span></td>
+        </tr>`;
+    });
+
+    document.getElementById("feed").innerHTML = html;
+}
+setInterval(render, 3000);
+render();
+
+/* ---------------- TOGGLE LIVE ---------------- */
+function toggleMode(){
+    LIVE_MODE = !LIVE_MODE;
+
+    document.getElementById("modeBtn").innerText =
+        LIVE_MODE ? "LIVE MODE: ON" : "LIVE MODE: OFF";
+
+    document.getElementById("modeBtn").className =
+        LIVE_MODE ? "liveOn" : "";
+
+    document.getElementById("engineState").innerText =
+        LIVE_MODE ? "LIVE ENGINE" : "DEMO MODE";
+
+    document.getElementById("feedState").innerText =
+        LIVE_MODE ? "STREAMING" : "STATIC";
+}
+
+/* ---------------- SEARCH ---------------- */
 function search(q){
-    console.log("GTFS keresés:", q);
+    console.log("keresés:", q);
 }
 </script>
 
