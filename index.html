@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V6 HYBRID - Börzsöny OFFLINE TÚRA</title>
+<title>Börzsöny PRO OFFLINE NAVIGÁTOR V7</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -22,22 +22,22 @@ body{
     display:flex;
     gap:8px;
     flex-wrap:wrap;
-    align-items:center;
 }
 
 button{
-    background:#1f6feb;
-    border:none;
     padding:8px 10px;
+    border:none;
     border-radius:6px;
+    background:#1f6feb;
     color:white;
+    cursor:pointer;
 }
 
 button:hover{background:#2d7fff;}
 
 #layout{
     display:grid;
-    grid-template-columns:320px 1fr;
+    grid-template-columns:340px 1fr;
     height: calc(100vh - 60px);
 }
 
@@ -51,58 +51,69 @@ button:hover{background:#2d7fff;}
 .card{
     background:#111826;
     border:1px solid #1f2a38;
-    padding:10px;
     border-radius:8px;
+    padding:10px;
     margin-bottom:10px;
 }
 
-.small{font-size:12px; opacity:0.8;}
+.small{font-size:12px; opacity:0.85;}
 
 #map{height:100%; width:100%;}
+
+input{
+    width:100%;
+    padding:8px;
+    margin-top:5px;
+    background:#0b1220;
+    border:1px solid #1f2a38;
+    color:white;
+    border-radius:6px;
+}
 </style>
 </head>
 
 <body>
 
 <div id="topbar">
-    <button onclick="startGPS()">📍 GPS indítás</button>
-    <button onclick="addPOI()">📌 POI mentés</button>
-    <button onclick="clearPOI()">🗑️ POI törlés</button>
-    <button onclick="toggleTrack()">🧭 Tracking</button>
+    <button onclick="startGPS()">📍 GPS</button>
+    <button onclick="loadGPX()">📁 GPX betöltés</button>
+    <button onclick="exportSOS()">🚨 VÉSZ MÓD</button>
+    <button onclick="clearTrack()">🧹 Törlés</button>
 </div>
 
 <div id="layout">
 
 <div id="panel">
 
-    <div class="card">
-        <b>📡 GPS STATUS</b>
-        <div id="gps" class="small">Nincs adat</div>
-    </div>
+<div class="card">
+<b>📡 GPS</b>
+<div id="gps" class="small">nincs adat</div>
+</div>
 
-    <div class="card">
-        <b>🧭 TÚRA TRACK</b>
-        <div id="track" class="small">OFF</div>
-    </div>
+<div class="card">
+<b>🧭 TRACK</b>
+<div id="trackInfo" class="small">OFF</div>
+</div>
 
-    <div class="card">
-        <b>📍 UTOLSÓ POZÍCIÓ</b>
-        <div id="pos" class="small">-</div>
-    </div>
+<div class="card">
+<b>📏 TÁVOLSÁG</b>
+<div id="dist" class="small">0 m</div>
+</div>
 
-    <div class="card">
-        <b>🚍 FUTÁR CORE STATUS</b>
-        <div class="small">
-            V6 HYBRID ACTIVE<br>
-            OFFLINE MODE READY<br>
-            BÖRZSÖNY PACK LOADED
-        </div>
-    </div>
+<div class="card">
+<b>⛰️ SZINT PROFIL</b>
+<div id="elev" class="small">nincs adat</div>
+</div>
 
-    <div class="card">
-        <b>📌 MENTETT PONTOK</b>
-        <div id="poiList" class="small">Nincs POI</div>
-    </div>
+<div class="card">
+<b>🚨 VÉSZ ADAT</b>
+<div id="sos" class="small">-</div>
+</div>
+
+<div class="card">
+<b>📁 GPX IMPORT</b>
+<input type="file" id="gpxFile" accept=".gpx"/>
+</div>
 
 </div>
 
@@ -119,44 +130,20 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 let marker;
-let watchId;
-let tracking = false;
-let path = [];
+let track = [];
 let polyline;
+let watchId;
+let totalDist = 0;
+let lastPoint = null;
 
-let pois = JSON.parse(localStorage.getItem("pois") || "[]");
-
-// POI betöltés
-function renderPOI(){
-    document.getElementById("poiList").innerHTML =
-        pois.length ? pois.map((p,i)=>
-        `${i+1}. ${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}`).join("<br>")
-        : "Nincs POI";
-
-    pois.forEach(p=>{
-        L.marker([p.lat,p.lon]).addTo(map).bindPopup("POI");
-    });
-}
-renderPOI();
-
-// GPS indítás
+// GPS
 function startGPS(){
-
-    if(!navigator.geolocation){
-        alert("Nincs GPS támogatás");
-        return;
-    }
-
     watchId = navigator.geolocation.watchPosition(pos=>{
         let lat = pos.coords.latitude;
         let lon = pos.coords.longitude;
-        let acc = pos.coords.accuracy;
 
         document.getElementById("gps").innerHTML =
-            `Lat: ${lat}<br>Lon: ${lon}<br>Pontosság: ${acc} m`;
-
-        document.getElementById("pos").innerHTML =
-            `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+            `Lat: ${lat}<br>Lon: ${lon}<br>Acc: ${pos.coords.accuracy} m`;
 
         if(!marker){
             marker = L.marker([lat,lon]).addTo(map);
@@ -164,46 +151,84 @@ function startGPS(){
             marker.setLatLng([lat,lon]);
         }
 
-        if(tracking){
-            path.push([lat,lon]);
+        track.push([lat,lon]);
 
-            if(polyline) map.removeLayer(polyline);
-
-            polyline = L.polyline(path,{color:'cyan'}).addTo(map);
+        if(lastPoint){
+            totalDist += map.distance(lastPoint, [lat,lon]);
+            document.getElementById("dist").innerHTML =
+                totalDist.toFixed(0) + " m";
         }
+
+        lastPoint = [lat,lon];
+
+        if(polyline) map.removeLayer(polyline);
+        polyline = L.polyline(track,{color:"cyan"}).addTo(map);
 
         map.setView([lat,lon]);
 
-    }, err=>{
-        alert("GPS hiba / engedély hiányzik");
     },{
         enableHighAccuracy:true
     });
 }
 
-// Tracking toggle
-function toggleTrack(){
-    tracking = !tracking;
-    document.getElementById("track").innerHTML =
-        tracking ? "ON 🟢" : "OFF 🔴";
+// GPX import (basic parser)
+function loadGPX(){
+    let file = document.getElementById("gpxFile").files[0];
+    if(!file) return alert("Nincs GPX");
+
+    let reader = new FileReader();
+
+    reader.onload = function(e){
+        let parser = new DOMParser();
+        let xml = parser.parseFromString(e.target.result,"text/xml");
+
+        let trkpts = xml.getElementsByTagName("trkpt");
+
+        track = [];
+
+        for(let p of trkpts){
+            let lat = parseFloat(p.getAttribute("lat"));
+            let lon = parseFloat(p.getAttribute("lon"));
+            track.push([lat,lon]);
+        }
+
+        if(polyline) map.removeLayer(polyline);
+
+        polyline = L.polyline(track,{color:"lime"}).addTo(map);
+
+        map.fitBounds(polyline.getBounds());
+    };
+
+    reader.readAsText(file);
 }
 
-// POI mentés
-function addPOI(){
+// VÉSZ MÓD
+function exportSOS(){
     if(!marker) return;
 
     let p = marker.getLatLng();
-    pois.push({lat:p.lat, lon:p.lng});
 
-    localStorage.setItem("pois", JSON.stringify(pois));
-    renderPOI();
+    let text =
+`🚨 BÖRZSÖNY SOS
+Lat: ${p.lat}
+Lon: ${p.lng}
+Google: https://maps.google.com/?q=${p.lat},${p.lng}`;
+
+    document.getElementById("sos").innerText = text;
+
+    navigator.clipboard.writeText(text);
+    alert("SOS kimásolva!");
 }
 
-// POI törlés
-function clearPOI(){
-    localStorage.removeItem("pois");
-    pois = [];
-    renderPOI();
+// törlés
+function clearTrack(){
+    track = [];
+    totalDist = 0;
+    lastPoint = null;
+
+    if(polyline) map.removeLayer(polyline);
+
+    document.getElementById("dist").innerHTML = "0 m";
 }
 
 </script>
