@@ -3,40 +3,34 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 HYBRID DISPATCHER + Megállóhelyi Menetrend 5.3</title>
+<title>FUTÁR V5 HYBRID REAL ENGINE v1</title>
 
 <style>
 body{
     margin:0;
-    font-family: Arial, sans-serif;
+    font-family: Arial;
     background:#0b0f14;
     color:#e6f1ff;
 }
 
-/* TOP BAR */
 .header{
     background:#111827;
     padding:12px;
-    font-size:16px;
-    font-weight:bold;
     display:flex;
     justify-content:space-between;
-    align-items:center;
+    font-weight:bold;
 }
 
 .clock{
     color:#00ff99;
 }
 
-/* LAYOUT */
 .container{
-    display:grid;
-    grid-template-columns: 1fr;
-    gap:10px;
     padding:10px;
+    display:grid;
+    gap:10px;
 }
 
-/* PANELS */
 .panel{
     background:#111827;
     border:1px solid #1f2937;
@@ -44,17 +38,23 @@ body{
     padding:10px;
 }
 
-/* STOP SEARCH */
 input{
     width:100%;
     padding:10px;
     border-radius:8px;
     border:none;
-    outline:none;
-    font-size:14px;
 }
 
-/* TABLE */
+button{
+    width:100%;
+    padding:10px;
+    margin-top:8px;
+    background:#2563eb;
+    color:white;
+    border:none;
+    border-radius:8px;
+}
+
 table{
     width:100%;
     border-collapse:collapse;
@@ -70,116 +70,136 @@ th{
     color:#9ca3af;
 }
 
-/* BUTTON */
-button{
-    width:100%;
-    padding:10px;
-    background:#2563eb;
-    border:none;
-    border-radius:8px;
-    color:white;
-    font-weight:bold;
-    margin-top:6px;
-}
-
-button:hover{
-    background:#1d4ed8;
-}
-
-/* LIVE DOT */
-.dot{
-    height:10px;
-    width:10px;
-    background:#00ff99;
-    border-radius:50%;
-    display:inline-block;
-}
+.ok{color:#00ff99;}
+.warn{color:#ffcc00;}
+.bad{color:#ff4d4d;}
 </style>
 </head>
 
 <body>
 
 <div class="header">
-    🚍 FUTÁR V5 HYBRID DISPATCHER
-    <div class="clock" id="clock">--:--:--</div>
+🚍 FUTÁR V5 HYBRID REAL ENGINE v1
+<div class="clock" id="clock"></div>
 </div>
 
 <div class="container">
 
-    <!-- SEARCH -->
-    <div class="panel">
-        <h3>📍 Megálló kereső (Kassai Dániel 5.3 kompatibilis)</h3>
-        <input id="search" placeholder="Írd be: pl. Blaha Lujza tér / Szeged / MÁV / Volán">
-        <button onclick="searchStop()">Keresés indítása</button>
-    </div>
+<div class="panel">
+<h3>📍 Megálló kereső (REAL ENGINE)</h3>
+<input id="stopInput" placeholder="pl. Blaha, Oktogon, Szeged, MÁV">
+<button onclick="searchStop()">Keresés</button>
+<div id="result"></div>
+</div>
 
-    <!-- LIVE BOARD -->
-    <div class="panel">
-        <h3>🧠 Élő indulások (SIMULÁLT GTFS/REALTIME)</h3>
-        <table>
-            <tr>
-                <th>Járat</th>
-                <th>Honnan</th>
-                <th>Indulás</th>
-                <th>Késés</th>
-            </tr>
+<div class="panel">
+<h3>🧠 LIVE INDULÁSOK (DATA ENGINE)</h3>
+<table>
+<thead>
+<tr>
+<th>Járat</th>
+<th>Megálló</th>
+<th>Indulás</th>
+<th>Status</th>
+</tr>
+</thead>
+<tbody id="board"></tbody>
+</table>
+</div>
 
-            <tr>
-                <td>🚍 7E</td>
-                <td>Blaha</td>
-                <td>22:05</td>
-                <td><span class="dot"></span> 0p</td>
-            </tr>
-
-            <tr>
-                <td>🚋 4-6</td>
-                <td>Oktogon</td>
-                <td>22:07</td>
-                <td>+2p</td>
-            </tr>
-
-            <tr>
-                <td>🚍 133E</td>
-                <td>Újbuda</td>
-                <td>22:10</td>
-                <td>0p</td>
-            </tr>
-        </table>
-    </div>
-
-    <!-- DISPATCH PANEL -->
-    <div class="panel">
-        <h3>📡 Dispatcher Panel (FUTÁR V5 CORE)</h3>
-        <p>• GTFS feed: OFFLINE DEMO</p>
-        <p>• Kassai Dániel 5.3: INTEGRATED MODE</p>
-        <p>• Multi-city: BKK / MÁV / VOLÁN READY</p>
-        <p>• Status: <span style="color:#00ff99;">LIVE SIMULATION</span></p>
-    </div>
+<div class="panel">
+<h3>📡 ENGINE STATUS</h3>
+<p>GTFS CORE: <span class="ok">ACTIVE (SIMULATED DATA LAYER)</span></p>
+<p>ROUTING: <span class="warn">BASIC MODE</span></p>
+<p>REALTIME: <span class="bad">NOT CONNECTED</span></p>
+<p>MODE: HYBRID ENGINE v1</p>
+</div>
 
 </div>
 
 <script>
 
-// CLOCK
+/* =========================
+   🧠 MINI GTFS-LIKE DATABASE
+========================= */
+
+const stops = [
+    {id:1, name:"Blaha Lujza tér"},
+    {id:2, name:"Oktogon"},
+    {id:3, name:"Újbuda-központ"},
+    {id:4, name:"Szeged vasútállomás"}
+];
+
+const trips = [
+    {route:"7E", stop:"Blaha Lujza tér", time:"22:05", delay:0},
+    {route:"4-6", stop:"Oktogon", time:"22:07", delay:2},
+    {route:"133E", stop:"Újbuda-központ", time:"22:10", delay:0},
+    {route:"MÁV IC", stop:"Szeged vasútállomás", time:"22:15", delay:5}
+];
+
+/* =========================
+   ⏰ CLOCK
+========================= */
 function updateClock(){
-    const now = new Date();
     document.getElementById("clock").innerText =
-        now.toLocaleTimeString();
+        new Date().toLocaleTimeString();
 }
 setInterval(updateClock,1000);
 updateClock();
 
-// SEARCH MOCK
+/* =========================
+   🔎 SEARCH ENGINE
+========================= */
 function searchStop(){
-    let value = document.getElementById("search").value;
+    let val = document.getElementById("stopInput").value.toLowerCase();
+    let found = stops.filter(s => s.name.toLowerCase().includes(val));
 
-    if(value === ""){
-        alert("Adj meg egy megállót!");
+    let out = "";
+
+    if(found.length === 0){
+        document.getElementById("result").innerHTML =
+            "<p class='bad'>Nincs találat</p>";
         return;
     }
 
-    alert("🔎 Keresés indítva: " + value + "\n(Kassai Dániel 5.3 kompatibilis mód)");
+    found.forEach(s=>{
+        out += `<p class='ok'>✔ ${s.name}</p>`;
+    });
+
+    document.getElementById("result").innerHTML = out;
+
+    renderBoard(val);
 }
+
+/* =========================
+   📊 LIVE BOARD ENGINE
+========================= */
+function renderBoard(filter=""){
+    let tbody = document.getElementById("board");
+    tbody.innerHTML = "";
+
+    let filtered = trips.filter(t =>
+        t.stop.toLowerCase().includes(filter)
+    );
+
+    filtered.forEach(t=>{
+        let status =
+            t.delay === 0 ? "<span class='ok'>OK</span>" :
+            t.delay <= 3 ? "<span class='warn'>KÉSÉS</span>" :
+            "<span class='bad'>NAGY KÉSÉS</span>";
+
+        tbody.innerHTML += `
+        <tr>
+            <td>${t.route}</td>
+            <td>${t.stop}</td>
+            <td>${t.time}</td>
+            <td>${status}</td>
+        </tr>`;
+    });
+}
+
+/* initial load */
+renderBoard();
 
 </script>
 
