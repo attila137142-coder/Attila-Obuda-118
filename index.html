@@ -2,168 +2,268 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
+<title>ATTILA DISPATCHER V7.1 – AUTO UI FIX</title>
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 SMART ZONE ENGINE v2</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://unpkg.com/papaparse@5.4.1/papaparse.min.js"></script>
 
 <style>
-body{
-    margin:0;
-    font-family: Arial;
-    background:#0b0f14;
-    color:#e6f1ff;
+body{margin:0;font-family:Arial;display:flex;height:100vh;}
+#sidebar{width:380px;background:#0b1220;color:#00ff66;overflow:auto;}
+#map{flex:1;}
+
+.tabbar{
+  display:flex;
+  background:#001a00;
 }
 
-.header{
-    background:#111827;
-    padding:12px;
-    display:flex;
-    justify-content:space-between;
-    font-weight:bold;
+.tab{
+  flex:1;
+  padding:8px;
+  text-align:center;
+  cursor:pointer;
+  border-bottom:2px solid transparent;
 }
 
-.clock{color:#00ff99;}
-
-.container{
-    padding:10px;
-    display:grid;
-    gap:10px;
+.tab.active{
+  border-bottom:2px solid #00ff66;
 }
 
 .panel{
-    background:#111827;
-    border:1px solid #1f2937;
-    border-radius:10px;
-    padding:10px;
+  padding:10px;
+  font-family:monospace;
 }
 
-input{
-    width:100%;
-    padding:10px;
-    border-radius:8px;
-    border:none;
+.matrix{
+  background:black;
+  color:#00ff66;
+  padding:10px;
+}
+
+.row{
+  display:flex;
+  justify-content:space-between;
+  border-bottom:1px solid #003300;
+  padding:4px;
 }
 
 button{
-    width:100%;
-    padding:10px;
-    margin-top:8px;
-    background:#2563eb;
-    color:white;
-    border:none;
-    border-radius:8px;
+  padding:6px;
+  margin:4px;
+  background:#003300;
+  color:#00ff66;
+  border:none;
 }
-
-.tag{
-    display:inline-block;
-    padding:3px 8px;
-    border-radius:6px;
-    font-size:12px;
-    margin:2px;
-}
-
-.budapest{background:#1e3a8a;}
-.pest{background:#065f46;}
-.zala{background:#7c2d12;}
-.near{background:#374151;}
-.ok{color:#00ff99;}
-.warn{color:#ffcc00;}
 </style>
 </head>
 
 <body>
 
-<div class="header">
-🚍 FUTÁR V5 SMART ZONE ENGINE v2
-<div class="clock" id="clock"></div>
+<div id="sidebar">
+
+<h3>🟢 V7.1 DISPATCH</h3>
+
+<input type="file" id="zip">
+<button onclick="loadGTFS()">LOAD GTFS</button>
+
+<div class="tabbar">
+  <div class="tab active" onclick="setView('list')">LISTA</div>
+  <div class="tab" onclick="setView('board')">INDULÁS</div>
+  <div class="tab" onclick="setView('debug')">DEBUG</div>
 </div>
 
-<div class="container">
-
-<div class="panel">
-<h3>🌍 Okos kereső (országos + zónás)</h3>
-<input id="q" placeholder="pl. Tahitótfalu / Zalaegerszeg / Oktogon">
-<button onclick="search()">Keresés</button>
-<div id="out"></div>
-</div>
-
-<div class="panel">
-<h3>🧠 Zóna rendszer</h3>
-<div>
-<span class="tag budapest">BUDAPEST CORE</span>
-<span class="tag pest">PEST AGGLO</span>
-<span class="tag zala">ZALA REGION</span>
-<span class="tag near">NEARBY LOGIC</span>
-</div>
-</div>
-
-<div class="panel">
-<h3>📡 TALÁLATOK</h3>
-<div id="results"></div>
-</div>
+<div id="content"></div>
 
 </div>
+
+<div id="map"></div>
 
 <script>
 
-/* ======================
-   🧠 ZONE DATABASE
-====================== */
+// ================= MAP =================
+const map = L.map('map').setView([47.5,19.05],10);
 
-const database = [
-    {name:"Budapest", zone:"BUDAPEST CORE", type:"city"},
-    {name:"Oktogon", zone:"BUDAPEST CORE", type:"stop"},
-    {name:"Blaha Lujza tér", zone:"BUDAPEST CORE", type:"stop"},
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+  attribution:'OSM'
+}).addTo(map);
 
-    {name:"Tahitótfalu", zone:"PEST AGGLO", type:"town"},
-    {name:"Vác", zone:"PEST AGGLO", type:"city"},
-    {name:"Érd", zone:"PEST AGGLO", type:"city"},
+// ================= STATE =================
+let stops = [];
+let stopTimes = [];
+let departures = {};
+let currentView = "list";
 
-    {name:"Zalaegerszeg", zone:"ZALA REGION", type:"city"},
-    {name:"Keszthely", zone:"ZALA REGION", type:"city"},
-    {name:"Nagykanizsa", zone:"ZALA REGION", type:"city"}
-];
+// ================= SAFE STATE =================
+function safe(v, fallback=[]){
+  return v && v.length ? v : fallback;
+}
 
-/* ======================
-   ⏰ CLOCK
-====================== */
-setInterval(()=>{
-    document.getElementById("clock").innerText =
-        new Date().toLocaleTimeString();
-},1000);
+// ================= VIEW SWITCH =================
+function setView(v){
+  currentView = v;
 
-/* ======================
-   🔎 SMART SEARCH
-====================== */
-function search(){
-    let q = document.getElementById("q").value.toLowerCase();
+  document.querySelectorAll(".tab").forEach(t=>t.classList.remove("active"));
+  event.target.classList.add("active");
 
-    let matches = database.filter(d =>
-        d.name.toLowerCase().includes(q)
-    );
+  renderUI(lastSelectedStop);
+}
 
-    let out = document.getElementById("results");
-    let html = "";
+// ================= GTFS LOAD =================
+let lastSelectedStop = null;
 
-    if(matches.length === 0){
+async function loadGTFS(){
 
-        // 🚨 SMART FALLBACK (NEARBY LOGIC)
-        html += "<p class='warn'>⚠ Nincs pontos találat – közeli zónák aktiválva</p>";
+  const file = document.getElementById("zip").files[0];
+  const zip = await JSZip.loadAsync(file);
 
-        database.forEach(d=>{
-            if(d.zone.includes("PEST") || d.zone.includes("BUDAPEST")){
-                html += `<p>🟢 ${d.name} <small>(${d.zone})</small></p>`;
-            }
-        });
+  stops = [];
+  stopTimes = [];
+  departures = {};
 
-        out.innerHTML = html;
-        return;
+  for(let path in zip.files){
+
+    let name = path.toLowerCase().split("/").pop();
+    let content = await zip.files[path].async("string");
+
+    if(name==="stops.txt"){
+      stops = Papa.parse(content,{header:true,skipEmptyLines:true}).data
+        .filter(s=>s.stop_lat && s.stop_lon);
     }
 
-    matches.forEach(m=>{
-        html += `<p class='ok'>✔ ${m.name} <small>(${m.zone})</small></p>`;
-    });
+    if(name==="stop_times.txt"){
+      stopTimes = Papa.parse(content,{header:true,skipEmptyLines:true}).data;
+    }
+  }
 
-    out.innerHTML = html;
+  buildDepartures();
+  renderStops();
+
+  console.log("GTFS LOADED ✔", stops.length, stopTimes.length);
+
+  // 🔥 AUTO UI TRIGGER (EZ A LÉNYEG)
+  setTimeout(()=>{
+    renderUI(stops[0]);
+  },100);
+}
+
+// ================= BUILD DEPARTURES =================
+function buildDepartures(){
+
+  departures = {};
+
+  stopTimes.forEach(st=>{
+
+    if(!departures[st.stop_id]){
+      departures[st.stop_id]=[];
+    }
+
+    departures[st.stop_id].push({
+      trip: st.trip_id,
+      time: st.departure_time
+    });
+  });
+}
+
+// ================= STOPS =================
+function renderStops(){
+
+  map.eachLayer(l=>{
+    if(l instanceof L.CircleMarker) map.removeLayer(l);
+  });
+
+  stops.forEach(s=>{
+
+    L.circleMarker([s.stop_lat,s.stop_lon],{
+      radius:4,
+      color:"cyan"
+    }).addTo(map)
+    .on("click",()=>{
+      lastSelectedStop = s;
+      renderUI(s);
+    });
+  });
+
+  renderList();
+}
+
+// ================= LIST =================
+function renderList(){
+
+  let html = "<div class='panel'>📍 MEGÁLLÓK<br><br>";
+
+  safe(stops).slice(0,50).forEach(s=>{
+    html += `📍 ${s.stop_name}<br>`;
+  });
+
+  html += "</div>";
+
+  if(currentView==="list"){
+    document.getElementById("content").innerHTML = html;
+  }
+}
+
+// ================= MATRIX BOARD =================
+function renderBoard(stop){
+
+  let list = departures[stop?.stop_id] || [];
+
+  let html = `
+  <div class="matrix">
+    🟢 INDULÁSOK<br>
+    <b>${stop?.stop_name || "–"}</b>
+    <hr>
+    <div class="row"><b>Trip</b><b>Idő</b></div>
+  `;
+
+  list.slice(0,15).forEach(d=>{
+    html += `
+    <div class="row">
+      <div>${d.trip}</div>
+      <div>${d.time}</div>
+    </div>`;
+  });
+
+  html += "</div>";
+
+  if(currentView==="board"){
+    document.getElementById("content").innerHTML = html;
+  }
+}
+
+// ================= DEBUG =================
+function renderDebug(){
+
+  let html = `
+  <div class="panel">
+    🧠 DEBUG<br><br>
+    stops: ${stops.length}<br>
+    stop_times: ${stopTimes.length}<br>
+    departures keys: ${Object.keys(departures).length}<br>
+  </div>
+  `;
+
+  if(currentView==="debug"){
+    document.getElementById("content").innerHTML = html;
+  }
+}
+
+// ================= UI MASTER =================
+function renderUI(stop){
+
+  if(!stops.length){
+    document.getElementById("content").innerHTML =
+      "❌ NINCS GTFS BETÖLTVE";
+    return;
+  }
+
+  renderList();
+  renderBoard(stop);
+  renderDebug();
 }
 
 </script>
