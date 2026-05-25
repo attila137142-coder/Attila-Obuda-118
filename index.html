@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V8 MULTI GTFS PERSISTENT ENGINE</title>
+<title>V8.1 FULL GTFS DISPATCH FIX</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -15,10 +15,10 @@
 body{
   margin:0;
   font-family:Arial;
-  background:#0b0f14;
-  color:#e6f1ff;
   display:flex;
   height:100vh;
+  background:#0b0f14;
+  color:#e6f1ff;
 }
 
 #sidebar{
@@ -28,7 +28,9 @@ body{
   border-right:1px solid #1f2937;
 }
 
-#map{flex:1;}
+#map{
+  flex:1;
+}
 
 .header{
   padding:10px;
@@ -51,7 +53,10 @@ input,button{
   border:none;
 }
 
-button{background:#1d4ed8;color:white;}
+button{
+  background:#1d4ed8;
+  color:white;
+}
 
 .row{
   display:flex;
@@ -61,16 +66,6 @@ button{background:#1d4ed8;color:white;}
 }
 
 .ok{color:#00ff99;}
-.warn{color:#ffcc00;}
-.bad{color:#ff4d4d;}
-
-.tag{
-  font-size:12px;
-  padding:2px 6px;
-  border-radius:4px;
-  background:#1f2937;
-  margin-left:6px;
-}
 </style>
 </head>
 
@@ -79,7 +74,7 @@ button{background:#1d4ed8;color:white;}
 <div id="sidebar">
 
 <div class="header">
-🚍 V8 MULTI GTFS ENGINE
+🚍 V8.1 DISPATCH FIX
 <div id="clock"></div>
 </div>
 
@@ -90,8 +85,7 @@ button{background:#1d4ed8;color:white;}
   <option value="volan">VOLÁN</option>
   <option value="mav">MÁV</option>
 </select>
-<button onclick="loadGTFS()">LOAD GTFS (ADD TO SYSTEM)</button>
-<button onclick="clearAll()">CLEAR ALL</button>
+<button onclick="loadGTFS()">GTFS BETÖLTÉS</button>
 </div>
 
 <div class="panel">
@@ -100,12 +94,12 @@ button{background:#1d4ed8;color:white;}
 </div>
 
 <div class="panel">
-<h3>🧠 PERSISTENT DISPATCH BOARD</h3>
+<h3>🧠 INDULÁSOK</h3>
 <div id="board"></div>
 </div>
 
 <div class="panel">
-<h3>📡 ENGINE STATUS</h3>
+<h3>📡 STATUS</h3>
 <div id="status"></div>
 </div>
 
@@ -128,15 +122,20 @@ setInterval(()=>{
     new Date().toLocaleTimeString();
 },1000);
 
-// ================= MULTI GTFS REGISTRY =================
+// ================= DATA =================
 let GTFS = {
-  bkk:{stops:[], departures:{}},
-  volan:{stops:[], departures:{}},
-  mav:{stops:[], departures:{}}
+  bkk:{stops:{}, departures:{}},
+  volan:{stops:{}, departures:{}},
+  mav:{stops:{}, departures:{}}
 };
 
-// ================= TIME =================
+let STOP_INDEX = [];
+
+// ================= TIME FIX =================
 function timeToSec(t){
+
+  if(!t) return 0;
+
   let [h,m,s] = t.split(":").map(Number);
 
   if(h>=24){
@@ -147,13 +146,14 @@ function timeToSec(t){
   return h*3600+m*60+s;
 }
 
-// ================= SAVE / LOAD =================
+// ================= SAVE =================
 function save(){
-  localStorage.setItem("gtfs_v8", JSON.stringify(GTFS));
+  localStorage.setItem("v81_gtfs", JSON.stringify(GTFS));
 }
 
+// ================= LOAD =================
 function load(){
-  let d = localStorage.getItem("gtfs_v8");
+  let d = localStorage.getItem("v81_gtfs");
   if(d) GTFS = JSON.parse(d);
 }
 load();
@@ -175,18 +175,29 @@ async function loadGTFS(){
     let content = await zip.files[p].async("string");
 
     if(name==="stops.txt"){
+
       let rows = Papa.parse(content,{header:true}).data;
 
       rows.forEach(s=>{
         stops[s.stop_id] = s;
+
+        STOP_INDEX.push({
+          id:s.stop_id,
+          name:s.stop_name,
+          lat:s.stop_lat,
+          lon:s.stop_lon,
+          source:src
+        });
       });
     }
 
     if(name==="stop_times.txt"){
+
       let rows = Papa.parse(content,{header:true}).data;
 
       rows.forEach(r=>{
-        if(!r.stop_id) return;
+
+        if(!r.stop_id || !r.departure_time) return;
 
         if(!departures[r.stop_id]) departures[r.stop_id]=[];
 
@@ -200,14 +211,33 @@ async function loadGTFS(){
     }
   }
 
-  GTFS[src] = {
-    stops,
-    departures
-  };
+  GTFS[src] = {stops, departures};
 
   save();
-  render();
+  renderMap();
   updateStatus();
+}
+
+// ================= MAP RENDER FIX =================
+function renderMap(){
+
+  map.eachLayer(l=>{
+    if(l instanceof L.CircleMarker) map.removeLayer(l);
+  });
+
+  STOP_INDEX.forEach(s=>{
+
+    if(!s.lat || !s.lon) return;
+
+    L.circleMarker([s.lat,s.lon],{
+      radius:4,
+      color:"#00ffff"
+    }).addTo(map)
+    .bindPopup(s.name)
+    .on("click",()=>{
+      renderBoard(s.id);
+    });
+  });
 }
 
 // ================= MERGE ENGINE =================
@@ -216,10 +246,10 @@ function getMerged(stop_id){
   let all = [];
 
   Object.keys(GTFS).forEach(src=>{
-    let g = GTFS[src];
-    if(!g.departures) return;
 
-    if(g.departures[stop_id]){
+    let g = GTFS[src];
+
+    if(g.departures && g.departures[stop_id]){
       all.push(...g.departures[stop_id]);
     }
   });
@@ -227,71 +257,52 @@ function getMerged(stop_id){
   return all.sort((a,b)=>a.sec-b.sec);
 }
 
-// ================= RENDER =================
-function render(stop_id=null){
+// ================= BOARD =================
+function renderBoard(stop_id){
 
-  let html = "";
+  let list = getMerged(stop_id);
 
-  if(stop_id){
+  let html = "<b>INDULÁSOK</b><br><br>";
 
-    let list = getMerged(stop_id);
+  if(list.length===0){
+    html += "Nincs adat";
+  }
 
-    html += "<b>INDULÁSOK (V8 MERGED)</b><br><br>";
-
-    list.slice(0,15).forEach(d=>{
-      html += `
+  list.slice(0,15).forEach(d=>{
+    html += `
       <div class="row">
-        <div>${d.trip}<span class="tag">${d.source}</span></div>
+        <div>${d.trip} <small>[${d.source}]</small></div>
         <div class="ok">${d.time}</div>
       </div>`;
-    });
-  }
+  });
 
   document.getElementById("board").innerHTML = html;
 }
 
-// ================= SEARCH =================
+// ================= SEARCH FIX =================
 function searchStop(){
 
   let q = document.getElementById("search").value.toLowerCase();
 
-  let found = null;
-
-  Object.keys(GTFS).forEach(src=>{
-    let g = GTFS[src];
-
-    Object.values(g.stops).forEach(s=>{
-      if(s.stop_name && s.stop_name.toLowerCase().includes(q)){
-        found = s;
-      }
-    });
-  });
+  let found = STOP_INDEX.find(s =>
+    s.name && s.name.toLowerCase().includes(q)
+  );
 
   if(found){
-    render(found.stop_id);
+    map.setView([found.lat,found.lon],14);
+    renderBoard(found.id);
   }
-}
-
-// ================= CLEAR =================
-function clearAll(){
-  GTFS = {
-    bkk:{stops:[], departures:{}},
-    volan:{stops:[], departures:{}},
-    mav:{stops:[], departures:{}}
-  };
-  save();
-  render();
 }
 
 // ================= STATUS =================
 function updateStatus(){
 
   document.getElementById("status").innerHTML = `
-  BKK: ${Object.keys(GTFS.bkk.departures||{}).length} stops<br>
-  VOLÁN: ${Object.keys(GTFS.volan.departures||{}).length} stops<br>
-  MÁV: ${Object.keys(GTFS.mav.departures||{}).length} stops<br>
-  MODE: V8 MULTI PERSISTENT ✔<br>
-  STORAGE: localStorage ACTIVE<br>
+  BKK stops: ${Object.keys(GTFS.bkk.stops).length}<br>
+  VOLÁN stops: ${Object.keys(GTFS.volan.stops).length}<br>
+  MÁV stops: ${Object.keys(GTFS.mav.stops).length}<br>
+  INDEX: ${STOP_INDEX.length}<br>
+  MODE: V8.1 FIXED UI ENGINE<br>
   `;
 }
 
