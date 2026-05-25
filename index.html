@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V5 HYBRID REAL ENGINE v1</title>
+<title>FUTÁR V5 SMART ZONE ENGINE v2</title>
 
 <style>
 body{
@@ -21,9 +21,7 @@ body{
     font-weight:bold;
 }
 
-.clock{
-    color:#00ff99;
-}
+.clock{color:#00ff99;}
 
 .container{
     padding:10px;
@@ -55,151 +53,118 @@ button{
     border-radius:8px;
 }
 
-table{
-    width:100%;
-    border-collapse:collapse;
-    font-size:13px;
+.tag{
+    display:inline-block;
+    padding:3px 8px;
+    border-radius:6px;
+    font-size:12px;
+    margin:2px;
 }
 
-th, td{
-    padding:6px;
-    border-bottom:1px solid #1f2937;
-}
-
-th{
-    color:#9ca3af;
-}
-
+.budapest{background:#1e3a8a;}
+.pest{background:#065f46;}
+.zala{background:#7c2d12;}
+.near{background:#374151;}
 .ok{color:#00ff99;}
 .warn{color:#ffcc00;}
-.bad{color:#ff4d4d;}
 </style>
 </head>
 
 <body>
 
 <div class="header">
-🚍 FUTÁR V5 HYBRID REAL ENGINE v1
+🚍 FUTÁR V5 SMART ZONE ENGINE v2
 <div class="clock" id="clock"></div>
 </div>
 
 <div class="container">
 
 <div class="panel">
-<h3>📍 Megálló kereső (REAL ENGINE)</h3>
-<input id="stopInput" placeholder="pl. Blaha, Oktogon, Szeged, MÁV">
-<button onclick="searchStop()">Keresés</button>
-<div id="result"></div>
+<h3>🌍 Okos kereső (országos + zónás)</h3>
+<input id="q" placeholder="pl. Tahitótfalu / Zalaegerszeg / Oktogon">
+<button onclick="search()">Keresés</button>
+<div id="out"></div>
 </div>
 
 <div class="panel">
-<h3>🧠 LIVE INDULÁSOK (DATA ENGINE)</h3>
-<table>
-<thead>
-<tr>
-<th>Járat</th>
-<th>Megálló</th>
-<th>Indulás</th>
-<th>Status</th>
-</tr>
-</thead>
-<tbody id="board"></tbody>
-</table>
+<h3>🧠 Zóna rendszer</h3>
+<div>
+<span class="tag budapest">BUDAPEST CORE</span>
+<span class="tag pest">PEST AGGLO</span>
+<span class="tag zala">ZALA REGION</span>
+<span class="tag near">NEARBY LOGIC</span>
+</div>
 </div>
 
 <div class="panel">
-<h3>📡 ENGINE STATUS</h3>
-<p>GTFS CORE: <span class="ok">ACTIVE (SIMULATED DATA LAYER)</span></p>
-<p>ROUTING: <span class="warn">BASIC MODE</span></p>
-<p>REALTIME: <span class="bad">NOT CONNECTED</span></p>
-<p>MODE: HYBRID ENGINE v1</p>
+<h3>📡 TALÁLATOK</h3>
+<div id="results"></div>
 </div>
 
 </div>
 
 <script>
 
-/* =========================
-   🧠 MINI GTFS-LIKE DATABASE
-========================= */
+/* ======================
+   🧠 ZONE DATABASE
+====================== */
 
-const stops = [
-    {id:1, name:"Blaha Lujza tér"},
-    {id:2, name:"Oktogon"},
-    {id:3, name:"Újbuda-központ"},
-    {id:4, name:"Szeged vasútállomás"}
+const database = [
+    {name:"Budapest", zone:"BUDAPEST CORE", type:"city"},
+    {name:"Oktogon", zone:"BUDAPEST CORE", type:"stop"},
+    {name:"Blaha Lujza tér", zone:"BUDAPEST CORE", type:"stop"},
+
+    {name:"Tahitótfalu", zone:"PEST AGGLO", type:"town"},
+    {name:"Vác", zone:"PEST AGGLO", type:"city"},
+    {name:"Érd", zone:"PEST AGGLO", type:"city"},
+
+    {name:"Zalaegerszeg", zone:"ZALA REGION", type:"city"},
+    {name:"Keszthely", zone:"ZALA REGION", type:"city"},
+    {name:"Nagykanizsa", zone:"ZALA REGION", type:"city"}
 ];
 
-const trips = [
-    {route:"7E", stop:"Blaha Lujza tér", time:"22:05", delay:0},
-    {route:"4-6", stop:"Oktogon", time:"22:07", delay:2},
-    {route:"133E", stop:"Újbuda-központ", time:"22:10", delay:0},
-    {route:"MÁV IC", stop:"Szeged vasútállomás", time:"22:15", delay:5}
-];
-
-/* =========================
+/* ======================
    ⏰ CLOCK
-========================= */
-function updateClock(){
+====================== */
+setInterval(()=>{
     document.getElementById("clock").innerText =
         new Date().toLocaleTimeString();
-}
-setInterval(updateClock,1000);
-updateClock();
+},1000);
 
-/* =========================
-   🔎 SEARCH ENGINE
-========================= */
-function searchStop(){
-    let val = document.getElementById("stopInput").value.toLowerCase();
-    let found = stops.filter(s => s.name.toLowerCase().includes(val));
+/* ======================
+   🔎 SMART SEARCH
+====================== */
+function search(){
+    let q = document.getElementById("q").value.toLowerCase();
 
-    let out = "";
+    let matches = database.filter(d =>
+        d.name.toLowerCase().includes(q)
+    );
 
-    if(found.length === 0){
-        document.getElementById("result").innerHTML =
-            "<p class='bad'>Nincs találat</p>";
+    let out = document.getElementById("results");
+    let html = "";
+
+    if(matches.length === 0){
+
+        // 🚨 SMART FALLBACK (NEARBY LOGIC)
+        html += "<p class='warn'>⚠ Nincs pontos találat – közeli zónák aktiválva</p>";
+
+        database.forEach(d=>{
+            if(d.zone.includes("PEST") || d.zone.includes("BUDAPEST")){
+                html += `<p>🟢 ${d.name} <small>(${d.zone})</small></p>`;
+            }
+        });
+
+        out.innerHTML = html;
         return;
     }
 
-    found.forEach(s=>{
-        out += `<p class='ok'>✔ ${s.name}</p>`;
+    matches.forEach(m=>{
+        html += `<p class='ok'>✔ ${m.name} <small>(${m.zone})</small></p>`;
     });
 
-    document.getElementById("result").innerHTML = out;
-
-    renderBoard(val);
+    out.innerHTML = html;
 }
-
-/* =========================
-   📊 LIVE BOARD ENGINE
-========================= */
-function renderBoard(filter=""){
-    let tbody = document.getElementById("board");
-    tbody.innerHTML = "";
-
-    let filtered = trips.filter(t =>
-        t.stop.toLowerCase().includes(filter)
-    );
-
-    filtered.forEach(t=>{
-        let status =
-            t.delay === 0 ? "<span class='ok'>OK</span>" :
-            t.delay <= 3 ? "<span class='warn'>KÉSÉS</span>" :
-            "<span class='bad'>NAGY KÉSÉS</span>";
-
-        tbody.innerHTML += `
-        <tr>
-            <td>${t.route}</td>
-            <td>${t.stop}</td>
-            <td>${t.time}</td>
-            <td>${status}</td>
-        </tr>`;
-    });
-}
-
-/* initial load */
-renderBoard();
 
 </script>
 
