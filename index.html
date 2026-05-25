@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V7.4 FULL ACCURACY ENGINE</title>
+<title>FUTÁR V8 MULTI GTFS PERSISTENT ENGINE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
@@ -28,16 +28,14 @@ body{
   border-right:1px solid #1f2937;
 }
 
-#map{
-  flex:1;
-}
+#map{flex:1;}
 
 .header{
   padding:10px;
   background:#111827;
-  font-weight:bold;
   display:flex;
   justify-content:space-between;
+  font-weight:bold;
 }
 
 .panel{
@@ -53,10 +51,7 @@ input,button{
   border:none;
 }
 
-button{
-  background:#1d4ed8;
-  color:white;
-}
+button{background:#1d4ed8;color:white;}
 
 .row{
   display:flex;
@@ -68,6 +63,14 @@ button{
 .ok{color:#00ff99;}
 .warn{color:#ffcc00;}
 .bad{color:#ff4d4d;}
+
+.tag{
+  font-size:12px;
+  padding:2px 6px;
+  border-radius:4px;
+  background:#1f2937;
+  margin-left:6px;
+}
 </style>
 </head>
 
@@ -76,13 +79,19 @@ button{
 <div id="sidebar">
 
 <div class="header">
-🚍 V7.4 FULL ACCURACY ENGINE
+🚍 V8 MULTI GTFS ENGINE
 <div id="clock"></div>
 </div>
 
 <div class="panel">
 <input type="file" id="zip">
-<button onclick="loadGTFS()">LOAD GTFS (BKK + VOLÁN)</button>
+<select id="source">
+  <option value="bkk">BKK</option>
+  <option value="volan">VOLÁN</option>
+  <option value="mav">MÁV</option>
+</select>
+<button onclick="loadGTFS()">LOAD GTFS (ADD TO SYSTEM)</button>
+<button onclick="clearAll()">CLEAR ALL</button>
 </div>
 
 <div class="panel">
@@ -91,7 +100,7 @@ button{
 </div>
 
 <div class="panel">
-<h3>🧠 INDULÁSOK (100% ACCURATE)</h3>
+<h3>🧠 PERSISTENT DISPATCH BOARD</h3>
 <div id="board"></div>
 </div>
 
@@ -113,54 +122,52 @@ L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
   attribution:'OSM'
 }).addTo(map);
 
-// ================= STATE =================
-let stops = [];
-let stopTimes = [];
-let departures = {};
-let selectedStop = null;
-
 // ================= CLOCK =================
 setInterval(()=>{
   document.getElementById("clock").innerText =
     new Date().toLocaleTimeString();
 },1000);
 
-// ================= TIME ENGINE =================
+// ================= MULTI GTFS REGISTRY =================
+let GTFS = {
+  bkk:{stops:[], departures:{}},
+  volan:{stops:[], departures:{}},
+  mav:{stops:[], departures:{}}
+};
+
+// ================= TIME =================
 function timeToSec(t){
   let [h,m,s] = t.split(":").map(Number);
-  return h*3600 + m*60 + s;
-}
 
-// ================= SAFE PUSH (DEDUP + ACCURACY) =================
-function addDeparture(stop_id, trip_id, time){
-
-  if(!departures[stop_id]){
-    departures[stop_id] = [];
+  if(h>=24){
+    h = h-24;
+    return (24*3600)+(h*3600+m*60+s);
   }
 
-  // 🔥 DUPLICATE FILTER (GTFS BUG FIX)
-  let exists = departures[stop_id].some(d =>
-    d.trip === trip_id && d.time === time
-  );
-
-  if(exists) return;
-
-  departures[stop_id].push({
-    trip: trip_id,
-    time: time,
-    sec: timeToSec(time)
-  });
+  return h*3600+m*60+s;
 }
+
+// ================= SAVE / LOAD =================
+function save(){
+  localStorage.setItem("gtfs_v8", JSON.stringify(GTFS));
+}
+
+function load(){
+  let d = localStorage.getItem("gtfs_v8");
+  if(d) GTFS = JSON.parse(d);
+}
+load();
 
 // ================= LOAD GTFS =================
 async function loadGTFS(){
 
   const file = document.getElementById("zip").files[0];
+  const src = document.getElementById("source").value;
+
   const zip = await JSZip.loadAsync(file);
 
-  stops = [];
-  stopTimes = [];
-  departures = {};
+  let stops = {};
+  let departures = {};
 
   for(let p in zip.files){
 
@@ -168,85 +175,77 @@ async function loadGTFS(){
     let content = await zip.files[p].async("string");
 
     if(name==="stops.txt"){
-      stops = Papa.parse(content,{header:true}).data;
+      let rows = Papa.parse(content,{header:true}).data;
+
+      rows.forEach(s=>{
+        stops[s.stop_id] = s;
+      });
     }
 
     if(name==="stop_times.txt"){
-      stopTimes = Papa.parse(content,{header:true}).data;
+      let rows = Papa.parse(content,{header:true}).data;
+
+      rows.forEach(r=>{
+        if(!r.stop_id) return;
+
+        if(!departures[r.stop_id]) departures[r.stop_id]=[];
+
+        departures[r.stop_id].push({
+          trip:r.trip_id,
+          time:r.departure_time,
+          sec:timeToSec(r.departure_time),
+          source:src
+        });
+      });
     }
   }
 
-  buildEngine();
-  renderMap();
+  GTFS[src] = {
+    stops,
+    departures
+  };
+
+  save();
+  render();
   updateStatus();
 }
 
-// ================= CORE ENGINE =================
-function buildEngine(){
+// ================= MERGE ENGINE =================
+function getMerged(stop_id){
 
-  stopTimes.forEach(r=>{
+  let all = [];
 
-    if(!r.stop_id || !r.departure_time || !r.trip_id) return;
+  Object.keys(GTFS).forEach(src=>{
+    let g = GTFS[src];
+    if(!g.departures) return;
 
-    addDeparture(r.stop_id, r.trip_id, r.departure_time);
+    if(g.departures[stop_id]){
+      all.push(...g.departures[stop_id]);
+    }
   });
 
-  // 🔥 SORT ALL STOPS (CRITICAL FIX)
-  Object.keys(departures).forEach(k=>{
-    departures[k].sort((a,b)=>a.sec-b.sec);
-  });
-
-  console.log("ENGINE READY ✔", Object.keys(departures).length);
+  return all.sort((a,b)=>a.sec-b.sec);
 }
 
-// ================= MAP =================
-function renderMap(){
+// ================= RENDER =================
+function render(stop_id=null){
 
-  stops.forEach(s=>{
-    if(!s.stop_lat) return;
+  let html = "";
 
-    L.circleMarker([s.stop_lat,s.stop_lon],{
-      radius:4,
-      color:"#00ffff"
-    }).addTo(map)
-    .on("click",()=>{
-      selectedStop = s;
-      renderBoard(s);
-    });
-  });
-}
+  if(stop_id){
 
-// ================= NEXT DEPARTURES =================
-function getNext(list){
+    let list = getMerged(stop_id);
 
-  let now = new Date();
-  let sec = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds();
+    html += "<b>INDULÁSOK (V8 MERGED)</b><br><br>";
 
-  return list
-    .filter(d=>d.sec >= sec)
-    .slice(0,10);
-}
-
-// ================= BOARD =================
-function renderBoard(stop){
-
-  let list = departures[stop.stop_id] || [];
-  let next = getNext(list);
-
-  let html = `<b>${stop.stop_name}</b><br><br>`;
-
-  if(next.length === 0){
-    html += "<span class='warn'>Nincs jövőbeli indulás</span>";
-  }
-
-  next.forEach(d=>{
-    html += `
+    list.slice(0,15).forEach(d=>{
+      html += `
       <div class="row">
-        <div>${d.trip}</div>
+        <div>${d.trip}<span class="tag">${d.source}</span></div>
         <div class="ok">${d.time}</div>
-      </div>
-    `;
-  });
+      </div>`;
+    });
+  }
 
   document.getElementById("board").innerHTML = html;
 }
@@ -256,25 +255,43 @@ function searchStop(){
 
   let q = document.getElementById("search").value.toLowerCase();
 
-  let found = stops.find(s =>
-    s.stop_name && s.stop_name.toLowerCase().includes(q)
-  );
+  let found = null;
+
+  Object.keys(GTFS).forEach(src=>{
+    let g = GTFS[src];
+
+    Object.values(g.stops).forEach(s=>{
+      if(s.stop_name && s.stop_name.toLowerCase().includes(q)){
+        found = s;
+      }
+    });
+  });
 
   if(found){
-    map.setView([found.stop_lat,found.stop_lon],14);
-    renderBoard(found);
+    render(found.stop_id);
   }
+}
+
+// ================= CLEAR =================
+function clearAll(){
+  GTFS = {
+    bkk:{stops:[], departures:{}},
+    volan:{stops:[], departures:{}},
+    mav:{stops:[], departures:{}}
+  };
+  save();
+  render();
 }
 
 // ================= STATUS =================
 function updateStatus(){
 
   document.getElementById("status").innerHTML = `
-  GTFS: LOADED ✔<br>
-  STOPS: ${stops.length}<br>
-  STOP TIMES: ${stopTimes.length}<br>
-  DEPARTURES: ${Object.keys(departures).length}<br>
-  MODE: V7.4 FULL ACCURACY ENGINE<br>
+  BKK: ${Object.keys(GTFS.bkk.departures||{}).length} stops<br>
+  VOLÁN: ${Object.keys(GTFS.volan.departures||{}).length} stops<br>
+  MÁV: ${Object.keys(GTFS.mav.departures||{}).length} stops<br>
+  MODE: V8 MULTI PERSISTENT ✔<br>
+  STORAGE: localStorage ACTIVE<br>
   `;
 }
 
