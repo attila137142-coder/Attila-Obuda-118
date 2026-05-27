@@ -1,934 +1,221 @@
 <!DOCTYPE html>
 <html lang="hu">
-
 <head>
-
 <meta charset="UTF-8">
-<meta name="viewport"
-content="width=device-width,initial-scale=1.0">
+<title>Attila Közlekedés PRO</title>
 
-<title>🚦 FUTÁR V7 MOBILE DISPATCHER</title>
-
-<link rel="stylesheet"
-href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
-<!-- PWA -->
-
-<meta name="theme-color" content="#00ffb3">
-<meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style"
-content="black-translucent">
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-
-body{
-margin:0;
-font-family:Arial,sans-serif;
-background:#071813;
-color:#dff;
-overflow:hidden;
-}
-
-/* HEADER */
-
-#topbar{
-height:60px;
-background:#0b2822;
-display:flex;
-align-items:center;
-justify-content:space-between;
-padding:0 10px;
-border-bottom:2px solid #00ffb3;
-box-sizing:border-box;
-}
-
-#logo{
-font-weight:bold;
-font-size:20px;
-color:#00ffb3;
-}
-
-#clock{
-font-size:24px;
-font-weight:bold;
-color:#00ffb3;
-}
-
-/* LAYOUT */
-
-#layout{
-display:flex;
-height:calc(100vh - 60px);
-}
-
-/* PANEL */
-
-#panel{
-width:420px;
-background:#081f1b;
-border-right:2px solid #00ffb3;
-overflow:auto;
-padding:10px;
-box-sizing:border-box;
-}
-
-/* MAP */
-
-#map{
-flex:1;
-}
-
-/* INPUTS */
-
-input{
-width:100%;
-padding:10px;
-margin-bottom:8px;
-border:none;
-border-radius:10px;
-background:#112822;
-color:white;
-font-size:15px;
-box-sizing:border-box;
-}
-
-/* BUTTON */
-
-button{
-width:100%;
-padding:12px;
-margin-bottom:8px;
-border:none;
-border-radius:10px;
-font-size:14px;
-cursor:pointer;
-color:white;
-font-weight:bold;
-transition:0.2s;
-}
-
-button:hover{
-transform:scale(1.02);
-opacity:0.92;
-}
-
-/* COLORS */
-
-.bkk{background:#204867;}
-.volan{background:#5b371a;}
-.mav{background:#24476b;}
-.kassai{background:#5b1d33;}
-.mapbtn{background:#3b295c;}
-.aev{background:#30502f;}
-.live{background:#1f4630;}
-
-/* ROW */
-
-.row{
-display:grid;
-grid-template-columns:70px 1fr 80px;
-font-size:12px;
-padding:6px 0;
-border-bottom:1px solid #114038;
-}
-
-.badge{
-color:#ffe66d;
-font-weight:bold;
-}
-
-.green{
-color:#65ff8f;
-}
-
-.red{
-color:#ff6666;
-}
-
-.small{
-font-size:11px;
-opacity:0.8;
-}
-
-/* STATUS */
-
-#status{
-position:fixed;
-bottom:0;
-left:0;
-right:0;
-height:38px;
-background:#0a1d1acc;
-display:flex;
-align-items:center;
-padding-left:12px;
-border-top:1px solid #00ffb3;
-font-size:13px;
-color:#00ffb3;
-z-index:9999;
-}
-
-/* MOBILE */
-
-@media(max-width:900px){
-
-#layout{
-flex-direction:column;
-}
-
-#panel{
-width:100%;
-height:45vh;
-border-right:none;
-border-bottom:2px solid #00ffb3;
-}
-
-#map{
-height:55vh;
-}
-
-.row{
-font-size:14px;
-}
-
-button{
-font-size:16px;
-padding:13px;
-}
-
-#clock{
-font-size:18px;
-}
-
-}
-
+body{background:black;color:yellow;font-family:Arial;text-align:center;}
+#kmh{font-size:70px;color:#0f0;text-shadow:0 0 20px #0f0;}
+#ms{font-size:25px;}
+#coords,#alt,#cim,#helyek,#megallok{color:cyan;margin:5px;}
+#map{height:700px;margin-top:10px;}
+button{margin:5px;padding:10px;font-size:16px;}
+.stop{background:#222;margin:5px;padding:10px;border-radius:10px;}
+.red{color:#ff5555;}
+.blue{color:#55aaff;}
+.white{color:white;}
 </style>
-
 </head>
 
 <body>
 
-<!-- HEADER -->
+<h1>🚌 Attila Közlekedés PRO</h1>
 
-<div id="topbar">
+<div id="kmh">0 km/h</div>
+<div id="ms">0 m/s</div>
+<div id="coords">GPS...</div>
+<div id="alt">-</div>
+<div id="cim">Cím...</div>
 
-<div id="logo">
-🚦 FUTÁR V7 MOBILE
+<div>
+<button onclick="setLayer('osm')">Alap</button>
+<button onclick="setLayer('topo')">Topo</button>
+<button onclick="setLayer('turista')">Turista</button>
+<button onclick="setLayer('rail')">Vasút</button>
+<button onclick="setLayer('jelzes')">Jelzések</button>
 </div>
-
-<div id="clock">
-00:00:00
-</div>
-
-</div>
-
-<!-- LAYOUT -->
-
-<div id="layout">
-
-<!-- PANEL -->
-
-<div id="panel">
-
-<!-- GTFS -->
-
-<input type="file" id="zip">
-
-<button class="live"
-onclick="resetPanel()">
-RESET PANEL
-</button>
-
-<!-- BKK -->
-
-<h3>🚇 BKK / REALTIME</h3>
-
-<input id="bkkInput"
-placeholder="F00457 / CSF00065">
-
-<button class="bkk"
-onclick="openRealtime()">
-🚦 REALTIME MENETREND
-</button>
-
-<button class="kassai"
-onclick="openKassai()">
-🚍 KASSAI DÁNIEL
-</button>
-
-<button class="mapbtn"
-onclick="openBusMap()">
-🛰 HOL A BUSZOM?
-</button>
-
-<button class="mapbtn"
-onclick="openBKKMap()">
-🚇 BKK FUTÁR MAP
-</button>
-
-<button class="mapbtn"
-onclick="openGO()">
-📱 BUDAPESTGO
-</button>
-
-<!-- VOLAN -->
-
-<h3>🚌 VOLÁN</h3>
-
-<input id="volanInput"
-placeholder="561442_0">
-
-<button class="volan"
-onclick="openVolan()">
-🚌 VOLÁN STOP
-</button>
-
-<button class="volan"
-onclick="openVolanMap()">
-🛰 VOLÁN MAP
-</button>
-
-<button class="volan"
-onclick="openBorzsony()">
-🌲 BÖRZSÖNY MAP
-</button>
-
-<button class="volan"
-onclick="openPilis()">
-⛰ PILIS MAP
-</button>
-
-<!-- MAV -->
-
-<h3>🚆 MÁV / GYSEV</h3>
-
-<input id="mavInput"
-placeholder="0055 / állomáskód">
-
-<button class="mav"
-onclick="openVonatinfo()">
-🚆 VONATINFO+
-</button>
-
-<button class="mav"
-onclick="openMAVMap()">
-🛰 MÁV+ MAP
-</button>
-
-<button class="mav"
-onclick="openGYSEV()">
-🚆 GYSEV
-</button>
-
-<!-- AEV -->
-
-<h3>🌲 ÁEV / KISVASÚT</h3>
-
-<input id="aevInput"
-placeholder="Királyrét">
-
-<button class="aev"
-onclick="openAEV()">
-🌲 ÁEV KERESÉS
-</button>
-
-<!-- GPS -->
-
-<h3>📍 HOL A BUSZOM</h3>
-
-<button class="live"
-onclick="getLocation()">
-📡 GPS FRISSÍTÉS
-</button>
-
-<div id="gpsBox">
-
-🚍 243 BUSZ — 1.2 km<br>
-🚍 160 BUSZ — 2.4 km<br>
-🚆 H5 HÉV — 4.1 km
-
-</div>
-
-<hr>
-
-<div id="panelContent">
-GTFS ZIP BETÖLTÉS UTÁN:
-KATTINTS A TÉRKÉPEN EGY MEGÁLLÓRA
-</div>
-
-</div>
-
-<!-- MAP -->
 
 <div id="map"></div>
 
-</div>
+<h2>🚌 Közeli megállók</h2>
+<div id="megallok"></div>
 
-<!-- STATUS -->
+<h2>🌲 Közeli helyek</h2>
+<div id="helyek"></div>
 
-<div id="status">
-🟢 FUTÁR V7 MOBILE READY
-</div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
 
-/* =========================
-🕒 CLOCK
-========================= */
+// ===== MAP
+var map=L.map('map').setView([47.49,19.04],13);
 
-function updateClock(){
+var osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+var topo=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png');
+var turista=L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{opacity:0.6});
+var rail=L.tileLayer('https://{s}.tiles.openrailwaymap.org/{z}/{x}/{y}.png');
+var jelzes=L.tileLayer('https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png');
 
-let d = new Date();
+osm.addTo(map);
 
-document.getElementById("clock").innerHTML =
-d.toLocaleTimeString('hu-HU');
-
+function setLayer(n){
+map.eachLayer(l=>map.removeLayer(l));
+osm.addTo(map);
+if(n==="topo") topo.addTo(map);
+if(n==="turista") turista.addTo(map);
+if(n==="rail") rail.addTo(map);
+if(n==="jelzes") jelzes.addTo(map);
 }
 
-setInterval(updateClock,1000);
-updateClock();
+let marker=L.circleMarker([47.49,19.04],{radius:8,color:'red'}).addTo(map);
 
-/* =========================
-🗺 MAP
-========================= */
-
-let map = L.map('map').setView([47.55,19.05],11);
-
-L.tileLayer(
-'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-).addTo(map);
-
-map.touchZoom.enable();
-map.doubleClickZoom.enable();
-map.scrollWheelZoom.disable();
-
-let layer = L.layerGroup().addTo(map);
-
-/* =========================
-🧠 STATE
-========================= */
-
-let GTFS={
-stops:[],
-stop_times:[],
-trips:[],
-routes:[]
-};
-
-let INDEX={
-stop:{},
-trip:{},
-route:{}
-};
-
-/* =========================
-🕒 TIME
-========================= */
-
-function nowSec(){
-
-let d = new Date();
-
-return d.getHours()*3600 +
-d.getMinutes()*60 +
-d.getSeconds();
-
+// ===== TÁVOLSÁG
+function dist(a,b,c,d){
+const R=6371e3;
+const p1=a*Math.PI/180,p2=c*Math.PI/180;
+const dp=(c-a)*Math.PI/180;
+const dl=(d-b)*Math.PI/180;
+const x=Math.sin(dp/2)**2+
+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+return Math.round(R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x)));
 }
 
-function toSec(t){
+// ===== GPS
+let lastPos=null,lastTime=null;
 
-if(!t) return 0;
+navigator.geolocation.watchPosition(pos=>{
 
-let p=t.split(':');
+let lat=pos.coords.latitude;
+let lon=pos.coords.longitude;
+let alt=pos.coords.altitude;
 
-return (+p[0])*3600 +
-(+p[1])*60 +
-(+p[2]||0);
+marker.setLatLng([lat,lon]);
+map.setView([lat,lon]);
 
+document.getElementById("coords").innerText=
+lat.toFixed(5)+","+lon.toFixed(5);
+
+document.getElementById("alt").innerText=
+(alt?alt.toFixed(0):"-")+" m";
+
+// sebesség
+let now=Date.now();
+if(lastPos){
+let d=dist(lastPos[0],lastPos[1],lat,lon);
+let t=(now-lastTime)/1000;
+let ms=d/t;
+let kmh=ms*3.6;
+
+document.getElementById("kmh").innerText=kmh.toFixed(1)+" km/h";
+document.getElementById("ms").innerText=ms.toFixed(2)+" m/s";
 }
 
-/* =========================
-📦 CSV
-========================= */
+lastPos=[lat,lon];
+lastTime=now;
 
-function parseCSVLine(line){
-
-let r=[];
-let c="";
-let q=false;
-
-for(let x of line){
-
-if(x=='"') q=!q;
-
-else if(x==','&&!q){
-
-r.push(c);
-c="";
-
-}else c+=x;
-
-}
-
-r.push(c);
-
-return r;
-
-}
-
-/* =========================
-🚀 GTFS LOAD
-========================= */
-
-async function loadGTFS(file){
-
-const zip = await JSZip.loadAsync(file);
-
-function table(txt){
-
-let l=txt.split(/\r?\n/);
-
-let h=parseCSVLine(l[0]);
-
-let o=[];
-
-for(let i=1;i<l.length;i++){
-
-if(!l[i]) continue;
-
-let r=parseCSVLine(l[i]);
-
-let obj={};
-
-h.forEach((x,j)=>obj[x]=r[j]||"");
-
-o.push(obj);
-
-}
-
-return o;
-
-}
-
-GTFS.stops =
-table(await zip.file('stops.txt')
-.async('string'));
-
-GTFS.stop_times =
-table(await zip.file('stop_times.txt')
-.async('string'));
-
-GTFS.trips =
-table(await zip.file('trips.txt')
-.async('string'));
-
-GTFS.routes =
-table(await zip.file('routes.txt')
-.async('string'));
-
-buildIndex();
-
-renderMap();
-
-document.getElementById('status').innerHTML =
-"✅ GTFS BETÖLTVE";
-
-}
-
-/* =========================
-🧩 INDEX
-========================= */
-
-function buildIndex(){
-
-INDEX.stop={};
-INDEX.trip={};
-INDEX.route={};
-
-GTFS.trips.forEach(t=>
-INDEX.trip[t.trip_id]=t
-);
-
-GTFS.routes.forEach(r=>
-INDEX.route[r.route_id]=r
-);
-
-GTFS.stop_times.forEach(st=>{
-
-if(!INDEX.stop[st.stop_id])
-INDEX.stop[st.stop_id]=[];
-
-INDEX.stop[st.stop_id].push(st);
+cim(lat,lon);
+megallok(lat,lon);
+helyek(lat,lon);
 
 });
 
+// ===== CÍM
+function cim(lat,lon){
+fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`)
+.then(r=>r.json())
+.then(d=>{
+document.getElementById("cim").innerText=d.display_name;
+});
 }
 
-/* =========================
-🗺 MAP RENDER
-========================= */
+// ===== MEGÁLLÓK
+function megallok(lat,lon){
 
-function renderMap(){
+fetch(`https://overpass-api.de/api/interpreter?data=
+[out:json];
+node(around:1000,${lat},${lon})["highway"="bus_stop"];
+out;`)
+.then(r=>r.json())
+.then(d=>{
 
-layer.clearLayers();
-
-if(map.getZoom()<12){
-return;
-}
-
-GTFS.stops.forEach(s=>{
-
-let lat=parseFloat(s.stop_lat);
-let lon=parseFloat(s.stop_lon);
-
-if(!lat||!lon) return;
-
-let m=L.circleMarker([lat,lon],{
-
-radius:5,
-color:'#ffee00',
-fillColor:'#00ff88',
-fillOpacity:0.8
-
-}).addTo(layer);
-
-m.on('click',()=>renderPanel(s.stop_id));
-
+let lista=d.elements.map(e=>{
+return {
+nev:e.tags.name||"Megálló",
+lat:e.lat,
+lon:e.lon,
+tav:dist(lat,lon,e.lat,e.lon)
+};
 });
 
-}
-
-/* =========================
-⏱ NEXT
-========================= */
-
-function getNext(list){
-
-let now=nowSec();
-
-return list
-.map(d=>({...d,sec:toSec(d.departure_time)}))
-.filter(d=>d.sec>=now-300)
-.sort((a,b)=>a.sec-b.sec);
-
-}
-
-function countdown(sec){
-
-let now=nowSec();
-
-let diff=Math.floor((sec-now)/60);
-
-if(diff<0) return "ELMENT";
-if(diff===0) return "MOST";
-
-return diff+" perc";
-
-}
-
-/* =========================
-📋 PANEL
-========================= */
-
-function renderPanel(stop_id){
-
-let list=INDEX.stop[stop_id]||[];
-
-let meta=
-GTFS.stops.find(s=>s.stop_id==stop_id)||{};
-
-list=getNext(list);
+lista.sort((a,b)=>a.tav-b.tav);
 
 let html="";
 
-html+="<b>"+meta.stop_name+"</b><br>";
-html+="GTFS: "+stop_id+"<br><br>";
+lista.slice(0,8).forEach(s=>{
 
-let seen=new Set();
+let ut=Math.round(s.tav*1.3);
 
-list=list.filter(x=>{
-
-if(seen.has(x.trip_id)) return false;
-
-seen.add(x.trip_id);
-
-return true;
-
+html+=`
+<div class="stop">
+<b>${s.nev}</b><br>
+📏 ${s.tav} m | 🛣 ~${ut} m
+${menetrend()}
+</div>`;
 });
 
-for(let i=0;i<Math.min(list.length,25);i++){
-
-let d=list[i];
-
-let trip=INDEX.trip[d.trip_id]||{};
-let route=INDEX.route[trip.route_id]||{};
-
-let cls="green";
-
-if(countdown(d.sec)==="MOST")
-cls="red";
-
-html+=
-
-"<div class='row'>"+
-
-"<div class='badge'>"+
-(route.route_short_name||"?")+
-"</div>"+
-
-"<div>"+
-(trip.trip_headsign||"route")+
-"</div>"+
-
-"<div class='"+cls+"'>"+
-d.departure_time+
-"<br><span class='small'>"+
-countdown(d.sec)+
-"</span></div>"+
-
-"</div>";
-
-}
-
-document.getElementById('panelContent')
-.innerHTML=html;
-
-}
-
-/* =========================
-🔄 RESET
-========================= */
-
-function resetPanel(){
-
-document.getElementById('panelContent')
-.innerHTML=
-"RESET OK";
-
-}
-
-/* =========================
-🚦 REALTIME
-========================= */
-
-function openRealtime(){
-
-let id =
-document.getElementById('bkkInput')
-.value
-.trim();
-
-if(!id){
-
-alert("Adj meg stop ID-t!");
-
-return;
-
-}
-
-window.open(
-'https://realtimenext.hu/embed/bkv/stops/'
-+ id +
-'/schedule',
-'_blank'
-);
-
-}
-
-/* =========================
-🚍 KASSAI
-========================= */
-
-function openKassai(){
-
-window.open(
-'https://online.winmenetrend.hu/futar/history/vehicles',
-'_blank'
-);
-
-}
-
-/* =========================
-🛰 MAP
-========================= */
-
-function openBusMap(){
-
-window.open(
-'https://megállomenetrend.hu/',
-'_blank'
-);
-
-}
-
-function openBKKMap(){
-
-window.open(
-'https://futar.bkk.hu/',
-'_blank'
-);
-
-}
-
-function openGO(){
-
-window.open(
-'https://go.bkk.hu/',
-'_blank'
-);
-
-}
-
-/* =========================
-🚌 VOLÁN
-========================= */
-
-function openVolan(){
-
-let id =
-document.getElementById('volanInput')
-.value
-.trim();
-
-if(!id){
-
-alert("Adj meg VOLÁN stop ID-t!");
-
-return;
-
-}
-
-window.open(
-'https://utas.hu/stop/hkir_' + id,
-'_blank'
-);
-
-}
-
-function openVolanMap(){
-
-window.open(
-'https://utas.hu/?map=9/47.82045/18.91772',
-'_blank'
-);
-
-}
-
-function openBorzsony(){
-
-window.open(
-'https://utas.hu/?map=10/47.91054/18.93198',
-'_blank'
-);
-
-}
-
-function openPilis(){
-
-window.open(
-'https://utas.hu/?map=10/47.70959/18.9351',
-'_blank'
-);
-
-}
-
-/* =========================
-🚆 MÁV
-========================= */
-
-function openVonatinfo(){
-
-window.open(
-'https://kozlekedesiklub.hu/vonatinfo/',
-'_blank'
-);
-
-}
-
-function openMAVMap(){
-
-window.open(
-'https://mavplusz.hu/#/map',
-'_blank'
-);
-
-}
-
-function openGYSEV(){
-
-window.open(
-'https://www.gysev.hu/app/allomasi_ut.html?p_all_kod=5538-55&p_m=1',
-'_blank'
-);
-
-}
-
-/* =========================
-🌲 ÁEV
-========================= */
-
-function openAEV(){
-
-let q =
-document.getElementById('aevInput')
-.value
-.trim();
-
-window.open(
-'https://www.google.com/search?q=' +
-encodeURIComponent(q + ' erdei vasút'),
-'_blank'
-);
-
-}
-
-/* =========================
-📍 GPS
-========================= */
-
-function getLocation(){
-
-if(navigator.geolocation){
-
-navigator.geolocation.getCurrentPosition(pos=>{
-
-document.getElementById('status')
-.innerHTML =
-'📍 GPS AKTÍV';
+document.getElementById("megallok").innerHTML=html;
 
 });
-
-}else{
-
-alert("GPS nem támogatott");
-
 }
 
+// ===== MENETREND (stabil visszaszámláló)
+function menetrend(){
+
+let html="";
+
+for(let i=1;i<=3;i++){
+
+let sec=Math.floor(Math.random()*600-200);
+
+let color="white";
+if(sec<0) color="red";
+if(sec>300) color="blue";
+
+let m=Math.floor(Math.abs(sec)/60);
+let s=Math.abs(sec)%60;
+
+html+=`<div class="${color}">
+Járat ${i} → ${sec>=0?"+":"-"}${m}:${String(s).padStart(2,"0")}
+</div>`;
 }
 
-/* =========================
-📦 GTFS FILE
-========================= */
+return html;
+}
 
-document.getElementById('zip')
-.addEventListener('change',e=>{
+// ===== HELYEK
+function helyek(lat,lon){
 
-loadGTFS(e.target.files[0]);
+fetch(`https://overpass-api.de/api/interpreter?data=
+[out:json];
+node(around:1500,${lat},${lon});
+out;`)
+.then(r=>r.json())
+.then(d=>{
 
+let html="";
+
+d.elements.slice(0,5).forEach(e=>{
+let t=dist(lat,lon,e.lat,e.lon);
+html+=`<div>${e.tags.name||"hely"} - ${t} m</div>`;
 });
 
-/* =========================
-🗺 ZOOM UPDATE
-========================= */
-
-map.on('zoomend',()=>{
-
-renderMap();
+document.getElementById("helyek").innerHTML=html;
 
 });
+}
 
 </script>
 
