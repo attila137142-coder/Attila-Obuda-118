@@ -1,1 +1,253 @@
-<!DOCTYPE html><html lang="hu"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>FUTÁR V4 LIVE CORE</title><link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" /><script src="https://unpkg.com/leaflet/dist/leaflet.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script><style>body{margin:0;font-family:Arial;background:#061b17;color:#dff;overflow:hidden;}#topbar{height:50px;background:#0a2a24;display:flex;align-items:center;gap:10px;padding:0 10px;border-bottom:2px solid #00ffb3;font-weight:bold;}#layout{display:flex;height:calc(100vh - 50px);}#panel{width:480px;background:#081f1b;border-right:2px solid #00ffb3;overflow:auto;padding:10px;font-family:monospace;}#map{flex:1;}.row{display:grid;grid-template-columns:70px 1fr 90px;font-size:12px;padding:4px 0;border-bottom:1px solid #0d3b33;}.badge{color:#ffe66d;font-weight:bold;}.green{color:#65ff8f;}.blue{color:#4db7ff;}.red{color:#ff5b5b;}.small{font-size:11px;opacity:0.8;}</style></head><body><div id="topbar">🚍 FUTÁR V4 CORE<input type="file" id="zip"><button onclick="resetPanel()">RESET</button></div><div id="layout"><div id="panel">UPLOAD GTFS ZIP</div><div id="map"></div></div><script>/* =========================🧠 STATE========================= */let GTFS={stops:[],stop_times:[],trips:[],routes:[]};let INDEX={stop:{},trip:{},route:{}};let map=L.map('map').setView([47.55,19.05],11);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);let layer=L.layerGroup().addTo(map);/* =========================🕒 TIME ENGINE========================= */function nowSec(){ let d=new Date(); return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();}function toSec(t){ if(!t) return 0; let p=t.split(':'); return (+p[0])*3600+(+p[1])*60+(+p[2]||0);}/* =========================📦 CSV PARSER========================= */function parseCSVLine(line){ let r=[],c="",q=false; for(let x of line){  if(x=='"') q=!q;  else if(x==','&&!q){r.push(c);c="";}  else c+=x; } r.push(c); return r;}/* =========================🚀 GTFS LOAD========================= */async function loadGTFS(file){ const zip=await JSZip.loadAsync(file); function table(txt){  let l=txt.split(/\r?\n/);  let h=parseCSVLine(l[0]);  let o=[];  for(let i=1;i<l.length;i++){   if(!l[i]) continue;   let r=parseCSVLine(l[i]);   let obj={};   h.forEach((x,j)=>obj[x]=r[j]||"");   o.push(obj);  }  return o; } GTFS.stops=table(await zip.file('stops.txt').async('string')); GTFS.stop_times=table(await zip.file('stop_times.txt').async('string')); GTFS.trips=table(await zip.file('trips.txt').async('string')); GTFS.routes=table(await zip.file('routes.txt').async('string')); buildIndex(); renderMap(); document.getElementById('panel').innerHTML="CLICK A STOP";}/* =========================🧩 INDEX========================= */function buildIndex(){ INDEX.stop={}; INDEX.trip={}; INDEX.route={}; GTFS.trips.forEach(t=>INDEX.trip[t.trip_id]=t); GTFS.routes.forEach(r=>INDEX.route[r.route_id]=r); GTFS.stop_times.forEach(st=>{  if(!INDEX.stop[st.stop_id]) INDEX.stop[st.stop_id]=[];  INDEX.stop[st.stop_id].push(st); });}/* =========================🗺 MAP========================= */function renderMap(){ layer.clearLayers(); GTFS.stops.forEach(s=>{  let lat=parseFloat(s.stop_lat);  let lon=parseFloat(s.stop_lon);  if(!lat||!lon) return;  let m=L.circleMarker([lat,lon],{   radius:5,   color:'#ffee00',   fillColor:'#00ff88',   fillOpacity:0.8  }).addTo(layer);  m.on('click',()=>renderPanel(s.stop_id)); });}/* =========================⏱ NEXT DEPARTURES ENGINE========================= */function getNext(list){ let now=nowSec(); return list  .map(d=>({...d,sec:toSec(d.departure_time)}))  .filter(d=>d.sec>=now-300)  .sort((a,b)=>a.sec-b.sec);}function countdown(sec){ let now=nowSec(); let diff=Math.floor((sec-now)/60); if(diff<0) return "DEPARTED"; if(diff===0) return "NOW"; return diff+" min";}/* =========================📋 PANEL========================= */function renderPanel(stop_id){ let list=INDEX.stop[stop_id]||[]; let meta=GTFS.stops.find(s=>s.stop_id==stop_id)||{}; list=getNext(list); let html=""; html+="<b>"+meta.stop_name+"</b><br>"; html+="GTFS: "+stop_id+"<br><br>"; let seen=new Set(); list=list.filter(x=>{  if(seen.has(x.trip_id)) return false;  seen.add(x.trip_id);  return true; }); for(let i=0;i<Math.min(list.length,20);i++){  let d=list[i];  let trip=INDEX.trip[d.trip_id]||{};  let route=INDEX.route[trip.route_id]||{};  let cls="green";  if(countdown(d.sec)==="NOW") cls="red";  html+=  "<div class='row'>"+   "<div class='badge'>"+(route.route_short_name||"?")+"</div>"+   "<div>"+(trip.trip_headsign||"route")+"</div>"+   "<div class='"+cls+"'>"+     d.departure_time+     "<br><span class='small'>"+countdown(d.sec)+"</span>"+   "</div>"+  "</div>"; } document.getElementById('panel').innerHTML=html;}function resetPanel(){ document.getElementById('panel').innerHTML="CLICK A STOP";}/* =========================🚀 BOOT========================= */document.getElementById('zip').addEventListener('change',e=>{ loadGTFS(e.target.files[0]);});</script></body></html>
+ATTILA KÖZLEKEDÉS SUPER HUB – MOBILE HTML
+(Sokat tudo, panelos, jol muködö)
+
+```html
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>ATTILA KÖZLEKEDÉS SUPER HUB</title>
+
+<style>
+*{
+    box-sizing:border-box;
+    -webkit-tap-highlight-color:transparent;
+}
+
+body{
+    margin:0;
+    background:#0b1117;
+    color:white;
+    font-family:Arial,Helvetica,sans-serif;
+}
+
+header{
+    background:#111b24;
+    padding:14px;
+    position:sticky;
+    top:0;
+    z-index:999;
+    border-bottom:2px solid #1f2e3a;
+}
+
+header h1{
+    margin:0;
+    font-size:22px;
+}
+
+header p{
+    margin:4px 0 0 0;
+    color:#8fb9d9;
+    font-size:13px;
+}
+
+.section{
+    padding:10px;
+}
+
+.section-title{
+    font-size:20px;
+    margin:10px 0;
+    color:#52d6ff;
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+    gap:10px;
+}
+
+.btn{
+    background:#13202b;
+    border:1px solid #284457;
+    color:white;
+    padding:14px;
+    border-radius:16px;
+    text-align:left;
+    font-size:15px;
+    font-weight:bold;
+    cursor:pointer;
+    transition:0.2s;
+}
+
+.btn:hover{
+    background:#1a3140;
+}
+
+.btn small{
+    display:block;
+    margin-top:5px;
+    color:#8bb3ca;
+    font-weight:normal;
+}
+
+#viewer{
+    position:fixed;
+    inset:0;
+    background:#000;
+    z-index:5000;
+    display:none;
+    flex-direction:column;
+}
+
+#topbar{
+    display:flex;
+    gap:10px;
+    padding:10px;
+    background:#101820;
+    border-bottom:1px solid #23384a;
+}
+
+.topbtn{
+    flex:1;
+    background:#1c2f3f;
+    color:white;
+    border:none;
+    border-radius:10px;
+    padding:12px;
+    font-size:15px;
+    cursor:pointer;
+}
+
+iframe{
+    width:100%;
+    height:100%;
+    border:none;
+    background:white;
+    zoom:1.25;
+    transform:scale(1.25);
+    transform-origin:0 0;
+    width:80%;
+    height:80%;
+}
+
+.notice{
+    background:#172733;
+    padding:12px;
+    border-radius:14px;
+    margin:10px;
+    color:#c7e8ff;
+    line-height:1.5;
+}
+</style>
+</head>
+<body>
+
+<header>
+<h1>🚍 ATTILA KÖZLEKEDÉS SUPER HUB</h1>
+<p>FUTÁR • VOLÁN • MÁV • HÉV • JÁRMŰKÖVETÉS</p>
+</header>
+
+<div class="notice">
+Mobil optimalizált HUB rendszer.<br>
+Ha valamelyik oldal iframe-ben nem tölt be, akkor a „Külső megnyitás” gombbal külön ablakban nyisd meg.
+</div>
+
+<div class="section">
+<div class="section-title">📱 Kassai Dániel – Megállóhelyi Menetrend</div>
+<div class="grid">
+<button class="btn" onclick="openUrl('https://futar.bkk.hu/stop/BKK_F00457?routeIds=|BKK_2430')">Nád utca<small>Megállóhelyi nézet</small></button>
+<button class="btn" onclick="openUrl('https://futar.bkk.hu/route/BKK_2430')">243 járat<small>Realtime</small></button>
+<button class="btn" onclick="openUrl('https://futar.bkk.hu/route/BKK_Z72')">Z72<small>Realtime</small></button>
+<button class="btn" onclick="openUrl('https://online.winmenetrend.hu/futar/history/lines')">FUTÁR History<small>Vonalak</small></button>
+<button class="btn" onclick="openUrl('https://online.winmenetrend.hu/futar/history/vehicles')">History Vehicles<small>Járművek</small></button>
+<button class="btn" onclick="openUrl('https://online.winmenetrend.hu/futar/history/vehicles-map')">Vehicle Map<small>Térkép</small></button>
+</div>
+</div>
+
+<div class="section">
+<div class="section-title">🚏 Csoportos Forgalmik</div>
+<div class="grid">
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00065/schedule')">Batthyány tér</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00438/schedule')">Gulácsy Lajos utca</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00667/schedule')">Aquincum</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/005501404/schedule')">ÓBUDA vasútállomás</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS008436/schedule')">Szentendre Papírgyár</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/064215/schedule')">Szépvölgyi dűlő</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS123405/schedule')">Árpád híd</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS008940/schedule')">Békásmegyer HÉV</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00520/schedule')">Bojtár utca</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/F00678/schedule')">ÓBUDA Buszgarázs</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/005501016/schedule')">Déli pályaudvar</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00611/schedule')">Flórián tér</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/005510017/schedule')">Keleti pályaudvar</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF01830/schedule')">Kocka utca</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00137/schedule')">Kolosy tér</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00234/schedule')">Margit híd</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00457/schedule')">Nád utca</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/005510033/schedule')">Nyugati pályaudvar</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/bkv/stops/F049892/schedule')">Óbudai sziget</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/008024/schedule')">Örs vezér tér 32</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/008030/schedule')">Örs vezér tér 85</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS009170/schedule')">Pomáz Dózsa Gy.</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS008434/schedule')">Pomáz HÉV</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00584/schedule')">Rendelőintézet</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS044601/schedule')">Solymár Auchan</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00621/schedule')">Szentlélek tér</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF01841/schedule')">Újhegyi sétány</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00265/schedule')">Verecke lépcső</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/F00680/schedule')">Vörösvári út</button>
+<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF03402/schedule')">Zsemlékes utca</button>
+</div>
+</div>
+
+<div class="section">
+<div class="section-title">🛰️ Járműkövetés</div>
+<div class="grid">
+<button class="btn" onclick="openUrl('https://map.realtimenext.hu/')">RealtimeNext Map</button>
+<button class="btn" onclick="openUrl('https://futar.bkk.hu/?map=14/47.59658/19.04446')">FUTÁR térkép</button>
+<button class="btn" onclick="openUrl('https://go.bkk.hu/?map=14/47.59793/19.05094')">BudapestGO térkép</button>
+<button class="btn" onclick="openUrl('https://utas.hu/?map=9/47.82045/18.91772')">VOLÁN térkép</button>
+<button class="btn" onclick="openUrl('https://utas.hu/?map=10/47.91054/18.93198')">Börzsöny</button>
+<button class="btn" onclick="openUrl('https://utas.hu/?map=10/47.70959/18.9351')">Pilis</button>
+</div>
+</div>
+
+<div class="section">
+<div class="section-title">🚆 MÁV / Vasút</div>
+<div class="grid">
+<button class="btn" onclick="openUrl('https://kozlekedesiklub.hu/vonatinfo/')">Vonatinfó</button>
+<button class="btn" onclick="openUrl('https://mavplusz.hu/#/map')">MÁV+ térkép</button>
+<button class="btn" onclick="openUrl('https://holavonat.is/')">HolAVonat</button>
+<button class="btn" onclick="openUrl('https://megisholavonat.info/hu')">MegisHolAVonat</button>
+<button class="btn" onclick="openUrl('https://vonatterkep.hu/')">Vonattérkép</button>
+<button class="btn" onclick="openUrl('https://ittavonat.eu/')">IttAVonat</button>
+<button class="btn" onclick="openUrl('https://traintrack.hu/')">TrainTrack</button>
+<button class="btn" onclick="openUrl('https://iemig.mav-trakcio.hu/')">MÁV Trakció</button>
+<button class="btn" onclick="openUrl('https://mav-stat.info/map-lite.html')">MÁV stat</button>
+</div>
+</div>
+
+<div id="viewer">
+<div id="topbar">
+<button class="topbtn" onclick="closeViewer()">⬅ Vissza</button>
+<button class="topbtn" onclick="openExternal()">🌍 Külső megnyitás</button>
+</div>
+<iframe id="frame"></iframe>
+</div>
+
+<script>
+let currentUrl='';
+
+function openUrl(url){
+    currentUrl=url;
+    document.getElementById('viewer').style.display='flex';
+    document.getElementById('frame').src=url;
+}
+
+function closeViewer(){
+    document.getElementById('viewer').style.display='none';
+    document.getElementById('frame').src='';
+}
+
+function openExternal(){
+    window.open(currentUrl,'_blank');
+}
+</script>
+
+</body>
+</html>
+```
+
+
