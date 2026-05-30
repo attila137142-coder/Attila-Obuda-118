@@ -1,33 +1,120 @@
 <!DOCTYPE html>
-    if(name === query) return 100;
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FUTÁR V3 – REAL STOP INDEX ENGINE (PRO LEVEL)</title>
+<style>
+    body{
+        margin:0;
+        font-family: Arial, Helvetica, sans-serif;
+        background:#0b0f14;
+        color:#e6edf3;
+    }
+    .screen{padding:16px;}
+    h1,h2,h3{margin:10px 0;}
+    input,button{
+        padding:10px;
+        margin:5px 0;
+        width:100%;
+        border-radius:6px;
+        border:none;
+    }
+    button{
+        background:#1f6feb;
+        color:white;
+        cursor:pointer;
+    }
+    button:hover{background:#2b7fff;}
+    .card{
+        background:#161b22;
+        padding:10px;
+        border-radius:10px;
+        margin:10px 0;
+    }
+    .grid{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:10px;
+    }
+    .small{font-size:12px;color:#9aa4af;}
+    .tag{padding:2px 6px;border-radius:6px;font-size:11px;}
+    .bkk{background:#1f6feb;}
+    .volan{background:#f39c12;}
+    .mav{background:#9b59b6;}
+</style>
+</head>
+<body>
+
+<div class="screen">
+
+<h1>🚦 FUTÁR V3 – REAL STOP INDEX ENGINE</h1>
+<h3>PROFESSIONAL MULTI-OPERATOR DISPATCH CORE</h3>
+
+<div class="card">
+    <h2>🔎 STOP SEARCH ENGINE</h2>
+    <input id="q" placeholder="Search BKK / Volán / MÁV / ID..." oninput="search()" />
+    <div id="results"></div>
+</div>
+
+<div class="card">
+    <h2>📊 STOP DETAILS</h2>
+    <div id="details">Select a stop...</div>
+</div>
+
+</div>
+
+<script>
+
+const stops = [
+    {id:"bkk_001", name:"Örs vezér tere M+H", lat:47.5021, lon:19.1355, agency:"BKK"},
+    {id:"bkk_002", name:"Kőbánya-Kispest", lat:47.4648, lon:19.1461, agency:"BKK"},
+    {id:"bkk_003", name:"Deák Ferenc tér", lat:47.4979, lon:19.0540, agency:"BKK"},
+
+    {id:"volan_101", name:"Gyöngyös autóbusz-állomás", lat:47.7825, lon:19.9281, agency:"VOLAN"},
+    {id:"volan_102", name:"Eger autóbusz-állomás", lat:47.9026, lon:20.3772, agency:"VOLAN"},
+
+    {id:"mav_201", name:"Budapest-Keleti pályaudvar", lat:47.5008, lon:19.0830, agency:"MAV"},
+    {id:"mav_202", name:"Budapest-Nyugati pályaudvar", lat:47.5100, lon:19.0568, agency:"MAV"}
+];
+
+function scoreMatch(name, query, id){
+    name = name.toLowerCase();
+    query = query.toLowerCase();
+
+    if(name === query || id.toLowerCase() === query) return 120;
+    if(id.toLowerCase().includes(query)) return 110;
     if(name.includes(query)) return 80;
 
     let score = 0;
     let parts = query.split(" ");
     parts.forEach(p=>{
         if(name.includes(p)) score += 20;
+        if(id.toLowerCase().includes(p)) score += 25;
     });
 
     return score;
 }
 
-// -----------------------------
-// SEARCH FUNCTION
-// -----------------------------
 function search(){
-    const q = document.getElementById("q").value;
+    const q = document.getElementById("q").value.trim();
     const res = document.getElementById("results");
     res.innerHTML = "";
 
-    if(q.length < 2) return;
+    if(q.length < 1) return;
 
     let sorted = stops
         .map(s=>({
             ...s,
-            score: scoreMatch(s.name, q)
+            score: scoreMatch(s.name, q, s.id)
         }))
         .filter(s=>s.score > 0)
         .sort((a,b)=>b.score - a.score);
+
+    if(sorted.length === 0){
+        res.innerHTML = "<div class='card'>❌ No results found</div>";
+        return;
+    }
 
     sorted.forEach(s=>{
         let div = document.createElement("div");
@@ -46,9 +133,6 @@ function search(){
     });
 }
 
-// -----------------------------
-// DISTANCE (Haversine)
-// -----------------------------
 function distance(lat1,lon1,lat2,lon2){
     const R=6371e3;
     const toRad=x=>x*Math.PI/180;
@@ -62,11 +146,11 @@ function distance(lat1,lon1,lat2,lon2){
     return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// -----------------------------
-// STOP DETAILS
-// -----------------------------
 function showDetails(s){
     navigator.geolocation.getCurrentPosition(pos=>{
+        let acc = pos.coords.accuracy;
+        let displayAcc = acc > 5000 ? "⚠️ Very poor GPS signal" : "🎯 ±"+acc.toFixed(1)+" m";
+
         let d = distance(pos.coords.latitude,pos.coords.longitude,s.lat,s.lon);
 
         document.getElementById("details").innerHTML = `
@@ -75,7 +159,8 @@ function showDetails(s){
             <p>🆔 Stop ID: ${s.id}</p>
             <p>📍 Lat/Lon: ${s.lat}, ${s.lon}</p>
             <p>📏 Distance: ${(d/1000).toFixed(2)} km</p>
-            <p class="small">✔ Offline index engine (GTFS-style normalized DB)</p>
+            <p>${displayAcc}</p>
+            <p class="small">✔ Offline dispatcher index engine</p>
         `;
     });
 }
