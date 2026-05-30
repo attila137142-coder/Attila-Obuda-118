@@ -1,253 +1,87 @@
-ATTILA KÖZLEKEDÉS SUPER HUB – MOBILE HTML
-(Sokat tudo, panelos, jol muködö)
 
-```html
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>ATTILA KÖZLEKEDÉS SUPER HUB</title>
+// ==============================================
 
-<style>
-*{
-    box-sizing:border-box;
-    -webkit-tap-highlight-color:transparent;
+return r - s;
 }
 
-body{
-    margin:0;
-    background:#0b1117;
-    color:white;
-    font-family:Arial,Helvetica,sans-serif;
+// -------------------------------
+// MULTI-AGENCY MERGE LOGIC
+// -------------------------------
+
+mergeAgencyData(
+bkk?: GTFSStop[],
+mav?: GTFSStop[],
+volan?: GTFSStop[]
+) {
+if (bkk) this.ingestStops(this.tagAgency(bkk, "BKK"));
+if (mav) this.ingestStops(this.tagAgency(mav, "MAV"));
+if (volan) this.ingestStops(this.tagAgency(volan, "VOLAN"));
 }
 
-header{
-    background:#111b24;
-    padding:14px;
-    position:sticky;
-    top:0;
-    z-index:999;
-    border-bottom:2px solid #1f2e3a;
+private tagAgency(data: GTFSStop[], agency: Agency): GTFSStop[] {
+return data.map(d => ({ ...d, agency }));
 }
 
-header h1{
-    margin:0;
-    font-size:22px;
+// -------------------------------
+// NORMALIZATION LAYER
+// -------------------------------
+
+private normalize(text: string): string {
+return text
+.toLowerCase()
+.normalize("NFD")
+.replace(/\p{Diacritic}/gu, "")
+.trim();
 }
 
-header p{
-    margin:4px 0 0 0;
-    color:#8fb9d9;
-    font-size:13px;
+private extractKeywords(text: string): string[] {
+return this.normalize(text).split(" ");
 }
 
-.section{
-    padding:10px;
+private timeToSeconds(t: string): number {
+const [h, m, s] = t.split(":").map(Number);
+return h * 3600 + m * 60 + (s || 0);
 }
 
-.section-title{
-    font-size:20px;
-    margin:10px 0;
-    color:#52d6ff;
+// -------------------------------
+// DEBUG / CONTROL ROOM OUTPUT
+// -------------------------------
+
+dumpStats() {
+return {
+stops: this.stops.size,
+routes: this.routes.size,
+trips: this.trips.size,
+stopTimes: this.stopTimes.size,
+};
+}
 }
 
-.grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
-    gap:10px;
-}
+// ==============================================
+// USAGE EXAMPLE (dispatcher core)
+// ==============================================
 
-.btn{
-    background:#13202b;
-    border:1px solid #284457;
-    color:white;
-    padding:14px;
-    border-radius:16px;
-    text-align:left;
-    font-size:15px;
-    font-weight:bold;
-    cursor:pointer;
-    transition:0.2s;
-}
+/*
+const engine = new GTFSIndexEngine();
 
-.btn:hover{
-    background:#1a3140;
-}
+engine.mergeAgencyData(bkkStops, mavStops, volanStops);
+engine.ingestRoutes(allRoutes);
+engine.ingestTrips(allTrips);
+engine.ingestStopTimes(allStopTimes);
 
-.btn small{
-    display:block;
-    margin-top:5px;
-    color:#8bb3ca;
-    font-weight:normal;
-}
+const results = engine.searchStops("deak ter");
+console.log(results);
+*/
 
-#viewer{
-    position:fixed;
-    inset:0;
-    background:#000;
-    z-index:5000;
-    display:none;
-    flex-direction:column;
-}
+// ==============================================
+// EXTENSION POINTS (future)
+// ==============================================
 
-#topbar{
-    display:flex;
-    gap:10px;
-    padding:10px;
-    background:#101820;
-    border-bottom:1px solid #23384a;
-}
+// - GTFS-RT live vehicle injection
+// - map clustering (Leaflet / Mapbox)
+// - schedule prediction AI layer
+// - cross-agency transfer graph
+// - delay propagation model
 
-.topbtn{
-    flex:1;
-    background:#1c2f3f;
-    color:white;
-    border:none;
-    border-radius:10px;
-    padding:12px;
-    font-size:15px;
-    cursor:pointer;
-}
-
-iframe{
-    width:100%;
-    height:100%;
-    border:none;
-    background:white;
-    zoom:1.25;
-    transform:scale(1.25);
-    transform-origin:0 0;
-    width:80%;
-    height:80%;
-}
-
-.notice{
-    background:#172733;
-    padding:12px;
-    border-radius:14px;
-    margin:10px;
-    color:#c7e8ff;
-    line-height:1.5;
-}
-</style>
-</head>
-<body>
-
-<header>
-<h1>🚍 ATTILA KÖZLEKEDÉS SUPER HUB</h1>
-<p>FUTÁR • VOLÁN • MÁV • HÉV • JÁRMŰKÖVETÉS</p>
-</header>
-
-<div class="notice">
-Mobil optimalizált HUB rendszer.<br>
-Ha valamelyik oldal iframe-ben nem tölt be, akkor a „Külső megnyitás” gombbal külön ablakban nyisd meg.
-</div>
-
-<div class="section">
-<div class="section-title">📱 Kassai Dániel – Megállóhelyi Menetrend</div>
-<div class="grid">
-<button class="btn" onclick="openUrl('https://futar.bkk.hu/stop/BKK_F00457?routeIds=|BKK_2430')">Nád utca<small>Megállóhelyi nézet</small></button>
-<button class="btn" onclick="openUrl('https://futar.bkk.hu/route/BKK_2430')">243 járat<small>Realtime</small></button>
-<button class="btn" onclick="openUrl('https://futar.bkk.hu/route/BKK_Z72')">Z72<small>Realtime</small></button>
-<button class="btn" onclick="openUrl('https://online.winmenetrend.hu/futar/history/lines')">FUTÁR History<small>Vonalak</small></button>
-<button class="btn" onclick="openUrl('https://online.winmenetrend.hu/futar/history/vehicles')">History Vehicles<small>Járművek</small></button>
-<button class="btn" onclick="openUrl('https://online.winmenetrend.hu/futar/history/vehicles-map')">Vehicle Map<small>Térkép</small></button>
-</div>
-</div>
-
-<div class="section">
-<div class="section-title">🚏 Csoportos Forgalmik</div>
-<div class="grid">
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00065/schedule')">Batthyány tér</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00438/schedule')">Gulácsy Lajos utca</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00667/schedule')">Aquincum</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/005501404/schedule')">ÓBUDA vasútállomás</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS008436/schedule')">Szentendre Papírgyár</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/064215/schedule')">Szépvölgyi dűlő</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS123405/schedule')">Árpád híd</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS008940/schedule')">Békásmegyer HÉV</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00520/schedule')">Bojtár utca</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/F00678/schedule')">ÓBUDA Buszgarázs</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/005501016/schedule')">Déli pályaudvar</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00611/schedule')">Flórián tér</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/005510017/schedule')">Keleti pályaudvar</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF01830/schedule')">Kocka utca</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00137/schedule')">Kolosy tér</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00234/schedule')">Margit híd</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00457/schedule')">Nád utca</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/005510033/schedule')">Nyugati pályaudvar</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/bkv/stops/F049892/schedule')">Óbudai sziget</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/008024/schedule')">Örs vezér tér 32</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/008030/schedule')">Örs vezér tér 85</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS009170/schedule')">Pomáz Dózsa Gy.</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS008434/schedule')">Pomáz HÉV</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00584/schedule')">Rendelőintézet</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CS044601/schedule')">Solymár Auchan</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00621/schedule')">Szentlélek tér</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF01841/schedule')">Újhegyi sétány</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF00265/schedule')">Verecke lépcső</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/F00680/schedule')">Vörösvári út</button>
-<button class="btn" onclick="openUrl('https://realtimenext.hu/embed/bkv/stops/CSF03402/schedule')">Zsemlékes utca</button>
-</div>
-</div>
-
-<div class="section">
-<div class="section-title">🛰️ Járműkövetés</div>
-<div class="grid">
-<button class="btn" onclick="openUrl('https://map.realtimenext.hu/')">RealtimeNext Map</button>
-<button class="btn" onclick="openUrl('https://futar.bkk.hu/?map=14/47.59658/19.04446')">FUTÁR térkép</button>
-<button class="btn" onclick="openUrl('https://go.bkk.hu/?map=14/47.59793/19.05094')">BudapestGO térkép</button>
-<button class="btn" onclick="openUrl('https://utas.hu/?map=9/47.82045/18.91772')">VOLÁN térkép</button>
-<button class="btn" onclick="openUrl('https://utas.hu/?map=10/47.91054/18.93198')">Börzsöny</button>
-<button class="btn" onclick="openUrl('https://utas.hu/?map=10/47.70959/18.9351')">Pilis</button>
-</div>
-</div>
-
-<div class="section">
-<div class="section-title">🚆 MÁV / Vasút</div>
-<div class="grid">
-<button class="btn" onclick="openUrl('https://kozlekedesiklub.hu/vonatinfo/')">Vonatinfó</button>
-<button class="btn" onclick="openUrl('https://mavplusz.hu/#/map')">MÁV+ térkép</button>
-<button class="btn" onclick="openUrl('https://holavonat.is/')">HolAVonat</button>
-<button class="btn" onclick="openUrl('https://megisholavonat.info/hu')">MegisHolAVonat</button>
-<button class="btn" onclick="openUrl('https://vonatterkep.hu/')">Vonattérkép</button>
-<button class="btn" onclick="openUrl('https://ittavonat.eu/')">IttAVonat</button>
-<button class="btn" onclick="openUrl('https://traintrack.hu/')">TrainTrack</button>
-<button class="btn" onclick="openUrl('https://iemig.mav-trakcio.hu/')">MÁV Trakció</button>
-<button class="btn" onclick="openUrl('https://mav-stat.info/map-lite.html')">MÁV stat</button>
-</div>
-</div>
-
-<div id="viewer">
-<div id="topbar">
-<button class="topbtn" onclick="closeViewer()">⬅ Vissza</button>
-<button class="topbtn" onclick="openExternal()">🌍 Külső megnyitás</button>
-</div>
-<iframe id="frame"></iframe>
-</div>
-
-<script>
-let currentUrl='';
-
-function openUrl(url){
-    currentUrl=url;
-    document.getElementById('viewer').style.display='flex';
-    document.getElementById('frame').src=url;
-}
-
-function closeViewer(){
-    document.getElementById('viewer').style.display='none';
-    document.getElementById('frame').src='';
-}
-
-function openExternal(){
-    window.open(currentUrl,'_blank');
-}
-</script>
-
-</body>
-</html>
-```
-
+// ==============================================
 
