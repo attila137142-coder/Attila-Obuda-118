@@ -1,87 +1,137 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FUTÁR MINI DISPATCH CORE</title>
 
-// ==============================================
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-return r - s;
+<style>
+body {
+  margin: 0;
+  font-family: Arial;
+  background: #0b0f14;
+  color: #fff;
 }
 
-// -------------------------------
-// MULTI-AGENCY MERGE LOGIC
-// -------------------------------
-
-mergeAgencyData(
-bkk?: GTFSStop[],
-mav?: GTFSStop[],
-volan?: GTFSStop[]
-) {
-if (bkk) this.ingestStops(this.tagAgency(bkk, "BKK"));
-if (mav) this.ingestStops(this.tagAgency(mav, "MAV"));
-if (volan) this.ingestStops(this.tagAgency(volan, "VOLAN"));
+#topbar {
+  padding: 10px;
+  background: #111826;
+  display: flex;
+  justify-content: space-between;
 }
 
-private tagAgency(data: GTFSStop[], agency: Agency): GTFSStop[] {
-return data.map(d => ({ ...d, agency }));
+#map {
+  height: 60vh;
 }
 
-// -------------------------------
-// NORMALIZATION LAYER
-// -------------------------------
-
-private normalize(text: string): string {
-return text
-.toLowerCase()
-.normalize("NFD")
-.replace(/\p{Diacritic}/gu, "")
-.trim();
+#panel {
+  padding: 10px;
 }
 
-private extractKeywords(text: string): string[] {
-return this.normalize(text).split(" ");
+input {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: none;
 }
 
-private timeToSeconds(t: string): number {
-const [h, m, s] = t.split(":").map(Number);
-return h * 3600 + m * 60 + (s || 0);
+.card {
+  background: #1a2233;
+  padding: 10px;
+  margin-top: 10px;
+  border-radius: 8px;
 }
+</style>
+</head>
 
-// -------------------------------
-// DEBUG / CONTROL ROOM OUTPUT
-// -------------------------------
+<body>
 
-dumpStats() {
-return {
-stops: this.stops.size,
-routes: this.routes.size,
-trips: this.trips.size,
-stopTimes: this.stopTimes.size,
-};
-}
-}
+<div id="topbar">
+  <div>🚦 FUTÁR MINI CORE</div>
+  <div id="clock"></div>
+</div>
 
-// ==============================================
-// USAGE EXAMPLE (dispatcher core)
-// ==============================================
+<div id="map"></div>
 
-/*
-const engine = new GTFSIndexEngine();
+<div id="panel">
 
-engine.mergeAgencyData(bkkStops, mavStops, volanStops);
-engine.ingestRoutes(allRoutes);
-engine.ingestTrips(allTrips);
-engine.ingestStopTimes(allStopTimes);
+  <input id="search" placeholder="Megálló keresése (pl. Deák, Kálvin, Keleti)">
 
-const results = engine.searchStops("deak ter");
-console.log(results);
-*/
+  <div id="results"></div>
 
-// ==============================================
-// EXTENSION POINTS (future)
-// ==============================================
+</div>
 
-// - GTFS-RT live vehicle injection
-// - map clustering (Leaflet / Mapbox)
-// - schedule prediction AI layer
-// - cross-agency transfer graph
-// - delay propagation model
+<script>
 
-// ==============================================
+// ------------------------
+// LIVE CLOCK
+// ------------------------
+setInterval(() => {
+  document.getElementById("clock").innerText =
+    new Date().toLocaleTimeString();
+}, 1000);
 
+// ------------------------
+// MAP INIT
+// ------------------------
+const map = L.map('map').setView([47.4979, 19.0402], 12);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: 'OSM'
+}).addTo(map);
+
+// ------------------------
+// DEMO GTFS MINI DATABASE
+// ------------------------
+const stops = [
+  { name: "Deák Ferenc tér", lat: 47.4975, lon: 19.0540, agency: "BKK" },
+  { name: "Kálvin tér", lat: 47.4892, lon: 19.0614, agency: "BKK" },
+  { name: "Keleti pályaudvar", lat: 47.5009, lon: 19.0822, agency: "MÁV" },
+  { name: "Népliget", lat: 47.4760, lon: 19.0980, agency: "VOLÁN" }
+];
+
+// ------------------------
+// MARKERS
+// ------------------------
+stops.forEach(s => {
+  L.marker([s.lat, s.lon])
+    .addTo(map)
+    .bindPopup(`<b>${s.name}</b><br>${s.agency}`);
+});
+
+// ------------------------
+// SEARCH ENGINE
+// ------------------------
+const search = document.getElementById("search");
+const results = document.getElementById("results");
+
+search.addEventListener("input", (e) => {
+  const q = e.target.value.toLowerCase();
+  results.innerHTML = "";
+
+  stops
+    .filter(s => s.name.toLowerCase().includes(q))
+    .forEach(s => {
+      const div = document.createElement("div");
+      div.className = "card";
+      div.innerHTML = `
+        🚏 <b>${s.name}</b><br>
+        🏷️ ${s.agency}<br>
+        📍 ${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}
+      `;
+
+      div.onclick = () => {
+        map.setView([s.lat, s.lon], 15);
+      };
+
+      results.appendChild(div);
+    });
+});
+
+</script>
+
+</body>
+</html>
