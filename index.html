@@ -3,46 +3,41 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR MINI DISPATCH CORE</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<title>FUTÁR V6 MULTI CORE DISPATCH</title>
 
 <style>
-body {
-  margin: 0;
+body{
+  margin:0;
   font-family: Arial;
-  background: #0b0f14;
-  color: #fff;
+  background:#0b0f14;
+  color:#fff;
 }
 
-#topbar {
-  padding: 10px;
-  background: #111826;
-  display: flex;
-  justify-content: space-between;
+#topbar{
+  padding:10px;
+  background:#111827;
+  display:flex;
+  gap:10px;
 }
 
-#map {
-  height: 60vh;
+input{
+  flex:1;
+  padding:10px;
+  border-radius:8px;
+  border:none;
 }
 
-#panel {
-  padding: 10px;
+button{
+  padding:10px;
+  border:none;
+  border-radius:8px;
+  background:#22c55e;
+  cursor:pointer;
 }
 
-input {
-  width: 100%;
-  padding: 10px;
-  border-radius: 6px;
-  border: none;
-}
-
-.card {
-  background: #1a2233;
-  padding: 10px;
-  margin-top: 10px;
-  border-radius: 8px;
+.stop{
+  padding:10px;
+  border-bottom:1px solid #222;
 }
 </style>
 </head>
@@ -50,87 +45,96 @@ input {
 <body>
 
 <div id="topbar">
-  <div>🚦 FUTÁR MINI CORE</div>
-  <div id="clock"></div>
+  <input id="q" placeholder="Megálló / járat keresés...">
+  <button onclick="searchAll()">KERESÉS</button>
 </div>
 
-<div id="map"></div>
-
-<div id="panel">
-
-  <input id="search" placeholder="Megálló keresése (pl. Deák, Kálvin, Keleti)">
-
-  <div id="results"></div>
-
-</div>
+<div id="results"></div>
 
 <script>
+/* =========================
+   🔐 CONFIG (IDE KÉSŐBB API-K)
+========================= */
+const CONFIG = {
+  BKK: { enabled: true },
+  MAV: { enabled: true },
+  VOLAN: { enabled: true }
+};
 
-// ------------------------
-// LIVE CLOCK
-// ------------------------
-setInterval(() => {
-  document.getElementById("clock").innerText =
-    new Date().toLocaleTimeString();
-}, 1000);
+/* =========================
+   🧠 UNIFIED STORAGE
+========================= */
+let DB = {
+  stops: []
+};
 
-// ------------------------
-// MAP INIT
-// ------------------------
-const map = L.map('map').setView([47.4979, 19.0402], 12);
+/* =========================
+   🌐 MOCK MULTI SOURCE LOAD
+   (itt később API lesz)
+========================= */
+async function loadAllSources(){
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: 'OSM'
-}).addTo(map);
+  // 🔵 BKK
+  const bkkStops = [
+    {id:"BKK_001", name:"Deák Ferenc tér", lat:47.4979, lon:19.05, provider:"BKK"},
+    {id:"BKK_002", name:"Kálvin tér", lat:47.489, lon:19.061, provider:"BKK"}
+  ];
 
-// ------------------------
-// DEMO GTFS MINI DATABASE
-// ------------------------
-const stops = [
-  { name: "Deák Ferenc tér", lat: 47.4975, lon: 19.0540, agency: "BKK" },
-  { name: "Kálvin tér", lat: 47.4892, lon: 19.0614, agency: "BKK" },
-  { name: "Keleti pályaudvar", lat: 47.5009, lon: 19.0822, agency: "MÁV" },
-  { name: "Népliget", lat: 47.4760, lon: 19.0980, agency: "VOLÁN" }
-];
+  // 🟢 MÁV
+  const mavStops = [
+    {id:"MAV_101", name:"Budapest-Keleti", lat:47.5009, lon:19.083, provider:"MÁV"}
+  ];
 
-// ------------------------
-// MARKERS
-// ------------------------
-stops.forEach(s => {
-  L.marker([s.lat, s.lon])
-    .addTo(map)
-    .bindPopup(`<b>${s.name}</b><br>${s.agency}`);
-});
+  // 🟡 VOLÁN
+  const volanStops = [
+    {id:"VOL_201", name:"Budapest Népliget autóbusz-pályaudvar", lat:47.476, lon:19.099, provider:"VOLÁN"}
+  ];
 
-// ------------------------
-// SEARCH ENGINE
-// ------------------------
-const search = document.getElementById("search");
-const results = document.getElementById("results");
+  DB.stops = [...bkkStops, ...mavStops, ...volanStops];
 
-search.addEventListener("input", (e) => {
-  const q = e.target.value.toLowerCase();
-  results.innerHTML = "";
+  console.log("MULTI CORE LOADED:", DB.stops.length);
+}
 
-  stops
-    .filter(s => s.name.toLowerCase().includes(q))
-    .forEach(s => {
-      const div = document.createElement("div");
-      div.className = "card";
-      div.innerHTML = `
-        🚏 <b>${s.name}</b><br>
-        🏷️ ${s.agency}<br>
-        📍 ${s.lat.toFixed(4)}, ${s.lon.toFixed(4)}
-      `;
+/* =========================
+   🔍 GLOBAL SEARCH ENGINE
+========================= */
+function searchAll(){
+  const q = document.getElementById("q").value.toLowerCase();
 
-      div.onclick = () => {
-        map.setView([s.lat, s.lon], 15);
-      };
+  const results = DB.stops.filter(s =>
+    s.name.toLowerCase().includes(q) ||
+    s.id.toLowerCase().includes(q)
+  );
 
-      results.appendChild(div);
-    });
-});
+  render(results);
+}
 
+/* =========================
+   🖥 RENDER
+========================= */
+function render(list){
+  const box = document.getElementById("results");
+  box.innerHTML = "";
+
+  list.forEach(s=>{
+    const div = document.createElement("div");
+    div.className = "stop";
+
+    div.innerHTML = `
+      <b>${s.name}</b><br>
+      <small>${s.provider}</small><br>
+      ID: ${s.id}<br>
+      📍 ${s.lat}, ${s.lon}
+    `;
+
+    box.appendChild(div);
+  });
+}
+
+/* =========================
+   🚀 INIT
+========================= */
+loadAllSources();
 </script>
 
 </body>
