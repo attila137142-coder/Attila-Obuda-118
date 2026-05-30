@@ -1,68 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>FUTÁR V3 – EMIG-STYLE DISPATCHER</title>
+<style>
+    body{
+        margin:0;
+        font-family: Arial, Helvetica, sans-serif;
+        background:#0b0f14;
+        color:#e6edf3;
+    }
+    .screen{display:none;padding:20px;}
+    .active{display:block;}
+    h1,h2{margin:10px 0;}
+    input,button{
+        padding:10px;
+        margin:5px 0;
+        width:100%;
+        border-radius:6px;
+        border:none;
+    }
+    button{
+        background:#1f6feb;
+        color:white;
+        cursor:pointer;
+    }
+    button:hover{background:#2b7fff;}
+    .card{
+        background:#161b22;
+        padding:10px;
+        border-radius:10px;
+        margin:10px 0;
+    }
+    .grid{
+        display:grid;
+        grid-template-columns:1fr 1fr;
+        gap:10px;
+    }
+    .small{font-size:12px;color:#9aa4af;}
+    .danger{color:#ff6b6b;}
+    .ok{color:#2ecc71;}
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="login" class="screen active">
+    <h1>🚦 FUTÁR V3 DISPATCHER</h1>
+    <h2>EMIG-STYLE AUTH SYSTEM</h2>
+
+    <div class="card">
+        <input id="email" placeholder="Operator Email" />
+        <button onclick="sendOTP()">Send OTP Code</button>
+    </div>
+
+    <div class="card">
+        <input id="otp" placeholder="Enter 6-digit code" />
+        <button onclick="verifyOTP()">Verify & Login</button>
+        <p class="small">Session timeout: 60s inactivity after login</p>
+    </div>
+
+    <p id="loginMsg" class="small"></p>
+</div>
+
+<!-- DISPATCHER -->
+<div id="dashboard" class="screen">
+    <h1>🚦 CONTROL ROOM</h1>
+
+    <div class="grid">
+        <div class="card">
+            <h2>📍 My Position</h2>
+            <p id="pos">Requesting GPS...</p>
+            <p id="acc"></p>
+        </div>
+
+        <div class="card">
+            <h2>🔎 Stop Search</h2>
+            <input id="search" placeholder="Search BKK / Volán stop" oninput="searchStops()" />
+            <div id="results"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h2>📊 Dispatcher Board</h2>
+        <div id="board">Select a stop...</div>
+    </div>
+</div>
+
 <script>
-let DB = { stops: [] };
+let otpCode = "";
+let sessionActive = false;
+let lastActivity = Date.now();
 
-function loadAllSources(){
+const stops = [
+    {name:"Örs vezér tere M+H", lat:47.5021, lon:19.1355, type:"BKK"},
+    {name:"Kőbánya-Kispest", lat:47.4648, lon:19.1461, type:"BKK"},
+    {name:"Volán Buszállomás – Gyöngyös", lat:47.7825, lon:19.9281, type:"VOLAN"}
+];
 
-  const bkkStops = [
-    {id:"BKK_001", name:"Deák Ferenc tér", provider:"BKK"},
-    {id:"BKK_002", name:"Kálvin tér", provider:"BKK"}
-  ];
-
-  const mavStops = [
-    {id:"MAV_101", name:"Budapest-Keleti", provider:"MÁV"}
-  ];
-
-  const volanStops = [
-    {id:"VOL_201", name:"Népliget autóbusz-pályaudvar", provider:"VOLÁN"}
-  ];
-
-  DB.stops = [...bkkStops, ...mavStops, ...volanStops];
-
-  console.log("✅ BETÖLTVE:", DB.stops.length, DB.stops);
+// ---------------- AUTH ----------------
+function sendOTP(){
+    otpCode = Math.floor(100000 + Math.random()*900000).toString();
+    document.getElementById("loginMsg").innerHTML = 
+        "📩 OTP generated (demo): <b>"+otpCode+"</b>";
 }
 
-/* 🔍 DEBUG KERESÉS */
-function searchAll(){
-
-  console.log("🔎 SEARCH CLICKED");
-
-  const input = document.getElementById("q");
-  const q = input.value.toLowerCase().trim();
-
-  console.log("QUERY:", q);
-  console.log("DB SIZE:", DB.stops.length);
-
-  const results = DB.stops.filter(s =>
-    s.name.toLowerCase().includes(q) ||
-    s.id.toLowerCase().includes(q)
-  );
-
-  console.log("RESULTS:", results);
-
-  const box = document.getElementById("results");
-  box.innerHTML = "";
-
-  if(results.length === 0){
-    box.innerHTML = "<b>❌ Nincs találat</b>";
-    return;
-  }
-
-  results.forEach(s=>{
-    const div = document.createElement("div");
-    div.style.padding="10px";
-    div.style.borderBottom="1px solid #333";
-
-    div.innerHTML = `
-      <b>${s.name}</b><br>
-      ${s.provider} | ${s.id}
-    `;
-
-    box.appendChild(div);
-  });
+function verifyOTP(){
+    let input = document.getElementById("otp").value;
+    if(input === otpCode){
+        sessionActive = true;
+        showDashboard();
+        startSessionWatchdog();
+        getLocation();
+    } else {
+        document.getElementById("loginMsg").innerHTML = "❌ Invalid OTP";
+    }
 }
 
-/* 🚀 FONTOS: kötelező init */
-window.onload = function(){
-  loadAllSources();
-};
+function showDashboard(){
+    document.getElementById("login").classList.remove("active");
+    document.getElementById("dashboard").classList.add("active");
+}
+
+// ---------------- GPS ----------------
+function getLocation(){
+    if(navigator.geolocation){
+        navigator.geolocation.watchPosition(pos=>{
+            let lat = pos.coords.latitude;
+            let lon = pos.coords.longitude;
+            let acc = pos.coords.accuracy;
+
+            document.getElementById("pos").innerText = 
+                lat.toFixed(5)+", "+lon.toFixed(5);
+            document.getElementById("acc").innerHTML = 
+                "🎯 Accuracy: ±"+acc.toFixed(1)+" m";
+
+            lastActivity = Date.now();
+        });
+    }
+}
+
+// ---------------- STOP SEARCH ----------------
+function searchStops(){
+    let q = document.getElementById("search").value.toLowerCase();
+    let res = document.getElementById("results");
+    res.innerHTML = "";
+
+    stops.filter(s=>s.name.toLowerCase().includes(q))
+        .forEach(s=>{
+            let div = document.createElement("div");
+            div.className="card";
+            div.innerHTML = s.name + " <span class='small'>("+s.type+")</span>";
+            div.onclick = ()=>loadStop(s);
+            res.appendChild(div);
+        });
+}
+
+// ---------------- DISTANCE ----------------
+function distance(lat1,lon1,lat2,lon2){
+    const R=6371e3;
+    const toRad=x=>x*Math.PI/180;
+    let dLat=toRad(lat2-lat1);
+    let dLon=toRad(lon2-lon1);
+
+    let a=Math.sin(dLat/2)**2+
+        Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*
+        Math.sin(dLon/2)**2;
+
+    return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+
+// ---------------- LOAD STOP ----------------
+function loadStop(stop){
+    navigator.geolocation.getCurrentPosition(pos=>{
+        let d = distance(pos.coords.latitude,pos.coords.longitude,stop.lat,stop.lon);
+
+        document.getElementById("board").innerHTML = `
+            <h3>${stop.name}</h3>
+            <p>Type: ${stop.type}</p>
+            <p>📏 Distance: ${(d/1000).toFixed(2)} km</p>
+            <p class='small'>GPS-based dispatcher estimation</p>
+        `;
+    });
+}
+
+// ---------------- SESSION WATCHDOG ----------------
+function startSessionWatchdog(){
+    setInterval(()=>{
+        if(!sessionActive) return;
+
+        if(Date.now() - lastActivity > 60000){
+            alert("Session locked due to inactivity");
+            location.reload();
+        }
+    },1000);
+}
+
+// activity tracking
+window.onmousemove=()=>lastActivity=Date.now();
+window.onkeydown=()=>lastActivity=Date.now();
 </script>
+
+</body>
+</html>
