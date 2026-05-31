@@ -1,322 +1,517 @@
-```html <!DOCTYPE html> <html lang="hu"> <head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width,initial-scale=1.0"> <title>🚦 FUTÁR V3 – GTFS CORE V1</title> <style> body{ margin:0; background:#0b1015; color:#e6edf3; font-family:Arial,Helvetica,sans-serif; } header{ background:#121922; padding:12px; border-bottom:2px solid #1f6feb; } h1{ margin:0; font-size:22px; } .panel{ margin:10px; padding:12px; background:#161b22; border-radius:10px; box-shadow:0 0 10px rgba(0,0,0,0.3); } } input{ szélesség:100%; kitöltés:12px; háttér:#0f141a; szegély:1px szilárd #2b3542; szín:fehér; szegélysugár:8px; betűméret:16px; dobozméret:szegélydoboz; } .result{ kitöltés:10px; felső margin:6px; háttér:#0f141a; szegélysugár:8px; kurzor:mutató; szegély:1px szilárd #222b36; } .result:hover{ háttér:#1b2430; } .small{ betűméret:12px; szín:#9aa4af; } .tag{ megjelenítés:inline-block; kitöltés:3px 7px; szegélysugár:6px; betűméret:11px; felső margin:4px; } .bkk{ háttér:#1f6feb; } .volan{ háttér:#f39c12; } .mav{ háttér:#9b59b6; } .good{ szín:#4cd137; } .bad{ szín:#e84118; } .dispatch{ sormagasság:1.7; } .footer{ szövegigazítás:középre; padding:20px; szín:#66707a; betűméret:12px; } } </style> </head> <body> <header> <h1>🚦 FUTÁR V3 – GTFS CORE V1</h1> <div class="small"> BKK + VOLÁN + MÁV INDEX MOTOR </div> </header> <div class="panel"> <h3>🚦 GPS </hid3> pozícióv... </div> </div> <div class="panel"> <h3>🔎 Megálló kereső</h3> <input id="searchBox" placeholder="Megálló név / stop ID / F00457..." autocomplete="off" /> <div id="results"></div> </div> <div class="3panel> <div class="3> Disp <div id="details" class="dispatch"> Válasszon egy megállót... </div> </div> <div class="footer"> FUTÁR V3 • REAL GTFS CORE • KÖZLEKEDÉS ATTILA </div> <script> let STOPS = []; legyen myLat = null; legyen myLon = null; legyen myAccuracy = null; // ---------------------------- // GPS MOTOR // ---------------------------- navigator.geolocation.getCurrentPosition( pos=>{ myLat = poz.s.coords. myAccuracy = poz.coords.accuracy;
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
 
-    let quality = "";
+<title>🚦 FUTÁR V3 SMART STOP INDEX V2</title>
 
-    if(myAccuracy < 25){
-        quality = "<span class='good'>Kiváló GPS</span>";
-    }
-    else if(myAccuracy < 150){
-        quality = "<span class='good'>Jó GPS</span>";
-    }
-    else{
-        quality = "<span class='bad'>Gyenge GPS</span>";
-    }
+<style>
 
-    document.getElementById("gps").innerHTML = `
-        📍 ${myLat.toFixed(5)}, ${myLon.toFixed(5)}
-        <br>
-        🎯 Pontosság: ±${myAccuracy.toFixed(1)} m
-        <br>
-        ${quality}
-    `;
+*{
+    box-sizing:border-box;
+}
+
+body{
+    margin:0;
+    background:#0b1015;
+    color:#e6edf3;
+    font-family:Arial,Helvetica,sans-serif;
+}
+
+header{
+    background:#121922;
+    border-bottom:2px solid #1f6feb;
+    padding:12px;
+}
+
+h1{
+    margin:0;
+    font-size:24px;
+}
+
+.panel{
+    margin:10px;
+    padding:12px;
+    background:#161b22;
+    border-radius:10px;
+    box-shadow:0 0 10px rgba(0,0,0,0.4);
+}
+
+.grid{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+}
+
+input{
+    width:100%;
+    padding:12px;
+    background:#0f141a;
+    border:1px solid #2b3542;
+    color:white;
+    border-radius:8px;
+    font-size:16px;
+}
+
+button{
+    padding:12px;
+    background:#1f6feb;
+    color:white;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:bold;
+}
+
+button:hover{
+    opacity:0.9;
+}
+
+.result{
+    margin-top:6px;
+    padding:10px;
+    background:#0f141a;
+    border:1px solid #222b36;
+    border-radius:8px;
+    cursor:pointer;
+}
+
+.result:hover{
+    background:#1b2430;
+}
+
+.small{
+    font-size:12px;
+    color:#9aa4af;
+}
+
+.good{
+    color:#4cd137;
+}
+
+.bad{
+    color:#e84118;
+}
+
+.tag{
+    display:inline-block;
+    padding:3px 8px;
+    border-radius:6px;
+    font-size:11px;
+    margin-top:4px;
+}
+
+.bkk{
+    background:#1f6feb;
+}
+
+.volan{
+    background:#f39c12;
+}
+
+.mav{
+    background:#9b59b6;
+}
+
+table{
+    width:100%;
+    border-collapse:collapse;
+    margin-top:10px;
+}
+
+th{
+    background:#121922;
+    padding:8px;
+    text-align:left;
+}
+
+td{
+    padding:8px;
+    border-top:1px solid #222b36;
+}
+
+.footer{
+    text-align:center;
+    padding:20px;
+    color:#66707a;
+}
+
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>🚦 FUTÁR V3 SMART STOP INDEX V2</h1>
+<div class="small">
+BKK + VOLÁN + MÁV DISPATCHER VIEW
+</div>
+</header>
+
+<div class="grid">
+
+<div class="panel">
+
+<h3>📍 Saját pozíció</h3>
+
+<div id="clock">
+🕒 --
+</div>
+
+<br>
+
+<div id="gps">
+GPS betöltése...
+</div>
+
+</div>
+
+<div class="panel">
+
+<h3>📊 Index állapot</h3>
+
+BKK:
+<b>6243</b>
+<br>
+
+VOLÁN:
+<b>61918</b>
+<br>
+
+MÁV:
+<b>---</b>
+<br>
+
+Összes:
+<b>68161+</b>
+
+</div>
+
+</div>
+
+<div class="panel">
+
+<h3>🔎 Megálló kereső</h3>
+
+<div style="display:flex;gap:10px;">
+
+<input
+id="searchBox"
+placeholder="Megálló név / GTFS ID..."
+autocomplete="off">
+
+<button onclick="searchStops()">
+KERESÉS
+</button>
+
+</div>
+
+<div id="results"></div>
+
+</div>
+
+<div class="panel">
+
+<h3>🚏 Kiválasztott megálló</h3>
+
+<div id="details">
+
+Válasszon egy megállót...
+
+</div>
+
+</div>
+
+<div class="panel">
+
+<h3>🚍 Dispatcher indulási tábla</h3>
+
+<table>
+
+<thead>
+<tr>
+<th>Járat</th>
+<th>Irány</th>
+<th>Indul</th>
+<th>Késés</th>
+<th>Rsz.</th>
+<th>Forda</th>
+<th>Jármű</th>
+</tr>
+</thead>
+
+<tbody id="departures">
+
+<tr>
+<td>85</td>
+<td>Örs Vezér tere</td>
+<td>14:32</td>
+<td>+1:24</td>
+<td>---</td>
+<td>---</td>
+<td>---</td>
+</tr>
+
+<tr>
+<td>85E</td>
+<td>KÖKI</td>
+<td>14:35</td>
+<td>-0:18</td>
+<td>---</td>
+<td>---</td>
+<td>---</td>
+</tr>
+
+</tbody>
+
+</table>
+
+</div>
+
+<div class="footer">
+
+FUTÁR V3 SMART STOP INDEX V2
+<br>
+ATTILA KÖZLEKEDÉS
+
+</div>
+
+<script>
+
+let myLat=null;
+let myLon=null;
+let myAccuracy=null;
+
+let STOPS=[
+{
+id:"F00457",
+name:"Nád utca",
+agency:"BKK",
+lat:47.594072,
+lon:19.048469
+},
+{
+id:"F00456",
+name:"Nád utca",
+agency:"BKK",
+lat:47.593996,
+lon:19.049185
+},
+{
+id:"089725",
+name:"Nád utca",
+agency:"BKK",
+lat:47.593784,
+lon:19.047312
+}
+];
+
+function updateClock(){
+
+const now=new Date();
+
+document.getElementById("clock").innerHTML=
+"🕒 "+now.toLocaleString("hu-HU");
+
+}
+
+setInterval(updateClock,1000);
+updateClock();
+
+navigator.geolocation.getCurrentPosition(
+
+pos=>{
+
+myLat=pos.coords.latitude;
+myLon=pos.coords.longitude;
+myAccuracy=pos.coords.accuracy;
+
+document.getElementById("gps").innerHTML=`
+
+GPS:
+${myLat.toFixed(5)},
+${myLon.toFixed(5)}
+
+<br><br>
+
+Pontosság:
+±${myAccuracy.toFixed(1)} m
+
+`;
 
 },
 
 err=>{
 
-    document.getElementById("gps").innerHTML = `
-        ❌ GPS hozzáférés sikertelen
-        <br>
-        Engedélyezd a helyhozzáférést.
-    `;
+document.getElementById("gps").innerHTML=
+"❌ GPS nem elérhető";
 
 }
 
 );
 
-// ----------------------------
-// GTFS STOP INDEX LOAD
-// ----------------------------
-
-fetch("stops_index.json")
-
-.then(r=>r.json())
-
-.then(data=>{
-
-    STOPS = data;
-
-    console.log("GTFS stops loaded:",STOPS.length);
-
-})
-
-.catch(err=>{
-
-    console.error(err);
-
-    document.getElementById("results").innerHTML = `
-        <div class="result">
-        ❌ Nem sikerült betölteni:
-        <br>
-        stops_index.json
-        </div>
-    `;
-
-});
-
-// ----------------------------
-// DISTANCE ENGINE
-// ----------------------------
-
 function haversine(lat1,lon1,lat2,lon2){
 
-    const R = 6371;
+const R=6371;
 
-    const dLat = (lat2-lat1)*Math.PI/180;
-    const dLon = (lon2-lon1)*Math.PI/180;
+const dLat=(lat2-lat1)*Math.PI/180;
+const dLon=(lon2-lon1)*Math.PI/180;
 
-    const a =
-        Math.sin(dLat/2)*Math.sin(dLat/2) +
+const a=
 
-        Math.cos(lat1*Math.PI/180) *
-        Math.cos(lat2*Math.PI/180) *
+Math.sin(dLat/2)**2+
 
-        Math.sin(dLon/2)*Math.sin(dLon/2);
+Math.cos(lat1*Math.PI/180)*
+Math.cos(lat2*Math.PI/180)*
 
-    return R * 2 * Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+Math.sin(dLon/2)**2;
+
+return R*2*Math.atan2(
+Math.sqrt(a),
+Math.sqrt(1-a)
+);
 
 }
 
-// ----------------------------
-// SEARCH ENGINE
-// ----------------------------
+function searchStops(){
+
+const q=
+document
+.getElementById("searchBox")
+.value
+.trim()
+.toLowerCase();
+
+const results=
+document.getElementById("results");
+
+results.innerHTML="";
+
+if(!q)return;
+
+let found=STOPS.filter(stop=>
+
+stop.name.toLowerCase().includes(q)
+
+||
+
+stop.id.toLowerCase().includes(q)
+
+);
+
+found.forEach(stop=>{
+
+let distance="";
+
+if(myLat!==null){
+
+distance=
+haversine(
+myLat,
+myLon,
+stop.lat,
+stop.lon
+).toFixed(2);
+
+distance+=" km";
+
+}
+
+const div=document.createElement("div");
+
+div.className="result";
+
+div.innerHTML=`
+
+<b>${stop.name}</b>
+
+<br>
+
+<span class="tag bkk">
+${stop.agency}
+</span>
+
+<div class="small">
+GTFS:
+${stop.id}
+</div>
+
+<div class="small">
+📏 ${distance}
+</div>
+
+`;
+
+div.onclick=()=>showStop(stop);
+
+results.appendChild(div);
+
+});
+
+}
+
+function showStop(stop){
+
+let distance="N/A";
+
+if(myLat!==null){
+
+distance=
+haversine(
+myLat,
+myLon,
+stop.lat,
+stop.lon
+).toFixed(2)+" km";
+
+}
+
+document.getElementById("details").innerHTML=`
+
+<h3>${stop.name}</h3>
+
+GTFS:
+<b>${stop.id}</b>
+
+<br><br>
+
+Agency:
+<b>${stop.agency}</b>
+
+<br><br>
+
+Koordináta:
+
+<br>
+
+${stop.lat}
+
+<br>
+
+${stop.lon}
+
+<br><br>
+
+Távolság:
+<b>${distance}</b>
+
+`;
+
+}
 
 document
 .getElementById("searchBox")
-
-.addEventListener("input",e=>{
-
-    const q =
-        e.target.value
-        .trim()
-        .toLowerCase();
-
-    const results =
-        document.getElementById("results");
-
-    results.innerHTML = "";
-
-    if(q.length < 1){
-        return;
-    }
-
-    let found = STOPS.filter(stop =>
-
-        stop.name.toLowerCase().includes(q)
-
-        ||
-
-        stop.id.toLowerCase().includes(q)
-
-    );
-
-    found = found.slice(0,50);
-
-    if(found.length===0){
-
-        results.innerHTML = `
-            <div class="result">
-            ❌ Nincs találat
-            </div>
-        `;
-
-        return;
-    }
-
-    found.forEach(stop=>{
-
-        let distance = "";
-
-        if(myLat!==null){
-
-            distance =
-                haversine(
-                    myLat,
-                    myLon,
-                    stop.lat,
-                    stop.lon
-                ).toFixed(2);
-
-            distance = `📏 ${distance} km`;
-
-        }
-
-        let tagClass = "";
-
-        if(stop.agency==="BKK"){ tagClass = "bkk"; } if(stop.agency==="VOLAN"){ tagClass = "volan"; } if(stop.agency==="MAV"){ tagClass = "mav"; } let div = document.createElement("div"); div.className = "result"; div.innerHTML = ` <b>${stop.name</b> <br> <span class="tag ${tagClass}"> ${stop.agency} </span> <div class="small"> ${stop.id} </div> <div class="small"> ${distance} </div> `; div.onclick = ()=>showStop(stop); results.appendChild(div); }); }); // ----------------------------- // DISZPÉCSER PANEL // ----------------------------- function showStop(stop){ let distance = "N/A"; ha(myLat!==null){ távolság = haversine(myLat, myHossz, stop.lat, stop.lon ).toFixed(2)+" km"; } document.getElementById("details").innerHTML = ` <h3>${stop.name}</h3> 🆔 Megálló azonosító: <b>${stop.id}</b> <br> 🚏 Üzemeltető: <b>${stop.agency}</b> <br> 📍 $Koordiná.{s.top.lat.} <br><br> 📏 Távolság: <b>${távolság}</b> <hr> 🚍 Vonal: -- <br> 🚌 Jármű: -- <br> 🔢 Rendszám: -- <br> 🔧 Forda: -- <br> 📡 Realtime: -- <br> ⏱ Késés: -- } </script> </body> </html> ```appendChild(div);
-
-    });
-
-});
-
-// ----------------------------
-// DISPATCHER PANEL
-// ----------------------------
-
-function showStop(stop){
-
-    let distance = "N/A";
-
-    if(myLat!==null){
-
-        distance =
-            haversine(
-                myLat,
-                myLon,
-                stop.lat,
-                stop.lon
-            ).toFixed(2)+" km";
-
-    }
-
-    document.getElementById("details").innerHTML = `
-
-        <h3>${stop.name}</h3>
-
-        🆔 Stop ID:
-        <b>${stop.id}</b>
-
-        <br>
-
-        🚏 Üzemeltető:
-        <b>${stop.agency}</b>
-
-        <br>
-
-        📍 Koordináta:
-        <br>
-        ${stop.lat},
-        ${stop.lon}
-
-        <br><br>
-
-        📏 Távolság:
-        <b>${distance}</b>
-
-        <hr>
-
-        🚍 Vonal:
-        --
-        <br>
-
-        🚌 Jármű:
-        --
-        <br>
-
-        🔢 Rendszám:
-        --
-        <br>
-
-        🔧 Forda:
-        --
-        <br>
-
-        📡 Realtime:
-        --
-        <br>
-
-        ⏱ Késés:
-        --
-
-    `;
-
+.addEventListener(
+"keydown",
+e=>{
+if(e.key==="Enter"){
+searchStops();
 }
+}
+);
 
 </script>
 
 </body>
 </html>
-```appendChild(div);
-
-    });
-
-});
-
-// ----------------------------
-// DISPATCHER PANEL
-// ----------------------------
-
-function showStop(stop){
-
-    let distance = "N/A";
-
-    if(myLat!==null){
-
-        distance =
-            haversine(
-                myLat,
-                myLon,
-                stop.lat,
-                stop.lon
-            ).toFixed(2)+" km";
-
-    }
-
-    document.getElementById("details").innerHTML = `
-
-        <h3>${stop.name}</h3>
-
-        🆔 Stop ID:
-        <b>${stop.id}</b>
-
-        <br>
-
-        🚏 Üzemeltető:
-        <b>${stop.agency}</b>
-
-        <br>
-
-        📍 Koordináta:
-        <br>
-        ${stop.lat},
-        ${stop.lon}
-
-        <br><br>
-
-        📏 Távolság:
-        <b>${distance}</b>
-
-        <hr>
-
-        🚍 Vonal:
-        --
-        <br>
-
-        🚌 Jármű:
-        --
-        <br>
-
-        🔢 Rendszám:
-        --
-        <br>
-
-        🔧 Forda:
-        --
-        <br>
-
-        📡 Realtime:
-        --
-        <br>
-
-        ⏱ Késés:
-        --
-
-    `;
-
-}
-
-</script>
-
-</body>
-</html>
-```
