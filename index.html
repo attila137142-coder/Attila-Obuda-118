@@ -2,207 +2,128 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>🚦 FUTÁR V4.5 DISPATCHER ALPHA</title>
+<title>🚦 GTFS LIVE DISPATCHER CORE</title>
 
 <style>
 body{
     margin:0;
-    background:#08131a;
-    color:#e6edf3;
-    font-family:Arial,Helvetica,sans-serif;
+    background:#0b0f14;
+    color:#e0e6ed;
+    font-family:Arial;
 }
-header{
-    background:#121922;
-    border-bottom:3px solid #1f6feb;
-    padding:12px;
+
+.header{
+    background:#111827;
+    padding:10px;
+    font-size:18px;
+    font-weight:bold;
 }
-h1{
-    margin:0;
-    font-size:24px;
-}
-.panel{
-    margin:10px;
-    background:#161b22;
-    border-radius:10px;
-    padding:12px;
-}
-input{
-    width:100%;
-    padding:12px;
-    background:#0f141a;
-    border:1px solid #2b3542;
-    color:white;
-    border-radius:8px;
-}
-table{
+
+.table{
     width:100%;
     border-collapse:collapse;
 }
-th{
-    background:#121922;
+
+td,th{
     padding:10px;
+    border-bottom:1px solid #1f2937;
     text-align:left;
-    font-size:13px;
 }
-td{
-    padding:8px;
-    border-top:1px solid #25303d;
-    font-size:13px;
-}
-.good{color:#4cd137;}
-.bad{color:#ff5b5b;}
-.warn{color:#f1c40f;}
-.live{
-    color:#4cd137;
-    font-weight:bold;
-}
-.schedule{
-    color:#58a6ff;
+
+.status-green{color:#22c55e;}
+.status-yellow{color:#eab308;}
+.status-red{color:#ef4444;}
+.status-purple{color:#a855f7;}
+
+.badge{
+    padding:4px 8px;
+    border-radius:6px;
+    font-size:12px;
+    background:#1f2937;
 }
 </style>
 </head>
 
 <body>
 
-<header>
-<h1>🚦 FUTÁR V4.5 GTFS MULTI-INDEX ALPHA</h1>
-<div>BKK + HÉV + MÁV + VOLÁN</div>
-</header>
+<div class="header">🚦 VALÓS GTFS DISPATCHER PANEL (BKK / MÁV / VOLÁN)</div>
 
-<div class="panel">
-<input type="text"
-placeholder="🔎 Megálló keresése (pl: Nád utca, Örs, Szob)">
-</div>
-
-<div class="panel">
-
-<h3>🚍 DISPATCHER INDULÁSI TÁBLA</h3>
-
-<table>
+<table class="table">
 <thead>
 <tr>
 <th>Járat</th>
-<th>Irány</th>
-<th>Indul</th>
+<th>Megálló</th>
+<th>Tervezett</th>
+<th>Valós</th>
 <th>Késés</th>
-<th>Rendszám</th>
-<th>Forda</th>
-<th>Járműtípus</th>
 <th>Státusz</th>
 </tr>
 </thead>
 
-<tbody id="dispatcher">
-</tbody>
-
+<tbody id="rows"></tbody>
 </table>
 
-</div>
-
 <script>
+// DEMO → ezt később GTFS-RT API váltja ki
 
-const rows = [
-
+const data = [
 {
 route:"85",
-dir:"Örs vezér tere",
-time:"14:32",
-delay:"+2",
-plate:"SGX-552",
-forda:"F12",
-vehicle:"🚌 Citaro 005",
-status:"LIVE"
+stop:"Örs vezér tere",
+scheduled:"12:00",
+realtime:"12:03"
 },
-
 {
-route:"85E",
-dir:"KÖKI",
-time:"14:35",
-delay:"+1",
-plate:"BPI-234",
-forda:"F15",
-vehicle:"🚌 MAN Lion's City",
-status:"LIVE"
+route:"MÁV IC 745",
+stop:"Kelenföld",
+scheduled:"12:10",
+realtime:"12:18"
 },
-
 {
-route:"32",
-dir:"Árpád híd",
-time:"14:41",
-delay:"—",
-plate:"—",
-forda:"—",
-vehicle:"🚌 Solaris Urbino",
-status:"MENETREND"
-},
-
-{
-route:"H5",
-dir:"Batthyány tér",
-time:"14:48",
-delay:"+3",
-plate:"—",
-forda:"—",
-vehicle:"🚆 MXA HÉV",
-status:"LIVE"
-},
-
-{
-route:"S70",
-dir:"Nyugati",
-time:"15:02",
-delay:"—",
-plate:"—",
-forda:"—",
-vehicle:"🚄 FLIRT 415",
-status:"MENETREND"
-},
-
-{
-route:"880",
-dir:"Vác",
-time:"15:11",
-delay:"+1",
-plate:"—",
-forda:"—",
-vehicle:"🚌 Credobus Econell",
-status:"LIVE"
+route:"Volán 100E",
+stop:"Deák Ferenc tér",
+scheduled:"12:05",
+realtime:"12:04"
 }
-
 ];
 
-function render(){
+function diffMin(a,b){
+const [h1,m1]=a.split(":").map(Number);
+const [h2,m2]=b.split(":").map(Number);
+return (h2*60+m2)-(h1*60+m1);
+}
 
-const tbody=document.getElementById("dispatcher");
+function statusClass(d){
+if(d<0) return "status-purple";
+if(d<=2) return "status-green";
+if(d<=5) return "status-yellow";
+return "status-red";
+}
+
+function render(){
+const tbody=document.getElementById("rows");
 tbody.innerHTML="";
 
-rows.forEach(r=>{
-
-let cls="schedule";
-
-if(r.status==="LIVE")
-    cls="live";
+data.forEach(d=>{
+const delay = diffMin(d.scheduled,d.realtime);
+const cls = statusClass(delay);
 
 tbody.innerHTML += `
 <tr>
-<td>${r.route}</td>
-<td>${r.dir}</td>
-<td>${r.time}</td>
-<td>${r.delay}</td>
-<td>${r.plate}</td>
-<td>${r.forda}</td>
-<td>${r.vehicle}</td>
-<td class="${cls}">${r.status}</td>
+<td><span class="badge">${d.route}</span></td>
+<td>${d.stop}</td>
+<td>${d.scheduled}</td>
+<td>${d.realtime}</td>
+<td>${delay} perc</td>
+<td class="${cls}">
+${delay<0?"KORAI":delay<=2?"PONTOS":delay<=5?"KÉSIK":"NAGY KÉSÉS"}
+</td>
 </tr>
 `;
-
 });
-
 }
 
 render();
-
 </script>
 
 </body>
