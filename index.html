@@ -1,1 +1,209 @@
-<!DOCTYPE html><html lang="hu"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>FUTÁR V4 LIVE CORE</title><link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" /><script src="https://unpkg.com/leaflet/dist/leaflet.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script><style>body{margin:0;font-family:Arial;background:#061b17;color:#dff;overflow:hidden;}#topbar{height:50px;background:#0a2a24;display:flex;align-items:center;gap:10px;padding:0 10px;border-bottom:2px solid #00ffb3;font-weight:bold;}#layout{display:flex;height:calc(100vh - 50px);}#panel{width:480px;background:#081f1b;border-right:2px solid #00ffb3;overflow:auto;padding:10px;font-family:monospace;}#map{flex:1;}.row{display:grid;grid-template-columns:70px 1fr 90px;font-size:12px;padding:4px 0;border-bottom:1px solid #0d3b33;}.badge{color:#ffe66d;font-weight:bold;}.green{color:#65ff8f;}.blue{color:#4db7ff;}.red{color:#ff5b5b;}.small{font-size:11px;opacity:0.8;}</style></head><body><div id="topbar">🚍 FUTÁR V4 CORE<input type="file" id="zip"><button onclick="resetPanel()">RESET</button></div><div id="layout"><div id="panel">UPLOAD GTFS ZIP</div><div id="map"></div></div><script>/* =========================🧠 STATE========================= */let GTFS={stops:[],stop_times:[],trips:[],routes:[]};let INDEX={stop:{},trip:{},route:{}};let map=L.map('map').setView([47.55,19.05],11);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);let layer=L.layerGroup().addTo(map);/* =========================🕒 TIME ENGINE========================= */function nowSec(){ let d=new Date(); return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();}function toSec(t){ if(!t) return 0; let p=t.split(':'); return (+p[0])*3600+(+p[1])*60+(+p[2]||0);}/* =========================📦 CSV PARSER========================= */function parseCSVLine(line){ let r=[],c="",q=false; for(let x of line){  if(x=='"') q=!q;  else if(x==','&&!q){r.push(c);c="";}  else c+=x; } r.push(c); return r;}/* =========================🚀 GTFS LOAD========================= */async function loadGTFS(file){ const zip=await JSZip.loadAsync(file); function table(txt){  let l=txt.split(/\r?\n/);  let h=parseCSVLine(l[0]);  let o=[];  for(let i=1;i<l.length;i++){   if(!l[i]) continue;   let r=parseCSVLine(l[i]);   let obj={};   h.forEach((x,j)=>obj[x]=r[j]||"");   o.push(obj);  }  return o; } GTFS.stops=table(await zip.file('stops.txt').async('string')); GTFS.stop_times=table(await zip.file('stop_times.txt').async('string')); GTFS.trips=table(await zip.file('trips.txt').async('string')); GTFS.routes=table(await zip.file('routes.txt').async('string')); buildIndex(); renderMap(); document.getElementById('panel').innerHTML="CLICK A STOP";}/* =========================🧩 INDEX========================= */function buildIndex(){ INDEX.stop={}; INDEX.trip={}; INDEX.route={}; GTFS.trips.forEach(t=>INDEX.trip[t.trip_id]=t); GTFS.routes.forEach(r=>INDEX.route[r.route_id]=r); GTFS.stop_times.forEach(st=>{  if(!INDEX.stop[st.stop_id]) INDEX.stop[st.stop_id]=[];  INDEX.stop[st.stop_id].push(st); });}/* =========================🗺 MAP========================= */function renderMap(){ layer.clearLayers(); GTFS.stops.forEach(s=>{  let lat=parseFloat(s.stop_lat);  let lon=parseFloat(s.stop_lon);  if(!lat||!lon) return;  let m=L.circleMarker([lat,lon],{   radius:5,   color:'#ffee00',   fillColor:'#00ff88',   fillOpacity:0.8  }).addTo(layer);  m.on('click',()=>renderPanel(s.stop_id)); });}/* =========================⏱ NEXT DEPARTURES ENGINE========================= */function getNext(list){ let now=nowSec(); return list  .map(d=>({...d,sec:toSec(d.departure_time)}))  .filter(d=>d.sec>=now-300)  .sort((a,b)=>a.sec-b.sec);}function countdown(sec){ let now=nowSec(); let diff=Math.floor((sec-now)/60); if(diff<0) return "DEPARTED"; if(diff===0) return "NOW"; return diff+" min";}/* =========================📋 PANEL========================= */function renderPanel(stop_id){ let list=INDEX.stop[stop_id]||[]; let meta=GTFS.stops.find(s=>s.stop_id==stop_id)||{}; list=getNext(list); let html=""; html+="<b>"+meta.stop_name+"</b><br>"; html+="GTFS: "+stop_id+"<br><br>"; let seen=new Set(); list=list.filter(x=>{  if(seen.has(x.trip_id)) return false;  seen.add(x.trip_id);  return true; }); for(let i=0;i<Math.min(list.length,20);i++){  let d=list[i];  let trip=INDEX.trip[d.trip_id]||{};  let route=INDEX.route[trip.route_id]||{};  let cls="green";  if(countdown(d.sec)==="NOW") cls="red";  html+=  "<div class='row'>"+   "<div class='badge'>"+(route.route_short_name||"?")+"</div>"+   "<div>"+(trip.trip_headsign||"route")+"</div>"+   "<div class='"+cls+"'>"+     d.departure_time+     "<br><span class='small'>"+countdown(d.sec)+"</span>"+   "</div>"+  "</div>"; } document.getElementById('panel').innerHTML=html;}function resetPanel(){ document.getElementById('panel').innerHTML="CLICK A STOP";}/* =========================🚀 BOOT========================= */document.getElementById('zip').addEventListener('change',e=>{ loadGTFS(e.target.files[0]);});</script></body></html>
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>🚦 FUTÁR V4.5 DISPATCHER ALPHA</title>
+
+<style>
+body{
+    margin:0;
+    background:#08131a;
+    color:#e6edf3;
+    font-family:Arial,Helvetica,sans-serif;
+}
+header{
+    background:#121922;
+    border-bottom:3px solid #1f6feb;
+    padding:12px;
+}
+h1{
+    margin:0;
+    font-size:24px;
+}
+.panel{
+    margin:10px;
+    background:#161b22;
+    border-radius:10px;
+    padding:12px;
+}
+input{
+    width:100%;
+    padding:12px;
+    background:#0f141a;
+    border:1px solid #2b3542;
+    color:white;
+    border-radius:8px;
+}
+table{
+    width:100%;
+    border-collapse:collapse;
+}
+th{
+    background:#121922;
+    padding:10px;
+    text-align:left;
+    font-size:13px;
+}
+td{
+    padding:8px;
+    border-top:1px solid #25303d;
+    font-size:13px;
+}
+.good{color:#4cd137;}
+.bad{color:#ff5b5b;}
+.warn{color:#f1c40f;}
+.live{
+    color:#4cd137;
+    font-weight:bold;
+}
+.schedule{
+    color:#58a6ff;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+<h1>🚦 FUTÁR V4.5 GTFS MULTI-INDEX ALPHA</h1>
+<div>BKK + HÉV + MÁV + VOLÁN</div>
+</header>
+
+<div class="panel">
+<input type="text"
+placeholder="🔎 Megálló keresése (pl: Nád utca, Örs, Szob)">
+</div>
+
+<div class="panel">
+
+<h3>🚍 DISPATCHER INDULÁSI TÁBLA</h3>
+
+<table>
+<thead>
+<tr>
+<th>Járat</th>
+<th>Irány</th>
+<th>Indul</th>
+<th>Késés</th>
+<th>Rendszám</th>
+<th>Forda</th>
+<th>Járműtípus</th>
+<th>Státusz</th>
+</tr>
+</thead>
+
+<tbody id="dispatcher">
+</tbody>
+
+</table>
+
+</div>
+
+<script>
+
+const rows = [
+
+{
+route:"85",
+dir:"Örs vezér tere",
+time:"14:32",
+delay:"+2",
+plate:"SGX-552",
+forda:"F12",
+vehicle:"🚌 Citaro 005",
+status:"LIVE"
+},
+
+{
+route:"85E",
+dir:"KÖKI",
+time:"14:35",
+delay:"+1",
+plate:"BPI-234",
+forda:"F15",
+vehicle:"🚌 MAN Lion's City",
+status:"LIVE"
+},
+
+{
+route:"32",
+dir:"Árpád híd",
+time:"14:41",
+delay:"—",
+plate:"—",
+forda:"—",
+vehicle:"🚌 Solaris Urbino",
+status:"MENETREND"
+},
+
+{
+route:"H5",
+dir:"Batthyány tér",
+time:"14:48",
+delay:"+3",
+plate:"—",
+forda:"—",
+vehicle:"🚆 MXA HÉV",
+status:"LIVE"
+},
+
+{
+route:"S70",
+dir:"Nyugati",
+time:"15:02",
+delay:"—",
+plate:"—",
+forda:"—",
+vehicle:"🚄 FLIRT 415",
+status:"MENETREND"
+},
+
+{
+route:"880",
+dir:"Vác",
+time:"15:11",
+delay:"+1",
+plate:"—",
+forda:"—",
+vehicle:"🚌 Credobus Econell",
+status:"LIVE"
+}
+
+];
+
+function render(){
+
+const tbody=document.getElementById("dispatcher");
+tbody.innerHTML="";
+
+rows.forEach(r=>{
+
+let cls="schedule";
+
+if(r.status==="LIVE")
+    cls="live";
+
+tbody.innerHTML += `
+<tr>
+<td>${r.route}</td>
+<td>${r.dir}</td>
+<td>${r.time}</td>
+<td>${r.delay}</td>
+<td>${r.plate}</td>
+<td>${r.forda}</td>
+<td>${r.vehicle}</td>
+<td class="${cls}">${r.status}</td>
+</tr>
+`;
+
+});
+
+}
+
+render();
+
+</script>
+
+</body>
+</html>
