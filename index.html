@@ -2,128 +2,183 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>🚦 GTFS LIVE DISPATCHER CORE</title>
+<title>🚦 FUTÁR V3 LIVE GTFS-RT MAP</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
 body{
     margin:0;
-    background:#0b0f14;
-    color:#e0e6ed;
     font-family:Arial;
+    background:#0b0f14;
+    color:#e5e7eb;
 }
 
-.header{
+#map{
+    height:100vh;
+    width:70%;
+    float:left;
+}
+
+#panel{
+    width:30%;
+    height:100vh;
+    float:left;
     background:#111827;
+    overflow:auto;
     padding:10px;
-    font-size:18px;
-    font-weight:bold;
+    box-sizing:border-box;
 }
 
-.table{
-    width:100%;
-    border-collapse:collapse;
-}
-
-td,th{
-    padding:10px;
+h2{
+    margin:0;
+    padding:10px 0;
     border-bottom:1px solid #1f2937;
-    text-align:left;
 }
 
-.status-green{color:#22c55e;}
-.status-yellow{color:#eab308;}
-.status-red{color:#ef4444;}
-.status-purple{color:#a855f7;}
+.card{
+    background:#1f2937;
+    margin:10px 0;
+    padding:10px;
+    border-radius:10px;
+}
 
 .badge{
-    padding:4px 8px;
+    padding:3px 6px;
     border-radius:6px;
     font-size:12px;
-    background:#1f2937;
 }
+
+.green{color:#22c55e;}
+.yellow{color:#eab308;}
+.red{color:#ef4444;}
+.purple{color:#a855f7;}
 </style>
 </head>
 
 <body>
 
-<div class="header">🚦 VALÓS GTFS DISPATCHER PANEL (BKK / MÁV / VOLÁN)</div>
+<div id="map"></div>
 
-<table class="table">
-<thead>
-<tr>
-<th>Járat</th>
-<th>Megálló</th>
-<th>Tervezett</th>
-<th>Valós</th>
-<th>Késés</th>
-<th>Státusz</th>
-</tr>
-</thead>
-
-<tbody id="rows"></tbody>
-</table>
+<div id="panel">
+<h2>🚦 LIVE DISPATCH PANEL</h2>
+<div id="list"></div>
+</div>
 
 <script>
-// DEMO → ezt később GTFS-RT API váltja ki
 
-const data = [
+// 🗺️ MAP INIT (Budapest központ)
+const map = L.map('map').setView([47.4979, 19.0402], 12);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'© OpenStreetMap'
+}).addTo(map);
+
+// 🚍 DEMO VEHICLES (GTFS-RT helyére jön majd API)
+let vehicles = [
 {
+id:"BKK-85",
 route:"85",
-stop:"Örs vezér tere",
+lat:47.489,
+lng:19.070,
 scheduled:"12:00",
 realtime:"12:03"
 },
 {
-route:"MÁV IC 745",
-stop:"Kelenföld",
+id:"MAV-IC745",
+route:"IC 745",
+lat:47.498,
+lng:19.040,
 scheduled:"12:10",
 realtime:"12:18"
 },
 {
-route:"Volán 100E",
-stop:"Deák Ferenc tér",
+id:"VOLAN-100E",
+route:"100E",
+lat:47.462,
+lng:19.251,
 scheduled:"12:05",
 realtime:"12:04"
 }
 ];
 
-function diffMin(a,b){
-const [h1,m1]=a.split(":").map(Number);
-const [h2,m2]=b.split(":").map(Number);
-return (h2*60+m2)-(h1*60+m1);
+let markers = {};
+
+// ⏱ delay calc
+function delayMin(s,r){
+let [sh,sm]=s.split(":").map(Number);
+let [rh,rm]=r.split(":").map(Number);
+return (rh*60+rm)-(sh*60+sm);
 }
 
-function statusClass(d){
-if(d<0) return "status-purple";
-if(d<=2) return "status-green";
-if(d<=5) return "status-yellow";
-return "status-red";
+// 🎨 status
+function getStatus(d){
+if(d<0) return "purple";
+if(d<=2) return "green";
+if(d<=5) return "yellow";
+return "red";
 }
 
+// 🚍 render markers + panel
 function render(){
-const tbody=document.getElementById("rows");
-tbody.innerHTML="";
 
-data.forEach(d=>{
-const delay = diffMin(d.scheduled,d.realtime);
-const cls = statusClass(delay);
+document.getElementById("list").innerHTML="";
 
-tbody.innerHTML += `
-<tr>
-<td><span class="badge">${d.route}</span></td>
-<td>${d.stop}</td>
-<td>${d.scheduled}</td>
-<td>${d.realtime}</td>
-<td>${delay} perc</td>
-<td class="${cls}">
-${delay<0?"KORAI":delay<=2?"PONTOS":delay<=5?"KÉSIK":"NAGY KÉSÉS"}
-</td>
-</tr>
+vehicles.forEach(v=>{
+
+let d = delayMin(v.scheduled,v.realtime);
+let status = getStatus(d);
+
+// 📍 marker create/update
+if(!markers[v.id]){
+markers[v.id] = L.marker([v.lat,v.lng]).addTo(map);
+}
+markers[v.id]
+.setLatLng([v.lat,v.lng])
+.bindPopup(`
+<b>${v.route}</b><br>
+Késés: ${d} perc
+`);
+
+// 📊 panel card
+document.getElementById("list").innerHTML += `
+<div class="card">
+<div><b>🚍 ${v.route}</b></div>
+<div>ID: ${v.id}</div>
+<div>⏱ ${v.scheduled} → ${v.realtime}</div>
+<div class="${status}">
+KÉSÉS: ${d} perc
+</div>
+</div>
 `;
+
 });
 }
 
 render();
+
+// 🔄 LIVE UPDATE LOOP (GTFS-RT ide jön majd)
+setInterval(()=>{
+
+vehicles = vehicles.map(v=>{
+// demo: random drift
+let latShift = (Math.random()-0.5)*0.001;
+let lngShift = (Math.random()-0.5)*0.001;
+
+return {
+...v,
+lat:v.lat+latShift,
+lng:v.lng+lngShift
+};
+});
+
+render();
+
+},3000);
+
 </script>
 
 </body>
