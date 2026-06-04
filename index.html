@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR CORE V1</title>
+<title>BKK GTFS CONNECT V1</title>
 
 <style>
 body{
@@ -50,60 +50,65 @@ button{
 
 <body>
 
-<header>🚦 FUTÁR CORE V1 – STOP ID ENGINE</header>
+<header>🚦 BKK REAL GTFS CONNECT V1</header>
 
-<input id="stopId" placeholder="STOP ID pl. BKK_1234">
-<button onclick="loadStop()">Betöltés</button>
+<input id="stopId" placeholder="STOP ID pl. 01000123">
+<button onclick="loadStop()">Lekérdezés</button>
 
 <div id="out"></div>
 
 <script>
 
-// 🔥 EZ LESZ KÉSŐBB A GTFS / API HELYE
-const STOP_DATABASE = {
-    "BKK_1001": {
-        name: "Örs vezér tere",
-        lines: [
-            {route:"32", times:["05:10","05:30","05:50"], delay: "+1"},
-            {route:"85", times:["05:12","05:32","05:52"], delay: "-2"},
-            {route:"85E", times:["05:15","05:35","05:55"], delay: "0"}
-        ]
-    },
-    "BKK_2002": {
-        name: "Deák Ferenc tér",
-        lines: [
-            {route:"47", times:["05:00","05:20","05:40"], delay: "+0"},
-            {route:"49", times:["05:05","05:25","05:45"], delay: "+2"}
-        ]
-    }
-};
+const API_BASE = "https://YOUR-VERCEL-API.vercel.app/api/stop?stop_id=";
 
-function loadStop(){
+/*
+👉 EZ LESZ A VALÓS BACKEND KAPU
+- BKK GTFS-RT fetch
+- stop_times parsing
+- vehicle positions
+*/
+
+async function loadStop(){
     const id = document.getElementById("stopId").value.trim();
     const out = document.getElementById("out");
 
-    const stop = STOP_DATABASE[id];
+    out.innerHTML = `<div class="card">⏳ Lekérdezés...</div>`;
 
-    if(!stop){
-        out.innerHTML = `<div class="card">❌ Nincs ilyen STOP ID: ${id}</div>`;
-        return;
-    }
+    try{
+        const res = await fetch(API_BASE + id);
+        const data = await res.json();
 
-    let html = `<div class="card">
-        <h3>📍 ${stop.name}</h3>
-        <small>STOP ID: ${id}</small>
-    </div>`;
+        if(!data || !data.stop){
+            out.innerHTML = `<div class="card">❌ Nincs adat erre: ${id}</div>`;
+            return;
+        }
 
-    stop.lines.forEach(l=>{
-        html += `
+        let html = `
         <div class="card">
-            <span class="badge">${l.route}</span>
-            <div>${l.times.join(" - ")}</div>
-            <small>Késés: ${l.delay} perc</small>
+            <h3>📍 ${data.stop.name}</h3>
+            <small>STOP ID: ${id}</small>
         </div>`;
-    });
 
-    out.innerHTML = html;
+        data.routes.forEach(r=>{
+            html += `
+            <div class="card">
+                <span class="badge">${r.route}</span>
+                <div>következő indulások:</div>
+                <div>${r.times.join(" - ")}</div>
+                <small>késés: ${r.delay ?? "0"} perc</small>
+            </div>`;
+        });
+
+        out.innerHTML = html;
+
+    } catch(e){
+        out.innerHTML = `
+        <div class="card">
+            ❌ API hiba / nincs backend kapcsolat
+            <br><br>
+            👉 ${e}
+        </div>`;
+    }
 }
 
 </script>
