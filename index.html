@@ -3,27 +3,42 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>BKK GTFS CONNECT V1</title>
+<title>FUTÁR V3 CONTROL ROOM</title>
 
 <style>
 body{
     margin:0;
     font-family: Arial;
-    background:#0b1016;
+    background:#0a0f14;
     color:#e6f1ff;
 }
 
 header{
-    padding:12px;
-    background:#121a24;
-    text-align:center;
+    padding:10px;
+    background:#111a24;
     font-weight:bold;
 }
 
-input, button{
+.grid{
+    display:grid;
+    grid-template-columns: 1fr 2fr;
+    height:90vh;
+}
+
+.panel{
     padding:10px;
-    margin:8px;
-    border-radius:8px;
+    border-right:1px solid #1f2d3d;
+}
+
+.main{
+    padding:10px;
+}
+
+input, button{
+    width:100%;
+    padding:10px;
+    margin-bottom:10px;
+    border-radius:6px;
     border:none;
 }
 
@@ -33,82 +48,74 @@ button{
 }
 
 .card{
-    margin:10px;
-    padding:10px;
     background:#141e2b;
-    border-radius:10px;
+    padding:8px;
+    margin-bottom:8px;
+    border-radius:8px;
 }
 
 .badge{
     background:#00c2ff;
     color:#000;
     padding:2px 6px;
-    border-radius:6px;
+    border-radius:5px;
 }
 </style>
 </head>
 
 <body>
 
-<header>🚦 BKK REAL GTFS CONNECT V1</header>
+<header>🚦 FUTÁR V3 CONTROL ROOM – LIVE DISPATCH</header>
 
-<input id="stopId" placeholder="STOP ID pl. 01000123">
-<button onclick="loadStop()">Lekérdezés</button>
+<div class="grid">
 
-<div id="out"></div>
+<!-- LEFT PANEL -->
+<div class="panel">
+    <input id="stop" placeholder="STOP ID (pl. 01000123)">
+    <button onclick="load()">LEKÉRDEZÉS</button>
+
+    <div id="info"></div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+    <h3>📡 LIVE JÁRAT PANEL</h3>
+    <div id="departures"></div>
+</div>
+
+</div>
 
 <script>
 
-const API_BASE = "https://YOUR-VERCEL-API.vercel.app/api/stop?stop_id=";
+async function load(){
 
-/*
-👉 EZ LESZ A VALÓS BACKEND KAPU
-- BKK GTFS-RT fetch
-- stop_times parsing
-- vehicle positions
-*/
+    const id = document.getElementById("stop").value;
+    const info = document.getElementById("info");
+    const dep = document.getElementById("departures");
 
-async function loadStop(){
-    const id = document.getElementById("stopId").value.trim();
-    const out = document.getElementById("out");
+    info.innerHTML = "⏳ betöltés...";
 
-    out.innerHTML = `<div class="card">⏳ Lekérdezés...</div>`;
+    const res = await fetch("/api/stop?stop_id=" + id);
+    const data = await res.json();
 
-    try{
-        const res = await fetch(API_BASE + id);
-        const data = await res.json();
-
-        if(!data || !data.stop){
-            out.innerHTML = `<div class="card">❌ Nincs adat erre: ${id}</div>`;
-            return;
-        }
-
-        let html = `
+    info.innerHTML = `
         <div class="card">
-            <h3>📍 ${data.stop.name}</h3>
-            <small>STOP ID: ${id}</small>
-        </div>`;
+            📍 <b>${data.stop.name}</b><br>
+            STOP ID: ${id}
+        </div>
+    `;
 
-        data.routes.forEach(r=>{
-            html += `
-            <div class="card">
-                <span class="badge">${r.route}</span>
-                <div>következő indulások:</div>
-                <div>${r.times.join(" - ")}</div>
-                <small>késés: ${r.delay ?? "0"} perc</small>
-            </div>`;
-        });
+    dep.innerHTML = "";
 
-        out.innerHTML = html;
-
-    } catch(e){
-        out.innerHTML = `
+    data.routes.forEach(r=>{
+        dep.innerHTML += `
         <div class="card">
-            ❌ API hiba / nincs backend kapcsolat
-            <br><br>
-            👉 ${e}
-        </div>`;
-    }
+            <span class="badge">${r.route}</span><br>
+            ${r.times ? r.times.join(" - ") : "n/a"}<br>
+            <small>delay: ${r.delay}</small>
+        </div>
+        `;
+    });
 }
 
 </script>
