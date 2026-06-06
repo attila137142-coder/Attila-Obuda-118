@@ -1,76 +1,176 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>DISPATCHER SAFE CORE V1.1</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
+<style>
+body{margin:0;font-family:Arial;background:#0b0f14;color:#00ff9d;}
+#top{padding:10px;background:#111;color:#00ff9d}
+#wrap{display:flex;height:95vh}
+#left{width:30%;padding:10px;overflow:auto;border-right:1px solid #1f2a3a}
+#map{flex:1}
+input{width:100%;padding:8px;background:#0f1722;color:#00ff9d;border:1px solid #1f2a3a}
+.row{padding:6px;border-bottom:1px solid #1f2a3a;cursor:pointer}
+.row:hover{background:#162033}
+.badge{background:#1f2a3a;padding:2px 6px;margin-left:6px}
+</style>
+</head>
+
+<body>
+
+<div id="top">🚦 SAFE DISPATCHER CORE V1.1</div>
+
+<div id="wrap">
+<div id="left">
+<input id="search" placeholder="GTFS stop keresés...">
+<div id="list"></div>
+</div>
+<div id="map"></div>
+</div>
+
 <script>
 
-// GTFS STORAGE
-let GTFS_STOPS = [];
-
 /* =========================
-   GTFS LOADER (CSV PARSER)
+   SAFE STATE
 ========================= */
 
-function parseCSV(text){
-const lines = text.trim().split("\n");
-const headers = lines[0].split(",");
+let STOPS = [];
+let map;
+let markers = [];
 
-return lines.slice(1).map(line=>{
-const cols = line.split(",");
-let obj = {};
-headers.forEach((h,i)=> obj[h] = cols[i]);
-return obj;
-});
+/* =========================
+   FALLBACK DEMO (ALWAYS WORKS)
+========================= */
+
+function fallbackStops(){
+return [
+{id:"BKK_1",name:"Deák Ferenc tér",lat:47.4979,lon:19.0546},
+{id:"BKK_2",name:"Kálvin tér",lat:47.4893,lon:19.0616},
+{id:"BKK_3",name:"Örs vezér tere",lat:47.5030,lon:19.1350},
+{id:"MAV_1",name:"Keleti pályaudvar",lat:47.5008,lon:19.0836}
+];
 }
 
 /* =========================
-   LOAD GTFS STOPS.TXT
+   SAFE INIT MAP
 ========================= */
 
-async function loadGTFSStops(url){
-const res = await fetch(url);
-const text = await res.text();
+function initMap(){
+map = L.map('map').setView([47.4979,19.04],12);
 
-const data = parseCSV(text);
-
-GTFS_STOPS = data.map(s=>({
-id: s.stop_id,
-name: s.stop_name,
-lat: parseFloat(s.stop_lat),
-lon: parseFloat(s.stop_lon)
-}));
-
-console.log("GTFS STOPS LOADED:", GTFS_STOPS.length);
-initStopsOnMap();
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+attribution:'OSM'
+}).addTo(map);
 }
 
 /* =========================
-   MAP INIT FROM REAL DATA
+   SAFE RENDER
 ========================= */
 
-let stopMarkers = [];
+function renderStops(list){
 
-function initStopsOnMap(){
+markers.forEach(m=>map.removeLayer(m));
+markers = [];
 
-stopMarkers.forEach(m=>map.removeLayer(m));
-stopMarkers = [];
+document.getElementById("list").innerHTML = "";
 
-GTFS_STOPS.forEach(s=>{
-if(!s.lat || !s.lon) return;
+list.forEach(s=>{
 
-const marker = L.marker([s.lat,s.lon])
-.addTo(map)
+const m = L.marker([s.lat,s.lon]).addTo(map)
 .bindPopup(`<b>${s.name}</b><br>${s.id}`);
 
-stopMarkers.push(marker);
+markers.push(m);
+
+document.getElementById("list").innerHTML += `
+<div class="row" onclick="focusStop(${s.lat},${s.lon})">
+${s.name}
+<span class="badge">${s.id}</span>
+</div>
+`;
 });
 }
 
 /* =========================
-   SEARCH SWITCH
+   SAFE FOCUS
 ========================= */
 
-function searchStops(q){
-return GTFS_STOPS.filter(s=>
-(s.name || "").toLowerCase().includes(q) ||
-(s.id || "").toLowerCase().includes(q)
-);
+window.focusStop = function(lat,lon){
+map.setView([lat,lon],15);
 }
 
+/* =========================
+   SAFE SEARCH
+========================= */
+
+document.addEventListener("input",(e)=>{
+if(e.target.id!=="search") return;
+
+const q = e.target.value.toLowerCase();
+
+const res = STOPS.filter(s=>
+s.name.toLowerCase().includes(q) ||
+s.id.toLowerCase().includes(q)
+);
+
+renderStops(res);
+});
+
+/* =========================
+   SAFE GTFS LOADER
+   (NO CRASH EVER)
+========================= */
+
+async function loadGTFS(){
+try{
+
+// ide jön majd valós GTFS URL
+const url = "stops.txt";
+
+const r = await fetch(url);
+if(!r.ok) throw new Error("NO GTFS");
+
+const txt = await r.text();
+
+// very simple safe parse
+const lines = txt.split("\n").filter(Boolean);
+const header = lines[0].split(",");
+
+STOPS = lines.slice(1).map(l=>{
+const c = l.split(",");
+let o={};
+header.forEach((h,i)=>o[h]=c[i]);
+return {
+id:o.stop_id,
+name:o.stop_name,
+lat:parseFloat(o.stop_lat),
+lon:parseFloat(o.stop_lon)
+};
+});
+
+}catch(e){
+console.log("GTFS FALLBACK MODE:",e.message);
+STOPS = fallbackStops();
+}
+
+renderStops(STOPS);
+}
+
+/* =========================
+   BOOT SEQUENCE (SAFE)
+========================= */
+
+window.onload = function(){
+initMap();
+loadGTFS();
+};
+
 </script>
+
+</body>
+</html>
