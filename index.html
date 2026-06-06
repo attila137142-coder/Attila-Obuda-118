@@ -1,39 +1,251 @@
-{
-  "incident_id": "INC-20260606-001",
-  "type": "road_closure",
-  "severity": "high",
-  "status": "active",
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>DISPATCHER V1 CORE</title>
 
-  "affected_routes": [
-    {
-      "route_id": "85E",
-      "operator": "BKK",
-      "impact_type": "detour",
-      "delay_estimate_min": 8
-    }
-  ],
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  "affected_segment": {
-    "from_stop": "Kőbánya-Kispest",
-    "to_stop": "Népliget"
-  },
+<!-- MAP -->
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
-  "time": {
-    "start": "2026-06-06T08:00:00+02:00",
-    "end_estimated": "2026-06-06T12:30:00+02:00"
-  },
-
-  "reason": "útlezárás",
-  "description": "Baleset miatt teljes útzár, terelés érvényben",
-
-  "routing_action": {
-    "type": "detour",
-    "new_path": ["stopA", "stopX", "stopY", "stopB"]
-  },
-
-  "system_effect": {
-    "delay_multiplier": 1.35,
-    "skip_stops": false,
-    "force_reroute": true
-  }
+<style>
+body{
+margin:0;
+font-family:Arial;
+background:#0b0f14;
+color:#00ff9d;
 }
+
+#topbar{
+display:flex;
+justify-content:space-between;
+padding:10px;
+background:#111824;
+border-bottom:1px solid #1f2a3a;
+}
+
+#clock{
+font-size:18px;
+font-weight:bold;
+}
+
+#container{
+display:flex;
+height:calc(100vh - 50px);
+}
+
+#left{
+width:35%;
+padding:10px;
+overflow:auto;
+border-right:1px solid #1f2a3a;
+}
+
+#right{
+flex:1;
+display:flex;
+flex-direction:column;
+}
+
+#map{
+flex:1;
+}
+
+input{
+width:100%;
+padding:8px;
+background:#0f1722;
+border:1px solid #1f2a3a;
+color:#00ff9d;
+margin-bottom:10px;
+}
+
+.table{
+width:100%;
+font-size:12px;
+}
+
+.row{
+display:flex;
+justify-content:space-between;
+padding:6px;
+border-bottom:1px solid #1f2a3a;
+}
+
+.badge{
+padding:2px 6px;
+border-radius:4px;
+background:#1f2a3a;
+}
+
+.red{color:#ff4d4d;}
+.yellow{color:#ffd000;}
+.green{color:#00ff9d;}
+</style>
+</head>
+
+<body>
+
+<div id="topbar">
+<div>🚦 DISPATCHER V1 CORE</div>
+<div id="clock">--:--:--</div>
+</div>
+
+<div id="container">
+
+<!-- LEFT PANEL -->
+<div id="left">
+
+<h3>🔎 STOP SEARCH</h3>
+<input id="search" placeholder="Stop name / ID..."/>
+
+<div id="results"></div>
+
+<hr>
+
+<h3>🚍 LIVE DEPARTURES</h3>
+<div id="departures"></div>
+
+</div>
+
+<!-- RIGHT PANEL -->
+<div id="right">
+<div id="map"></div>
+</div>
+
+</div>
+
+<script>
+
+/* =========================
+   MOCK GTFS CORE DATA
+========================= */
+
+const stops = [
+{ id:"BKK_001", name:"Deák Ferenc tér", lat:47.4979, lon:19.0546 },
+{ id:"BKK_002", name:"Kálvin tér", lat:47.4893, lon:19.0616 },
+{ id:"BKK_003", name:"Örs vezér tere", lat:47.5030, lon:19.1350 },
+{ id:"MAV_001", name:"Budapest-Keleti", lat:47.5008, lon:19.0836 }
+];
+
+const routes = [
+{ id:"7", type:"BKK BUS" },
+{ id:"M4", type:"METRO" },
+{ id:"IC", type:"MÁV INTERCITY" }
+];
+
+/* simulated realtime */
+function randDelay(){
+return Math.floor(Math.random()*12)-3; // -3 early / + delay
+}
+
+/* =========================
+   CLOCK
+========================= */
+
+function updateClock(){
+const d = new Date();
+document.getElementById("clock").innerText =
+d.toLocaleTimeString();
+}
+setInterval(updateClock,1000);
+updateClock();
+
+/* =========================
+   MAP INIT
+========================= */
+
+const map = L.map('map').setView([47.4979,19.0402], 12);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+attribution:'OSM'
+}).addTo(map);
+
+stops.forEach(s=>{
+L.marker([s.lat,s.lon])
+.addTo(map)
+.bindPopup(`<b>${s.name}</b><br>${s.id}`);
+});
+
+/* =========================
+   SEARCH ENGINE
+========================= */
+
+document.getElementById("search").addEventListener("input",(e)=>{
+const q = e.target.value.toLowerCase();
+
+const res = stops.filter(s=>
+s.name.toLowerCase().includes(q) ||
+s.id.toLowerCase().includes(q)
+);
+
+document.getElementById("results").innerHTML =
+res.map(s=>`
+<div class="row" onclick="selectStop('${s.id}')">
+<span>${s.name}</span>
+<span class="badge">${s.id}</span>
+</div>
+`).join("");
+});
+
+/* =========================
+   STOP SELECT
+========================= */
+
+let currentStop = null;
+
+window.selectStop = function(id){
+currentStop = stops.find(s=>s.id===id);
+renderDepartures();
+}
+
+/* =========================
+   DEPARTURE ENGINE
+========================= */
+
+function renderDepartures(){
+
+if(!currentStop){
+document.getElementById("departures").innerHTML =
+"<i>Select a stop</i>";
+return;
+}
+
+let html = "";
+
+for(let i=0;i<8;i++){
+
+const route = routes[Math.floor(Math.random()*routes.length)];
+const base = 5 + i*7;
+const delay = randDelay();
+
+let status = "green";
+if(delay>3) status="red";
+else if(delay>0) status="yellow";
+
+html += `
+<div class="row">
+<div>
+<b>${route.id}</b>
+<span class="badge">${route.type}</span>
+</div>
+
+<div>
+${base} min
+<span class="${status}">(${delay>=0?"+":""}${delay})</span>
+</div>
+</div>
+`;
+}
+
+document.getElementById("departures").innerHTML = html;
+}
+
+setInterval(renderDepartures,5000);
+
+</script>
+
+</body>
+</html>
