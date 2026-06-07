@@ -2,175 +2,116 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>DISPATCHER SAFE CORE V1.1</title>
-
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Attila Calculator V1</title>
 <style>
-body{margin:0;font-family:Arial;background:#0b0f14;color:#00ff9d;}
-#top{padding:10px;background:#111;color:#00ff9d}
-#wrap{display:flex;height:95vh}
-#left{width:30%;padding:10px;overflow:auto;border-right:1px solid #1f2a3a}
-#map{flex:1}
-input{width:100%;padding:8px;background:#0f1722;color:#00ff9d;border:1px solid #1f2a3a}
-.row{padding:6px;border-bottom:1px solid #1f2a3a;cursor:pointer}
-.row:hover{background:#162033}
-.badge{background:#1f2a3a;padding:2px 6px;margin-left:6px}
+body{background:#0b0f14;color:#e5e7eb;font-family:Arial;margin:0;padding:15px}
+.section{background:#111827;margin:12px 0;padding:12px;border-radius:10px}
+textarea,input{width:100%;padding:8px;margin:4px 0;box-sizing:border-box}
+button{padding:8px 12px;cursor:pointer}
+table{border-collapse:collapse;width:100%}
+td,th{border:1px solid #333;padding:6px}
+.out{background:#1f2937;padding:8px;margin-top:6px;white-space:pre-wrap}
 </style>
 </head>
-
 <body>
+<h1>🧮 ATTILA CALCULATOR V1</h1>
 
-<div id="top">🚦 SAFE DISPATCHER CORE V1.1</div>
-
-<div id="wrap">
-<div id="left">
-<input id="search" placeholder="GTFS stop keresés...">
-<div id="list"></div>
+<div class="section">
+<h2>1. Költségmegosztás (%)</h2>
+Összes összeg:<input id="tot" value="12600">
+A,B,C... összegek (soronként):<textarea id="shares">2600
+5100
+810
+4010
+80</textarea>
+<button onclick="calcShare()">Számol</button>
+<div id="shareOut"></div>
 </div>
-<div id="map"></div>
+
+<div class="section">
+<h2>2. Áremelés</h2>
+Régi ár <input id="oldp" value="200">
+Új ár <input id="newp" value="300">
+<button onclick="calcRaise()">Számol</button>
+<div id="raiseOut" class="out"></div>
+</div>
+
+<div class="section">
+<h2>3. Megálló távolságok</h2>
+<textarea id="dist">120
+240
+180
+350
+90</textarea>
+<button onclick="calcDist()">Elemzés</button>
+<div id="distOut"></div>
+</div>
+
+<div class="section">
+<h2>4. Menetidő / Sebesség</h2>
+Távolság (m)<input id="dm" value="800">
+Idő (perc)<input id="tm" value="12">
+<button onclick="calcSpeed()">Sebesség</button>
+<div id="speedOut" class="out"></div>
+</div>
+
+<div class="section">
+<h2>5. Lejtő kalkulátor</h2>
+Távolság (m)<input id="len" value="118">
+Ezrelék (‰)<input id="perm" value="26">
+<button onclick="calcSlope()">Számol</button>
+<div id="slopeOut" class="out"></div>
+</div>
+
+<div class="section">
+<h2>6. Nagyobb / kisebb arány</h2>
+Régi<input id="v1" value="2000">
+Új<input id="v2" value="5000">
+<button onclick="calcRatio()">Számol</button>
+<div id="ratioOut" class="out"></div>
 </div>
 
 <script>
-
-/* =========================
-   SAFE STATE
-========================= */
-
-let STOPS = [];
-let map;
-let markers = [];
-
-/* =========================
-   FALLBACK DEMO (ALWAYS WORKS)
-========================= */
-
-function fallbackStops(){
-return [
-{id:"BKK_1",name:"Deák Ferenc tér",lat:47.4979,lon:19.0546},
-{id:"BKK_2",name:"Kálvin tér",lat:47.4893,lon:19.0616},
-{id:"BKK_3",name:"Örs vezér tere",lat:47.5030,lon:19.1350},
-{id:"MAV_1",name:"Keleti pályaudvar",lat:47.5008,lon:19.0836}
-];
+function calcShare(){
+ let t=+tot.value;
+ let vals=shares.value.trim().split(/\n+/).map(Number);
+ let h='<table><tr><th>#</th><th>Ft</th><th>%</th></tr>';
+ vals.forEach((v,i)=>h+=`<tr><td>${String.fromCharCode(65+i)}</td><td>${v}</td><td>${(v/t*100).toFixed(2)}%</td></tr>`);
+ h+='</table>';
+ shareOut.innerHTML=h;
 }
-
-/* =========================
-   SAFE INIT MAP
-========================= */
-
-function initMap(){
-map = L.map('map').setView([47.4979,19.04],12);
-
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-attribution:'OSM'
-}).addTo(map);
+function calcRaise(){
+ let o=+oldp.value,n=+newp.value;
+ raiseOut.textContent=`Változás: ${(n-o).toFixed(2)} Ft\nEmelés: ${(((n-o)/o)*100).toFixed(2)} %`;
 }
-
-/* =========================
-   SAFE RENDER
-========================= */
-
-function renderStops(list){
-
-markers.forEach(m=>map.removeLayer(m));
-markers = [];
-
-document.getElementById("list").innerHTML = "";
-
-list.forEach(s=>{
-
-const m = L.marker([s.lat,s.lon]).addTo(map)
-.bindPopup(`<b>${s.name}</b><br>${s.id}`);
-
-markers.push(m);
-
-document.getElementById("list").innerHTML += `
-<div class="row" onclick="focusStop(${s.lat},${s.lon})">
-${s.name}
-<span class="badge">${s.id}</span>
-</div>
-`;
-});
+function calcDist(){
+ let a=dist.value.trim().split(/\n+/).map(Number);
+ let total=a.reduce((x,y)=>x+y,0), run=0, avg=total/a.length;
+ let h='<table><tr><th>Megálló</th><th>Szakasz</th><th>Hátra</th><th>Megtett %</th><th>Hátra %</th><th>Átlaghoz %</th></tr>';
+ a.forEach((v,i)=>{
+   run+=v;
+   h+=`<tr><td>${i+1}</td><td>${v}</td><td>${(total-run).toFixed(0)}</td><td>${(run/total*100).toFixed(1)}</td><td>${((total-run)/total*100).toFixed(1)}</td><td>${(v/avg*100).toFixed(1)}</td></tr>`;
+ });
+ h+='</table>';
+ distOut.innerHTML=h;
 }
-
-/* =========================
-   SAFE FOCUS
-========================= */
-
-window.focusStop = function(lat,lon){
-map.setView([lat,lon],15);
+function calcSpeed(){
+ let d=+dm.value,t=+tm.value;
+ let ms=d/(t*60);
+ let kmh=ms*3.6;
+ speedOut.textContent=`Sebesség: ${kmh.toFixed(2)} km/h\nSebesség: ${ms.toFixed(2)} m/s`;
 }
-
-/* =========================
-   SAFE SEARCH
-========================= */
-
-document.addEventListener("input",(e)=>{
-if(e.target.id!=="search") return;
-
-const q = e.target.value.toLowerCase();
-
-const res = STOPS.filter(s=>
-s.name.toLowerCase().includes(q) ||
-s.id.toLowerCase().includes(q)
-);
-
-renderStops(res);
-});
-
-/* =========================
-   SAFE GTFS LOADER
-   (NO CRASH EVER)
-========================= */
-
-async function loadGTFS(){
-try{
-
-// ide jön majd valós GTFS URL
-const url = "stops.txt";
-
-const r = await fetch(url);
-if(!r.ok) throw new Error("NO GTFS");
-
-const txt = await r.text();
-
-// very simple safe parse
-const lines = txt.split("\n").filter(Boolean);
-const header = lines[0].split(",");
-
-STOPS = lines.slice(1).map(l=>{
-const c = l.split(",");
-let o={};
-header.forEach((h,i)=>o[h]=c[i]);
-return {
-id:o.stop_id,
-name:o.stop_name,
-lat:parseFloat(o.stop_lat),
-lon:parseFloat(o.stop_lon)
-};
-});
-
-}catch(e){
-console.log("GTFS FALLBACK MODE:",e.message);
-STOPS = fallbackStops();
+function calcSlope(){
+ let l=+len.value,p=+perm.value;
+ let sz=l*p/1000;
+ slopeOut.textContent=`Szintkülönbség: ${sz.toFixed(3)} m\nLejtő: ${(p/10).toFixed(2)} %`;
 }
-
-renderStops(STOPS);
+function calcRatio(){
+ let a=+v1.value,b=+v2.value;
+ ratioOut.textContent=`Növekedés: ${(((b-a)/a)*100).toFixed(2)} %\nRégi az újnak: ${(a/b*100).toFixed(2)} %`;
 }
-
-/* =========================
-   BOOT SEQUENCE (SAFE)
-========================= */
-
-window.onload = function(){
-initMap();
-loadGTFS();
-};
-
+calcShare();calcRaise();calcDist();calcSpeed();calcSlope();calcRatio();
 </script>
-
 </body>
 </html>
