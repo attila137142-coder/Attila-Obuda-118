@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V4 REALTIME ENGINE</title>
+<title>GTFS UNIVERSAL ENGINE V5</title>
 
 <style>
 body{
@@ -12,11 +12,9 @@ body{
     font-family:Consolas,monospace;
 }
 
-/* ================= HEADER ================= */
 #top{
     display:flex;
     justify-content:space-between;
-    align-items:center;
     padding:10px;
     border-bottom:2px solid #00ff66;
 }
@@ -24,40 +22,37 @@ body{
 #clock{
     font-size:40px;
     color:#00ff66;
-    text-shadow:0 0 15px #00ff66;
 }
 
 #gps{
     font-size:12px;
     color:#ffd000;
-    max-width:50%;
 }
 
-/* ================= DROP AREA ================= */
-#drop{
+#zone{
     margin:10px;
-    padding:20px;
+    padding:15px;
     border:2px dashed #00ff66;
     text-align:center;
     color:#00ff66;
 }
 
-/* ================= SEARCH ================= */
+#file{
+    margin:10px;
+}
+
 #search{
     width:95%;
     margin:10px;
     padding:10px;
-    font-size:16px;
-    border:none;
 }
 
-/* ================= STOPS ================= */
 .stop{
     padding:8px;
     border-bottom:1px solid #222;
 }
 
-.dist{
+.badge{
     color:#7dff7d;
 }
 </style>
@@ -67,139 +62,194 @@ body{
 
 <div id="top">
     <div id="clock">00:00:00</div>
-    <div id="gps">GPS inicializálás...</div>
+    <div id="gps">GPS...</div>
 </div>
 
-<div id="drop">📦 GTFS ZIP DROP ZONE (dobd ide a fájlt)</div>
+<div id="zone">📦 DROP GTFS ZIP (BKK / MÁV / VOLÁN)</div>
 
-<input id="search" placeholder="🔍 megálló keresése...">
+<input type="file" id="file" accept=".zip">
 
-<div id="stops"></div>
+<input id="search" placeholder="🔍 keresés...">
+
+<div id="out"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
 /* ================= CLOCK ================= */
-function tick(){
+setInterval(()=>{
     document.getElementById("clock").innerText =
         new Date().toLocaleTimeString('hu-HU',{hour12:false});
-}
-setInterval(tick,1000); tick();
+},1000);
 
 /* ================= GPS ================= */
-let myLat=null, myLon=null;
+let myLat=null,myLon=null;
 
 navigator.geolocation.getCurrentPosition(pos=>{
-    myLat = pos.coords.latitude;
-    myLon = pos.coords.longitude;
+    myLat=pos.coords.latitude;
+    myLon=pos.coords.longitude;
 
-    document.getElementById("gps").innerHTML =
+    document.getElementById("gps").innerText =
         `📍 ${myLat.toFixed(5)}, ${myLon.toFixed(5)}`;
-
-    renderStops();
 });
 
-/* ================= GTFS STORAGE ================= */
+/* ================= GLOBAL GTFS STORE ================= */
 let GTFS = {
-    stops:[]
+    stops: [],
+    routes: [],
+    trips: [],
+    stop_times: []
 };
 
-/* ================= ZIP LOAD ================= */
-document.getElementById("drop").ondragover = e=>{
-    e.preventDefault();
-};
+/* ================= FILE FINDER (CRITICAL FIX) ================= */
+function findFile(zip, name){
+    return Object.keys(zip.files).find(f =>
+        f.toLowerCase().endsWith(name)
+    );
+}
 
-document.getElementById("drop").ondrop = async e=>{
-    e.preventDefault();
+/* ================= LOAD ENGINE ================= */
+async function loadGTFS(file){
 
-    const file = e.dataTransfer.files[0];
     const zip = await JSZip.loadAsync(file);
 
-    const stopsFile = zip.file("stops.txt");
-    if(!stopsFile){
-        alert("Nincs stops.txt a GTFS-ben!");
+    await loadTable(zip, "stops.txt", "stops", parseStops);
+    await loadTable(zip, "routes.txt", "routes", parseSimpleCSV);
+    await loadTable(zip, "trips.txt", "trips", parseSimpleCSV);
+    await loadTable(zip, "stop_times.txt", "stop_times", parseSimpleCSV);
+
+    render();
+}
+
+/* ================= SAFE LOADER ================= */
+async function loadTable(zip, filename, key, parser){
+
+    const path = findFile(zip, filename);
+    if(!path){
+        console.log("Missing:", filename);
         return;
     }
 
-    const text = await stopsFile.async("string");
+    const text = await zip.file(path).async("string");
 
-    parseStops(text);
-    renderStops();
-};
+    GTFS[key] = parser(text);
+}
 
-/* ================= GTFS PARSER ================= */
-function parseStops(csv){
-    const lines = csv.split("\n");
-    const headers = lines[0].split(",");
+/* ================= SMART CSV PARSER ================= */
+function parseSimpleCSV(csv){
 
-    const idx = {
-        id: headers.indexOf("stop_id"),
-        name: headers.indexOf("stop_name"),
-        lat: headers.indexOf("stop_lat"),
-        lon: headers.indexOf("stop_lon")
-    };
+    const lines = csv
+        .replace(/\r/g,"")
+        .split("\n")
+        .filter(l=>l.trim());
 
-    GTFS.stops = [];
+    const headers = splitCSV(lines[0]);
+
+    const rows = [];
 
     for(let i=1;i<lines.length;i++){
-        const c = lines[i].split(",");
-        if(c.length < 3) continue;
+        const cols = splitCSV(lines[i]);
 
-        GTFS.stops.push({
-            stop_id: c[idx.id],
-            stop_name: c[idx.name],
-            stop_lat: parseFloat(c[idx.lat]),
-            stop_lon: parseFloat(c[idx.lon])
+        let obj = {};
+        headers.forEach((h,idx)=>{
+            obj[h] = cols[idx] || "";
         });
+
+        rows.push(obj);
     }
+
+    return rows;
+}
+
+/* ================= SPECIAL STOP PARSER ================= */
+function parseStops(csv){
+
+    const data = parseSimpleCSV(csv);
+
+    return data.map(s=>({
+        stop_id: s.stop_id,
+        stop_name: s.stop_name,
+        stop_lat: parseFloat(s.stop_lat),
+        stop_lon: parseFloat(s.stop_lon)
+    }));
+}
+
+/* ================= CSV SPLITTER (QUOTE SAFE) ================= */
+function splitCSV(str){
+    const res=[];
+    let cur="";
+    let inQ=false;
+
+    for(let c of str){
+        if(c === '"') inQ = !inQ;
+        else if(c === "," && !inQ){
+            res.push(cur);
+            cur="";
+        }else cur+=c;
+    }
+    res.push(cur);
+    return res;
 }
 
 /* ================= DISTANCE ================= */
 function dist(lat1,lon1,lat2,lon2){
-    const R = 6371000;
-    const dLat = (lat2-lat1)*Math.PI/180;
-    const dLon = (lon2-lon1)*Math.PI/180;
+    const R=6371000;
+    const dLat=(lat2-lat1)*Math.PI/180;
+    const dLon=(lon2-lon1)*Math.PI/180;
 
-    const a =
+    const a=
         Math.sin(dLat/2)**2 +
-        Math.cos(lat1*Math.PI/180) *
-        Math.cos(lat2*Math.PI/180) *
+        Math.cos(lat1*Math.PI/180)*
+        Math.cos(lat2*Math.PI/180)*
         Math.sin(dLon/2)**2;
 
-    return 2 * R * Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+    return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
 /* ================= RENDER ================= */
-function renderStops(){
+function render(){
+
     const q = document.getElementById("search").value.toLowerCase();
-    const out = document.getElementById("stops");
+    const out = document.getElementById("out");
 
     if(!GTFS.stops.length){
-        out.innerHTML = "Nincs GTFS betöltve...";
+        out.innerHTML = "Nincs GTFS betöltve";
         return;
     }
 
     out.innerHTML = GTFS.stops
-        .filter(s => s.stop_name?.toLowerCase().includes(q))
-        .slice(0,200)
+        .filter(s=>s.stop_name?.toLowerCase().includes(q))
+        .slice(0,300)
         .map(s=>{
 
-            let d = "";
+            let d="";
             if(myLat){
-                const m = dist(myLat,myLon,s.stop_lat,s.stop_lon);
-                d = m < 1000 ? Math.round(m)+" m" : (m/1000).toFixed(2)+" km";
+                const m=dist(myLat,myLon,s.stop_lat,s.stop_lon);
+                d = m<1000?Math.round(m)+" m":(m/1000).toFixed(2)+" km";
             }
 
             return `
             <div class="stop">
                 🚏 ${s.stop_name}<br>
-                <span style="color:#888">${s.stop_id}</span><br>
-                📏 <span class="dist">${d}</span>
+                <span class="badge">${s.stop_id}</span><br>
+                📏 ${d}
             </div>`;
         }).join("");
 }
 
-document.getElementById("search").oninput = renderStops;
+/* ================= EVENTS ================= */
+document.getElementById("file").addEventListener("change",e=>{
+    loadGTFS(e.target.files[0]);
+});
+
+document.getElementById("zone").ondragover=e=>e.preventDefault();
+
+document.getElementById("zone").ondrop=e=>{
+    e.preventDefault();
+    loadGTFS(e.dataTransfer.files[0]);
+};
+
+document.getElementById("search").oninput=render;
 </script>
 
 </body>
