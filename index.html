@@ -1,234 +1,281 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Megálló Menetrend V1</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>🚦 ATTILA DISPATCH CORE V1 OFFLINE</title>
 
 <style>
-
-body{
-    margin:0;
-    background:#f0f0f0;
-    font-family:Arial,Helvetica,sans-serif;
+body {
+  margin:0;
+  font-family: Arial, sans-serif;
+  background:#0b0f14;
+  color:#d7e1ea;
 }
 
-.header{
-    background:#ffffff;
-    padding:12px;
-    font-size:22px;
-    font-weight:bold;
-    border-bottom:1px solid #ccc;
+header {
+  padding:10px;
+  background:#111826;
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  border-bottom:2px solid #1f2a3a;
 }
 
-.stopTitle{
-    font-size:18px;
-    font-weight:bold;
-    padding:10px;
-    background:white;
+h1 { font-size:16px; margin:0; }
+
+.clock {
+  font-weight:bold;
+  color:#4dd0e1;
 }
 
-.departure{
-    display:flex;
-    background:white;
-    border-bottom:1px solid #d0d0d0;
-    min-height:92px;
+.container {
+  display:grid;
+  grid-template-columns: 320px 1fr;
+  height: calc(100vh - 50px);
 }
 
-.route{
-    width:95px;
-    min-width:95px;
-    background:#1399d6;
-    color:white;
-    font-size:30px;
-    font-weight:bold;
-    display:flex;
-    align-items:center;
-    justify-content:center;
+.panel {
+  background:#0f1621;
+  border-right:1px solid #1f2a3a;
+  padding:10px;
+  overflow:auto;
 }
 
-.center{
-    flex:1;
-    padding:8px;
+.main {
+  padding:10px;
+  overflow:auto;
 }
 
-.destination{
-    font-size:20px;
-    font-weight:bold;
+input, button, textarea {
+  width:100%;
+  margin-top:6px;
+  padding:8px;
+  background:#111826;
+  color:#fff;
+  border:1px solid #2b3b52;
 }
 
-.vehicle{
-    font-size:14px;
-    margin-top:5px;
+button {
+  cursor:pointer;
+  background:#1e88e5;
+  font-weight:bold;
 }
 
-.nextstop{
-    font-size:14px;
-    font-weight:bold;
+table {
+  width:100%;
+  border-collapse:collapse;
+  margin-top:10px;
 }
 
-.minutes{
-    width:90px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    font-size:58px;
-    color:black;
+td, th {
+  border:1px solid #2b3b52;
+  padding:6px;
+  font-size:12px;
 }
 
-.green{
-    color:#13b613;
+th {
+  background:#111826;
+  color:#4dd0e1;
 }
 
-.red{
-    color:#d02020;
+.badge {
+  padding:2px 6px;
+  border-radius:4px;
+  background:#1e88e5;
 }
 
-.search{
-    padding:10px;
-    background:white;
+.small {
+  font-size:11px;
+  opacity:0.8;
 }
-
-input{
-    width:100%;
-    padding:10px;
-    font-size:18px;
-    box-sizing:border-box;
-}
-
 </style>
 </head>
+
 <body>
 
-<div class="header">
-🚏 Megállók
+<header>
+  <h1>🚦 ATTILA DISPATCH CORE V1 (OFFLINE GTFS + BEÉGETETT ADAT)</h1>
+  <div class="clock" id="clock"></div>
+</header>
+
+<div class="container">
+
+<!-- LEFT PANEL -->
+<div class="panel">
+
+<h3>📦 GTFS BETÖLTÉS</h3>
+
+<button onclick="loadDemo()">🟢 DEMO GTFS BETÖLTÉS</button>
+
+<textarea id="gtfsInput" placeholder="GTFS CSV (stops.txt / routes.txt / stop_times.txt)..."></textarea>
+<button onclick="saveGTFS()">💾 GTFS MENTÉS LOCALSTORAGE</button>
+<button onclick="clearGTFS()">🗑 TÖRLÉS</button>
+
+<hr/>
+
+<h3>🔍 MEGÁLLÓ KERESŐ</h3>
+<input id="search" placeholder="pl: Örs vezér tér" oninput="searchStops()"/>
+
+<div id="results"></div>
+
 </div>
 
-<div class="search">
-<input id="searchBox"
-placeholder="Megálló keresése...">
+<!-- MAIN -->
+<div class="main">
+
+<h2>🚏 DISPATCH VIEW</h2>
+<div id="stopInfo">Nincs kiválasztott megálló</div>
+
+<table>
+<thead>
+<tr>
+<th>Járat</th>
+<th>Indulás</th>
+<th>Úticél</th>
+<th>Státusz</th>
+</tr>
+</thead>
+<tbody id="departures"></tbody>
+</table>
+
 </div>
 
-<div class="stopTitle">
-Zemplén Győző utca (összesített megálló nézet)
 </div>
-
-<div id="list"></div>
 
 <script>
 
-const departures = [
+// ===== CLOCK =====
+setInterval(()=>{
+  document.getElementById("clock").innerText =
+    new Date().toLocaleTimeString();
+},1000);
 
-{
-route:"160",
-dest:"Békásmegyer H",
-min:2,
-vehicle:"NGC151 - MERCEDES Citaro O530",
-next:"Zemplén Győző utca"
-},
+// ===== DEMO GTFS (BEÉGETETT) =====
+const DEMO_GTFS = `
+stops:
+1,Örs vezér tere
+2,Deák Ferenc tér
+3,Kelenföld
+4,Moszkva tér
 
-{
-route:"243",
-dest:"Donát utca ▶ Békásmegyer H",
-min:9
-},
+routes:
+100,Busz 100E
+200,Metro M2
 
-{
-route:"160",
-dest:"Óbudai rendelőintézet",
-min:13
-},
-
-{
-route:"160",
-dest:"Békásmegyer H",
-min:21,
-vehicle:"NGC159 - MERCEDES Citaro O530",
-next:"Bécsi út / Vörösvári út"
-},
-
-{
-route:"243",
-dest:"Donát utca ▶ Békásmegyer H",
-min:21
-},
-
-{
-route:"243",
-dest:"Donát utca ▶ Békásmegyer H",
-min:33
-},
-
-{
-route:"160",
-dest:"Békásmegyer H",
-min:36
-},
-
-{
-route:"160",
-dest:"Óbudai rendelőintézet",
-min:44
-},
-
-{
-route:"243",
-dest:"Donát utca ▶ Békásmegyer H",
-min:45
-}
-
-];
-
-function render(){
-
-const list=document.getElementById("list");
-
-list.innerHTML="";
-
-departures.forEach(d=>{
-
-const color =
-d.min <=5
-? "green"
-: "";
-
-list.innerHTML += `
-
-<div class="departure">
-
-<div class="route">
-${d.route}
-</div>
-
-<div class="center">
-
-<div class="destination">
-${d.dest}
-</div>
-
-${d.vehicle
-? `<div class="vehicle">${d.vehicle}</div>`
-: ``}
-
-${d.next
-? `<div class="nextstop">Következő megálló: ${d.next}</div>`
-: ``}
-
-</div>
-
-<div class="minutes ${color}">
-${d.min}'
-</div>
-
-</div>
-
+stop_times:
+100,1,08:10,Deák Ferenc tér
+100,1,08:25,Kelenföld
+100,2,08:40,Örs vezér tere
+200,2,09:00,Kelenföld
 `;
 
-});
+// ===== STORAGE =====
+let GTFS = loadGTFS();
 
+function loadGTFS(){
+  return JSON.parse(localStorage.getItem("gtfs") || "null");
 }
 
-render();
+// ===== SAVE =====
+function saveGTFS(){
+  const txt = document.getElementById("gtfsInput").value;
+  localStorage.setItem("gtfs", JSON.stringify(txt));
+  GTFS = txt;
+  alert("GTFS elmentve!");
+}
+
+// ===== CLEAR =====
+function clearGTFS(){
+  localStorage.removeItem("gtfs");
+  GTFS = null;
+  alert("Törölve!");
+}
+
+// ===== DEMO LOAD =====
+function loadDemo(){
+  document.getElementById("gtfsInput").value = DEMO_GTFS;
+  saveGTFS();
+}
+
+// ===== PARSER =====
+function parseGTFS(text){
+  if(!text) return null;
+
+  const lines = text.split("\n").map(l=>l.trim()).filter(Boolean);
+
+  let stops=[], routes=[], stopTimes=[];
+
+  let mode="";
+
+  for(let l of lines){
+    if(l.startsWith("stops:")) {mode="stops"; continue;}
+    if(l.startsWith("routes:")) {mode="routes"; continue;}
+    if(l.startsWith("stop_times:")) {mode="stop_times"; continue;}
+
+    const parts = l.split(",");
+
+    if(mode==="stops"){
+      stops.push({id:parts[0], name:parts[1]});
+    }
+
+    if(mode==="routes"){
+      routes.push({id:parts[0], name:parts[1]});
+    }
+
+    if(mode==="stop_times"){
+      stopTimes.push({
+        route:parts[0],
+        stop:parts[1],
+        time:parts[2],
+        dest:parts[3]
+      });
+    }
+  }
+
+  return {stops,routes,stopTimes};
+}
+
+// ===== SEARCH =====
+function searchStops(){
+  const q = document.getElementById("search").value.toLowerCase();
+  const data = parseGTFS(GTFS || DEMO_GTFS);
+
+  const res = data.stops.filter(s=>s.name.toLowerCase().includes(q));
+
+  document.getElementById("results").innerHTML =
+    res.map(r=>
+      `<div onclick="selectStop('${r.id}','${r.name}')"
+            style="cursor:pointer;padding:5px;border-bottom:1px solid #1f2a3a">
+        🚏 ${r.name}
+      </div>`
+    ).join("");
+}
+
+// ===== SELECT STOP =====
+function selectStop(id,name){
+  const data = parseGTFS(GTFS || DEMO_GTFS);
+
+  document.getElementById("stopInfo").innerHTML =
+    `<h3>🚏 ${name}</h3><span class="small">stop_id: ${id}</span>`;
+
+  const dep = data.stopTimes.filter(s=>s.stop==id);
+
+  document.getElementById("departures").innerHTML =
+    dep.map(d=>`
+      <tr>
+        <td><span class="badge">${d.route}</span></td>
+        <td>${d.time}</td>
+        <td>${d.dest}</td>
+        <td>🟢 ON TIME (demo)</td>
+      </tr>
+    `).join("");
+}
+
+// ===== INIT =====
+if(!GTFS){
+  GTFS = DEMO_GTFS;
+}
 
 </script>
 
