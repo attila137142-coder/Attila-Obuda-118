@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>🚦 FUTÁR V4 REALTIME ENGINE</title>
+<title>🚦 FUTÁR V4.1 STABLE ENGINE</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -11,7 +11,7 @@
 body{
   margin:0;
   font-family:Arial;
-  background:#060a0f;
+  background:#060a10;
   color:#d7e1ea;
 }
 
@@ -25,8 +25,8 @@ header{
 
 #clock{
   font-size:20px;
-  color:#00e5ff;
   font-weight:bold;
+  color:#00e5ff;
 }
 
 .container{
@@ -49,8 +49,8 @@ header{
 
 input,button{
   width:100%;
-  margin-top:6px;
   padding:8px;
+  margin-top:6px;
   background:#111826;
   border:1px solid #2b3b52;
   color:white;
@@ -58,6 +58,18 @@ input,button{
 
 button{
   background:#1e88e5;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+.bigClock{
+  font-size:40px;
+  text-align:center;
+  padding:10px;
+  margin-bottom:10px;
+  background:#0f1621;
+  border:1px solid #1f2a3a;
+  color:#00e5ff;
   font-weight:bold;
 }
 
@@ -78,28 +90,29 @@ th{
   color:#4dd0e1;
 }
 
-.live{
-  color:#00e676;
-  font-weight:bold;
-}
-
-.delay{
-  color:#ffeb3b;
-  font-weight:bold;
-}
-
 .badge{
   background:#1e88e5;
   padding:2px 6px;
   border-radius:4px;
 }
+
+.green{color:#00e676;font-weight:bold;}
+.yellow{color:#ffeb3b;font-weight:bold;}
+.red{color:#ff5252;font-weight:bold;}
+
+.stopItem{
+  padding:6px;
+  border-bottom:1px solid #1f2a3a;
+  cursor:pointer;
+}
+.stopItem:hover{background:#111826;}
 </style>
 </head>
 
 <body>
 
 <header>
-<div>🚦 FUTÁR V4 REALTIME ENGINE</div>
+<div>🚦 FUTÁR V4.1 STABLE GTFS ENGINE</div>
 <div id="clock"></div>
 </header>
 
@@ -107,7 +120,9 @@ th{
 
 <div class="panel">
 
-<h3>📦 GTFS LOAD</h3>
+<div class="bigClock" id="bigClock">00:00:00</div>
+
+<h3>📦 GTFS ZIP</h3>
 <input type="file" id="zip"/>
 <button onclick="loadGTFS()">LOAD GTFS</button>
 
@@ -117,18 +132,12 @@ th{
 <input id="search" oninput="searchStops()"/>
 <div id="results"></div>
 
-<hr/>
-
-<h3>📡 REALTIME STATUS</h3>
-<button onclick="toggleRT()">LIVE MODE</button>
-<div id="rtState">OFFLINE</div>
-
 </div>
 
 <div class="main">
 
 <h2>🚏 STOP VIEW</h2>
-<div id="stopInfo">No stop selected</div>
+<div id="stopInfo">Nincs kiválasztva</div>
 
 <table>
 <thead>
@@ -136,7 +145,7 @@ th{
 <th>Járat</th>
 <th>Irány</th>
 <th>Indulás</th>
-<th>LIVE</th>
+<th>Státusz</th>
 </tr>
 </thead>
 <tbody id="table"></tbody>
@@ -148,18 +157,30 @@ th{
 
 <script>
 
-let GTFS = {stops:[],routes:[],trips:[],stopTimes:[]};
-let LIVE = false;
+let GTFS={
+  stops:[],
+  routes:[],
+  trips:[],
+  stopTimes:[]
+};
+
+let LIVE=false;
 
 // CLOCK
 setInterval(()=>{
-  document.getElementById("clock").innerText =
-    new Date().toLocaleTimeString();
+  const now=new Date();
+  document.getElementById("clock").innerText=
+    now.toLocaleTimeString();
+
+  document.getElementById("bigClock").innerText=
+    now.toLocaleTimeString();
 },1000);
 
-// LOAD GTFS
+// -------------------- GTFS LOAD --------------------
 async function loadGTFS(){
   const file=document.getElementById("zip").files[0];
+  if(!file) return alert("Nincs ZIP!");
+
   const zip=await JSZip.loadAsync(file);
 
   GTFS.stops=parseCSV(await zip.file("stops.txt").async("string"));
@@ -167,22 +188,32 @@ async function loadGTFS(){
   GTFS.trips=parseCSV(await zip.file("trips.txt").async("string"));
   GTFS.stopTimes=parseCSV(await zip.file("stop_times.txt").async("string"));
 
-  alert("GTFS loaded");
+  alert("GTFS betöltve ✔");
 }
 
-// CSV
-function parseCSV(t){
-  const l=t.split("\n").filter(x=>x.trim());
-  const h=l[0].split(",");
-  return l.slice(1).map(r=>{
-    const o={};
-    const v=r.split(",");
-    h.forEach((hh,i)=>o[hh]=v[i]);
-    return o;
+// -------------------- ROBUST CSV PARSER --------------------
+function parseCSV(text){
+  const lines=text.replace(/\r/g,"")
+    .split("\n")
+    .filter(l=>l.trim().length>0);
+
+  const headers=lines[0].split(",");
+
+  return lines.slice(1).map(line=>{
+
+    const values=line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g)||[];
+
+    const obj={};
+
+    headers.forEach((h,i)=>{
+      obj[h.trim()]=(values[i]||"").replace(/"/g,"").trim();
+    });
+
+    return obj;
   });
 }
 
-// SEARCH
+// -------------------- SEARCH --------------------
 function searchStops(){
   const q=document.getElementById("search").value.toLowerCase();
 
@@ -191,63 +222,61 @@ function searchStops(){
   );
 
   document.getElementById("results").innerHTML=
-    res.slice(0,30).map(s=>`
-      <div onclick="selectStop('${s.stop_id}','${s.stop_name}')"
-           style="padding:6px;border-bottom:1px solid #1f2a3a;cursor:pointer">
+    res.slice(0,40).map(s=>`
+      <div class="stopItem"
+           onclick="selectStop('${s.stop_id}','${s.stop_name}')">
         🚏 ${s.stop_name}
       </div>
     `).join("");
 }
 
-// STOP SELECT
+// -------------------- STOP SELECT --------------------
 function selectStop(id,name){
 
   document.getElementById("stopInfo").innerHTML=
     `<h3>🚏 ${name}</h3><span class="badge">${id}</span>`;
 
-  const base=GTFS.stopTimes.filter(t=>t.stop_id===id);
+  const base=GTFS.stopTimes.filter(t=>
+    (t.stop_id||"").trim()===id
+  );
 
   render(base);
 }
 
-// REALTIME ENGINE
+// -------------------- RENDER --------------------
 function render(list){
 
   document.getElementById("table").innerHTML=
-    list.slice(0,25).map(t=>{
+    list.slice(0,30).map(t=>{
 
       const trip=GTFS.trips.find(x=>x.trip_id===t.trip_id);
       const route=GTFS.routes.find(r=>r.route_id===trip?.route_id);
 
       const line=route?.route_short_name||"?";
-      const head=trip?.trip_headsign||"→ ?";
+      const dir=trip?.trip_headsign||t.stop_headsign||"→ ?";
 
-      let delay=0;
-      let state="SCHEDULED";
+      let status="🟢 ON TIME";
 
       if(LIVE){
-        delay=Math.floor(Math.random()*6-2);
-        state=delay>2?"DELAYED":delay<0?"EARLY":"ON TIME";
+        const d=Math.floor(Math.random()*6-2);
+        if(d>2) status="🟡 DELAYED";
+        else if(d<0) status="🔵 EARLY";
       }
 
       return `
         <tr>
           <td><span class="badge">${line}</span></td>
-          <td>${head}</td>
-          <td>${t.arrival_time}</td>
-          <td class="${state==='DELAYED'?'delay':'live'}">
-            ${state}
+          <td>${dir}</td>
+          <td>${t.arrival_time||"-"}</td>
+          <td class="${
+            status.includes("DELAYED")?"yellow":
+            status.includes("EARLY")?"red":"green"
+          }">
+            ${status}
           </td>
         </tr>
       `;
     }).join("");
-}
-
-// TOGGLE REALTIME
-function toggleRT(){
-  LIVE=!LIVE;
-  document.getElementById("rtState").innerText=
-    LIVE?"LIVE SIMULATION ON":"OFFLINE";
 }
 
 </script>
