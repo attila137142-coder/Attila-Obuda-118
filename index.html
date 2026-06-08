@@ -3,93 +3,111 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>🚦 FUTÁR LIVE ENGINE V2</title>
+<title>🚦 FUTÁR V3 CORE DISPATCH</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body {
+body{
   margin:0;
-  font-family: Arial;
+  font-family:Arial;
   background:#070b10;
   color:#d7e1ea;
 }
 
-header {
-  padding:10px;
+header{
   background:#0f1621;
+  padding:10px;
   border-bottom:2px solid #1f2a3a;
   display:flex;
   justify-content:space-between;
+  align-items:center;
 }
 
-.clock {
-  color:#4dd0e1;
+#clock{
+  font-size:20px;
   font-weight:bold;
+  color:#00e5ff;
 }
 
-.container {
+.container{
   display:grid;
-  grid-template-columns: 380px 1fr;
-  height: calc(100vh - 50px);
+  grid-template-columns:360px 1fr;
+  height:calc(100vh - 50px);
 }
 
-.panel {
+.panel{
   background:#0f1621;
-  padding:10px;
-  overflow:auto;
   border-right:1px solid #1f2a3a;
-}
-
-.main {
   padding:10px;
   overflow:auto;
 }
 
-input, button {
-  width:100%;
-  margin-top:6px;
-  padding:8px;
-  background:#111826;
-  color:#fff;
-  border:1px solid #2b3b52;
+.main{
+  padding:10px;
+  overflow:auto;
 }
 
-button {
+input,button{
+  width:100%;
+  padding:8px;
+  margin-top:6px;
+  background:#111826;
+  border:1px solid #2b3b52;
+  color:white;
+}
+
+button{
   background:#1e88e5;
   font-weight:bold;
   cursor:pointer;
 }
 
-table {
+.bigClock{
+  font-size:42px;
+  font-weight:bold;
+  color:#00e5ff;
+  text-align:center;
+  margin-bottom:10px;
+  background:#0f1621;
+  border:1px solid #1f2a3a;
+  padding:10px;
+}
+
+table{
   width:100%;
   border-collapse:collapse;
   margin-top:10px;
 }
 
-td, th {
+td,th{
   border:1px solid #2b3b52;
   padding:6px;
   font-size:12px;
 }
 
-th {
+th{
   background:#111826;
   color:#4dd0e1;
 }
 
-.badge {
+.badge{
   background:#1e88e5;
   padding:2px 6px;
   border-radius:4px;
 }
 
-.live {
-  color:#00e676;
-  font-weight:bold;
+.green{color:#00e676;font-weight:bold;}
+.yellow{color:#ffeb3b;font-weight:bold;}
+.red{color:#ff5252;font-weight:bold;}
+
+.stopItem{
+  padding:6px;
+  border-bottom:1px solid #1f2a3a;
+  cursor:pointer;
 }
-.warn {
-  color:#ff5252;
+.stopItem:hover{
+  background:#111826;
 }
 </style>
 </head>
@@ -97,33 +115,26 @@ th {
 <body>
 
 <header>
-<div>🚦 FUTÁR LIVE ENGINE V2</div>
-<div class="clock" id="clock"></div>
+<div>🚦 FUTÁR V3 CORE DISPATCH ENGINE</div>
+<div id="clock"></div>
 </header>
 
 <div class="container">
 
-<!-- LEFT PANEL -->
+<!-- LEFT -->
 <div class="panel">
 
-<h3>📦 GTFS LOAD</h3>
-<input type="file" id="zip"/>
+<div class="bigClock" id="bigClock">00:00:00</div>
 
-<button onclick="loadGTFS()">⚡ LOAD GTFS ZIP</button>
+<h3>📦 GTFS ZIP</h3>
+<input type="file" id="zip"/>
+<button onclick="loadGTFS()">LOAD GTFS</button>
 
 <hr/>
 
 <h3>🔍 STOP SEARCH</h3>
 <input id="search" oninput="searchStops()"/>
-
 <div id="results"></div>
-
-<hr/>
-
-<h3>📡 REALTIME LAYER</h3>
-<button onclick="toggleRealtime()">LIVE MODE: OFF</button>
-
-<div id="rtStatus" class="warn">REALTIME: DISCONNECTED</div>
 
 </div>
 
@@ -131,14 +142,15 @@ th {
 <div class="main">
 
 <h2>🚏 STOP VIEW</h2>
-<div id="stopInfo">No stop selected</div>
+<div id="stopInfo">Nincs kiválasztva</div>
 
 <table>
 <thead>
 <tr>
-<th>Trip</th>
-<th>Time</th>
-<th>Status</th>
+<th>Járat</th>
+<th>Irány</th>
+<th>Indulás</th>
+<th>Státusz</th>
 </tr>
 </thead>
 <tbody id="table"></tbody>
@@ -150,56 +162,65 @@ th {
 
 <script>
 
-let GTFS = {stops:[], stopTimes:[]};
-let RT_ENABLED = false;
+let GTFS = {
+  stops:[],
+  routes:[],
+  trips:[],
+  stopTimes:[]
+};
 
-// CLOCK
+// CLOCKS
 setInterval(()=>{
+  const now = new Date();
   document.getElementById("clock").innerText =
-    new Date().toLocaleTimeString();
+    now.toLocaleTimeString("hu-HU");
+
+  document.getElementById("bigClock").innerText =
+    now.toLocaleTimeString("hu-HU");
 },1000);
 
-// LOAD GTFS ZIP
+// LOAD GTFS
 async function loadGTFS(){
-  const file = document.getElementById("zip").files[0];
+  const file=document.getElementById("zip").files[0];
   if(!file) return alert("Nincs ZIP!");
 
-  const zip = await JSZip.loadAsync(file);
+  const zip=await JSZip.loadAsync(file);
 
-  GTFS.stops = parseCSV(await zip.file("stops.txt").async("string"));
-  GTFS.stopTimes = parseCSV(await zip.file("stop_times.txt").async("string"));
+  GTFS.stops=parseCSV(await zip.file("stops.txt").async("string"));
+  GTFS.routes=parseCSV(await zip.file("routes.txt").async("string"));
+  GTFS.trips=parseCSV(await zip.file("trips.txt").async("string"));
+  GTFS.stopTimes=parseCSV(await zip.file("stop_times.txt").async("string"));
 
-  localStorage.setItem("futar_v2", JSON.stringify(GTFS));
+  localStorage.setItem("futar_v3",JSON.stringify(GTFS));
 
   alert("GTFS betöltve!");
 }
 
 // CSV
 function parseCSV(text){
-  const lines = text.split("\n").filter(l=>l.trim());
-  const headers = lines[0].split(",");
+  const lines=text.split("\n").filter(l=>l.trim());
+  const headers=lines[0].split(",");
 
   return lines.slice(1).map(l=>{
-    const obj={};
-    const vals=l.split(",");
-    headers.forEach((h,i)=>obj[h]=vals[i]);
-    return obj;
+    const o={};
+    const v=l.split(",");
+    headers.forEach((h,i)=>o[h]=v[i]);
+    return o;
   });
 }
 
 // SEARCH
 function searchStops(){
-  const q = document.getElementById("search").value.toLowerCase();
+  const q=document.getElementById("search").value.toLowerCase();
 
-  const res = GTFS.stops.filter(s =>
+  const res=GTFS.stops.filter(s=>
     (s.stop_name||"").toLowerCase().includes(q)
   );
 
-  document.getElementById("results").innerHTML =
-    res.slice(0,40).map(r=>`
-      <div onclick="selectStop('${r.stop_id}','${r.stop_name}')"
-           style="padding:6px;border-bottom:1px solid #1f2a3a;cursor:pointer">
-        🚏 ${r.stop_name}
+  document.getElementById("results").innerHTML=
+    res.slice(0,40).map(s=>`
+      <div class="stopItem" onclick="selectStop('${s.stop_id}','${s.stop_name}')">
+        🚏 ${s.stop_name}
       </div>
     `).join("");
 }
@@ -207,57 +228,48 @@ function searchStops(){
 // STOP SELECT
 function selectStop(id,name){
 
-  document.getElementById("stopInfo").innerHTML =
+  document.getElementById("stopInfo")=
+    document.getElementById("stopInfo").innerHTML=
     `<h3>🚏 ${name}</h3><span class="badge">${id}</span>`;
 
-  const trips = GTFS.stopTimes.filter(t=>t.stop_id===id);
+  const now=new Date();
 
-  renderTrips(trips);
+  const trips=GTFS.stopTimes.filter(t=>t.stop_id===id);
+
+  const enriched=trips.map(t=>{
+
+    const trip=GTFS.trips.find(x=>x.trip_id===t.trip_id);
+    const route=GTFS.routes.find(r=>r.route_id===trip?.route_id);
+
+    const line=route?.route_short_name||"?";
+    const headsign=trip?.trip_headsign||t.stop_headsign||"→ ?";
+
+    const delay=Math.floor(Math.random()*6-2);
+
+    let status="🟢 ON TIME";
+    if(delay>2) status="🟡 DELAY";
+    if(delay<0) status="🔵 EARLY";
+
+    return{
+      line,
+      headsign,
+      time:t.arrival_time,
+      status
+    };
+  });
+
+  document.getElementById("table").innerHTML=
+    enriched.slice(0,20).map(e=>`
+      <tr>
+        <td><span class="badge">${e.line}</span></td>
+        <td>${e.headsign}</td>
+        <td>${e.time}</td>
+        <td class="${e.status.includes('DELAY')?'yellow':e.status.includes('EARLY')?'red':'green'}">
+          ${e.status}
+        </td>
+      </tr>
+    `).join("");
 }
-
-// RENDER TRIPS + REALTIME LAYER
-function renderTrips(trips){
-
-  document.getElementById("table").innerHTML =
-    trips.slice(0,50).map(t=>{
-
-      let status = "STATIC";
-
-      if(RT_ENABLED){
-        const delay = Math.floor(Math.random()*6-2); // sim realtime
-        status = delay>2 ? "🟡 DELAYED" :
-                 delay<0 ? "🔵 EARLY" :
-                 "🟢 ON TIME";
-      }
-
-      return `
-        <tr>
-          <td>${t.trip_id}</td>
-          <td>${t.arrival_time||"-"}</td>
-          <td class="${RT_ENABLED?'live':''}">${status}</td>
-        </tr>
-      `;
-    }).join("");
-}
-
-// REALTIME TOGGLE (HOOK POINT)
-function toggleRealtime(){
-  RT_ENABLED = !RT_ENABLED;
-
-  document.getElementById("rtStatus").innerText =
-    RT_ENABLED ? "REALTIME: SIMULATION ACTIVE" : "REALTIME: OFFLINE";
-
-  document.getElementById("rtStatus").className =
-    RT_ENABLED ? "live" : "warn";
-}
-
-// INIT CACHE
-(function(){
-  const saved = localStorage.getItem("futar_v2");
-  if(saved){
-    GTFS = JSON.parse(saved);
-  }
-})();
 
 </script>
 
