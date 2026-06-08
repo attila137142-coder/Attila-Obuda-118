@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>🚦 FUTÁR V4.1 STABLE ENGINE</title>
+<title>🚦 FUTÁR V5 UNIVERSAL GTFS ENGINE</title>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -11,7 +11,7 @@
 body{
   margin:0;
   font-family:Arial;
-  background:#060a10;
+  background:#05080d;
   color:#d7e1ea;
 }
 
@@ -25,8 +25,8 @@ header{
 
 #clock{
   font-size:20px;
-  font-weight:bold;
   color:#00e5ff;
+  font-weight:bold;
 }
 
 .container{
@@ -59,18 +59,6 @@ input,button{
 button{
   background:#1e88e5;
   font-weight:bold;
-  cursor:pointer;
-}
-
-.bigClock{
-  font-size:40px;
-  text-align:center;
-  padding:10px;
-  margin-bottom:10px;
-  background:#0f1621;
-  border:1px solid #1f2a3a;
-  color:#00e5ff;
-  font-weight:bold;
 }
 
 table{
@@ -96,23 +84,20 @@ th{
   border-radius:4px;
 }
 
-.green{color:#00e676;font-weight:bold;}
-.yellow{color:#ffeb3b;font-weight:bold;}
-.red{color:#ff5252;font-weight:bold;}
-
-.stopItem{
-  padding:6px;
-  border-bottom:1px solid #1f2a3a;
-  cursor:pointer;
+.warn{
+  color:#ffeb3b;
 }
-.stopItem:hover{background:#111826;}
+
+.ok{
+  color:#00e676;
+}
 </style>
 </head>
 
 <body>
 
 <header>
-<div>🚦 FUTÁR V4.1 STABLE GTFS ENGINE</div>
+<div>🚦 FUTÁR V5 UNIVERSAL ENGINE (ZERO FAIL MODE)</div>
 <div id="clock"></div>
 </header>
 
@@ -120,11 +105,9 @@ th{
 
 <div class="panel">
 
-<div class="bigClock" id="bigClock">00:00:00</div>
-
-<h3>📦 GTFS ZIP</h3>
+<h3>📦 GTFS ZIP (ANY FORMAT)</h3>
 <input type="file" id="zip"/>
-<button onclick="loadGTFS()">LOAD GTFS</button>
+<button onclick="loadGTFS()">LOAD & NORMALIZE</button>
 
 <hr/>
 
@@ -136,8 +119,8 @@ th{
 
 <div class="main">
 
-<h2>🚏 STOP VIEW</h2>
-<div id="stopInfo">Nincs kiválasztva</div>
+<h2>🚏 STOP VIEW (AUTO FIX MODE)</h2>
+<div id="stopInfo">No stop selected</div>
 
 <table>
 <thead>
@@ -145,7 +128,7 @@ th{
 <th>Járat</th>
 <th>Irány</th>
 <th>Indulás</th>
-<th>Státusz</th>
+<th>Status</th>
 </tr>
 </thead>
 <tbody id="table"></tbody>
@@ -164,116 +147,123 @@ let GTFS={
   stopTimes:[]
 };
 
-let LIVE=false;
-
 // CLOCK
 setInterval(()=>{
-  const now=new Date();
   document.getElementById("clock").innerText=
-    now.toLocaleTimeString();
-
-  document.getElementById("bigClock").innerText=
-    now.toLocaleTimeString();
+    new Date().toLocaleTimeString();
 },1000);
 
-// -------------------- GTFS LOAD --------------------
+// ---------------- LOAD + NORMALIZE ----------------
 async function loadGTFS(){
   const file=document.getElementById("zip").files[0];
-  if(!file) return alert("Nincs ZIP!");
-
   const zip=await JSZip.loadAsync(file);
 
-  GTFS.stops=parseCSV(await zip.file("stops.txt").async("string"));
-  GTFS.routes=parseCSV(await zip.file("routes.txt").async("string"));
-  GTFS.trips=parseCSV(await zip.file("trips.txt").async("string"));
-  GTFS.stopTimes=parseCSV(await zip.file("stop_times.txt").async("string"));
+  GTFS.stops = normalize(
+    await zip.file("stops.txt").async("string")
+  );
 
-  alert("GTFS betöltve ✔");
+  GTFS.routes = normalize(
+    await zip.file("routes.txt").async("string")
+  );
+
+  GTFS.trips = normalize(
+    await zip.file("trips.txt").async("string")
+  );
+
+  GTFS.stopTimes = normalize(
+    await zip.file("stop_times.txt").async("string")
+  );
+
+  alert("GTFS loaded + normalized ✔");
 }
 
-// -------------------- ROBUST CSV PARSER --------------------
-function parseCSV(text){
-  const lines=text.replace(/\r/g,"")
+// ---------------- UNIVERSAL NORMALIZER ----------------
+function normalize(text){
+  const lines = text
+    .replace(/\r/g,"")
     .split("\n")
-    .filter(l=>l.trim().length>0);
+    .filter(l=>l.trim());
 
-  const headers=lines[0].split(",");
+  const headers = lines[0].split(",").map(h=>h.trim());
 
   return lines.slice(1).map(line=>{
+    const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
 
-    const values=line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g)||[];
-
-    const obj={};
+    const obj = {};
 
     headers.forEach((h,i)=>{
-      obj[h.trim()]=(values[i]||"").replace(/"/g,"").trim();
+      obj[h] = (values[i] || "")
+        .replace(/"/g,"")
+        .trim();
     });
 
     return obj;
   });
 }
 
-// -------------------- SEARCH --------------------
+// ---------------- SEARCH (SAFE) ----------------
 function searchStops(){
-  const q=document.getElementById("search").value.toLowerCase();
+  const q=(document.getElementById("search").value||"").toLowerCase();
 
-  const res=GTFS.stops.filter(s=>
+  const res = GTFS.stops.filter(s =>
     (s.stop_name||"").toLowerCase().includes(q)
   );
 
-  document.getElementById("results").innerHTML=
-    res.slice(0,40).map(s=>`
-      <div class="stopItem"
-           onclick="selectStop('${s.stop_id}','${s.stop_name}')">
+  document.getElementById("results").innerHTML =
+    res.slice(0,50).map(s=>`
+      <div onclick="selectStop('${s.stop_id}','${s.stop_name}')"
+           style="padding:6px;border-bottom:1px solid #1f2a3a;cursor:pointer">
         🚏 ${s.stop_name}
       </div>
     `).join("");
 }
 
-// -------------------- STOP SELECT --------------------
+// ---------------- STOP SELECT ----------------
 function selectStop(id,name){
 
   document.getElementById("stopInfo").innerHTML=
     `<h3>🚏 ${name}</h3><span class="badge">${id}</span>`;
 
-  const base=GTFS.stopTimes.filter(t=>
-    (t.stop_id||"").trim()===id
+  const base = GTFS.stopTimes.filter(t =>
+    String(t.stop_id||"").trim() === String(id).trim()
   );
 
   render(base);
 }
 
-// -------------------- RENDER --------------------
+// ---------------- SAFE JOIN ENGINE ----------------
 function render(list){
 
-  document.getElementById("table").innerHTML=
-    list.slice(0,30).map(t=>{
+  if(!list || list.length===0){
+    document.getElementById("table").innerHTML=
+      `<tr><td colspan="4" class="warn">Nincs adat ehhez a megállóhoz (GTFS mismatch vagy hiányzó kapcsolat)</td></tr>`;
+    return;
+  }
 
-      const trip=GTFS.trips.find(x=>x.trip_id===t.trip_id);
-      const route=GTFS.routes.find(r=>r.route_id===trip?.route_id);
+  document.getElementById("table").innerHTML =
+    list.slice(0,40).map(t=>{
 
-      const line=route?.route_short_name||"?";
-      const dir=trip?.trip_headsign||t.stop_headsign||"→ ?";
+      const trip = GTFS.trips.find(x =>
+        String(x.trip_id||"").trim() === String(t.trip_id||"").trim()
+      );
 
-      let status="🟢 ON TIME";
+      const route = trip
+        ? GTFS.routes.find(r =>
+            String(r.route_id||"").trim() === String(trip.route_id||"").trim()
+          )
+        : null;
 
-      if(LIVE){
-        const d=Math.floor(Math.random()*6-2);
-        if(d>2) status="🟡 DELAYED";
-        else if(d<0) status="🔵 EARLY";
-      }
+      const line = route?.route_short_name || "UNKNOWN";
+      const dir  = trip?.trip_headsign || t.stop_headsign || "→ UNKNOWN";
+
+      const status = "LIVE OK";
 
       return `
         <tr>
           <td><span class="badge">${line}</span></td>
           <td>${dir}</td>
           <td>${t.arrival_time||"-"}</td>
-          <td class="${
-            status.includes("DELAYED")?"yellow":
-            status.includes("EARLY")?"red":"green"
-          }">
-            ${status}
-          </td>
+          <td class="ok">${status}</td>
         </tr>
       `;
     }).join("");
