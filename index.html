@@ -1,272 +1,235 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V6 TRUE SYSTEM</title>
-
-<style>
-body {
-  margin: 0;
-  font-family: Arial, sans-serif;
-  background: #0b0f14;
-  color: #d7e1ee;
-}
-
-/* TOP BAR */
-.topbar {
-  background: #111826;
-  padding: 10px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 2px solid #1f2a3a;
-}
-
-.clock {
-  font-size: 18px;
-  font-weight: bold;
-  color: #4df0ff;
-}
-
-.status {
-  color: #7CFF6B;
-}
-
-/* LAYOUT */
-.container {
-  display: grid;
-  grid-template-columns: 320px 1fr 360px;
-  height: calc(100vh - 50px);
-}
-
-/* PANELS */
-.panel {
-  border-right: 1px solid #1f2a3a;
-  padding: 10px;
-  overflow-y: auto;
-}
-
-.panel h3 {
-  color: #4df0ff;
-}
-
-/* INPUT */
-input, button {
-  width: 100%;
-  padding: 8px;
-  margin: 5px 0;
-  background: #111826;
-  border: 1px solid #2b3a50;
-  color: white;
-}
-
-/* LIST */
-.item {
-  padding: 6px;
-  border-bottom: 1px solid #1b2635;
-  cursor: pointer;
-}
-
-.item:hover {
-  background: #152233;
-}
-
-/* MAP */
-.map {
-  position: relative;
-  background: radial-gradient(#111, #05070a);
-}
-
-/* RIGHT PANEL */
-.right {
-  border-left: 1px solid #1f2a3a;
-}
-
-/* SMALL TAGS */
-.tag {
-  display: inline-block;
-  padding: 2px 6px;
-  background: #1d2a3d;
-  margin: 2px;
-  font-size: 12px;
-  border-radius: 4px;
-}
-
-</style>
-</head>
-
-<body>
-
-<div class="topbar">
-  <div>🚦 FUTÁR V6 TRUE SYSTEM</div>
-  <div class="clock" id="clock"></div>
-  <div class="status" id="status">GTFS READY</div>
+<div id="clockPanel">
+<div id="clock">00:00:00</div>
 </div>
 
-<div class="container">
+<div id="locationPanel">
 
-  <!-- LEFT -->
-  <div class="panel">
-    <h3>📦 GTFS LOAD</h3>
-    <input type="file" id="gtfsFile" accept=".zip"/>
-    <button onclick="saveGTFS()">💾 Mentés rendszerbe</button>
-    <button onclick="loadSaved()">📂 Betöltött GTFS</button>
-
-    <h3>🔎 STOP SEARCH</h3>
-    <input id="search" placeholder="Stop név / ID..." oninput="searchStops()"/>
-
-    <div id="stopList"></div>
-  </div>
-
-  <!-- CENTER MAP -->
-  <div class="panel map">
-    <h3>🗺️ DISPATCH MAP CORE</h3>
-    <div id="mapInfo">
-      <p>GTFS nincs betöltve</p>
-    </div>
-  </div>
-
-  <!-- RIGHT -->
-  <div class="panel right">
-    <h3>🚍 JÁRAT PANEL</h3>
-    <div id="routePanel"></div>
-
-    <h3>📊 LIVE ENGINE</h3>
-    <div id="live">
-      <span class="tag">SIM MODE</span>
-      <span class="tag">NO GTFS-RT</span>
-    </div>
-  </div>
-
+<div class="title">
+📍 HELYZETEM
 </div>
 
-<script>
-let gtfsData = {
-  stops: [],
-  routes: [],
-  trips: []
-};
+<div id="address">
+Pozíció keresése...
+</div>
 
-// CLOCK
-function updateClock() {
-  document.getElementById("clock").innerText =
-    new Date().toLocaleTimeString();
+  #clockPanel{
+background:#000;
+padding:10px;
+text-align:center;
+border-bottom:2px solid #00ff66;
 }
-setInterval(updateClock, 1000);
+
+#clock{
+font-size:54px;
+font-weight:bold;
+color:#00ff66;
+font-family:Consolas,monospace;
+text-shadow:0 0 20px #00ff66;
+}
+
+#locationPanel{
+background:#2d2600;
+color:#ffd000;
+padding:12px;
+font-size:14px;
+border-bottom:2px solid #665500;
+}
+
+#locationPanel .title{
+font-size:18px;
+font-weight:bold;
+margin-bottom:6px;
+}
+
+.distance{
+color:#7dff7d;
+font-weight:bold;
+}
+
+  * ==========================
+   NAGY ZÖLD ÓRA
+========================== */
+
+function updateClock(){
+
+const now=new Date();
+
+document.getElementById("clock").innerHTML=
+now.toLocaleTimeString(
+'hu-HU',
+{
+hour12:false
+}
+);
+
+}
+
+setInterval(updateClock,1000);
 updateClock();
 
-// LOAD FILE
-document.getElementById("gtfsFile").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  if (!file) return;
+/* ==========================
+   GPS
+========================== */
 
-  document.getElementById("status").innerText = "LOADING GTFS...";
+let myLat=null;
+let myLon=null;
 
-  const text = await file.text();
+async function updateLocation(){
 
-  // VERY SIMPLE PARSER (CSV-like GTFS inside zip is NOT extracted here)
-  parseGTFS(text);
+if(!navigator.geolocation)
+return;
 
-  document.getElementById("status").innerText = "GTFS LOADED";
-});
+navigator.geolocation.getCurrentPosition(
+async pos=>{
 
-function parseGTFS(text) {
-  const lines = text.split("\n");
+myLat=pos.coords.latitude;
+myLon=pos.coords.longitude;
 
-  gtfsData.stops = [];
-  gtfsData.routes = [];
+let city="";
+let road="";
+let house="";
 
-  for (let line of lines) {
-    if (line.includes("stop_id") || line.includes("route_id")) continue;
+try{
 
-    const parts = line.split(",");
+const url=
+`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${myLat}&lon=${myLon}`;
 
-    if (parts.length > 3) {
-      gtfsData.stops.push({
-        id: parts[0],
-        name: parts[1] || "STOP",
-        lat: parts[2],
-        lon: parts[3]
-      });
-    }
-  }
+const res=await fetch(url);
 
-  renderStops();
-  renderRoutes();
+const data=await res.json();
+
+city=
+data.address.city ||
+data.address.town ||
+data.address.village ||
+"";
+
+road=
+data.address.road ||
+"";
+
+house=
+data.address.house_number ||
+"";
+
+}catch(err){}
+
+document.getElementById("address").innerHTML=
+`
+🏙️ ${city}<br>
+🛣️ ${road} ${house}<br><br>
+
+🌍 ${myLat.toFixed(6)}<br>
+🌍 ${myLon.toFixed(6)}<br><br>
+
+🎯 ±${Math.round(pos.coords.accuracy)} m
+`;
+
+},
+err=>{
+document.getElementById("address").innerHTML=
+"GPS nem elérhető";
+},
+{
+enableHighAccuracy:true
+}
+);
+
 }
 
-// SAVE
-function saveGTFS() {
-  localStorage.setItem("gtfs_v6", JSON.stringify(gtfsData));
-  alert("GTFS elmentve V6 rendszerbe!");
+updateLocation();
+
+setInterval(
+updateLocation,
+30000
+);
+
+/* ==========================
+   TÁVOLSÁG SZÁMÍTÁS
+========================== */
+
+function distanceMeters(
+lat1,
+lon1,
+lat2,
+lon2
+){
+
+const R=6371000;
+
+const dLat=
+(lat2-lat1)*Math.PI/180;
+
+const dLon=
+(lon2-lon1)*Math.PI/180;
+
+const a=
+Math.sin(dLat/2)*
+Math.sin(dLat/2)+
+Math.cos(lat1*Math.PI/180)*
+Math.cos(lat2*Math.PI/180)*
+Math.sin(dLon/2)*
+Math.sin(dLon/2);
+
+const c=
+2*Math.atan2(
+Math.sqrt(a),
+Math.sqrt(1-a)
+);
+
+return R*c;
+
 }
 
-function loadSaved() {
-  const data = localStorage.getItem("gtfs_v6");
-  if (!data) return alert("Nincs mentett GTFS");
+ out.innerHTML=res.map(s=>{
 
-  gtfsData = JSON.parse(data);
-  renderStops();
-  renderRoutes();
+let dist="";
+
+if(
+myLat &&
+myLon &&
+s.stop_lat &&
+s.stop_lon
+){
+
+const d=
+distanceMeters(
+myLat,
+myLon,
+parseFloat(s.stop_lat),
+parseFloat(s.stop_lon)
+);
+
+dist=
+d<1000
+?
+Math.round(d)+" m"
+:
+(d/1000).toFixed(2)+" km";
+
 }
 
-// SEARCH
-function searchStops() {
-  const q = document.getElementById("search").value.toLowerCase();
+return `
+<div class="row">
 
-  const filtered = gtfsData.stops.filter(s =>
-    (s.name || "").toLowerCase().includes(q) ||
-    (s.id || "").toLowerCase().includes(q)
-  );
+🚏 <b>${s.stop_name}</b>
 
-  renderStopList(filtered);
-}
+<br>
 
-function renderStops() {
-  renderStopList(gtfsData.stops);
-}
+GTFS:
+${s.stop_id}
 
-function renderStopList(list) {
-  const el = document.getElementById("stopList");
-  el.innerHTML = "";
+<br>
 
-  list.slice(0, 50).forEach(s => {
-    const div = document.createElement("div");
-    div.className = "item";
-    div.innerHTML = `
-      <b>${s.name}</b><br/>
-      <small>ID: ${s.id}</small>
-    `;
-    div.onclick = () => selectStop(s);
-    el.appendChild(div);
-  });
-}
+<span class="distance">
+📏 ${dist}
+</span>
 
-function selectStop(stop) {
-  document.getElementById("mapInfo").innerHTML = `
-    <h3>${stop.name}</h3>
-    <p>STOP ID: ${stop.id}</p>
-    <p>LAT: ${stop.lat}</p>
-    <p>LON: ${stop.lon}</p>
-  `;
-}
+</div>
+`;
 
-// ROUTES MOCK
-function renderRoutes() {
-  const el = document.getElementById("routePanel");
-  el.innerHTML = "";
+}).join("");
 
-  const routes = ["BKK 7", "BKK 105", "BKK 133E", "MÁV IC", "VOLÁN 500"];
+  
 
-  routes.forEach(r => {
-    const div = document.createElement("div");
-    div.className = "item";
-    div.innerHTML = `<b>${r}</b> <span class="tag">LIVE SIM</span>`;
-    el.appendChild(div);
-  });
-}
-</script>
-
-</body>
-</html>
+</div>
