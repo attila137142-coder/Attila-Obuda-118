@@ -1,45 +1,44 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>🚦 ATTILA DISPATCH CORE V1 OFFLINE</title>
+<title>🚦 FUTÁR LIVE ENGINE V2</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body {
   margin:0;
-  font-family: Arial, sans-serif;
-  background:#0b0f14;
+  font-family: Arial;
+  background:#070b10;
   color:#d7e1ea;
 }
 
 header {
   padding:10px;
-  background:#111826;
+  background:#0f1621;
+  border-bottom:2px solid #1f2a3a;
   display:flex;
   justify-content:space-between;
-  align-items:center;
-  border-bottom:2px solid #1f2a3a;
 }
 
-h1 { font-size:16px; margin:0; }
-
 .clock {
-  font-weight:bold;
   color:#4dd0e1;
+  font-weight:bold;
 }
 
 .container {
   display:grid;
-  grid-template-columns: 320px 1fr;
+  grid-template-columns: 380px 1fr;
   height: calc(100vh - 50px);
 }
 
 .panel {
   background:#0f1621;
-  border-right:1px solid #1f2a3a;
   padding:10px;
   overflow:auto;
+  border-right:1px solid #1f2a3a;
 }
 
 .main {
@@ -47,7 +46,7 @@ h1 { font-size:16px; margin:0; }
   overflow:auto;
 }
 
-input, button, textarea {
+input, button {
   width:100%;
   margin-top:6px;
   padding:8px;
@@ -57,9 +56,9 @@ input, button, textarea {
 }
 
 button {
-  cursor:pointer;
   background:#1e88e5;
   font-weight:bold;
+  cursor:pointer;
 }
 
 table {
@@ -80,14 +79,17 @@ th {
 }
 
 .badge {
+  background:#1e88e5;
   padding:2px 6px;
   border-radius:4px;
-  background:#1e88e5;
 }
 
-.small {
-  font-size:11px;
-  opacity:0.8;
+.live {
+  color:#00e676;
+  font-weight:bold;
+}
+.warn {
+  color:#ff5252;
 }
 </style>
 </head>
@@ -95,8 +97,8 @@ th {
 <body>
 
 <header>
-  <h1>🚦 ATTILA DISPATCH CORE V1 (OFFLINE GTFS + BEÉGETETT ADAT)</h1>
-  <div class="clock" id="clock"></div>
+<div>🚦 FUTÁR LIVE ENGINE V2</div>
+<div class="clock" id="clock"></div>
 </header>
 
 <div class="container">
@@ -104,39 +106,42 @@ th {
 <!-- LEFT PANEL -->
 <div class="panel">
 
-<h3>📦 GTFS BETÖLTÉS</h3>
+<h3>📦 GTFS LOAD</h3>
+<input type="file" id="zip"/>
 
-<button onclick="loadDemo()">🟢 DEMO GTFS BETÖLTÉS</button>
-
-<textarea id="gtfsInput" placeholder="GTFS CSV (stops.txt / routes.txt / stop_times.txt)..."></textarea>
-<button onclick="saveGTFS()">💾 GTFS MENTÉS LOCALSTORAGE</button>
-<button onclick="clearGTFS()">🗑 TÖRLÉS</button>
+<button onclick="loadGTFS()">⚡ LOAD GTFS ZIP</button>
 
 <hr/>
 
-<h3>🔍 MEGÁLLÓ KERESŐ</h3>
-<input id="search" placeholder="pl: Örs vezér tér" oninput="searchStops()"/>
+<h3>🔍 STOP SEARCH</h3>
+<input id="search" oninput="searchStops()"/>
 
 <div id="results"></div>
+
+<hr/>
+
+<h3>📡 REALTIME LAYER</h3>
+<button onclick="toggleRealtime()">LIVE MODE: OFF</button>
+
+<div id="rtStatus" class="warn">REALTIME: DISCONNECTED</div>
 
 </div>
 
 <!-- MAIN -->
 <div class="main">
 
-<h2>🚏 DISPATCH VIEW</h2>
-<div id="stopInfo">Nincs kiválasztott megálló</div>
+<h2>🚏 STOP VIEW</h2>
+<div id="stopInfo">No stop selected</div>
 
 <table>
 <thead>
 <tr>
-<th>Járat</th>
-<th>Indulás</th>
-<th>Úticél</th>
-<th>Státusz</th>
+<th>Trip</th>
+<th>Time</th>
+<th>Status</th>
 </tr>
 </thead>
-<tbody id="departures"></tbody>
+<tbody id="table"></tbody>
 </table>
 
 </div>
@@ -145,137 +150,114 @@ th {
 
 <script>
 
-// ===== CLOCK =====
+let GTFS = {stops:[], stopTimes:[]};
+let RT_ENABLED = false;
+
+// CLOCK
 setInterval(()=>{
   document.getElementById("clock").innerText =
     new Date().toLocaleTimeString();
 },1000);
 
-// ===== DEMO GTFS (BEÉGETETT) =====
-const DEMO_GTFS = `
-stops:
-1,Örs vezér tere
-2,Deák Ferenc tér
-3,Kelenföld
-4,Moszkva tér
+// LOAD GTFS ZIP
+async function loadGTFS(){
+  const file = document.getElementById("zip").files[0];
+  if(!file) return alert("Nincs ZIP!");
 
-routes:
-100,Busz 100E
-200,Metro M2
+  const zip = await JSZip.loadAsync(file);
 
-stop_times:
-100,1,08:10,Deák Ferenc tér
-100,1,08:25,Kelenföld
-100,2,08:40,Örs vezér tere
-200,2,09:00,Kelenföld
-`;
+  GTFS.stops = parseCSV(await zip.file("stops.txt").async("string"));
+  GTFS.stopTimes = parseCSV(await zip.file("stop_times.txt").async("string"));
 
-// ===== STORAGE =====
-let GTFS = loadGTFS();
+  localStorage.setItem("futar_v2", JSON.stringify(GTFS));
 
-function loadGTFS(){
-  return JSON.parse(localStorage.getItem("gtfs") || "null");
+  alert("GTFS betöltve!");
 }
 
-// ===== SAVE =====
-function saveGTFS(){
-  const txt = document.getElementById("gtfsInput").value;
-  localStorage.setItem("gtfs", JSON.stringify(txt));
-  GTFS = txt;
-  alert("GTFS elmentve!");
+// CSV
+function parseCSV(text){
+  const lines = text.split("\n").filter(l=>l.trim());
+  const headers = lines[0].split(",");
+
+  return lines.slice(1).map(l=>{
+    const obj={};
+    const vals=l.split(",");
+    headers.forEach((h,i)=>obj[h]=vals[i]);
+    return obj;
+  });
 }
 
-// ===== CLEAR =====
-function clearGTFS(){
-  localStorage.removeItem("gtfs");
-  GTFS = null;
-  alert("Törölve!");
-}
-
-// ===== DEMO LOAD =====
-function loadDemo(){
-  document.getElementById("gtfsInput").value = DEMO_GTFS;
-  saveGTFS();
-}
-
-// ===== PARSER =====
-function parseGTFS(text){
-  if(!text) return null;
-
-  const lines = text.split("\n").map(l=>l.trim()).filter(Boolean);
-
-  let stops=[], routes=[], stopTimes=[];
-
-  let mode="";
-
-  for(let l of lines){
-    if(l.startsWith("stops:")) {mode="stops"; continue;}
-    if(l.startsWith("routes:")) {mode="routes"; continue;}
-    if(l.startsWith("stop_times:")) {mode="stop_times"; continue;}
-
-    const parts = l.split(",");
-
-    if(mode==="stops"){
-      stops.push({id:parts[0], name:parts[1]});
-    }
-
-    if(mode==="routes"){
-      routes.push({id:parts[0], name:parts[1]});
-    }
-
-    if(mode==="stop_times"){
-      stopTimes.push({
-        route:parts[0],
-        stop:parts[1],
-        time:parts[2],
-        dest:parts[3]
-      });
-    }
-  }
-
-  return {stops,routes,stopTimes};
-}
-
-// ===== SEARCH =====
+// SEARCH
 function searchStops(){
   const q = document.getElementById("search").value.toLowerCase();
-  const data = parseGTFS(GTFS || DEMO_GTFS);
 
-  const res = data.stops.filter(s=>s.name.toLowerCase().includes(q));
+  const res = GTFS.stops.filter(s =>
+    (s.stop_name||"").toLowerCase().includes(q)
+  );
 
   document.getElementById("results").innerHTML =
-    res.map(r=>
-      `<div onclick="selectStop('${r.id}','${r.name}')"
-            style="cursor:pointer;padding:5px;border-bottom:1px solid #1f2a3a">
-        🚏 ${r.name}
-      </div>`
-    ).join("");
-}
-
-// ===== SELECT STOP =====
-function selectStop(id,name){
-  const data = parseGTFS(GTFS || DEMO_GTFS);
-
-  document.getElementById("stopInfo").innerHTML =
-    `<h3>🚏 ${name}</h3><span class="small">stop_id: ${id}</span>`;
-
-  const dep = data.stopTimes.filter(s=>s.stop==id);
-
-  document.getElementById("departures").innerHTML =
-    dep.map(d=>`
-      <tr>
-        <td><span class="badge">${d.route}</span></td>
-        <td>${d.time}</td>
-        <td>${d.dest}</td>
-        <td>🟢 ON TIME (demo)</td>
-      </tr>
+    res.slice(0,40).map(r=>`
+      <div onclick="selectStop('${r.stop_id}','${r.stop_name}')"
+           style="padding:6px;border-bottom:1px solid #1f2a3a;cursor:pointer">
+        🚏 ${r.stop_name}
+      </div>
     `).join("");
 }
 
-// ===== INIT =====
-if(!GTFS){
-  GTFS = DEMO_GTFS;
+// STOP SELECT
+function selectStop(id,name){
+
+  document.getElementById("stopInfo").innerHTML =
+    `<h3>🚏 ${name}</h3><span class="badge">${id}</span>`;
+
+  const trips = GTFS.stopTimes.filter(t=>t.stop_id===id);
+
+  renderTrips(trips);
 }
+
+// RENDER TRIPS + REALTIME LAYER
+function renderTrips(trips){
+
+  document.getElementById("table").innerHTML =
+    trips.slice(0,50).map(t=>{
+
+      let status = "STATIC";
+
+      if(RT_ENABLED){
+        const delay = Math.floor(Math.random()*6-2); // sim realtime
+        status = delay>2 ? "🟡 DELAYED" :
+                 delay<0 ? "🔵 EARLY" :
+                 "🟢 ON TIME";
+      }
+
+      return `
+        <tr>
+          <td>${t.trip_id}</td>
+          <td>${t.arrival_time||"-"}</td>
+          <td class="${RT_ENABLED?'live':''}">${status}</td>
+        </tr>
+      `;
+    }).join("");
+}
+
+// REALTIME TOGGLE (HOOK POINT)
+function toggleRealtime(){
+  RT_ENABLED = !RT_ENABLED;
+
+  document.getElementById("rtStatus").innerText =
+    RT_ENABLED ? "REALTIME: SIMULATION ACTIVE" : "REALTIME: OFFLINE";
+
+  document.getElementById("rtStatus").className =
+    RT_ENABLED ? "live" : "warn";
+}
+
+// INIT CACHE
+(function(){
+  const saved = localStorage.getItem("futar_v2");
+  if(saved){
+    GTFS = JSON.parse(saved);
+  }
+})();
 
 </script>
 
