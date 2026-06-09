@@ -2,255 +2,48 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS UNIVERSAL ENGINE V5</title>
-
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FUTÁR_V5_3_CONTROL_ROOM</title>
 <style>
-body{
-    margin:0;
-    background:#000;
-    color:#fff;
-    font-family:Consolas,monospace;
-}
-
-#top{
-    display:flex;
-    justify-content:space-between;
-    padding:10px;
-    border-bottom:2px solid #00ff66;
-}
-
-#clock{
-    font-size:40px;
-    color:#00ff66;
-}
-
-#gps{
-    font-size:12px;
-    color:#ffd000;
-}
-
-#zone{
-    margin:10px;
-    padding:15px;
-    border:2px dashed #00ff66;
-    text-align:center;
-    color:#00ff66;
-}
-
-#file{
-    margin:10px;
-}
-
-#search{
-    width:95%;
-    margin:10px;
-    padding:10px;
-}
-
-.stop{
-    padding:8px;
-    border-bottom:1px solid #222;
-}
-
-.badge{
-    color:#7dff7d;
-}
+body{margin:0;background:#060a10;color:#d7e1ea;font-family:Arial}
+header{padding:10px;background:#0f1621;border-bottom:2px solid #1f2a3a}
+.bigClock{font-size:72px;font-weight:bold;color:#00ff00;text-align:center;
+background:#000;border:2px solid #00aa00;padding:15px;margin:10px}
+.grid{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 120px)}
+.panel,.main{padding:10px;overflow:auto}
+.panel{background:#0f1621;border-right:1px solid #1f2a3a}
+.card{border:1px solid #1f2a3a;padding:8px;margin-bottom:8px}
+input{width:100%;padding:8px}
+table{width:100%;border-collapse:collapse}
+td,th{border:1px solid #2b3b52;padding:6px}
 </style>
 </head>
-
 <body>
-
-<div id="top">
-    <div id="clock">00:00:00</div>
-    <div id="gps">GPS...</div>
+<header><h2>🚦 FUTÁR V5.3 CONTROL ROOM</h2></header>
+<div class="bigClock" id="clock">00:00:00</div>
+<div class="grid">
+<div class="panel">
+<div class="card">
+<h3>📍 Helyzetem</h3>
+<div id="gps">GPS: betöltés...</div>
+<div id="addr">Cím: ...</div>
+<div id="acc">Pontosság: ...</div>
 </div>
-
-<div id="zone">📦 DROP GTFS ZIP (BKK / MÁV / VOLÁN)</div>
-
-<input type="file" id="file" accept=".zip">
-
-<input id="search" placeholder="🔍 keresés...">
-
-<div id="out"></div>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
+<div class="card">
+<h3>🔍 Megálló kereső</h3>
+<input placeholder="Megálló neve">
+</div>
+</div>
+<div class="main">
+<h3>🚏 Megálló adatai</h3>
+<p>GTFS ID, koordináták, légvonal távolság és indulások helye.</p>
+<table>
+<tr><th>Járat</th><th>Irány</th><th>Indulás</th></tr>
+</table>
+</div>
+</div>
 <script>
-/* ================= CLOCK ================= */
 setInterval(()=>{
-    document.getElementById("clock").innerText =
-        new Date().toLocaleTimeString('hu-HU',{hour12:false});
+ document.getElementById('clock').textContent =
+ new Date().toLocaleTimeString('hu-HU');
 },1000);
-
-/* ================= GPS ================= */
-let myLat=null,myLon=null;
-
-navigator.geolocation.getCurrentPosition(pos=>{
-    myLat=pos.coords.latitude;
-    myLon=pos.coords.longitude;
-
-    document.getElementById("gps").innerText =
-        `📍 ${myLat.toFixed(5)}, ${myLon.toFixed(5)}`;
-});
-
-/* ================= GLOBAL GTFS STORE ================= */
-let GTFS = {
-    stops: [],
-    routes: [],
-    trips: [],
-    stop_times: []
-};
-
-/* ================= FILE FINDER (CRITICAL FIX) ================= */
-function findFile(zip, name){
-    return Object.keys(zip.files).find(f =>
-        f.toLowerCase().endsWith(name)
-    );
-}
-
-/* ================= LOAD ENGINE ================= */
-async function loadGTFS(file){
-
-    const zip = await JSZip.loadAsync(file);
-
-    await loadTable(zip, "stops.txt", "stops", parseStops);
-    await loadTable(zip, "routes.txt", "routes", parseSimpleCSV);
-    await loadTable(zip, "trips.txt", "trips", parseSimpleCSV);
-    await loadTable(zip, "stop_times.txt", "stop_times", parseSimpleCSV);
-
-    render();
-}
-
-/* ================= SAFE LOADER ================= */
-async function loadTable(zip, filename, key, parser){
-
-    const path = findFile(zip, filename);
-    if(!path){
-        console.log("Missing:", filename);
-        return;
-    }
-
-    const text = await zip.file(path).async("string");
-
-    GTFS[key] = parser(text);
-}
-
-/* ================= SMART CSV PARSER ================= */
-function parseSimpleCSV(csv){
-
-    const lines = csv
-        .replace(/\r/g,"")
-        .split("\n")
-        .filter(l=>l.trim());
-
-    const headers = splitCSV(lines[0]);
-
-    const rows = [];
-
-    for(let i=1;i<lines.length;i++){
-        const cols = splitCSV(lines[i]);
-
-        let obj = {};
-        headers.forEach((h,idx)=>{
-            obj[h] = cols[idx] || "";
-        });
-
-        rows.push(obj);
-    }
-
-    return rows;
-}
-
-/* ================= SPECIAL STOP PARSER ================= */
-function parseStops(csv){
-
-    const data = parseSimpleCSV(csv);
-
-    return data.map(s=>({
-        stop_id: s.stop_id,
-        stop_name: s.stop_name,
-        stop_lat: parseFloat(s.stop_lat),
-        stop_lon: parseFloat(s.stop_lon)
-    }));
-}
-
-/* ================= CSV SPLITTER (QUOTE SAFE) ================= */
-function splitCSV(str){
-    const res=[];
-    let cur="";
-    let inQ=false;
-
-    for(let c of str){
-        if(c === '"') inQ = !inQ;
-        else if(c === "," && !inQ){
-            res.push(cur);
-            cur="";
-        }else cur+=c;
-    }
-    res.push(cur);
-    return res;
-}
-
-/* ================= DISTANCE ================= */
-function dist(lat1,lon1,lat2,lon2){
-    const R=6371000;
-    const dLat=(lat2-lat1)*Math.PI/180;
-    const dLon=(lon2-lon1)*Math.PI/180;
-
-    const a=
-        Math.sin(dLat/2)**2 +
-        Math.cos(lat1*Math.PI/180)*
-        Math.cos(lat2*Math.PI/180)*
-        Math.sin(dLon/2)**2;
-
-    return 2*R*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
-}
-
-/* ================= RENDER ================= */
-function render(){
-
-    const q = document.getElementById("search").value.toLowerCase();
-    const out = document.getElementById("out");
-
-    if(!GTFS.stops.length){
-        out.innerHTML = "Nincs GTFS betöltve";
-        return;
-    }
-
-    out.innerHTML = GTFS.stops
-        .filter(s=>s.stop_name?.toLowerCase().includes(q))
-        .slice(0,300)
-        .map(s=>{
-
-            let d="";
-            if(myLat){
-                const m=dist(myLat,myLon,s.stop_lat,s.stop_lon);
-                d = m<1000?Math.round(m)+" m":(m/1000).toFixed(2)+" km";
-            }
-
-            return `
-            <div class="stop">
-                🚏 ${s.stop_name}<br>
-                <span class="badge">${s.stop_id}</span><br>
-                📏 ${d}
-            </div>`;
-        }).join("");
-}
-
-/* ================= EVENTS ================= */
-document.getElementById("file").addEventListener("change",e=>{
-    loadGTFS(e.target.files[0]);
-});
-
-document.getElementById("zone").ondragover=e=>e.preventDefault();
-
-document.getElementById("zone").ondrop=e=>{
-    e.preventDefault();
-    loadGTFS(e.dataTransfer.files[0]);
-};
-
-document.getElementById("search").oninput=render;
-</script>
-
-</body>
-</html>
