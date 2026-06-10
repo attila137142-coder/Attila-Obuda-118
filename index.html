@@ -1,209 +1,77 @@
 <!DOCTYPE html>
-<html lang="hu">
+<html>
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V5.4 ULTRA TURBO DISPATCHER</title>
-
+<meta charset="utf-8"/>
+<title>FUTÁR Dispatcher Core</title>
 <style>
-body {
-    margin:0;
-    background:#0a0f14;
-    color:#00ff9d;
-    font-family: monospace;
-    overflow:hidden;
+body { margin:0; font-family:Arial; background:#0b0f14; color:#0f0; }
+.stop-dot {
+  width:8px; height:8px;
+  background:red;
+  position:absolute;
+  border-radius:50%;
 }
-
-header {
-    background:#111a22;
-    padding:10px;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    border-bottom:2px solid #00ff9d;
-}
-
-#clock {
-    font-size:24px;
-    color:#00ff9d;
-}
-
-.container {
-    display:grid;
-    grid-template-columns: 1fr 2fr;
-    height:calc(100vh - 50px);
-}
-
-.panel {
-    border-right:1px solid #00ff9d33;
-    padding:10px;
-    overflow:auto;
-}
-
-.map {
-    position:relative;
-    background:radial-gradient(circle at center,#0f1c24,#05080b);
-}
-
-.big-speed {
-    font-size:48px;
-    color:red;
-    text-align:center;
-    margin-top:20px;
-}
-
-.small {
-    color:#aaa;
-    font-size:12px;
-}
-
-input {
-    width:100%;
-    padding:8px;
-    background:#0d141b;
-    color:#00ff9d;
-    border:1px solid #00ff9d55;
-    margin-bottom:8px;
-}
-
-table {
-    width:100%;
-    border-collapse:collapse;
-    font-size:12px;
-}
-
-td,th {
-    border-bottom:1px solid #00ff9d22;
-    padding:4px;
-}
-
-.status-ok { color:#00ff9d; }
-.status-late { color:#ff4444; }
-
-.dot {
-    position:absolute;
-    width:10px;
-    height:10px;
-    border-radius:50%;
-    background:red;
-    box-shadow:0 0 10px red;
+#panel {
+  position:fixed; top:10px; left:10px;
+  background:#111; padding:10px;
 }
 </style>
 </head>
-
 <body>
 
-<header>
-    <div>🚍 FUTÁR V5.4 ULTRA TURBO DISPATCHER</div>
-    <div id="clock">--:--:--</div>
-</header>
-
-<div class="container">
-
-<!-- LEFT PANEL -->
-<div class="panel">
-    <h3>GTFS / SEARCH / CONTROL</h3>
-
-    <input id="search" placeholder="Járat / megálló keresés..." />
-
-    <input type="file" id="gtfsFile" />
-
-    <div class="small">
-        📡 GTFS betöltés után cache-eli a böngészőben<br>
-        🧠 offline dispatcher mód
-    </div>
-
-    <hr>
-
-    <h3>VEHICLE STATUS</h3>
-    <div class="big-speed" id="speed">0 km/h</div>
-    <div class="small" id="speedms">0 m/s</div>
-
-    <hr>
-
-    <h3>DISPATCH TABLE</h3>
-    <table id="table">
-        <thead>
-            <tr>
-                <th>Járat</th>
-                <th>Stop</th>
-                <th>Késés</th>
-            </tr>
-        </thead>
-        <tbody></tbody>
-    </table>
-</div>
-
-<!-- MAP -->
-<div class="map" id="map"></div>
-
+<div id="panel">
+  <div id="speed">Speed: --</div>
+  <div id="delay">Delay: --</div>
 </div>
 
 <script>
 
-// CLOCK
-function updateClock(){
-    document.getElementById("clock").innerText =
-        new Date().toLocaleTimeString();
-}
-setInterval(updateClock,1000);
-updateClock();
+let user = {lat:0, lon:0, speed:0};
 
-// SPEED SIMULATION
-let speed = 0;
-setInterval(()=>{
-    speed = Math.random()*70;
-    document.getElementById("speed").innerText = speed.toFixed(1)+" km/h";
-    document.getElementById("speedms").innerText = (speed/3.6).toFixed(2)+" m/s";
-},1500);
+// 📡 GPS
+navigator.geolocation.watchPosition(p => {
+  user.lat = p.coords.latitude;
+  user.lon = p.coords.longitude;
+  user.speed = p.coords.speed || 0;
 
-// FAKE DISPATCH DATA
-let data = [
-    ["7", "Blaha Lujza tér", "+2"],
-    ["4-6", "Oktogon", "-1"],
-    ["M2", "Deák Ferenc tér", "0"],
-    ["100E", "Kálvin tér", "+5"]
-];
-
-function render(){
-    let tbody = document.querySelector("#table tbody");
-    tbody.innerHTML="";
-    data.forEach(r=>{
-        let cls = r[2].includes("+") ? "status-late" : "status-ok";
-        tbody.innerHTML += `
-        <tr>
-            <td>${r[0]}</td>
-            <td>${r[1]}</td>
-            <td class="${cls}">${r[2]}</td>
-        </tr>`;
-    });
-}
-render();
-
-// MAP DOTS (SIMULATED GPS)
-const map = document.getElementById("map");
-
-function spawnDot(){
-    let d = document.createElement("div");
-    d.className="dot";
-    d.style.left = Math.random()*90+"%";
-    d.style.top = Math.random()*90+"%";
-    map.appendChild(d);
-
-    setTimeout(()=>d.remove(),4000);
-}
-setInterval(spawnDot,800);
-
-// SEARCH FILTER
-document.getElementById("search").addEventListener("input",(e)=>{
-    let val = e.target.value.toLowerCase();
-    document.querySelectorAll("#table tbody tr").forEach(tr=>{
-        tr.style.display = tr.innerText.toLowerCase().includes(val)
-        ? "" : "none";
-    });
+  document.getElementById("speed").innerText =
+    "Speed: " + (user.speed*3.6).toFixed(1) + " km/h";
 });
 
-</script>
+// 🧮 STOP sample
+const stops = [
+  {name:"Stop A", lat:47.4979, lon:19.0402},
+  {name:"Stop B", lat:47.5030, lon:19.0450}
+];
 
+// 📏 distance
+function distance(a,b){
+  const R=6371000;
+  const dLat=(b.lat-a.lat)*Math.PI/180;
+  const dLon=(b.lon-a.lon)*Math.PI/180;
+  const x=Math.sin(dLat/2)**2 +
+    Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*
+    Math.sin(dLon/2)**2;
+  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+
+// ⏱ ETA
+function eta(stop){
+  const dist = distance(user, stop);
+  const speed = user.speed || 10;
+  return dist / speed;
+}
+
+// 🧠 dispatcher AI v1
+function updateDelay(){
+  const e = eta(stops[0]);
+  const delay = e - 120; // fake schedule baseline
+  document.getElementById("delay").innerText =
+    "Delay: " + Math.round(delay) + " sec";
+}
+
+setInterval(updateDelay, 2000);
+
+</script>
 </body>
 </html>
