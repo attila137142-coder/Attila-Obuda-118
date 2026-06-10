@@ -1,117 +1,72 @@
 <!DOCTYPE html>
-<html lang="hu">
-<head>
+<html lang="hu"><head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0">
-<title>Attila Calculator V1</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FUTÁR GTFS UNIVERSAL PARSER V2</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-body{background:#0b0f14;color:#e5e7eb;font-family:Arial;margin:0;padding:15px}
-.section{background:#111827;margin:12px 0;padding:12px;border-radius:10px}
-textarea,input{width:100%;padding:8px;margin:4px 0;box-sizing:border-box}
-button{padding:8px 12px;cursor:pointer}
-table{border-collapse:collapse;width:100%}
-td,th{border:1px solid #333;padding:6px}
-.out{background:#1f2937;padding:8px;margin-top:6px;white-space:pre-wrap}
-</style>
-</head>
-<body>
-<h1>🧮 ATTILA CALCULATOR V1</h1>
-
-<div class="section">
-<h2>1. Költségmegosztás (%)</h2>
-Összes összeg:<input id="tot" value="12600">
-A,B,C... összegek (soronként):<textarea id="shares">2600
-5100
-810
-4010
-80</textarea>
-<button onclick="calcShare()">Számol</button>
-<div id="shareOut"></div>
+body{background:#0b0f14;color:#ddd;font-family:Arial;margin:0}
+#clock{font-size:52px;color:#00ff66;text-align:center;padding:10px;font-family:monospace;font-weight:bold}
+#loc{background:#3a3300;color:#ffd000;padding:10px}
+.wrap{padding:10px} input,button{padding:8px;margin:4px}
+#search{width:100%;box-sizing:border-box}.row{border-bottom:1px solid #233;padding:8px}
+.small{color:#9ab}
+</style></head><body>
+<div id="clock">00:00:00</div>
+<div id="loc">📍 Helyzet keresése...</div>
+<div class="wrap">
+<input type="file" id="zipFile" accept=".zip">
+<button onclick="localStorage.clear();location.reload()">Cache törlése</button><br>
+<input id="search" placeholder="Megállónév vagy stop_id keresése">
+<div id="status">Nincs GTFS betöltve</div>
+<div id="results"></div>
 </div>
-
-<div class="section">
-<h2>2. Áremelés</h2>
-Régi ár <input id="oldp" value="200">
-Új ár <input id="newp" value="300">
-<button onclick="calcRaise()">Számol</button>
-<div id="raiseOut" class="out"></div>
-</div>
-
-<div class="section">
-<h2>3. Megálló távolságok</h2>
-<textarea id="dist">120
-240
-180
-350
-90</textarea>
-<button onclick="calcDist()">Elemzés</button>
-<div id="distOut"></div>
-</div>
-
-<div class="section">
-<h2>4. Menetidő / Sebesség</h2>
-Távolság (m)<input id="dm" value="800">
-Idő (perc)<input id="tm" value="12">
-<button onclick="calcSpeed()">Sebesség</button>
-<div id="speedOut" class="out"></div>
-</div>
-
-<div class="section">
-<h2>5. Lejtő kalkulátor</h2>
-Távolság (m)<input id="len" value="118">
-Ezrelék (‰)<input id="perm" value="26">
-<button onclick="calcSlope()">Számol</button>
-<div id="slopeOut" class="out"></div>
-</div>
-
-<div class="section">
-<h2>6. Nagyobb / kisebb arány</h2>
-Régi<input id="v1" value="2000">
-Új<input id="v2" value="5000">
-<button onclick="calcRatio()">Számol</button>
-<div id="ratioOut" class="out"></div>
-</div>
-
 <script>
-function calcShare(){
- let t=+tot.value;
- let vals=shares.value.trim().split(/\n+/).map(Number);
- let h='<table><tr><th>#</th><th>Ft</th><th>%</th></tr>';
- vals.forEach((v,i)=>h+=`<tr><td>${String.fromCharCode(65+i)}</td><td>${v}</td><td>${(v/t*100).toFixed(2)}%</td></tr>`);
- h+='</table>';
- shareOut.innerHTML=h;
+let STOPS=[]; let myLat=null,myLon=null;
+setInterval(()=>clock.textContent=new Date().toLocaleTimeString('hu-HU',{hour12:false}),1000);
+
+function csvParse(text){
+ text=text.replace(/^\uFEFF/,"");
+ const rows=[]; let row=[],v="",q=false;
+ for(let i=0;i<text.length;i++){
+  const c=text[i];
+  if(c=='"'){q=!q;continue;}
+  if(c==','&&!q){row.push(v);v="";continue;}
+  if((c=='\n'||c=='\r')&&!q){if(v!==""||row.length){row.push(v);rows.push(row);row=[];v="";}continue;}
+  v+=c;
+ }
+ return rows;
 }
-function calcRaise(){
- let o=+oldp.value,n=+newp.value;
- raiseOut.textContent=`Változás: ${(n-o).toFixed(2)} Ft\nEmelés: ${(((n-o)/o)*100).toFixed(2)} %`;
-}
-function calcDist(){
- let a=dist.value.trim().split(/\n+/).map(Number);
- let total=a.reduce((x,y)=>x+y,0), run=0, avg=total/a.length;
- let h='<table><tr><th>Megálló</th><th>Szakasz</th><th>Hátra</th><th>Megtett %</th><th>Hátra %</th><th>Átlaghoz %</th></tr>';
- a.forEach((v,i)=>{
-   run+=v;
-   h+=`<tr><td>${i+1}</td><td>${v}</td><td>${(total-run).toFixed(0)}</td><td>${(run/total*100).toFixed(1)}</td><td>${((total-run)/total*100).toFixed(1)}</td><td>${(v/avg*100).toFixed(1)}</td></tr>`;
+
+if(navigator.geolocation){
+ navigator.geolocation.getCurrentPosition(p=>{
+  myLat=p.coords.latitude; myLon=p.coords.longitude;
+  loc.innerHTML='📍 GPS: '+myLat.toFixed(6)+', '+myLon.toFixed(6)+'<br>🎯 ±'+Math.round(p.coords.accuracy)+' m';
  });
- h+='</table>';
- distOut.innerHTML=h;
 }
-function calcSpeed(){
- let d=+dm.value,t=+tm.value;
- let ms=d/(t*60);
- let kmh=ms*3.6;
- speedOut.textContent=`Sebesség: ${kmh.toFixed(2)} km/h\nSebesség: ${ms.toFixed(2)} m/s`;
-}
-function calcSlope(){
- let l=+len.value,p=+perm.value;
- let sz=l*p/1000;
- slopeOut.textContent=`Szintkülönbség: ${sz.toFixed(3)} m\nLejtő: ${(p/10).toFixed(2)} %`;
-}
-function calcRatio(){
- let a=+v1.value,b=+v2.value;
- ratioOut.textContent=`Növekedés: ${(((b-a)/a)*100).toFixed(2)} %\nRégi az újnak: ${(a/b*100).toFixed(2)} %`;
-}
-calcShare();calcRaise();calcDist();calcSpeed();calcSlope();calcRatio();
-</script>
-</body>
-</html>
+
+zipFile.addEventListener('change',async e=>{
+ const zip=await JSZip.loadAsync(e.target.files[0]);
+ const name=Object.keys(zip.files).find(x=>x.toLowerCase().endsWith('stops.txt'));
+ if(!name){alert('stops.txt nincs');return;}
+ const txt=await zip.file(name).async('string');
+ const rows=csvParse(txt);
+ const h=rows[0], idx={}; h.forEach((x,i)=>idx[x]=i);
+ STOPS=[];
+ for(let i=1;i<rows.length;i++){
+  let r=rows[i];
+  STOPS.push({stop_id:r[idx.stop_id]||'',stop_name:r[idx.stop_name]||'',stop_lat:r[idx.stop_lat]||'',stop_lon:r[idx.stop_lon]||''});
+ }
+ localStorage.setItem('gtfsStops',JSON.stringify(STOPS));
+ status.textContent='Betöltve: '+STOPS.length+' megálló';
+});
+
+const saved=localStorage.getItem('gtfsStops');
+if(saved){STOPS=JSON.parse(saved);status.textContent='Cache: '+STOPS.length+' megálló';}
+
+search.addEventListener('input',()=>{
+ const q=search.value.toLowerCase();
+ const r=STOPS.filter(s=>(s.stop_name||'').toLowerCase().includes(q)||(s.stop_id||'').toLowerCase().includes(q)).slice(0,200);
+ results.innerHTML=r.map(s=>'<div class="row">🚏 <b>'+s.stop_name+'</b><br><span class="small">GTFS: '+s.stop_id+'</span></div>').join('');
+});
+</script></body></html>
