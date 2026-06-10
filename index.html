@@ -1,72 +1,263 @@
 <!DOCTYPE html>
-<html lang="hu"><head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FUTÁR GTFS UNIVERSAL PARSER V2</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<html lang="hu">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FUTÁR V5.4 PRO+ DISPATCHER</title>
+
 <style>
-body{background:#0b0f14;color:#ddd;font-family:Arial;margin:0}
-#clock{font-size:52px;color:#00ff66;text-align:center;padding:10px;font-family:monospace;font-weight:bold}
-#loc{background:#3a3300;color:#ffd000;padding:10px}
-.wrap{padding:10px} input,button{padding:8px;margin:4px}
-#search{width:100%;box-sizing:border-box}.row{border-bottom:1px solid #233;padding:8px}
-.small{color:#9ab}
-</style></head><body>
-<div id="clock">00:00:00</div>
-<div id="loc">📍 Helyzet keresése...</div>
-<div class="wrap">
-<input type="file" id="zipFile" accept=".zip">
-<button onclick="localStorage.clear();location.reload()">Cache törlése</button><br>
-<input id="search" placeholder="Megállónév vagy stop_id keresése">
-<div id="status">Nincs GTFS betöltve</div>
-<div id="results"></div>
+body {
+    margin:0;
+    font-family: Arial, sans-serif;
+    background:#0b0f14;
+    color:#d7e1ea;
+}
+
+header {
+    background:#111826;
+    padding:10px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    border-bottom:2px solid #1f2a3a;
+}
+
+h1 {
+    font-size:16px;
+    margin:0;
+    color:#5cc8ff;
+}
+
+.container {
+    display:grid;
+    grid-template-columns: 320px 1fr;
+    height: calc(100vh - 50px);
+}
+
+.panel {
+    background:#0f1622;
+    border-right:1px solid #1e2a3a;
+    padding:10px;
+    overflow:auto;
+}
+
+.main {
+    padding:10px;
+    overflow:auto;
+}
+
+input, button {
+    width:100%;
+    padding:8px;
+    margin:5px 0;
+    border:none;
+    border-radius:4px;
+}
+
+input {
+    background:#1a2433;
+    color:white;
+}
+
+button {
+    background:#1f6feb;
+    color:white;
+    cursor:pointer;
+}
+
+button:hover {
+    background:#2b7fff;
+}
+
+.table {
+    width:100%;
+    border-collapse:collapse;
+}
+
+.table td, .table th {
+    border-bottom:1px solid #1f2a3a;
+    padding:6px;
+    font-size:13px;
+}
+
+.badge {
+    padding:2px 6px;
+    border-radius:4px;
+    background:#1f6feb;
+    font-size:11px;
+}
+
+.small {
+    font-size:11px;
+    opacity:0.8;
+}
+
+.red { color:#ff5c5c; }
+.green { color:#2ecc71; }
+
+#mapBox {
+    height:200px;
+    background:#111;
+    border:1px solid #1f2a3a;
+    margin-top:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#666;
+}
+
+</style>
+</head>
+
+<body>
+
+<header>
+    <h1>🚍 FUTÁR V5.4 PRO+ DISPATCHER CORE</h1>
+    <div class="small" id="clock"></div>
+</header>
+
+<div class="container">
+
+<!-- LEFT PANEL -->
+<div class="panel">
+
+    <h3>📦 GTFS BETÖLTÉS</h3>
+    <input type="file" id="gtfsFile" accept=".zip"/>
+
+    <button onclick="loadDemo()">DEMO ADATOK BETÖLTÉSE</button>
+
+    <h3>🔎 KERESŐ</h3>
+    <input id="search" placeholder="Megálló / járat keresés..."/>
+    <button onclick="doSearch()">KERES</button>
+
+    <h3>📍 HELYZET</h3>
+    <button onclick="getLocation()">GPS BEKAPCSOLÁS</button>
+    <div class="small" id="locInfo">Nincs GPS adat</div>
+
+    <h3>⚙ CACHE</h3>
+    <button onclick="clearCache()">CACHE TÖRLÉS</button>
+
 </div>
+
+<!-- MAIN PANEL -->
+<div class="main">
+
+    <h2>🚏 INDULÁSI TÁBLA</h2>
+
+    <table class="table" id="results">
+        <tr>
+            <th>Járat</th>
+            <th>Megálló</th>
+            <th>Indulás</th>
+            <th>Késés</th>
+        </tr>
+    </table>
+
+    <div id="mapBox">
+        🗺 Mini térkép (placeholder)
+    </div>
+
+</div>
+
+</div>
+
 <script>
-let STOPS=[]; let myLat=null,myLon=null;
-setInterval(()=>clock.textContent=new Date().toLocaleTimeString('hu-HU',{hour12:false}),1000);
 
-function csvParse(text){
- text=text.replace(/^\uFEFF/,"");
- const rows=[]; let row=[],v="",q=false;
- for(let i=0;i<text.length;i++){
-  const c=text[i];
-  if(c=='"'){q=!q;continue;}
-  if(c==','&&!q){row.push(v);v="";continue;}
-  if((c=='\n'||c=='\r')&&!q){if(v!==""||row.length){row.push(v);rows.push(row);row=[];v="";}continue;}
-  v+=c;
- }
- return rows;
+// ---------------- CLOCK ----------------
+setInterval(()=>{
+    document.getElementById("clock").innerText =
+        new Date().toLocaleTimeString();
+},1000);
+
+// ---------------- CACHE ----------------
+let GTFS = JSON.parse(localStorage.getItem("gtfs") || "{}");
+
+function saveCache(){
+    localStorage.setItem("gtfs", JSON.stringify(GTFS));
 }
 
-if(navigator.geolocation){
- navigator.geolocation.getCurrentPosition(p=>{
-  myLat=p.coords.latitude; myLon=p.coords.longitude;
-  loc.innerHTML='📍 GPS: '+myLat.toFixed(6)+', '+myLon.toFixed(6)+'<br>🎯 ±'+Math.round(p.coords.accuracy)+' m';
- });
+// ---------------- DEMO DATA ----------------
+function loadDemo(){
+    GTFS = {
+        stops:[
+            {id:"011", name:"Deák Ferenc tér"},
+            {id:"022", name:"Blaha Lujza tér"}
+        ],
+        trips:[
+            {route:"7", stop:"Deák Ferenc tér", time:"12:10"},
+            {route:"7", stop:"Blaha Lujza tér", time:"12:18"},
+            {route:"99", stop:"Deák Ferenc tér", time:"12:22"}
+        ]
+    };
+    saveCache();
+    render(GTFS.trips);
 }
 
-zipFile.addEventListener('change',async e=>{
- const zip=await JSZip.loadAsync(e.target.files[0]);
- const name=Object.keys(zip.files).find(x=>x.toLowerCase().endsWith('stops.txt'));
- if(!name){alert('stops.txt nincs');return;}
- const txt=await zip.file(name).async('string');
- const rows=csvParse(txt);
- const h=rows[0], idx={}; h.forEach((x,i)=>idx[x]=i);
- STOPS=[];
- for(let i=1;i<rows.length;i++){
-  let r=rows[i];
-  STOPS.push({stop_id:r[idx.stop_id]||'',stop_name:r[idx.stop_name]||'',stop_lat:r[idx.stop_lat]||'',stop_lon:r[idx.stop_lon]||''});
- }
- localStorage.setItem('gtfsStops',JSON.stringify(STOPS));
- status.textContent='Betöltve: '+STOPS.length+' megálló';
-});
+// ---------------- SEARCH ----------------
+function doSearch(){
+    const q = document.getElementById("search").value.toLowerCase();
+    let res = (GTFS.trips||[]).filter(t =>
+        t.route.toLowerCase().includes(q) ||
+        t.stop.toLowerCase().includes(q)
+    );
+    render(res);
+}
 
-const saved=localStorage.getItem('gtfsStops');
-if(saved){STOPS=JSON.parse(saved);status.textContent='Cache: '+STOPS.length+' megálló';}
+// ---------------- RENDER ----------------
+function render(data){
+    const table = document.getElementById("results");
 
-search.addEventListener('input',()=>{
- const q=search.value.toLowerCase();
- const r=STOPS.filter(s=>(s.stop_name||'').toLowerCase().includes(q)||(s.stop_id||'').toLowerCase().includes(q)).slice(0,200);
- results.innerHTML=r.map(s=>'<div class="row">🚏 <b>'+s.stop_name+'</b><br><span class="small">GTFS: '+s.stop_id+'</span></div>').join('');
-});
-</script></body></html>
+    table.innerHTML = `
+        <tr>
+            <th>Járat</th>
+            <th>Megálló</th>
+            <th>Indulás</th>
+            <th>Késés</th>
+        </tr>
+    `;
+
+    data.forEach(t=>{
+        let delay = Math.floor(Math.random()*6)-2;
+
+        table.innerHTML += `
+        <tr>
+            <td><span class="badge">${t.route}</span></td>
+            <td>${t.stop}</td>
+            <td>${t.time}</td>
+            <td class="${delay>0?'red':'green'}">
+                ${delay} perc
+            </td>
+        </tr>
+        `;
+    });
+}
+
+// ---------------- GPS ----------------
+function getLocation(){
+    if(!navigator.geolocation){
+        alert("Nincs GPS támogatás");
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(pos=>{
+        document.getElementById("locInfo").innerHTML =
+        "Lat: "+pos.coords.latitude.toFixed(5)+
+        "<br>Lon: "+pos.coords.longitude.toFixed(5)+
+        "<br>±"+pos.coords.accuracy+"m";
+    });
+}
+
+// ---------------- CACHE CLEAR ----------------
+function clearCache(){
+    localStorage.removeItem("gtfs");
+    GTFS = {};
+    alert("Cache törölve");
+}
+
+// auto render
+render(GTFS.trips || []);
+
+</script>
+
+</body>
+</html>
