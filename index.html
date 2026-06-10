@@ -1,44 +1,92 @@
-“SURVIVAL PRO MODE
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8"/>
+<meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>🆘 ESCAPE ROUTE SYSTEM</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<title>FUTÁR V5.4 ULTRA TURBO DISPATCHER</title>
 
 <style>
 body {
-  margin:0;
-  font-family: Arial;
-  background:#0b0f14;
-  color:#e6e6e6;
+    margin:0;
+    background:#0a0f14;
+    color:#00ff9d;
+    font-family: monospace;
+    overflow:hidden;
 }
 
 header {
-  padding:10px;
-  background:#111826;
-  display:flex;
-  justify-content:space-between;
+    background:#111a22;
+    padding:10px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    border-bottom:2px solid #00ff9d;
 }
 
-#map { height:60vh; }
-
-.panel { padding:10px; }
-
-.card {
-  background:#111826;
-  padding:10px;
-  margin-bottom:10px;
-  border-left:3px solid #ff5252;
+#clock {
+    font-size:24px;
+    color:#00ff9d;
 }
-button {
-  padding:10px;
-  background:#ff5252;
-  border:none;
-  cursor:pointer;
-  color:white;
+
+.container {
+    display:grid;
+    grid-template-columns: 1fr 2fr;
+    height:calc(100vh - 50px);
+}
+
+.panel {
+    border-right:1px solid #00ff9d33;
+    padding:10px;
+    overflow:auto;
+}
+
+.map {
+    position:relative;
+    background:radial-gradient(circle at center,#0f1c24,#05080b);
+}
+
+.big-speed {
+    font-size:48px;
+    color:red;
+    text-align:center;
+    margin-top:20px;
+}
+
+.small {
+    color:#aaa;
+    font-size:12px;
+}
+
+input {
+    width:100%;
+    padding:8px;
+    background:#0d141b;
+    color:#00ff9d;
+    border:1px solid #00ff9d55;
+    margin-bottom:8px;
+}
+
+table {
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
+}
+
+td,th {
+    border-bottom:1px solid #00ff9d22;
+    padding:4px;
+}
+
+.status-ok { color:#00ff9d; }
+.status-late { color:#ff4444; }
+
+.dot {
+    position:absolute;
+    width:10px;
+    height:10px;
+    border-radius:50%;
+    background:red;
+    box-shadow:0 0 10px red;
 }
 </style>
 </head>
@@ -46,135 +94,114 @@ button {
 <body>
 
 <header>
-  <div>🆘 ESCAPE ROUTE SYSTEM</div>
-  <div id="status">READY</div>
+    <div>🚍 FUTÁR V5.4 ULTRA TURBO DISPATCHER</div>
+    <div id="clock">--:--:--</div>
 </header>
 
-<div id="map"></div>
+<div class="container">
 
+<!-- LEFT PANEL -->
 <div class="panel">
-  <button onclick="escapeRoute()">🧭 Find Escape Route</button>
-  <div id="output"></div>
+    <h3>GTFS / SEARCH / CONTROL</h3>
+
+    <input id="search" placeholder="Járat / megálló keresés..." />
+
+    <input type="file" id="gtfsFile" />
+
+    <div class="small">
+        📡 GTFS betöltés után cache-eli a böngészőben<br>
+        🧠 offline dispatcher mód
+    </div>
+
+    <hr>
+
+    <h3>VEHICLE STATUS</h3>
+    <div class="big-speed" id="speed">0 km/h</div>
+    <div class="small" id="speedms">0 m/s</div>
+
+    <hr>
+
+    <h3>DISPATCH TABLE</h3>
+    <table id="table">
+        <thead>
+            <tr>
+                <th>Járat</th>
+                <th>Stop</th>
+                <th>Késés</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
 </div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<!-- MAP -->
+<div class="map" id="map"></div>
+
+</div>
 
 <script>
 
-// 🗺 MAP
-const map = L.map('map').setView([47.4979, 19.0402], 11);
+// CLOCK
+function updateClock(){
+    document.getElementById("clock").innerText =
+        new Date().toLocaleTimeString();
+}
+setInterval(updateClock,1000);
+updateClock();
 
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
-  attribution:'© OSM'
-}).addTo(map);
+// SPEED SIMULATION
+let speed = 0;
+setInterval(()=>{
+    speed = Math.random()*70;
+    document.getElementById("speed").innerText = speed.toFixed(1)+" km/h";
+    document.getElementById("speedms").innerText = (speed/3.6).toFixed(2)+" m/s";
+},1500);
 
-// 🧭 SAFETY POI DATABASE
-const safePoints = [
-  { name:"Budakeszi", type:"town", coords:[47.510,18.927] },
-  { name:"Normafa busz", type:"bus", coords:[47.503,19.012] },
-  { name:"Kaán Károly turistaház", type:"hut", coords:[47.518,18.960] },
-  { name:"Farkasrét", type:"town", coords:[47.482,19.002] },
-  { name:"Hűvösvölgy", type:"hub", coords:[47.541,18.956] }
+// FAKE DISPATCH DATA
+let data = [
+    ["7", "Blaha Lujza tér", "+2"],
+    ["4-6", "Oktogon", "-1"],
+    ["M2", "Deák Ferenc tér", "0"],
+    ["100E", "Kálvin tér", "+5"]
 ];
 
-// 📏 DISTANCE
-function distance(a,b){
-  const R=6371000;
-  const dLat=(b[0]-a[0])*Math.PI/180;
-  const dLon=(b[1]-a[1])*Math.PI/180;
-
-  const x =
-    Math.sin(dLat/2)**2 +
-    Math.cos(a[0]*Math.PI/180) *
-    Math.cos(b[0]*Math.PI/180) *
-    Math.sin(dLon/2)**2;
-
-  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+function render(){
+    let tbody = document.querySelector("#table tbody");
+    tbody.innerHTML="";
+    data.forEach(r=>{
+        let cls = r[2].includes("+") ? "status-late" : "status-ok";
+        tbody.innerHTML += `
+        <tr>
+            <td>${r[0]}</td>
+            <td>${r[1]}</td>
+            <td class="${cls}">${r[2]}</td>
+        </tr>`;
+    });
 }
+render();
 
-// 🧭 BEARING
-function bearing(a,b){
-  const dLon=(b[1]-a[1])*Math.PI/180;
+// MAP DOTS (SIMULATED GPS)
+const map = document.getElementById("map");
 
-  const y=Math.sin(dLon)*Math.cos(b[0]*Math.PI/180);
-  const x=
-    Math.cos(a[0]*Math.PI/180)*Math.sin(b[0]*Math.PI/180)-
-    Math.sin(a[0]*Math.PI/180)*Math.cos(b[0]*Math.PI/180)*Math.cos(dLon);
+function spawnDot(){
+    let d = document.createElement("div");
+    d.className="dot";
+    d.style.left = Math.random()*90+"%";
+    d.style.top = Math.random()*90+"%";
+    map.appendChild(d);
 
-  return (Math.atan2(y,x)*180/Math.PI+360)%360;
+    setTimeout(()=>d.remove(),4000);
 }
+setInterval(spawnDot,800);
 
-// 📍 USER POSITION
-function getUser(){
-  return new Promise((resolve,reject)=>{
-    navigator.geolocation.getCurrentPosition(pos=>{
-      resolve({
-        lat:pos.coords.latitude,
-        lon:pos.coords.longitude
-      });
-    },reject);
-  });
-}
-
-// 🆘 ESCAPE ENGINE
-async function escapeRoute(){
-
-  const user = await getUser();
-
-  map.setView([user.lat,user.lon],13);
-
-  L.marker([user.lat,user.lon])
-    .addTo(map)
-    .bindPopup("📍 YOU");
-
-  // find nearest safe point
-  let best = null;
-  let bestDist = Infinity;
-
-  safePoints.forEach(p=>{
-
-    const d = distance(
-      [user.lat,user.lon],
-      p.coords
-    );
-
-    if(d < bestDist){
-      bestDist = d;
-      best = p;
-    }
-  });
-
-  // draw escape line
-  const line = L.polyline([
-    [user.lat,user.lon],
-    best.coords
-  ],{
-    color:"#ff5252",
-    weight:4
-  }).addTo(map);
-
-  map.fitBounds(line.getBounds());
-
-  L.marker(best.coords)
-    .addTo(map)
-    .bindPopup("🆘 SAFE: " + best.name);
-
-  const dir = bearing(
-    [user.lat,user.lon],
-    best.coords
-  );
-
-  document.getElementById("output").innerHTML = `
-    <div class="card">
-      🆘 <b>SAFE DESTINATION FOUND</b><br><br>
-      📍 ${best.name}<br>
-      📏 ${Math.round(bestDist)} m<br>
-      🧭 ${Math.round(dir)}°
-    </div>
-  `;
-
-  console.log("ESCAPE TARGET:", best);
-}
+// SEARCH FILTER
+document.getElementById("search").addEventListener("input",(e)=>{
+    let val = e.target.value.toLowerCase();
+    document.querySelectorAll("#table tbody tr").forEach(tr=>{
+        tr.style.display = tr.innerText.toLowerCase().includes(val)
+        ? "" : "none";
+    });
+});
 
 </script>
 
