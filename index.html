@@ -3,50 +3,61 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V5.4 PRO+ DISPATCHER</title>
+<title>FUTÁR V5.4 TURBO UPGRADE</title>
 
 <style>
-body {
+body{
     margin:0;
-    font-family: Arial, sans-serif;
+    font-family:Arial;
     background:#0b0f14;
     color:#d7e1ea;
 }
 
-header {
-    background:#111826;
+/* HEADER */
+header{
+    background:#0f1622;
+    border-bottom:2px solid #1f2a3a;
     padding:10px;
     display:flex;
     justify-content:space-between;
     align-items:center;
-    border-bottom:2px solid #1f2a3a;
 }
 
-h1 {
-    font-size:16px;
+h1{
+    font-size:15px;
     margin:0;
     color:#5cc8ff;
 }
 
-.container {
-    display:grid;
-    grid-template-columns: 320px 1fr;
-    height: calc(100vh - 50px);
+/* BIG GREEN CLOCK */
+#bigClock{
+    font-size:22px;
+    font-weight:bold;
+    color:#2ecc71;
+    letter-spacing:1px;
 }
 
-.panel {
+/* LAYOUT */
+.container{
+    display:grid;
+    grid-template-columns:320px 1fr;
+    height:calc(100vh - 50px);
+}
+
+.panel{
     background:#0f1622;
     border-right:1px solid #1e2a3a;
     padding:10px;
     overflow:auto;
 }
 
-.main {
+.main{
     padding:10px;
     overflow:auto;
 }
 
-input, button {
+/* INPUTS */
+input,button{
     width:100%;
     padding:8px;
     margin:5px 0;
@@ -54,57 +65,39 @@ input, button {
     border-radius:4px;
 }
 
-input {
-    background:#1a2433;
-    color:white;
-}
+input{background:#1a2433;color:white;}
+button{background:#1f6feb;color:white;cursor:pointer;}
+button:hover{background:#2b7fff;}
 
-button {
-    background:#1f6feb;
-    color:white;
-    cursor:pointer;
-}
-
-button:hover {
-    background:#2b7fff;
-}
-
-.table {
+/* TABLE */
+table{
     width:100%;
     border-collapse:collapse;
 }
 
-.table td, .table th {
+td,th{
     border-bottom:1px solid #1f2a3a;
     padding:6px;
     font-size:13px;
 }
 
-.badge {
+.badge{
+    background:#1f6feb;
     padding:2px 6px;
     border-radius:4px;
-    background:#1f6feb;
-    font-size:11px;
 }
 
-.small {
-    font-size:11px;
-    opacity:0.8;
-}
-
-.red { color:#ff5c5c; }
-.green { color:#2ecc71; }
-
-#mapBox {
-    height:200px;
-    background:#111;
+/* LOCATION BOX */
+#locBox{
+    background:#111826;
+    padding:8px;
     border:1px solid #1f2a3a;
-    margin-top:10px;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-    color:#666;
+    font-size:12px;
+    line-height:1.4;
 }
+
+.ok{color:#2ecc71;}
+.warn{color:#ffcc00;}
 
 </style>
 </head>
@@ -112,39 +105,38 @@ button:hover {
 <body>
 
 <header>
-    <h1>🚍 FUTÁR V5.4 PRO+ DISPATCHER CORE</h1>
-    <div class="small" id="clock"></div>
+    <h1>🚍 FUTÁR V5.4 TURBO DISPATCH</h1>
+    <div id="bigClock">--:--:--</div>
 </header>
 
 <div class="container">
 
-<!-- LEFT PANEL -->
+<!-- LEFT -->
 <div class="panel">
 
-    <h3>📦 GTFS BETÖLTÉS</h3>
-    <input type="file" id="gtfsFile" accept=".zip"/>
-
-    <button onclick="loadDemo()">DEMO ADATOK BETÖLTÉSE</button>
-
     <h3>🔎 KERESŐ</h3>
-    <input id="search" placeholder="Megálló / járat keresés..."/>
-    <button onclick="doSearch()">KERES</button>
+    <input id="search" placeholder="járat / megálló"/>
+    <button onclick="search()">KERES</button>
 
-    <h3>📍 HELYZET</h3>
-    <button onclick="getLocation()">GPS BEKAPCSOLÁS</button>
-    <div class="small" id="locInfo">Nincs GPS adat</div>
-
-    <h3>⚙ CACHE</h3>
+    <h3>📦 GTFS</h3>
+    <button onclick="loadDemo()">DEMO BETÖLTÉS</button>
     <button onclick="clearCache()">CACHE TÖRLÉS</button>
+
+    <h3>📍 HELYEM</h3>
+    <button onclick="getLocation()">HELYZET FRISSÍTÉS</button>
+
+    <div id="locBox">
+        📡 nincs adat
+    </div>
 
 </div>
 
-<!-- MAIN PANEL -->
+<!-- MAIN -->
 <div class="main">
 
     <h2>🚏 INDULÁSI TÁBLA</h2>
 
-    <table class="table" id="results">
+    <table id="table">
         <tr>
             <th>Járat</th>
             <th>Megálló</th>
@@ -153,59 +145,56 @@ button:hover {
         </tr>
     </table>
 
-    <div id="mapBox">
-        🗺 Mini térkép (placeholder)
-    </div>
-
 </div>
 
 </div>
 
 <script>
 
-// ---------------- CLOCK ----------------
-setInterval(()=>{
-    document.getElementById("clock").innerText =
-        new Date().toLocaleTimeString();
-},1000);
-
-// ---------------- CACHE ----------------
 let GTFS = JSON.parse(localStorage.getItem("gtfs") || "{}");
 
-function saveCache(){
+// ---------------- BIG CLOCK ----------------
+function updateClock(){
+    const now = new Date();
+    document.getElementById("bigClock").innerText =
+        now.toLocaleTimeString("hu-HU");
+}
+setInterval(updateClock,1000);
+updateClock();
+
+// ---------------- CACHE ----------------
+function save(){
     localStorage.setItem("gtfs", JSON.stringify(GTFS));
 }
 
-// ---------------- DEMO DATA ----------------
+// ---------------- DEMO ----------------
 function loadDemo(){
     GTFS = {
-        stops:[
-            {id:"011", name:"Deák Ferenc tér"},
-            {id:"022", name:"Blaha Lujza tér"}
-        ],
         trips:[
             {route:"7", stop:"Deák Ferenc tér", time:"12:10"},
-            {route:"7", stop:"Blaha Lujza tér", time:"12:18"},
-            {route:"99", stop:"Deák Ferenc tér", time:"12:22"}
+            {route:"9", stop:"Blaha Lujza tér", time:"12:14"},
+            {route:"99", stop:"Astoria", time:"12:22"}
         ]
     };
-    saveCache();
+    save();
     render(GTFS.trips);
 }
 
 // ---------------- SEARCH ----------------
-function doSearch(){
+function search(){
     const q = document.getElementById("search").value.toLowerCase();
-    let res = (GTFS.trips||[]).filter(t =>
+
+    const res = (GTFS.trips||[]).filter(t =>
         t.route.toLowerCase().includes(q) ||
         t.stop.toLowerCase().includes(q)
     );
+
     render(res);
 }
 
 // ---------------- RENDER ----------------
 function render(data){
-    const table = document.getElementById("results");
+    const table = document.getElementById("table");
 
     table.innerHTML = `
         <tr>
@@ -217,33 +206,57 @@ function render(data){
     `;
 
     data.forEach(t=>{
-        let delay = Math.floor(Math.random()*6)-2;
+        let delay = Math.floor(Math.random()*5)-2;
 
         table.innerHTML += `
         <tr>
             <td><span class="badge">${t.route}</span></td>
             <td>${t.stop}</td>
             <td>${t.time}</td>
-            <td class="${delay>0?'red':'green'}">
-                ${delay} perc
+            <td style="color:${delay>0?'#ff5c5c':'#2ecc71'}">
+                ${delay}p
             </td>
-        </tr>
-        `;
+        </tr>`;
     });
 }
 
-// ---------------- GPS ----------------
+// ---------------- GPS + ADDRESS ----------------
 function getLocation(){
     if(!navigator.geolocation){
-        alert("Nincs GPS támogatás");
+        alert("GPS nem támogatott");
         return;
     }
 
-    navigator.geolocation.getCurrentPosition(pos=>{
-        document.getElementById("locInfo").innerHTML =
-        "Lat: "+pos.coords.latitude.toFixed(5)+
-        "<br>Lon: "+pos.coords.longitude.toFixed(5)+
-        "<br>±"+pos.coords.accuracy+"m";
+    navigator.geolocation.getCurrentPosition(async pos=>{
+        const lat = pos.coords.latitude;
+        const lon = pos.coords.longitude;
+
+        // reverse geocode (OpenStreetMap Nominatim)
+        try{
+            const res = await fetch(
+                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
+            );
+            const data = await res.json();
+
+            const addr = data.address || {};
+
+            document.getElementById("locBox").innerHTML = `
+                <span class="ok">📍 GPS OK</span><br><br>
+
+                <b>Város:</b> ${addr.city || addr.town || addr.village || "?"}<br>
+                <b>Utca:</b> ${addr.road || "?"}<br>
+                <b>Házszám:</b> ${addr.house_number || "?"}<br><br>
+
+                <span class="warn">Koordináta:</span><br>
+                ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>
+                ±${pos.coords.accuracy}m
+            `;
+
+        } catch(e){
+            document.getElementById("locBox").innerHTML =
+                "GPS OK, de cím nem elérhető";
+        }
+
     });
 }
 
@@ -254,7 +267,7 @@ function clearCache(){
     alert("Cache törölve");
 }
 
-// auto render
+// INIT
 render(GTFS.trips || []);
 
 </script>
