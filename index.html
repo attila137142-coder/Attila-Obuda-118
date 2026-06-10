@@ -2,175 +2,283 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V5.4 TURBO</title>
+<title>FUTÁR V5.4 TURBO PRO</title>
 <style>
 body {
-margin:0;
-font-family: Arial;
-background:#0b0f14;
-color:#00ff9d;
+  margin:0;
+  font-family: Arial;
+  background:#0b0f14;
+  color:#00ff9d;
 }
 
 header {
-background:#111826;
-padding:10px;
-display:flex;
-justify-content:space-between;
-align-items:center;
-border-bottom:2px solid #00ff9d;
-}
-
-#clock {
-font-size:28px;
-color:#00ff9d;
-font-weight:bold;
+  background:#111826;
+  padding:10px;
+  display:flex;
+  justify-content:space-between;
+  border-bottom:2px solid #00ff9d;
+  font-weight:bold;
 }
 
 .container {
-display:grid;
-grid-template-columns: 1fr 2fr;
-height:calc(100vh - 60px);
+  display:grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  height:calc(100vh - 50px);
 }
 
 .panel {
-border-right:1px solid #1f2a3a;
-padding:10px;
-overflow:auto;
-}
-
-.main {
-padding:10px;
+  border-right:1px solid #1f2a3a;
+  padding:10px;
+  overflow:auto;
 }
 
 .card {
-background:#111826;
-padding:10px;
-margin-bottom:10px;
-border-left:3px solid #00ff9d;
+  background:#111826;
+  padding:10px;
+  margin-bottom:10px;
+  border-left:3px solid #00ff9d;
 }
 
-.label {
-color:#aaa;
-font-size:12px;
+input, button {
+  width:100%;
+  padding:8px;
+  margin-top:5px;
+  background:#0b0f14;
+  border:1px solid #00ff9d;
+  color:#00ff9d;
 }
-.value {
-font-size:16px;
-margin-bottom:5px;
-}
+
 button {
-background:#00ff9d;
-color:#000;
-border:none;
-padding:8px;
-cursor:pointer;
-font-weight:bold;
+  cursor:pointer;
+  font-weight:bold;
+  background:#00ff9d;
+  color:#000;
 }
+small { color:#aaa; }
 </style>
 </head>
 
 <body>
 
 <header>
-<div>🚍 FUTÁR V5.4 TURBO</div>
-<div id="clock">--:--:--</div>
+  <div>🚍 FUTÁR V5.4 TURBO PRO (GTFS + GPS FUSION)</div>
+  <div id="clock"></div>
 </header>
 
 <div class="container">
 
-<!-- BAL PANEL -->
+<!-- LEFT -->
 <div class="panel">
 
-<div class="card">
-<div class="label">📍 Helyzet</div>
-<div class="value" id="coords">Nincs adat</div>
-<div class="value" id="address">Cím betöltése...</div>
-<button onclick="getLocation()">Helyzet frissítés</button>
-</div>
+  <div class="card">
+    <h3>📦 GTFS BETÖLTÉS</h3>
+    <input type="file" id="gtfsFile" multiple>
+    <button onclick="loadGTFS()">Betöltés</button>
+    <small id="gtfsStatus">Nincs adat</small>
+  </div>
+
+  <div class="card">
+    <h3>🔎 STOP SEARCH</h3>
+    <input id="search" placeholder="megálló neve...">
+    <button onclick="searchStops()">Keresés</button>
+    <div id="results"></div>
+  </div>
 
 </div>
 
-<!-- KÖZÉP / MAIN -->
-<div class="main">
+<!-- CENTER -->
+<div class="panel">
 
-<div class="card">
-<h3>🧭 VALÓS HELYZET MODUL</h3>
-<div class="value">GPS + Reverse Geocoding aktív</div>
-<div class="label">Automatikus frissítés: 5 mp</div>
+  <div class="card">
+    <h3>🧭 GPS HELYZET</h3>
+    <div id="coords">--</div>
+    <div id="address">--</div>
+    <button onclick="getLocation()">Helyzet frissítés</button>
+  </div>
+
+  <div class="card">
+    <h3>📍 LEGKÖZELEBBI MEGÁLLÓK</h3>
+    <div id="nearStops">Nincs adat</div>
+  </div>
+
 </div>
 
-<div class="card">
-<h3>📡 Status</h3>
-<div id="status">Várakozás GPS-re...</div>
-</div>
+<!-- RIGHT -->
+<div class="panel">
+
+  <div class="card">
+    <h3>🚍 STOP BOARD</h3>
+    <div id="stopBoard">Válassz megállót</div>
+  </div>
 
 </div>
 
 </div>
 
 <script>
-// ⏰ ÓRA
-function updateClock(){
-const d = new Date();
-document.getElementById("clock").innerText =
-d.toLocaleTimeString();
-}
-setInterval(updateClock,1000);
-updateClock();
 
-// 📍 GPS + cím
+let GTFS = {
+  stops: []
+};
+
+// ⏰ CLOCK
+setInterval(() => {
+  document.getElementById("clock").innerText =
+    new Date().toLocaleTimeString();
+},1000);
+
+// ==========================
+// 📦 GTFS LOADER (simple mock parser)
+// ==========================
+function loadGTFS(){
+  const files = document.getElementById("gtfsFile").files;
+
+  if(!files.length){
+    alert("Nincs fájl kiválasztva");
+    return;
+  }
+
+  GTFS.stops = [];
+
+  let loaded = 0;
+
+  for(let f of files){
+    const reader = new FileReader();
+
+    reader.onload = function(e){
+      const text = e.target.result;
+      parseGTFS(text);
+      loaded++;
+
+      if(loaded === files.length){
+        document.getElementById("gtfsStatus").innerText =
+          "✔ GTFS betöltve: " + GTFS.stops.length + " megálló";
+      }
+    };
+
+    reader.readAsText(f);
+  }
+}
+
+// simple stops.txt parser
+function parseGTFS(text){
+  const lines = text.split("\n");
+
+  for(let line of lines){
+    const parts = line.split(",");
+
+    if(parts.length > 2){
+      GTFS.stops.push({
+        id: parts[0],
+        name: parts[2],
+        lat: parseFloat(parts[3]),
+        lon: parseFloat(parts[4])
+      });
+    }
+  }
+}
+
+// ==========================
+// 🔎 STOP SEARCH
+// ==========================
+function searchStops(){
+  const q = document.getElementById("search").value.toLowerCase();
+
+  const res = GTFS.stops.filter(s =>
+    s.name && s.name.toLowerCase().includes(q)
+  );
+
+  document.getElementById("results").innerHTML =
+    res.slice(0,10).map(r =>
+      `<div onclick="selectStop('${r.name}')">${r.name}</div>`
+    ).join("");
+}
+
+function selectStop(name){
+  const stop = GTFS.stops.find(s => s.name === name);
+  if(!stop) return;
+
+  document.getElementById("stopBoard").innerHTML =
+    "📍 " + stop.name + "<br>ID: " + stop.id;
+}
+
+// ==========================
+// 📍 GPS + REVERSE GEOCODE
+// ==========================
 function getLocation(){
-if(!navigator.geolocation){
-alert("GPS nem támogatott");
-return;
+  navigator.geolocation.getCurrentPosition(async pos => {
+
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+
+    document.getElementById("coords").innerText =
+      lat.toFixed(6) + ", " + lon.toFixed(6);
+
+    // reverse geocode
+    try{
+      const r = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`
+      );
+
+      const d = await r.json();
+      const a = d.address;
+
+      const city = a.city || a.town || a.village || "";
+      const road = a.road || "";
+      const house = a.house_number || "";
+
+      document.getElementById("address").innerText =
+        city + " " + road + " " + house;
+
+    } catch(e){
+      document.getElementById("address").innerText =
+        "Cím nem elérhető";
+    }
+
+    calculateNearestStops(lat, lon);
+
+  });
 }
 
-document.getElementById("status").innerText = "GPS keresés...";
+// ==========================
+// 📏 DISTANCE (Haversine)
+// ==========================
+function dist(lat1, lon1, lat2, lon2){
+  const R = 6371e3;
+  const toRad = x => x * Math.PI / 180;
 
-navigator.geolocation.getCurrentPosition(async (pos) => {
+  const dLat = toRad(lat2-lat1);
+  const dLon = toRad(lon2-lon1);
 
-const lat = pos.coords.latitude;
-const lon = pos.coords.longitude;
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(toRad(lat1)) *
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon/2)**2;
 
-document.getElementById("coords").innerText =
-lat.toFixed(6) + ", " + lon.toFixed(6);
-
-document.getElementById("status").innerText =
-"Cím lekérése...";
-
-// 🌍 REVERSE GEOCODING (OpenStreetMap)
-const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`;
-
-try {
-const res = await fetch(url);
-const data = await res.json();
-
-const addr = data.address;
-
-const city = addr.city || addr.town || addr.village || "Ismeretlen város";
-const road = addr.road || "Ismeretlen utca";
-const house = addr.house_number || "";
-
-document.getElementById("address").innerText =
-city + ", " + road + " " + house;
-
-document.getElementById("status").innerText =
-"OK ✔ helyzet betöltve";
-
-} catch(e){
-document.getElementById("address").innerText =
-"Cím nem elérhető";
-document.getElementById("status").innerText =
-"Hiba a geocoding során";
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
 }
 
-}, () => {
-document.getElementById("status").innerText =
-"GPS elutasítva / nincs engedély";
-});
-}
+// ==========================
+// 📍 NEAREST STOPS
+// ==========================
+function calculateNearestStops(lat, lon){
 
-// 🔁 AUTO UPDATE
-setInterval(getLocation, 5000);
+  if(!GTFS.stops.length) return;
+
+  const nearest = GTFS.stops
+    .map(s => ({
+      ...s,
+      d: dist(lat, lon, s.lat, s.lon)
+    }))
+    .sort((a,b)=>a.d-b.d)
+    .slice(0,5);
+
+  document.getElementById("nearStops").innerHTML =
+    nearest.map(n =>
+      `${n.name}<br><small>${Math.round(n.d)} m</small><br><br>`
+    ).join("");
+}
 
 </script>
 
