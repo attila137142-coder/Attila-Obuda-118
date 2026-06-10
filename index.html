@@ -1,276 +1,49 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V5.4 TURBO UPGRADE</title>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FUTÁR_V5_3_CONTROL_ROOM</title>
 <style>
-body{
-    margin:0;
-    font-family:Arial;
-    background:#0b0f14;
-    color:#d7e1ea;
-}
-
-/* HEADER */
-header{
-    background:#0f1622;
-    border-bottom:2px solid #1f2a3a;
-    padding:10px;
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-}
-
-h1{
-    font-size:15px;
-    margin:0;
-    color:#5cc8ff;
-}
-
-/* BIG GREEN CLOCK */
-#bigClock{
-    font-size:22px;
-    font-weight:bold;
-    color:#2ecc71;
-    letter-spacing:1px;
-}
-
-/* LAYOUT */
-.container{
-    display:grid;
-    grid-template-columns:320px 1fr;
-    height:calc(100vh - 50px);
-}
-
-.panel{
-    background:#0f1622;
-    border-right:1px solid #1e2a3a;
-    padding:10px;
-    overflow:auto;
-}
-
-.main{
-    padding:10px;
-    overflow:auto;
-}
-
-/* INPUTS */
-input,button{
-    width:100%;
-    padding:8px;
-    margin:5px 0;
-    border:none;
-    border-radius:4px;
-}
-
-input{background:#1a2433;color:white;}
-button{background:#1f6feb;color:white;cursor:pointer;}
-button:hover{background:#2b7fff;}
-
-/* TABLE */
-table{
-    width:100%;
-    border-collapse:collapse;
-}
-
-td,th{
-    border-bottom:1px solid #1f2a3a;
-    padding:6px;
-    font-size:13px;
-}
-
-.badge{
-    background:#1f6feb;
-    padding:2px 6px;
-    border-radius:4px;
-}
-
-/* LOCATION BOX */
-#locBox{
-    background:#111826;
-    padding:8px;
-    border:1px solid #1f2a3a;
-    font-size:12px;
-    line-height:1.4;
-}
-
-.ok{color:#2ecc71;}
-.warn{color:#ffcc00;}
-
+body{margin:0;background:#060a10;color:#d7e1ea;font-family:Arial}
+header{padding:10px;background:#0f1621;border-bottom:2px solid #1f2a3a}
+.bigClock{font-size:72px;font-weight:bold;color:#00ff00;text-align:center;
+background:#000;border:2px solid #00aa00;padding:15px;margin:10px}
+.grid{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 120px)}
+.panel,.main{padding:10px;overflow:auto}
+.panel{background:#0f1621;border-right:1px solid #1f2a3a}
+.card{border:1px solid #1f2a3a;padding:8px;margin-bottom:8px}
+input{width:100%;padding:8px}
+table{width:100%;border-collapse:collapse}
+td,th{border:1px solid #2b3b52;padding:6px}
 </style>
 </head>
-
 <body>
-
-<header>
-    <h1>🚍 FUTÁR V5.4 TURBO DISPATCH</h1>
-    <div id="bigClock">--:--:--</div>
-</header>
-
-<div class="container">
-
-<!-- LEFT -->
+<header><h2>🚦 FUTÁR V5.3 CONTROL ROOM</h2></header>
+<div class="bigClock" id="clock">00:00:00</div>
+<div class="grid">
 <div class="panel">
-
-    <h3>🔎 KERESŐ</h3>
-    <input id="search" placeholder="járat / megálló"/>
-    <button onclick="search()">KERES</button>
-
-    <h3>📦 GTFS</h3>
-    <button onclick="loadDemo()">DEMO BETÖLTÉS</button>
-    <button onclick="clearCache()">CACHE TÖRLÉS</button>
-
-    <h3>📍 HELYEM</h3>
-    <button onclick="getLocation()">HELYZET FRISSÍTÉS</button>
-
-    <div id="locBox">
-        📡 nincs adat
-    </div>
-
+<div class="card">
+<h3>📍 Helyzetem</h3>
+<div id="gps">GPS: betöltés...</div>
+<div id="addr">Cím: ...</div>
+<div id="acc">Pontosság: ...</div>
 </div>
-
-<!-- MAIN -->
+<div class="card">
+<h3>🔍 Megálló kereső</h3>
+<input placeholder="Megálló neve">
+</div>
+</div>
 <div class="main">
-
-    <h2>🚏 INDULÁSI TÁBLA</h2>
-
-    <table id="table">
-        <tr>
-            <th>Járat</th>
-            <th>Megálló</th>
-            <th>Indulás</th>
-            <th>Késés</th>
-        </tr>
-    </table>
-
+<h3>🚏 Megálló adatai</h3>
+<p>GTFS ID, koordináták, légvonal távolság és indulások helye.</p>
+<table>
+<tr><th>Járat</th><th>Irány</th><th>Indulás</th></tr>
+</table>
 </div>
-
 </div>
-
 <script>
-
-let GTFS = JSON.parse(localStorage.getItem("gtfs") || "{}");
-
-// ---------------- BIG CLOCK ----------------
-function updateClock(){
-    const now = new Date();
-    document.getElementById("bigClock").innerText =
-        now.toLocaleTimeString("hu-HU");
-}
-setInterval(updateClock,1000);
-updateClock();
-
-// ---------------- CACHE ----------------
-function save(){
-    localStorage.setItem("gtfs", JSON.stringify(GTFS));
-}
-
-// ---------------- DEMO ----------------
-function loadDemo(){
-    GTFS = {
-        trips:[
-            {route:"7", stop:"Deák Ferenc tér", time:"12:10"},
-            {route:"9", stop:"Blaha Lujza tér", time:"12:14"},
-            {route:"99", stop:"Astoria", time:"12:22"}
-        ]
-    };
-    save();
-    render(GTFS.trips);
-}
-
-// ---------------- SEARCH ----------------
-function search(){
-    const q = document.getElementById("search").value.toLowerCase();
-
-    const res = (GTFS.trips||[]).filter(t =>
-        t.route.toLowerCase().includes(q) ||
-        t.stop.toLowerCase().includes(q)
-    );
-
-    render(res);
-}
-
-// ---------------- RENDER ----------------
-function render(data){
-    const table = document.getElementById("table");
-
-    table.innerHTML = `
-        <tr>
-            <th>Járat</th>
-            <th>Megálló</th>
-            <th>Indulás</th>
-            <th>Késés</th>
-        </tr>
-    `;
-
-    data.forEach(t=>{
-        let delay = Math.floor(Math.random()*5)-2;
-
-        table.innerHTML += `
-        <tr>
-            <td><span class="badge">${t.route}</span></td>
-            <td>${t.stop}</td>
-            <td>${t.time}</td>
-            <td style="color:${delay>0?'#ff5c5c':'#2ecc71'}">
-                ${delay}p
-            </td>
-        </tr>`;
-    });
-}
-
-// ---------------- GPS + ADDRESS ----------------
-function getLocation(){
-    if(!navigator.geolocation){
-        alert("GPS nem támogatott");
-        return;
-    }
-
-    navigator.geolocation.getCurrentPosition(async pos=>{
-        const lat = pos.coords.latitude;
-        const lon = pos.coords.longitude;
-
-        // reverse geocode (OpenStreetMap Nominatim)
-        try{
-            const res = await fetch(
-                `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`
-            );
-            const data = await res.json();
-
-            const addr = data.address || {};
-
-            document.getElementById("locBox").innerHTML = `
-                <span class="ok">📍 GPS OK</span><br><br>
-
-                <b>Város:</b> ${addr.city || addr.town || addr.village || "?"}<br>
-                <b>Utca:</b> ${addr.road || "?"}<br>
-                <b>Házszám:</b> ${addr.house_number || "?"}<br><br>
-
-                <span class="warn">Koordináta:</span><br>
-                ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>
-                ±${pos.coords.accuracy}m
-            `;
-
-        } catch(e){
-            document.getElementById("locBox").innerHTML =
-                "GPS OK, de cím nem elérhető";
-        }
-
-    });
-}
-
-// ---------------- CACHE CLEAR ----------------
-function clearCache(){
-    localStorage.removeItem("gtfs");
-    GTFS = {};
-    alert("Cache törölve");
-}
-
-// INIT
-render(GTFS.trips || []);
-
-</script>
-
-</body>
-</html>
+setInterval(()=>{
+ document.getElementById('clock').textContent =
+ new Date().toLocaleTimeString('hu-HU');
+},1000);
