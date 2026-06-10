@@ -2,48 +2,177 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FUTÁR_V5_3_CONTROL_ROOM</title>
+<title>FUTÁR V5.4 TURBO</title>
 <style>
-body{margin:0;background:#060a10;color:#d7e1ea;font-family:Arial}
-header{padding:10px;background:#0f1621;border-bottom:2px solid #1f2a3a}
-.bigClock{font-size:72px;font-weight:bold;color:#00ff00;text-align:center;
-background:#000;border:2px solid #00aa00;padding:15px;margin:10px}
-.grid{display:grid;grid-template-columns:380px 1fr;height:calc(100vh - 120px)}
-.panel,.main{padding:10px;overflow:auto}
-.panel{background:#0f1621;border-right:1px solid #1f2a3a}
-.card{border:1px solid #1f2a3a;padding:8px;margin-bottom:8px}
-input{width:100%;padding:8px}
-table{width:100%;border-collapse:collapse}
-td,th{border:1px solid #2b3b52;padding:6px}
+body {
+margin:0;
+font-family: Arial;
+background:#0b0f14;
+color:#00ff9d;
+}
+
+header {
+background:#111826;
+padding:10px;
+display:flex;
+justify-content:space-between;
+align-items:center;
+border-bottom:2px solid #00ff9d;
+}
+
+#clock {
+font-size:28px;
+color:#00ff9d;
+font-weight:bold;
+}
+
+.container {
+display:grid;
+grid-template-columns: 1fr 2fr;
+height:calc(100vh - 60px);
+}
+
+.panel {
+border-right:1px solid #1f2a3a;
+padding:10px;
+overflow:auto;
+}
+
+.main {
+padding:10px;
+}
+
+.card {
+background:#111826;
+padding:10px;
+margin-bottom:10px;
+border-left:3px solid #00ff9d;
+}
+
+.label {
+color:#aaa;
+font-size:12px;
+}
+.value {
+font-size:16px;
+margin-bottom:5px;
+}
+button {
+background:#00ff9d;
+color:#000;
+border:none;
+padding:8px;
+cursor:pointer;
+font-weight:bold;
+}
 </style>
 </head>
+
 <body>
-<header><h2>🚦 FUTÁR V5.3 CONTROL ROOM</h2></header>
-<div class="bigClock" id="clock">00:00:00</div>
-<div class="grid">
+
+<header>
+<div>🚍 FUTÁR V5.4 TURBO</div>
+<div id="clock">--:--:--</div>
+</header>
+
+<div class="container">
+
+<!-- BAL PANEL -->
 <div class="panel">
+
 <div class="card">
-<h3>📍 Helyzetem</h3>
-<div id="gps">GPS: betöltés...</div>
-<div id="addr">Cím: ...</div>
-<div id="acc">Pontosság: ...</div>
+<div class="label">📍 Helyzet</div>
+<div class="value" id="coords">Nincs adat</div>
+<div class="value" id="address">Cím betöltése...</div>
+<button onclick="getLocation()">Helyzet frissítés</button>
 </div>
-<div class="card">
-<h3>🔍 Megálló kereső</h3>
-<input placeholder="Megálló neve">
+
 </div>
-</div>
+
+<!-- KÖZÉP / MAIN -->
 <div class="main">
-<h3>🚏 Megálló adatai</h3>
-<p>GTFS ID, koordináták, légvonal távolság és indulások helye.</p>
-<table>
-<tr><th>Járat</th><th>Irány</th><th>Indulás</th></tr>
-</table>
+
+<div class="card">
+<h3>🧭 VALÓS HELYZET MODUL</h3>
+<div class="value">GPS + Reverse Geocoding aktív</div>
+<div class="label">Automatikus frissítés: 5 mp</div>
 </div>
+
+<div class="card">
+<h3>📡 Status</h3>
+<div id="status">Várakozás GPS-re...</div>
 </div>
+
+</div>
+
+</div>
+
 <script>
-setInterval(()=>{
- document.getElementById('clock').textContent =
- new Date().toLocaleTimeString('hu-HU');
-},1000);
+// ⏰ ÓRA
+function updateClock(){
+const d = new Date();
+document.getElementById("clock").innerText =
+d.toLocaleTimeString();
+}
+setInterval(updateClock,1000);
+updateClock();
+
+// 📍 GPS + cím
+function getLocation(){
+if(!navigator.geolocation){
+alert("GPS nem támogatott");
+return;
+}
+
+document.getElementById("status").innerText = "GPS keresés...";
+
+navigator.geolocation.getCurrentPosition(async (pos) => {
+
+const lat = pos.coords.latitude;
+const lon = pos.coords.longitude;
+
+document.getElementById("coords").innerText =
+lat.toFixed(6) + ", " + lon.toFixed(6);
+
+document.getElementById("status").innerText =
+"Cím lekérése...";
+
+// 🌍 REVERSE GEOCODING (OpenStreetMap)
+const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`;
+
+try {
+const res = await fetch(url);
+const data = await res.json();
+
+const addr = data.address;
+
+const city = addr.city || addr.town || addr.village || "Ismeretlen város";
+const road = addr.road || "Ismeretlen utca";
+const house = addr.house_number || "";
+
+document.getElementById("address").innerText =
+city + ", " + road + " " + house;
+
+document.getElementById("status").innerText =
+"OK ✔ helyzet betöltve";
+
+} catch(e){
+document.getElementById("address").innerText =
+"Cím nem elérhető";
+document.getElementById("status").innerText =
+"Hiba a geocoding során";
+}
+
+}, () => {
+document.getElementById("status").innerText =
+"GPS elutasítva / nincs engedély";
+});
+}
+
+// 🔁 AUTO UPDATE
+setInterval(getLocation, 5000);
+
+</script>
+
+</body>
+</html>
