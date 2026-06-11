@@ -2,76 +2,226 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>FUTÁR Dispatcher Core</title>
+<title>FUTÁR V5.5 DISPATCHER CORE</title>
+
 <style>
-body { margin:0; font-family:Arial; background:#0b0f14; color:#0f0; }
-.stop-dot {
-  width:8px; height:8px;
-  background:red;
-  position:absolute;
-  border-radius:50%;
+body {
+  margin:0;
+  font-family: Arial;
+  background:#0a0f14;
+  color:#00ff88;
 }
+
+#topbar {
+  position:fixed;
+  top:0; left:0; right:0;
+  height:60px;
+  background:#111;
+  display:flex;
+  align-items:center;
+  padding:10px;
+  gap:20px;
+  border-bottom:2px solid #0f0;
+}
+
+#map {
+  position:absolute;
+  top:60px;
+  left:0;
+  right:0;
+  bottom:0;
+  overflow:hidden;
+}
+
+.stop {
+  width:10px;
+  height:10px;
+  background:red;
+  border-radius:50%;
+  position:absolute;
+}
+
 #panel {
-  position:fixed; top:10px; left:10px;
-  background:#111; padding:10px;
+  position:fixed;
+  bottom:10px;
+  left:10px;
+  background:#111;
+  padding:10px;
+  border:1px solid #0f0;
 }
 </style>
 </head>
+
 <body>
 
+<div id="topbar">
+  <input type="file" id="gtfs" />
+  <div id="status">GTFS: NONE</div>
+  <div id="speed">0 km/h</div>
+</div>
+
+<div id="map"></div>
+
 <div id="panel">
-  <div id="speed">Speed: --</div>
+  <div id="gps">GPS: waiting...</div>
   <div id="delay">Delay: --</div>
+  <div id="ai">AI: --</div>
 </div>
 
 <script>
 
-let user = {lat:0, lon:0, speed:0};
+// ==========================
+// GLOBAL STATE
+// ==========================
+let GTFS = {
+  stops: [],
+  stopTimes: []
+};
 
-// 📡 GPS
+let user = {
+  lat: 0,
+  lon: 0,
+  speed: 0
+};
+
+// ==========================
+// GPS TRACKING
+// ==========================
 navigator.geolocation.watchPosition(p => {
   user.lat = p.coords.latitude;
   user.lon = p.coords.longitude;
   user.speed = p.coords.speed || 0;
 
   document.getElementById("speed").innerText =
-    "Speed: " + (user.speed*3.6).toFixed(1) + " km/h";
+    (user.speed * 3.6).toFixed(1) + " km/h";
+
+  document.getElementById("gps").innerText =
+    `GPS: ${user.lat.toFixed(5)}, ${user.lon.toFixed(5)}`;
 });
 
-// 🧮 STOP sample
-const stops = [
-  {name:"Stop A", lat:47.4979, lon:19.0402},
-  {name:"Stop B", lat:47.5030, lon:19.0450}
-];
+// ==========================
+// GTFS LOADER (ZIP text simplified)
+// ==========================
+document.getElementById("gtfs").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  const text = await file.text();
 
-// 📏 distance
-function distance(a,b){
-  const R=6371000;
-  const dLat=(b.lat-a.lat)*Math.PI/180;
-  const dLon=(b.lon-a.lon)*Math.PI/180;
-  const x=Math.sin(dLat/2)**2 +
-    Math.cos(a.lat*Math.PI/180)*Math.cos(b.lat*Math.PI/180)*
-    Math.sin(dLon/2)**2;
-  return 2*R*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+  parseGTFS(text);
+  document.getElementById("status").innerText = "GTFS: LOADED";
+});
+
+// VERY SIMPLIFIED PARSER (CSV only demo)
+function parseGTFS(text) {
+  const lines = text.split("\n");
+
+  GTFS.stops = [];
+
+  for (let line of lines) {
+    const cols = line.split(",");
+
+    // stops.txt detection (very simple heuristic)
+    if (cols.length > 3 && !isNaN(cols[2])) {
+      GTFS.stops.push({
+        id: cols[0],
+        name: cols[1],
+        lat: parseFloat(cols[2]),
+        lon: parseFloat(cols[3])
+      });
+    }
+  }
+
+  drawStops();
 }
 
-// ⏱ ETA
-function eta(stop){
+// ==========================
+// MAP RENDER (simple projection)
+// ==========================
+function project(lat, lon) {
+  return {
+    x: (lon + 180) * 3,
+    y: (90 - lat) * 3
+  };
+}
+
+function drawStops() {
+  const map = document.getElementById("map");
+  map.innerHTML = "";
+
+  GTFS.stops.forEach(s => {
+    const p = project(s.lat, s.lon);
+
+    const el = document.createElement("div");
+    el.className = "stop";
+    el.style.left = p.x + "px";
+    el.style.top = p.y + "px";
+    el.title = s.name;
+
+    map.appendChild(el);
+  });
+}
+
+// ==========================
+// DISTANCE ENGINE (Haversine)
+// ==========================
+function distance(a, b) {
+  const R = 6371000;
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLon = (b.lon - a.lon) * Math.PI / 180;
+
+  const x =
+    Math.sin(dLat/2)**2 +
+    Math.cos(a.lat*Math.PI/180) *
+    Math.cos(b.lat*Math.PI/180) *
+    Math.sin(dLon/2)**2;
+
+  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+}
+
+// ==========================
+// ETA ENGINE
+// ==========================
+function estimate(stop) {
   const dist = distance(user, stop);
   const speed = user.speed || 10;
+
   return dist / speed;
 }
 
-// 🧠 dispatcher AI v1
-function updateDelay(){
-  const e = eta(stops[0]);
-  const delay = e - 120; // fake schedule baseline
+// ==========================
+// AI DELAY ENGINE V5.5
+// ==========================
+let history = [];
+
+function updateAI() {
+  if (GTFS.stops.length === 0) return;
+
+  const target = GTFS.stops[0];
+
+  const eta = estimate(target);
+
+  // simulated schedule baseline (5 min)
+  const scheduled = 300;
+
+  const delay = eta - scheduled;
+
+  history.push(delay);
+  if (history.length > 10) history.shift();
+
+  const avg = history.reduce((a,b)=>a+b,0)/history.length;
+
+  const speedPenalty = user.speed < 2 ? 90 : 0;
+  const congestionAI = avg * 0.6 + speedPenalty;
+
   document.getElementById("delay").innerText =
     "Delay: " + Math.round(delay) + " sec";
+
+  document.getElementById("ai").innerText =
+    "AI Score: " + Math.round(congestionAI) + " sec";
 }
 
-setInterval(updateDelay, 2000);
+setInterval(updateAI, 2000);
 
 </script>
+
 </body>
 </html>
