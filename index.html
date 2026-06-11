@@ -2,17 +2,18 @@
 <html>
 <head>
 <meta charset="utf-8"/>
-<title>FUTÁR V5.5 DISPATCHER CORE</title>
+<title>FUTÁR V6 CONTROL ROOM</title>
 
 <style>
 body {
   margin:0;
-  font-family: Arial;
-  background:#0a0f14;
+  background:#070b10;
   color:#00ff88;
+  font-family:Arial;
+  overflow:hidden;
 }
 
-#topbar {
+#top {
   position:fixed;
   top:0; left:0; right:0;
   height:60px;
@@ -30,12 +31,21 @@ body {
   left:0;
   right:0;
   bottom:0;
-  overflow:hidden;
+  background:#05080c;
+}
+
+.bus {
+  width:12px;
+  height:12px;
+  background:lime;
+  border-radius:50%;
+  position:absolute;
+  box-shadow:0 0 10px lime;
 }
 
 .stop {
-  width:10px;
-  height:10px;
+  width:8px;
+  height:8px;
   background:red;
   border-radius:50%;
   position:absolute;
@@ -48,178 +58,174 @@ body {
   background:#111;
   padding:10px;
   border:1px solid #0f0;
+  width:260px;
+}
+
+#ai {
+  color:orange;
 }
 </style>
 </head>
 
 <body>
 
-<div id="topbar">
-  <input type="file" id="gtfs" />
-  <div id="status">GTFS: NONE</div>
-  <div id="speed">0 km/h</div>
+<div id="top">
+  <div>🚍 FUTÁR V6 CONTROL ROOM</div>
+  <button onclick="spawnBus()">Spawn Bus</button>
+  <div id="status">READY</div>
 </div>
 
-<div id="map"></div>
+<canvas id="map"></canvas>
 
 <div id="panel">
-  <div id="gps">GPS: waiting...</div>
+  <div id="gps">GPS: --</div>
+  <div id="speed">Speed: --</div>
   <div id="delay">Delay: --</div>
   <div id="ai">AI: --</div>
 </div>
 
 <script>
 
-// ==========================
-// GLOBAL STATE
-// ==========================
-let GTFS = {
-  stops: [],
-  stopTimes: []
-};
+// =========================
+// CANVAS MAP
+// =========================
+const canvas = document.getElementById("map");
+const ctx = canvas.getContext("2d");
 
-let user = {
-  lat: 0,
-  lon: 0,
-  speed: 0
-};
-
-// ==========================
-// GPS TRACKING
-// ==========================
-navigator.geolocation.watchPosition(p => {
-  user.lat = p.coords.latitude;
-  user.lon = p.coords.longitude;
-  user.speed = p.coords.speed || 0;
-
-  document.getElementById("speed").innerText =
-    (user.speed * 3.6).toFixed(1) + " km/h";
-
-  document.getElementById("gps").innerText =
-    `GPS: ${user.lat.toFixed(5)}, ${user.lon.toFixed(5)}`;
-});
-
-// ==========================
-// GTFS LOADER (ZIP text simplified)
-// ==========================
-document.getElementById("gtfs").addEventListener("change", async (e) => {
-  const file = e.target.files[0];
-  const text = await file.text();
-
-  parseGTFS(text);
-  document.getElementById("status").innerText = "GTFS: LOADED";
-});
-
-// VERY SIMPLIFIED PARSER (CSV only demo)
-function parseGTFS(text) {
-  const lines = text.split("\n");
-
-  GTFS.stops = [];
-
-  for (let line of lines) {
-    const cols = line.split(",");
-
-    // stops.txt detection (very simple heuristic)
-    if (cols.length > 3 && !isNaN(cols[2])) {
-      GTFS.stops.push({
-        id: cols[0],
-        name: cols[1],
-        lat: parseFloat(cols[2]),
-        lon: parseFloat(cols[3])
-      });
-    }
-  }
-
-  drawStops();
+function resize(){
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
 }
+window.onresize = resize;
+resize();
 
-// ==========================
-// MAP RENDER (simple projection)
-// ==========================
-function project(lat, lon) {
-  return {
-    x: (lon + 180) * 3,
-    y: (90 - lat) * 3
-  };
-}
+// =========================
+// SIM WORLD (GTFS STYLE STOPS)
+// =========================
+const stops = [
+  {x:100,y:120},
+  {x:300,y:200},
+  {x:500,y:350},
+  {x:700,y:420},
+  {x:900,y:300}
+];
 
-function drawStops() {
-  const map = document.getElementById("map");
-  map.innerHTML = "";
+// =========================
+// BUSES
+// =========================
+let buses = [];
 
-  GTFS.stops.forEach(s => {
-    const p = project(s.lat, s.lon);
-
-    const el = document.createElement("div");
-    el.className = "stop";
-    el.style.left = p.x + "px";
-    el.style.top = p.y + "px";
-    el.title = s.name;
-
-    map.appendChild(el);
+function spawnBus(){
+  buses.push({
+    i:0,
+    t:0,
+    speed:1.5 + Math.random(),
+    delay:0,
+    history:[]
   });
 }
 
-// ==========================
-// DISTANCE ENGINE (Haversine)
-// ==========================
-function distance(a, b) {
-  const R = 6371000;
-  const dLat = (b.lat - a.lat) * Math.PI / 180;
-  const dLon = (b.lon - a.lon) * Math.PI / 180;
+// =========================
+// DRAW
+// =========================
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
 
-  const x =
-    Math.sin(dLat/2)**2 +
-    Math.cos(a.lat*Math.PI/180) *
-    Math.cos(b.lat*Math.PI/180) *
-    Math.sin(dLon/2)**2;
+  // stops
+  for(let s of stops){
+    ctx.fillStyle="red";
+    ctx.fillRect(s.x,s.y,6,6);
+  }
 
-  return 2 * R * Math.atan2(Math.sqrt(x), Math.sqrt(1-x));
+  // buses
+  for(let b of buses){
+    const a = stops[b.i];
+    const c = stops[Math.min(b.i+1, stops.length-1)];
+
+    const x = a.x + (c.x - a.x)*b.t;
+    const y = a.y + (c.y - a.y)*b.t;
+
+    ctx.fillStyle="lime";
+    ctx.beginPath();
+    ctx.arc(x,y,6,0,Math.PI*2);
+    ctx.fill();
+
+    b._pos = {x,y};
+  }
 }
 
-// ==========================
-// ETA ENGINE
-// ==========================
-function estimate(stop) {
-  const dist = distance(user, stop);
-  const speed = user.speed || 10;
+// =========================
+// ENGINE LOOP
+// =========================
+function update(){
 
-  return dist / speed;
+  for(let b of buses){
+
+    const next = stops[b.i+1];
+    if(!next) continue;
+
+    b.t += 0.01 * b.speed;
+
+    if(b.t >= 1){
+      b.t = 0;
+      b.i++;
+    }
+
+    // delay simulation
+    const baseSpeed = 1.2;
+    const delayFactor = baseSpeed - b.speed;
+
+    b.delay = delayFactor * 100;
+    b.history.push(b.delay);
+    if(b.history.length > 20) b.history.shift();
+
+    const avg = b.history.reduce((a,b)=>a+b,0)/b.history.length;
+
+    b.ai = avg + (b.speed < 1 ? 80 : 0);
+  }
+
+  updatePanel();
 }
 
-// ==========================
-// AI DELAY ENGINE V5.5
-// ==========================
-let history = [];
+// =========================
+// DISPATCH PANEL
+// =========================
+function updatePanel(){
+  if(buses.length === 0){
+    document.getElementById("status").innerText="NO BUSES";
+    return;
+  }
 
-function updateAI() {
-  if (GTFS.stops.length === 0) return;
+  const b = buses[0];
 
-  const target = GTFS.stops[0];
-
-  const eta = estimate(target);
-
-  // simulated schedule baseline (5 min)
-  const scheduled = 300;
-
-  const delay = eta - scheduled;
-
-  history.push(delay);
-  if (history.length > 10) history.shift();
-
-  const avg = history.reduce((a,b)=>a+b,0)/history.length;
-
-  const speedPenalty = user.speed < 2 ? 90 : 0;
-  const congestionAI = avg * 0.6 + speedPenalty;
+  document.getElementById("speed").innerText =
+    "Speed: " + b.speed.toFixed(2);
 
   document.getElementById("delay").innerText =
-    "Delay: " + Math.round(delay) + " sec";
+    "Delay: " + Math.round(b.delay) + " sec";
 
   document.getElementById("ai").innerText =
-    "AI Score: " + Math.round(congestionAI) + " sec";
+    "AI: " + Math.round(b.ai) + " congestion";
 }
 
-setInterval(updateAI, 2000);
+// =========================
+// GPS (optional user tracking)
+// =========================
+navigator.geolocation.watchPosition(p=>{
+  document.getElementById("gps").innerText =
+    `GPS: ${p.coords.latitude.toFixed(5)}, ${p.coords.longitude.toFixed(5)}`;
+});
+
+// =========================
+// MAIN LOOP
+// =========================
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+
+loop();
 
 </script>
 
