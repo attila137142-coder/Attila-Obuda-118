@@ -2,45 +2,90 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V7 CORE – REAL GTFS ENGINE</title>
+<title>FUTÁR V7 REAL ENGINE V2 – DISPATCH ROOM</title>
+
 <style>
-body { font-family: Arial; background:#0b0f14; color:#d7e1ff; margin:0; }
-header { padding:12px; background:#111a26; font-size:18px; font-weight:bold; }
-.container { display:flex; height:90vh; }
-.panel { flex:1; padding:10px; overflow:auto; border-right:1px solid #1f2a3a; }
-input, button { padding:8px; margin:5px; width:95%; background:#101826; color:white; border:1px solid #2a3a55; }
-button { cursor:pointer; }
-.item { padding:6px; border-bottom:1px solid #1c2a3a; cursor:pointer; }
-.item:hover { background:#162235; }
-.small { font-size:12px; opacity:0.8; }
+body { margin:0; font-family:Arial; background:#070b10; color:#d7e1ff; }
+header { padding:12px; background:#101826; font-weight:bold; }
+.container { display:flex; height:92vh; }
+
+.panel {
+  flex:1;
+  border-right:1px solid #1b2a3a;
+  overflow:auto;
+  padding:10px;
+}
+
+input, button {
+  width:95%;
+  padding:8px;
+  margin:5px 0;
+  background:#0e1622;
+  border:1px solid #24354a;
+  color:white;
+}
+
+.item {
+  padding:6px;
+  border-bottom:1px solid #1a2a3a;
+  cursor:pointer;
+}
+.item:hover { background:#132033; }
+
+.badge {
+  display:inline-block;
+  padding:2px 6px;
+  font-size:11px;
+  border-radius:4px;
+  background:#1b2b3f;
+  margin-left:5px;
+}
+
+.live {
+  color:#00ff99;
+  font-weight:bold;
+}
+
+.red { color:#ff4d4d; }
+.yellow { color:#ffd24d; }
+.green { color:#52ff7a; }
+.small { font-size:12px; opacity:0.7; }
 </style>
 </head>
 
 <body>
 
-<header>🚦 FUTÁR V7 CORE – REAL GTFS ENGINE (LIVE / OFFLINE)</header>
+<header>🚦 FUTÁR V7 REAL ENGINE V2 – LIVE DISPATCH CONTROL ROOM</header>
 
 <div class="container">
 
 <!-- LEFT -->
 <div class="panel">
-<h3>📦 GTFS Loader</h3>
-<input type="file" id="zipFile" />
-<button onclick="loadGTFS()">GTFS ZIP betöltése</button>
-<div id="status" class="small">Nincs adat betöltve</div>
+<h3>📦 GTFS Loader (IndexedDB)</h3>
+<input type="file" id="zipFile">
+<button onclick="loadGTFS()">GTFS betöltés</button>
+<div id="status" class="small">waiting...</div>
 
 <hr>
 
-<h3>🔍 Keresés</h3>
-<input id="search" placeholder="Megálló / járat keresés..." oninput="searchAll()" />
+<h3>🔍 Stop Search</h3>
+<input id="search" oninput="searchStops()" placeholder="megálló neve...">
 
 <div id="results"></div>
 </div>
 
+<!-- CENTER -->
+<div class="panel">
+<h3>🚏 LIVE STOP BOARD</h3>
+<div id="stopInfo">Nincs kiválasztva</div>
+<div id="departures"></div>
+</div>
+
 <!-- RIGHT -->
 <div class="panel">
-<h3>🚏 Részletek</h3>
-<div id="details">Válassz egy elemet</div>
+<h3>📊 DISPATCH STATUS</h3>
+<div id="clock" class="live"></div>
+<div id="stats"></div>
 </div>
 
 </div>
@@ -49,53 +94,58 @@ button { cursor:pointer; }
 
 <script>
 let db;
+let selectedStop = null;
 
-// -------------------- DB INIT --------------------
+// ---------------- CLOCK ----------------
+setInterval(()=>{
+  document.getElementById("clock").innerText =
+    "⏱ " + new Date().toLocaleTimeString();
+  if(selectedStop) loadDepartures(selectedStop);
+},3000);
+
+// ---------------- DB ----------------
 function initDB(){
-  let req = indexedDB.open("futar_v7_real",1);
+  let req = indexedDB.open("futar_v7_v2",1);
   req.onupgradeneeded = e=>{
     let db = e.target.result;
     db.createObjectStore("stops",{keyPath:"stop_id"});
     db.createObjectStore("routes",{keyPath:"route_id"});
-    db.createObjectStore("trips",{keyPath:"trip_id"});
-    db.createObjectStore("stop_times",{keyPath:"id",autoIncrement:true});
+    db.createObjectStore("stop_times",{autoIncrement:true});
   };
-  req.onsuccess = e=>{ db = e.target.result; };
+  req.onsuccess = e=> db = e.target.result;
 }
 initDB();
 
-// -------------------- GTFS LOADER --------------------
+// ---------------- LOAD GTFS ----------------
 async function loadGTFS(){
   const file = document.getElementById("zipFile").files[0];
-  if(!file) return alert("Nincs fájl!");
+  if(!file) return alert("nincs file");
 
   const zip = await JSZip.loadAsync(file);
-  document.getElementById("status").innerText = "Betöltés...";
+  document.getElementById("status").innerText="loading...";
 
-  const files = ["stops.txt","routes.txt","trips.txt","stop_times.txt"];
+  for(let name of ["stops.txt","routes.txt","stop_times.txt"]){
+    if(!zip.file(name)) continue;
 
-  for(let f of files){
-    if(zip.file(f)){
-      const text = await zip.file(f).async("string");
-      parseGTFS(f,text);
-    }
+    const text = await zip.file(name).async("string");
+    parse(name,text);
   }
 
-  document.getElementById("status").innerText = "GTFS betöltve ✔";
+  document.getElementById("status").innerText="READY ✔";
 }
 
-// -------------------- PARSER --------------------
-function parseGTFS(name,text){
-  const lines = text.split("\n").map(l=>l.trim()).filter(Boolean);
+// ---------------- PARSE ----------------
+function parse(name,text){
+  const lines = text.split("\n").filter(Boolean);
   const headers = lines[0].split(",");
 
   const tx = db.transaction(getStore(name),"readwrite");
   const store = tx.objectStore(getStore(name));
 
   for(let i=1;i<lines.length;i++){
-    const obj = {};
-    const cols = lines[i].split(",");
-    headers.forEach((h,idx)=> obj[h]=cols[idx]);
+    const obj={};
+    const cols=lines[i].split(",");
+    headers.forEach((h,i)=>obj[h]=cols[i]);
     store.put(obj);
   }
 }
@@ -103,53 +153,97 @@ function parseGTFS(name,text){
 function getStore(name){
   if(name==="stops.txt") return "stops";
   if(name==="routes.txt") return "routes";
-  if(name==="trips.txt") return "trips";
   return "stop_times";
 }
 
-// -------------------- SEARCH --------------------
-function searchAll(){
+// ---------------- SEARCH ----------------
+function searchStops(){
   const q = document.getElementById("search").value.toLowerCase();
   const out = document.getElementById("results");
-  out.innerHTML = "";
+  out.innerHTML="";
 
   if(!db) return;
 
-  const tx = db.transaction(["stops","routes","trips"]);
-  const stops = tx.objectStore("stops").getAll();
-  const routes = tx.objectStore("routes").getAll();
+  const tx = db.transaction("stops");
+  const req = tx.objectStore("stops").getAll();
 
-  stops.onsuccess = ()=>{
-    stops.result
-      .filter(s=> (s.stop_name||"").toLowerCase().includes(q))
-      .slice(0,20)
+  req.onsuccess=()=>{
+    req.result
+      .filter(s=>(s.stop_name||"").toLowerCase().includes(q))
+      .slice(0,15)
       .forEach(s=>{
-        let div = document.createElement("div");
+        let div=document.createElement("div");
         div.className="item";
-        div.innerHTML="🚏 "+s.stop_name+" <div class='small'>"+s.stop_id+"</div>";
-        div.onclick=()=>showStop(s);
+        div.innerHTML="🚏 "+s.stop_name+" <span class='badge'>"+s.stop_id+"</span>";
+        div.onclick=()=>selectStop(s);
         out.appendChild(div);
       });
   };
 }
 
-// -------------------- STOP VIEW --------------------
-function showStop(stop){
-  const d = document.getElementById("details");
-  d.innerHTML = `<h3>🚏 ${stop.stop_name}</h3><div class='small'>ID: ${stop.stop_id}</div>`;
+// ---------------- STOP SELECT ----------------
+function selectStop(stop){
+  selectedStop = stop;
 
+  document.getElementById("stopInfo").innerHTML=
+    "<h3>🚏 "+stop.stop_name+"</h3><div class='small'>"+stop.stop_id+"</div>";
+
+  loadDepartures(stop);
+}
+
+// ---------------- DEPARTURES ENGINE ----------------
+function loadDepartures(stop){
   const tx = db.transaction("stop_times");
-  const store = tx.objectStore("stop_times");
-  const req = store.getAll();
+  const req = tx.objectStore("stop_times").getAll();
 
-  req.onsuccess = ()=>{
-    const times = req.result.filter(t=>t.stop_id===stop.stop_id).slice(0,20);
+  req.onsuccess=()=>{
+    const now = new Date();
+    const currentMin = now.getHours()*60 + now.getMinutes();
 
-    d.innerHTML += "<h4>🕒 Járatok:</h4>";
-    times.forEach(t=>{
-      d.innerHTML += `<div class='item'>Trip: ${t.trip_id} | ${t.arrival_time||""}</div>`;
-    });
+    let list = req.result
+      .filter(t=>t.stop_id===stop.stop_id)
+      .map(t=>{
+        let [h,m] = (t.arrival_time||"00:00:00").split(":");
+        let min = parseInt(h)*60 + parseInt(m);
+        return {t,min};
+      })
+      .filter(x=>x.min>=currentMin)
+      .sort((a,b)=>a.min-b.min)
+      .slice(0,10);
+
+    renderDepartures(list);
+    updateStats(list);
   };
+}
+
+// ---------------- RENDER ----------------
+function renderDepartures(list){
+  const out=document.getElementById("departures");
+  out.innerHTML="";
+
+  list.forEach(x=>{
+    let diff = x.min - (new Date().getHours()*60 + new Date().getMinutes());
+
+    let color = diff<5 ? "red" : diff<15 ? "yellow" : "green";
+
+    out.innerHTML += `
+      <div class="item">
+        🚌 Trip <span class="${color}">${x.t.trip_id}</span>
+        <span class="badge">${x.t.arrival_time}</span>
+        <span class="badge ${color}">+${diff} min</span>
+      </div>
+    `;
+  });
+}
+
+// ---------------- STATS ----------------
+function updateStats(list){
+  document.getElementById("stats").innerHTML = `
+    <p>🚦 Aktív indulások: <b>${list.length}</b></p>
+    <p>🟢 normál: ${list.filter(x=>x.min>15).length}</p>
+    <p>🟡 közel: ${list.filter(x=>x.min<=15 && x.min>5).length}</p>
+    <p>🔴 azonnali: ${list.filter(x=>x.min<=5).length}</p>
+  `;
 }
 </script>
 
