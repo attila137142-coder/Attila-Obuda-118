@@ -3,54 +3,44 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V6 Leaflet Core</title>
+<title>FUTÁR V6.1 CORE</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-body {
-  margin:0;
-  font-family: Arial;
-  background:#0b0f14;
-  color:#fff;
-}
+body { margin:0; font-family:Arial; background:#0b0f14; color:#fff; }
 
-#map {
-  height: 70vh;
-  width: 100%;
-}
+#map { height:72vh; }
 
 #panel {
-  height: 30vh;
-  overflow:auto;
+  height:28vh;
+  background:#0f1722;
   padding:10px;
-  background:#111826;
-  border-top:2px solid #1f2a3a;
+  overflow:auto;
 }
 
 .input {
-  width: 100%;
+  width:100%;
   padding:10px;
+  background:#1b2636;
   border:none;
-  outline:none;
-  background:#1a2433;
   color:white;
   margin-bottom:8px;
 }
 
 .card {
-  background:#1a2433;
+  background:#182233;
   padding:8px;
-  margin-bottom:6px;
+  margin:6px 0;
   border-radius:6px;
-  font-size:13px;
 }
-
-.badge {
-  background:#00c853;
-  padding:2px 6px;
-  border-radius:4px;
-  font-size:11px;
+.btnrow button{
+  margin-right:5px;
+  background:#243447;
+  color:white;
+  border:none;
+  padding:6px;
+  border-radius:5px;
 }
 </style>
 </head>
@@ -60,22 +50,39 @@ body {
 <div id="map"></div>
 
 <div id="panel">
-  <input class="input" id="search" placeholder="🔎 Megálló / járat keresés..."/>
-  <div id="info">Betöltés...</div>
+
+  <div class="btnrow">
+    <button onclick="setLayer('osm')">🗺 OSM</button>
+    <button onclick="setLayer('dark')">🌙 Dark</button>
+    <button onclick="setLayer('sat')">🛰 Sat</button>
+  </div>
+
+  <input id="search" class="input" placeholder="🔎 Megálló / járat keresés..." />
+  <div id="results"></div>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
-// 🌍 MAP INIT
-const map = L.map('map').setView([47.4979, 19.0402], 13);
+// ================= MAP LAYERS =================
+const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png');
+const dark = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png');
+const sat  = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}');
 
-// 🗺️ Tile layer (lightweight)
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap'
-}).addTo(map);
+const map = L.map('map', {
+  center:[47.4979,19.0402],
+  zoom:13,
+  layers:[dark]
+});
 
-// 📍 DEMO GTFS STOPOK (később JSON/GTFS-ből jön)
+const layers = { osm, dark, sat };
+
+function setLayer(name){
+  Object.values(layers).forEach(l=>map.removeLayer(l));
+  layers[name].addTo(map);
+}
+
+// ================= CLEAN GTFS DATA =================
 const stops = [
   {name:"Deák Ferenc tér", lat:47.4975, lon:19.0540},
   {name:"Kálvin tér", lat:47.4893, lon:19.0619},
@@ -83,52 +90,40 @@ const stops = [
   {name:"Nyugati pályaudvar", lat:47.5100, lon:19.0560}
 ];
 
-let markers = [];
-
-stops.forEach(s => {
-  const m = L.marker([s.lat, s.lon]).addTo(map)
-    .bindPopup(`<b>${s.name}</b>`);
-  markers.push({m, s});
+let markers = stops.map(s=>{
+  return L.marker([s.lat,s.lon]).addTo(map).bindPopup(s.name);
 });
 
-// 🚍 SIMULÁLT JÁRMŰ
-let bus = L.marker([47.4979, 19.0402]).addTo(map);
+// ================= SEARCH ENGINE =================
+const search = document.getElementById("search");
+const results = document.getElementById("results");
 
-let t = 0;
-setInterval(() => {
-  t += 0.001;
-
-  const lat = 47.4979 + Math.sin(t) * 0.01;
-  const lon = 19.0402 + Math.cos(t) * 0.02;
-
-  bus.setLatLng([lat, lon]);
-}, 500);
-
-// 🔎 KERESŐ
-document.getElementById("search").addEventListener("input", (e) => {
+search.addEventListener("input", (e)=>{
   const q = e.target.value.toLowerCase();
 
-  const results = stops.filter(s => s.name.toLowerCase().includes(q));
+  const res = stops.filter(s=>s.name.toLowerCase().includes(q));
 
-  document.getElementById("info").innerHTML =
-    results.map(r =>
-      `<div class="card">
-        🚏 <b>${r.name}</b><br>
-        <span class="badge">STOP</span>
-      </div>`
-    ).join("") || "Nincs találat";
+  if(q.length === 0){
+    results.innerHTML = "🔵 Készen áll a keresés";
+    return;
+  }
+
+  results.innerHTML = res.length
+    ? res.map(r=>`
+      <div class="card" onclick="goto(${r.lat},${r.lon})">
+        🚏 ${r.name}
+      </div>
+    `).join("")
+    : "❌ Nincs találat";
 });
 
-// 📊 DISPATCHER INFO
-document.getElementById("info").innerHTML = `
-<div class="card">
-🟢 FUTÁR Leaflet Core aktív<br>
-📡 GTFS modul: DEMO<br>
-🚍 Live vehicle: SIMULATED<br>
-</div>
-`;
+function goto(lat,lon){
+  map.setView([lat,lon],16);
+}
 
+results.innerHTML = "🔵 FUTÁR V6.1 READY";
 </script>
 
 </body>
 </html>
+
