@@ -2,327 +2,225 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V7.5 LIVE CONTROL ROOM</title>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FUTÁR V7.5 LIVE DISPATCH</title>
 
 <style>
 body {
-  margin:0;
-  font-family: Arial;
-  background:#070b10;
-  color:#d7e7ff;
-  overflow:hidden;
+    margin:0;
+    font-family: Arial, sans-serif;
+    background:#0b0f14;
+    color:#e6f1ff;
 }
 
-/* TOP */
-#topbar{
-  height:48px;
-  background:#0f1722;
-  display:flex;
-  align-items:center;
-  padding:0 12px;
-  border-bottom:2px solid #1e2a3a;
-  font-weight:bold;
+/* TOP BAR */
+.header {
+    background:#111826;
+    padding:10px;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    border-bottom:2px solid #1f2a3a;
 }
 
-/* LAYOUT */
-#wrap{
-  display:flex;
-  height:calc(100vh - 48px);
+.title {
+    font-size:18px;
+    font-weight:bold;
+    color:#00ff88;
 }
 
-/* LEFT */
-#left{
-  width:320px;
-  border-right:1px solid #1e2a3a;
-  display:flex;
-  flex-direction:column;
+.clock {
+    font-size:16px;
+    color:#00d4ff;
 }
 
-.panel{
-  padding:10px;
-  border-bottom:1px solid #1e2a3a;
+/* MAIN GRID */
+.grid {
+    display:grid;
+    grid-template-columns: 1.2fr 1fr 1fr;
+    gap:10px;
+    padding:10px;
 }
 
-input,button{
-  width:100%;
-  margin-top:6px;
-  padding:8px;
-  background:#0d1622;
-  color:#d7e7ff;
-  border:1px solid #24344a;
+/* PANELS */
+.panel {
+    background:#121a26;
+    border:1px solid #1f2a3a;
+    border-radius:8px;
+    padding:10px;
+    overflow:hidden;
 }
 
-/* CENTER MAP */
-#map{
-  flex:1;
-  position:relative;
-  background: radial-gradient(circle at center,#101b2a,#06090d);
-  overflow:hidden;
+.panel h3 {
+    margin:0 0 10px 0;
+    color:#00ff88;
 }
 
-/* RIGHT DISPATCH */
-#right{
-  width:420px;
-  border-left:1px solid #1e2a3a;
-  display:flex;
-  flex-direction:column;
+/* TABLE */
+table {
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
 }
 
-.table{
-  flex:1;
-  overflow:auto;
-  font-size:12px;
+th, td {
+    padding:6px;
+    border-bottom:1px solid #1f2a3a;
+    text-align:left;
 }
 
-.row{
-  display:grid;
-  grid-template-columns:70px 80px 80px 1fr;
-  padding:6px;
-  border-bottom:1px solid #162233;
+th {
+    color:#00d4ff;
 }
 
-.row.header{
-  position:sticky;
-  top:0;
-  background:#0f1a28;
-  font-weight:bold;
+.bad { color:#ff4d4d; }
+.ok { color:#00ff88; }
+.warn { color:#ffcc00; }
+
+/* SEARCH */
+input {
+    width:100%;
+    padding:8px;
+    background:#0b0f14;
+    border:1px solid #1f2a3a;
+    color:white;
+    border-radius:5px;
 }
 
-.ok{color:#39ff9c;}
-.bad{color:#ff4d4d;}
-
-/* VEHICLES */
-.vehicle{
-  position:absolute;
-  width:14px;
-  height:14px;
-  border-radius:50%;
-  background:#00ff88;
-  box-shadow:0 0 12px #00ff88;
-  transition: linear 1s;
+/* MAP MOCK */
+.map {
+    height:250px;
+    background:linear-gradient(45deg,#0f1722,#101b2a);
+    border-radius:8px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:#556;
+    font-size:14px;
 }
 
-.vehicle.delayed{
-  background:#ff4d4d;
-  box-shadow:0 0 12px #ff4d4d;
+/* RESPONSIVE */
+@media(max-width:900px){
+    .grid { grid-template-columns:1fr; }
 }
-
-/* BIG CLOCK */
-#clock{
-  font-size:56px;
-  color:#00ff88;
-  text-align:center;
-  font-weight:bold;
-  text-shadow:0 0 20px #00ff88;
-}
-
 </style>
 </head>
 
 <body>
 
-<div id="topbar">
-🚦 FUTÁR V7.5 LIVE MOVING VEHICLE CONTROL ROOM SIMULATOR
+<div class="header">
+    <div class="title">🚍 FUTÁR V7.5 LIVE CONTROL</div>
+    <div class="clock" id="clock">--:--:--</div>
 </div>
 
-<div id="wrap">
+<div class="grid">
 
-<!-- LEFT -->
-<div id="left">
+    <!-- LEFT: SEARCH + STOPS -->
+    <div class="panel">
+        <h3>🔎 GTFS Kereső</h3>
+        <input id="search" placeholder="Megálló / járat / jármű ID...">
 
-  <div class="panel">
-    <b>📦 GTFS LOAD (SIM)</b>
-    <input type="file" id="zip">
-    <button onclick="loadGTFS()">Load GTFS ZIP</button>
-    <div id="status">No feed</div>
-  </div>
-
-  <div class="panel">
-    <b>🛰️ REALTIME ENGINE</b>
-    <button onclick="start()">START LIVE SIM</button>
-    <div id="rt">idle</div>
-  </div>
-
-  <div class="panel">
-    <b>🔍 STOP SEARCH</b>
-    <input id="q">
-    <button onclick="search()">Search</button>
-    <div id="res"></div>
-  </div>
-
-</div>
-
-<!-- CENTER MAP -->
-<div id="map">
-  <div style="position:absolute; top:10px; width:100%;">
-    <div id="clock">00:00:00</div>
-  </div>
-</div>
-
-<!-- RIGHT -->
-<div id="right">
-
-  <div class="panel"><b>📊 DISPATCH BOARD</b></div>
-  <div class="table" id="table">
-    <div class="row header">
-      <div>Járat</div>
-      <div>Késés</div>
-      <div>Stop</div>
-      <div>Status</div>
+        <h3 style="margin-top:15px;">🚏 Megállók (LIVE)</h3>
+        <table>
+            <tr><th>ID</th><th>Név</th><th>Állapot</th></tr>
+            <tbody id="stops">
+                <tr><td>01123</td><td>Központ</td><td class="ok">OK</td></tr>
+                <tr><td>04567</td><td>Deák tér</td><td class="warn">Késés</td></tr>
+                <tr><td>07890</td><td>Újbuda</td><td class="ok">OK</td></tr>
+            </tbody>
+        </table>
     </div>
-  </div>
 
-</div>
+    <!-- CENTER: VEHICLES -->
+    <div class="panel">
+        <h3>🚍 Jármű Live Feed</h3>
+        <table>
+            <tr>
+                <th>Járat</th>
+                <th>Rendszám</th>
+                <th>Forda</th>
+                <th>Késés</th>
+            </tr>
+            <tbody id="vehicles">
+                <tr>
+                    <td>7</td>
+                    <td>BPO-123</td>
+                    <td>F12</td>
+                    <td class="ok">+0</td>
+                </tr>
+                <tr>
+                    <td>133E</td>
+                    <td>BPO-998</td>
+                    <td>F02</td>
+                    <td class="bad">+6</td>
+                </tr>
+                <tr>
+                    <td>M3</td>
+                    <td>RND-441</td>
+                    <td>F77</td>
+                    <td class="warn">+3</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h3 style="margin-top:15px;">📡 Status</h3>
+        <div class="map">LIVE MAP PLACEHOLDER (Leaflet / GTFS jön ide)</div>
+    </div>
+
+    <!-- RIGHT: DISPATCH -->
+    <div class="panel">
+        <h3>📊 Dispatcher Panel</h3>
+
+        <p>🕒 Rendszer idő: <span id="sysTime">--</span></p>
+        <p>📡 GTFS állapot: <span class="ok">BETÖLTVE (SIM)</span></p>
+        <p>🚦 Aktív járművek: <b>128</b></p>
+        <p>⚠️ Hibák: <span class="warn">2</span></p>
+
+        <h3 style="margin-top:15px;">⚡ Gyors akciók</h3>
+        <button onclick="alert('GTFS refresh (SIM)')">GTFS Frissítés</button>
+        <button onclick="alert('Cache törlés')">Cache Reset</button>
+        <button onclick="alert('Live sync ON')">LIVE Sync</button>
+    </div>
 
 </div>
 
 <script>
+// CLOCK
+function updateClock(){
+    const now = new Date();
+    document.getElementById("clock").innerText =
+        now.toLocaleTimeString();
+    document.getElementById("sysTime").innerText =
+        now.toLocaleString();
+}
+setInterval(updateClock,1000);
+updateClock();
 
-let GTFS = {stops:[]};
-let vehicles = [];
-let simInterval;
+// SAFE SEARCH FILTER (NO CRASH)
+document.getElementById("search").addEventListener("input", function(e){
+    const val = e.target.value.toLowerCase();
 
-/* CLOCK */
+    document.querySelectorAll("#vehicles tr").forEach(row=>{
+        try {
+            row.style.display = row.innerText.toLowerCase().includes(val)
+                ? "" : "none";
+        } catch(err){
+            // fail-safe: no crash
+        }
+    });
+});
+
+// SIM LIVE UPDATE (fake GTFS realtime)
 setInterval(()=>{
-  document.getElementById("clock").innerText =
-    new Date().toLocaleTimeString();
-},1000);
+    document.querySelectorAll("#vehicles td:last-child").forEach(cell=>{
+        let v = Math.floor(Math.random()*10);
+        cell.textContent = (v>5?"+":"") + (v-2);
 
-/* LOAD GTFS */
-async function loadGTFS(){
-  const file = document.getElementById("zip").files[0];
-  const zip = await JSZip.loadAsync(file);
-
-  GTFS.stops = parseCSV(await zip.file("stops.txt").async("string"));
-
-  localStorage.setItem("V75_GTFS", JSON.stringify(GTFS));
-
-  document.getElementById("status").innerText =
-    "Loaded " + GTFS.stops.length + " stops";
-
-  initVehicles();
-  renderBoard();
-}
-
-/* CSV */
-function parseCSV(t){
-  const lines = t.split("\n");
-  const h = lines[0].split(",");
-  return lines.slice(1).map(l=>{
-    let o={};
-    l.split(",").forEach((v,i)=>o[h[i]]=v);
-    return o;
-  });
-}
-
-/* INIT VEHICLES (MOCK POSITIONS) */
-function initVehicles(){
-
-  vehicles = [];
-
-  for(let i=0;i<12;i++){
-
-    let x = Math.random()*window.innerWidth*0.6 + 200;
-    let y = Math.random()*window.innerHeight*0.8;
-
-    let el = document.createElement("div");
-    el.className="vehicle";
-    el.style.left=x+"px";
-    el.style.top=y+"px";
-
-    document.getElementById("map").appendChild(el);
-
-    vehicles.push({
-      el,
-      x,y,
-      vx:(Math.random()-0.5)*4,
-      vy:(Math.random()-0.5)*4,
-      delay:Math.random()*10
+        cell.className =
+            v<3 ? "ok" :
+            v<7 ? "warn" : "bad";
     });
-  }
-}
-
-/* LIVE SIMULATION ENGINE */
-function start(){
-
-  document.getElementById("rt").innerText="LIVE";
-
-  clearInterval(simInterval);
-
-  simInterval = setInterval(()=>{
-
-    vehicles.forEach(v=>{
-
-      // movement
-      v.x += v.vx;
-      v.y += v.vy;
-
-      // bounce
-      if(v.x<200||v.x>window.innerWidth-20) v.vx*=-1;
-      if(v.y<0||v.y>window.innerHeight-20) v.vy*=-1;
-
-      // delay simulation drift
-      v.delay += (Math.random()-0.5);
-
-      if(v.delay>6) v.el.classList.add("delayed");
-      else v.el.classList.remove("delayed");
-
-      v.el.style.left=v.x+"px";
-      v.el.style.top=v.y+"px";
-    });
-
-    renderBoard();
-
-  },1000);
-}
-
-/* DISPATCH BOARD */
-function renderBoard(){
-
-  let t = document.getElementById("table");
-
-  t.innerHTML = `
-  <div class="row header">
-    <div>Járat</div>
-    <div>Késés</div>
-    <div>Stop</div>
-    <div>Status</div>
-  </div>`;
-
-  for(let i=0;i<vehicles.length;i++){
-
-    let delay = Math.floor(vehicles[i].delay);
-
-    t.innerHTML += `
-      <div class="row">
-        <div>B${40+i}</div>
-        <div class="${delay>5?'bad':'ok'}">${delay} min</div>
-        <div>${GTFS.stops[i]?.stop_name || "N/A"}</div>
-        <div>${delay>5?"DELAY":"OK"}</div>
-      </div>
-    `;
-  }
-}
-
-/* SEARCH */
-function search(){
-
-  let q=document.getElementById("q").value.toLowerCase();
-
-  let res=GTFS.stops.filter(s=>
-    (s.stop_name||"").toLowerCase().includes(q)
-  ).slice(0,8);
-
-  document.getElementById("res").innerHTML=
-    res.map(r=>"🚏 "+r.stop_name).join("<br>");
-}
-
-/* CACHE RESTORE */
-if(localStorage.getItem("V75_GTFS")){
-  GTFS = JSON.parse(localStorage.getItem("V75_GTFS"));
-}
+}, 4000);
 
 </script>
 
