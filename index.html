@@ -1,205 +1,132 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<title>FUTÁR V7 V3 – CONTROL ROOM</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FUTÁR V6 Leaflet Core</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
 body {
   margin:0;
   font-family: Arial;
-  background:#05080d;
-  color:#d7e1ff;
+  background:#0b0f14;
+  color:#fff;
 }
 
-header {
-  padding:14px;
-  background:#0f1722;
-  font-weight:bold;
-  font-size:18px;
+#map {
+  height: 70vh;
+  width: 100%;
 }
 
-.container {
-  display:flex;
-  height:92vh;
-}
-
-/* PANELS */
-.panel {
-  flex:1;
-  padding:10px;
+#panel {
+  height: 30vh;
   overflow:auto;
-  border-right:1px solid #1a2a3a;
+  padding:10px;
+  background:#111826;
+  border-top:2px solid #1f2a3a;
 }
 
-/* BIG CLOCK */
-.bigClock {
-  font-size:48px;
-  font-weight:bold;
-  color:#00ff99;
-  text-align:center;
-  margin:10px 0;
+.input {
+  width: 100%;
+  padding:10px;
+  border:none;
+  outline:none;
+  background:#1a2433;
+  color:white;
+  margin-bottom:8px;
 }
 
-/* LIVE BADGE */
-.live {
-  color:#00ff99;
-  font-weight:bold;
-}
-
-.small {
-  font-size:12px;
-  opacity:0.7;
-}
-
-/* ITEMS */
-.item {
+.card {
+  background:#1a2433;
   padding:8px;
-  border-bottom:1px solid #1b2a3a;
-  cursor:pointer;
+  margin-bottom:6px;
+  border-radius:6px;
+  font-size:13px;
 }
-.item:hover { background:#122033; }
 
 .badge {
-  background:#1a2a3a;
-  padding:3px 6px;
-  font-size:11px;
+  background:#00c853;
+  padding:2px 6px;
   border-radius:4px;
+  font-size:11px;
 }
 </style>
 </head>
 
 <body>
 
-<header>🚦 FUTÁR V7 V3 – TRUE CONTROL ROOM + LIVE VEHICLE TRACKING</header>
+<div id="map"></div>
 
-<div class="container">
-
-<!-- LEFT -->
-<div class="panel">
-<h3>📍 LIVE GPS POSITION</h3>
-
-<button onclick="getGPS()">📡 Saját pozíció lekérése</button>
-
-<div id="gps" class="small">Nincs GPS adat</div>
-
-<div id="address" class="small"></div>
-
-<hr>
-
-<h3>🚏 STOP SEARCH</h3>
-<input id="search" oninput="fakeSearch()" placeholder="megálló keresés...">
-
-<div id="results"></div>
+<div id="panel">
+  <input class="input" id="search" placeholder="🔎 Megálló / járat keresés..."/>
+  <div id="info">Betöltés...</div>
 </div>
 
-<!-- CENTER -->
-<div class="panel">
-<h3>🟢 CONTROL ROOM CLOCK</h3>
-
-<div class="bigClock" id="clock">--:--:--</div>
-
-<h3>📡 LIVE VEHICLE FEED (SIM / CORE)</h3>
-<div id="vehicles"></div>
-</div>
-
-<!-- RIGHT -->
-<div class="panel">
-<h3>📊 DISPATCH STATUS</h3>
-
-<div id="status"></div>
-</div>
-
-</div>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
+// 🌍 MAP INIT
+const map = L.map('map').setView([47.4979, 19.0402], 13);
 
-// ---------------- CLOCK ----------------
-setInterval(()=>{
-  document.getElementById("clock").innerText =
-    new Date().toLocaleTimeString();
-  simulateVehicles();
-},1000);
+// 🗺️ Tile layer (lightweight)
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution: '&copy; OpenStreetMap'
+}).addTo(map);
 
-// ---------------- GPS ----------------
-function getGPS(){
-  if(!navigator.geolocation){
-    alert("Nincs GPS API");
-    return;
-  }
+// 📍 DEMO GTFS STOPOK (később JSON/GTFS-ből jön)
+const stops = [
+  {name:"Deák Ferenc tér", lat:47.4975, lon:19.0540},
+  {name:"Kálvin tér", lat:47.4893, lon:19.0619},
+  {name:"Blaha Lujza tér", lat:47.4970, lon:19.0707},
+  {name:"Nyugati pályaudvar", lat:47.5100, lon:19.0560}
+];
 
-  navigator.geolocation.getCurrentPosition(async pos=>{
-    const lat = pos.coords.latitude;
-    const lon = pos.coords.longitude;
+let markers = [];
 
-    document.getElementById("gps").innerHTML =
-      `📍 LAT: ${lat}<br>📍 LON: ${lon}`;
+stops.forEach(s => {
+  const m = L.marker([s.lat, s.lon]).addTo(map)
+    .bindPopup(`<b>${s.name}</b>`);
+  markers.push({m, s});
+});
 
-    // reverse geocoding (OpenStreetMap Nominatim)
-    const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`;
+// 🚍 SIMULÁLT JÁRMŰ
+let bus = L.marker([47.4979, 19.0402]).addTo(map);
 
-    const res = await fetch(url);
-    const data = await res.json();
+let t = 0;
+setInterval(() => {
+  t += 0.001;
 
-    document.getElementById("address").innerHTML =
-      `🏙 ${data.address.city || data.address.town || ""}<br>
-       🛣 ${data.address.road || ""} ${data.address.house_number || ""}`;
-  });
-}
+  const lat = 47.4979 + Math.sin(t) * 0.01;
+  const lon = 19.0402 + Math.cos(t) * 0.02;
 
-// ---------------- FAKE STOP SEARCH ----------------
-function fakeSearch(){
-  const q = document.getElementById("search").value;
-  const out = document.getElementById("results");
-  out.innerHTML = "";
+  bus.setLatLng([lat, lon]);
+}, 500);
 
-  for(let i=0;i<5;i++){
-    const div = document.createElement("div");
-    div.className="item";
-    div.innerHTML = "🚏 " + q + " STOP " + (i+1);
-    out.appendChild(div);
-  }
-}
+// 🔎 KERESŐ
+document.getElementById("search").addEventListener("input", (e) => {
+  const q = e.target.value.toLowerCase();
 
-// ---------------- VEHICLE SIMULATION ----------------
-function simulateVehicles(){
-  const out = document.getElementById("vehicles");
-  out.innerHTML = "";
+  const results = stops.filter(s => s.name.toLowerCase().includes(q));
 
-  const now = Date.now();
+  document.getElementById("info").innerHTML =
+    results.map(r =>
+      `<div class="card">
+        🚏 <b>${r.name}</b><br>
+        <span class="badge">STOP</span>
+      </div>`
+    ).join("") || "Nincs találat";
+});
 
-  for(let i=0;i<6;i++){
-    const speed = 20 + Math.random()*40;
-    const delay = Math.floor(Math.random()*10);
-
-    const status =
-      delay < 3 ? "🟢 ON TIME"
-      : delay < 7 ? "🟡 DELAYED"
-      : "🔴 HEAVY DELAY";
-
-    const lat = 47.49 + Math.random()*0.02;
-    const lon = 19.05 + Math.random()*0.02;
-
-    out.innerHTML += `
-      <div class="item">
-        🚌 VEH-${100+i}
-        <span class="badge">${status}</span><br>
-        <span class="small">
-          📍 ${lat.toFixed(5)}, ${lon.toFixed(5)}<br>
-          🚀 ${speed.toFixed(1)} km/h
-        </span>
-      </div>
-    `;
-  }
-
-  document.getElementById("status").innerHTML = `
-    🟢 Aktív járművek: 6<br>
-    ⏱ Frissítés: LIVE (1s tick)<br>
-    📡 GPS + SIM FUSION ENGINE
-  `;
-}
-
-simulateVehicles();
+// 📊 DISPATCHER INFO
+document.getElementById("info").innerHTML = `
+<div class="card">
+🟢 FUTÁR Leaflet Core aktív<br>
+📡 GTFS modul: DEMO<br>
+🚍 Live vehicle: SIMULATED<br>
+</div>
+`;
 
 </script>
 
