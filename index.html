@@ -1,165 +1,286 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V7 OFFLINE GTFS CORE</title>
+<meta charset="UTF-8">
+<title>FUTÁR V7.4 CONTROL ROOM CORE</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
-body { margin:0; font-family:Arial; background:#0b0f14; color:white; }
-#map { height:70vh; }
-#panel { height:30vh; background:#0f1722; padding:10px; overflow:auto; }
+body {
+  margin:0;
+  font-family: Arial;
+  background:#0b0f14;
+  color:#d6e2ff;
+}
 
-input {
-  width:100%;
+/* TOP BAR */
+#topbar {
+  height:50px;
+  background:#111826;
+  display:flex;
+  align-items:center;
+  padding:0 12px;
+  font-weight:bold;
+  border-bottom:2px solid #1f2a3a;
+}
+
+/* LAYOUT */
+#container {
+  display:flex;
+  height:calc(100vh - 50px);
+}
+
+/* LEFT PANEL */
+#left {
+  width:320px;
+  border-right:1px solid #1f2a3a;
+  display:flex;
+  flex-direction:column;
+}
+
+.panel {
   padding:10px;
-  background:#1b2636;
-  border:none;
-  color:white;
+  border-bottom:1px solid #1f2a3a;
 }
 
-.card {
-  background:#182233;
-  margin:6px 0;
+input, button {
+  width:100%;
   padding:8px;
-  border-radius:6px;
-  cursor:pointer;
+  margin-top:6px;
+  background:#0f1722;
+  color:#d6e2ff;
+  border:1px solid #243247;
 }
-.small { font-size:12px; opacity:0.7; }
+
+/* CENTER MAP PLACEHOLDER */
+#center {
+  flex:1;
+  position:relative;
+  background: radial-gradient(#101826,#070b10);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+}
+
+/* RIGHT DISPATCH TABLE */
+#right {
+  width:420px;
+  border-left:1px solid #1f2a3a;
+  display:flex;
+  flex-direction:column;
+}
+
+.table {
+  overflow:auto;
+  flex:1;
+  font-size:12px;
+}
+
+.row {
+  display:grid;
+  grid-template-columns:60px 80px 80px 1fr;
+  padding:6px;
+  border-bottom:1px solid #1b2636;
+}
+
+.row.header {
+  background:#121b29;
+  font-weight:bold;
+  position:sticky;
+  top:0;
+}
+
+.bad {
+  color:#ff4d4d;
+}
+
+.ok {
+  color:#3cff9b;
+}
 </style>
 </head>
 
 <body>
 
-<div id="map"></div>
-
-<div id="panel">
-  <input id="search" placeholder="🔎 GTFS megálló keresés..."/>
-  <div id="results">GTFS V7 READY</div>
+<div id="topbar">
+🚦 FUTÁR V7.4 CONTROL ROOM CORE | GTFS + LIVE DISPATCH + REALTIME ENGINE
 </div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<div id="container">
+
+  <!-- LEFT -->
+  <div id="left">
+    
+    <div class="panel">
+      <b>📦 GTFS ZIP LOADER</b>
+      <input type="file" id="zipFile">
+      <button onclick="loadGTFS()">Load GTFS</button>
+      <div id="status">No feed loaded</div>
+    </div>
+
+    <div class="panel">
+      <b>🔍 STOP SEARCH</b>
+      <input id="search" placeholder="stop_id / name">
+      <button onclick="searchStops()">Search</button>
+      <div id="searchRes"></div>
+    </div>
+
+    <div class="panel">
+      <b>🛰️ REALTIME ENGINE</b>
+      <button onclick="startRealtime()">Start polling</button>
+      <div id="rtStatus">Idle</div>
+    </div>
+
+  </div>
+
+  <!-- CENTER -->
+  <div id="center">
+    <div style="text-align:center">
+      <h2>FUTÁR V7 DISPATCH MAP</h2>
+      <p>(map engine slot – Leaflet / offline tile később)</p>
+      <div id="clock"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT -->
+  <div id="right">
+
+    <div class="panel">
+      <b>📊 DISPATCH BOARD</b>
+    </div>
+
+    <div class="table" id="table">
+      <div class="row header">
+        <div>Járat</div>
+        <div>Késés</div>
+        <div>Stop</div>
+        <div>Status</div>
+      </div>
+    </div>
+
+  </div>
+
+</div>
 
 <script>
-// ================= MAP =================
-const map = L.map('map').setView([47.4979,19.0402],13);
 
-L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',{
-  attribution:'&copy; OpenStreetMap'
-}).addTo(map);
+let GTFS = {
+  stops: [],
+  routes: [],
+  trips: []
+};
 
-// ================= OFFLINE STORAGE =================
-const DB_NAME = "futar_v7";
-let db;
+let realtimeTimer = null;
 
-function openDB(){
-  return new Promise((res)=>{
-    const req = indexedDB.open(DB_NAME,1);
-    req.onupgradeneeded = e=>{
-      db = e.target.result;
-      db.createObjectStore("gtfs");
-    };
-    req.onsuccess = e=>{
-      db = e.target.result;
-      res();
-    };
-  });
+/* CLOCK */
+setInterval(()=>{
+  document.getElementById("clock").innerText =
+    new Date().toLocaleTimeString();
+},1000);
+
+/* -------------------------
+   V7.1 GTFS LOADER
+--------------------------*/
+async function loadGTFS(){
+  const file = document.getElementById("zipFile").files[0];
+  if(!file) return alert("No ZIP selected");
+
+  const zip = await JSZip.loadAsync(file);
+
+  GTFS.stops = parseCSV(await zip.file("stops.txt").async("string"));
+  GTFS.routes = parseCSV(await zip.file("routes.txt").async("string"));
+  GTFS.trips = parseCSV(await zip.file("trips.txt").async("string"));
+
+  localStorage.setItem("GTFS_CACHE", JSON.stringify(GTFS));
+
+  document.getElementById("status").innerText =
+    `Loaded: ${GTFS.stops.length} stops`;
+
+  renderBoard();
 }
 
-function saveGTFS(key,data){
-  const tx = db.transaction("gtfs","readwrite");
-  tx.objectStore("gtfs").put(data,key);
-}
-
-function loadGTFS(key){
-  return new Promise(res=>{
-    const tx = db.transaction("gtfs","readonly");
-    const req = tx.objectStore("gtfs").get(key);
-    req.onsuccess = ()=>res(req.result);
-  });
-}
-
-// ================= MINI GTFS PARSER (DEMO + REAL READY) =================
-let stops = [];
-
-// CSV parser (light)
+/* CSV PARSER */
 function parseCSV(text){
-  const lines = text.trim().split("\n");
+  const lines = text.split("\n");
   const headers = lines[0].split(",");
   return lines.slice(1).map(l=>{
     const obj = {};
-    l.split(",").forEach((v,i)=>obj[headers[i]]=v);
+    l.split(",").forEach((v,i)=> obj[headers[i]] = v);
     return obj;
   });
 }
 
-// ================= LOAD GTFS =================
-async function loadDemoGTFS(){
-  // később ZIP-ből jön
-  const demo = [
-    {stop_id:"1", stop_name:"Deák Ferenc tér", stop_lat:47.4975, stop_lon:19.0540},
-    {stop_id:"2", stop_name:"Kálvin tér", stop_lat:47.4893, stop_lon:19.0619},
-    {stop_id:"3", stop_name:"Blaha Lujza tér", stop_lat:47.4970, stop_lon:19.0707},
-    {stop_id:"4", stop_name:"Nyugati pályaudvar", stop_lat:47.5100, stop_lon:19.0560}
-  ];
+/* -------------------------
+   V7.2 LIVE DISPATCHER
+--------------------------*/
+function renderBoard(){
 
-  stops = demo;
+  const table = document.getElementById("table");
 
-  saveGTFS("stops", stops);
-  renderStops();
-}
+  table.innerHTML = `
+  <div class="row header">
+    <div>Járat</div>
+    <div>Késés</div>
+    <div>Stop</div>
+    <div>Status</div>
+  </div>`;
 
-// ================= RENDER =================
-let markers = [];
+  for(let i=0;i<20;i++){
 
-function renderStops(){
-  markers.forEach(m=>map.removeLayer(m));
-  markers = [];
+    let delay = Math.floor(Math.random()*12-4);
 
-  stops.forEach(s=>{
-    const m = L.marker([s.stop_lat,s.stop_lon])
-      .addTo(map)
-      .bindPopup(`<b>${s.stop_name}</b>`);
+    let status = delay>5 ? "DELAY" : "OK";
 
-    markers.push(m);
-  });
-}
-
-// ================= SEARCH =================
-document.getElementById("search").addEventListener("input",(e)=>{
-  const q = e.target.value.toLowerCase();
-
-  const res = stops.filter(s=>
-    s.stop_name.toLowerCase().includes(q)
-  );
-
-  document.getElementById("results").innerHTML =
-    res.map(r=>`
-      <div class="card" onclick="goto(${r.stop_lat},${r.stop_lon})">
-        🚏 ${r.stop_name}<div class="small">${r.stop_id}</div>
+    table.innerHTML += `
+      <div class="row">
+        <div>${"B"+(50+i)}</div>
+        <div class="${delay>5?'bad':'ok'}">${delay} min</div>
+        <div>${GTFS.stops[i]?.stop_name || "N/A"}</div>
+        <div>${status}</div>
       </div>
-    `).join("") || "Nincs találat";
-});
-
-function goto(lat,lon){
-  map.setView([lat,lon],16);
+    `;
+  }
 }
 
-// ================= INIT =================
-(async ()=>{
-  await openDB();
+/* -------------------------
+   SEARCH ENGINE
+--------------------------*/
+function searchStops(){
+  const q = document.getElementById("search").value.toLowerCase();
+  const res = GTFS.stops.filter(s=>
+    (s.stop_name||"").toLowerCase().includes(q)
+  ).slice(0,10);
 
-  const cached = await loadGTFS("stops");
+  document.getElementById("searchRes").innerHTML =
+    res.map(r=>`🚏 ${r.stop_name}`).join("<br>");
+}
 
-  if(cached){
-    stops = cached;
-    renderStops();
-  } else {
-    await loadDemoGTFS();
-  }
-})();
+/* -------------------------
+   V7.3 REALTIME ENGINE
+   (mock polling layer)
+--------------------------*/
+function startRealtime(){
+
+  document.getElementById("rtStatus").innerText = "LIVE";
+
+  if(realtimeTimer) clearInterval(realtimeTimer);
+
+  realtimeTimer = setInterval(()=>{
+
+    // itt jönne GTFS-RT / WebSocket
+    renderBoard();
+
+  },3000);
+}
+
+/* LOAD CACHE */
+if(localStorage.getItem("GTFS_CACHE")){
+  GTFS = JSON.parse(localStorage.getItem("GTFS_CACHE"));
+  document.getElementById("status").innerText =
+    "Cached GTFS loaded";
+}
+
 </script>
 
 </body>
