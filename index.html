@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V7.6 TIMETABLE ENGINE</title>
+<title>FUTÁR V7.7 TRACKING ENGINE</title>
 
 <style>
 body{
@@ -52,15 +52,12 @@ button{
 .ok{color:#00ff9d}
 .bad{color:#ff4d4d}
 
-table{
-    width:100%;
-    font-size:12px;
-    border-collapse:collapse;
-}
-
-td,th{
-    border-bottom:1px solid #00ff9d22;
-    padding:4px;
+.map{
+    height:220px;
+    border:1px dashed #00ff9d55;
+    display:flex;
+    align-items:center;
+    justify-content:center;
 }
 </style>
 
@@ -71,7 +68,7 @@ td,th{
 <body>
 
 <header>
-<div>🚍 FUTÁR V7.6 REAL TIMETABLE ENGINE</div>
+<div>🚍 FUTÁR V7.7 REAL VEHICLE TRACKING ENGINE</div>
 <div id="clock"></div>
 </header>
 
@@ -79,50 +76,48 @@ td,th{
 
 <!-- LOAD -->
 <div class="panel">
-<h3>📦 GTFS LOAD (FIXED ENGINE)</h3>
+<h3>📦 GTFS LOAD</h3>
 <input type="file" id="zip">
-<button onclick="loadGTFS()">LOAD GTFS</button>
-<div id="status" class="small">Waiting...</div>
+<button onclick="load()">LOAD GTFS</button>
+<div id="status" class="small">Idle</div>
 </div>
 
-<!-- SEARCH -->
+<!-- TRACK -->
 <div class="panel">
-<h3>🔎 STOP / ROUTE SEARCH</h3>
-<input id="q">
-<button onclick="search()">SEARCH</button>
-<div id="out" class="small"></div>
+<h3>🚍 VEHICLE TRACKING</h3>
+<input id="tripId" placeholder="trip_id">
+<button onclick="startTracking()">TRACK VEHICLE</button>
+<div id="trackOut" class="small"></div>
 </div>
 
-<!-- STOP TIMES ETA -->
+<!-- MAP -->
 <div class="panel" style="grid-column: span 2;">
-<h3>⏱ REAL TIMETABLE + ETA CORE</h3>
-<input id="stopQuery" placeholder="stop_id (pl: 04567)">
-<button onclick="getTimetable()">GET TIMETABLE</button>
-<div id="timetable" class="small"></div>
+<h3>🌍 LIVE TRACK MAP (SIMULATED LINEAR PATH)</h3>
+<div class="map" id="map">Vehicle path visualization</div>
 </div>
 
-<!-- DATA -->
+<!-- ETA -->
 <div class="panel">
-<h3>🚏 STOPS</h3>
-<div id="stops">-</div>
+<h3>⏱ ETA ENGINE</h3>
+<div id="eta">--</div>
 </div>
 
+<!-- VEHICLE STATE -->
 <div class="panel">
-<h3>🚍 ROUTES</h3>
-<div id="routes">-</div>
+<h3>📡 VEHICLE STATE</h3>
+<div id="state">Idle</div>
 </div>
 
 </div>
 
 <script>
 
-let db;
 let gtfs = {
-    stops:[],
-    routes:[],
     trips:[],
     stop_times:[]
 };
+
+let activeTracking = null;
 
 // CLOCK
 setInterval(()=>{
@@ -130,168 +125,80 @@ setInterval(()=>{
  new Date().toLocaleTimeString();
 },1000);
 
-// SAFE KEY
-function safe(v){
-    if(v===undefined||v===null) return null;
-    v=String(v).trim();
-    return v===""?null:v;
-}
-
-// CLEAN BOM
-function clean(t){
-    return (t||"").replace(/^\uFEFF/,"");
-}
-
-// INIT DB (FIXED)
-function initDB(){
-    let req=indexedDB.open("futar_v76",1);
-
-    req.onupgradeneeded=e=>{
-        db=e.target.result;
-
-        db.createObjectStore("stops",{keyPath:"stop_id"});
-        db.createObjectStore("routes",{keyPath:"route_id"});
-        db.createObjectStore("trips",{keyPath:"trip_id"});
-        db.createObjectStore("stop_times",{keyPath:"id",autoIncrement:true});
-    };
-
-    req.onsuccess=e=>db=e.target.result;
-}
-initDB();
-
-// PARSE CSV
-function parseCSV(t){
-    if(!t) return [];
-    t=clean(t);
-
-    let lines=t.split("\n");
-    let headers=lines[0].split(",");
-
-    return lines.slice(1).map(l=>{
-        let o={};
-        let c=l.split(",");
-        headers.forEach((h,i)=>o[h]=c[i]);
-        return o;
-    }).filter(x=>Object.values(x).join("")!="");
-}
-
 // LOAD GTFS
-async function loadGTFS(){
+async function load(){
     let file=document.getElementById("zip").files[0];
     if(!file) return;
 
     let zip=await JSZip.loadAsync(file);
-    document.getElementById("status").innerText="Loading...";
 
-    gtfs.stops=parseCSV(await zip.file("stops.txt")?.async("string"));
-    gtfs.routes=parseCSV(await zip.file("routes.txt")?.async("string"));
     gtfs.trips=parseCSV(await zip.file("trips.txt")?.async("string"));
     gtfs.stop_times=parseCSV(await zip.file("stop_times.txt")?.async("string"));
 
-    saveAll();
-
-    render();
-
-    document.getElementById("status").innerText="GTFS READY ✔";
+    document.getElementById("status").innerText="GTFS LOADED ✔";
 }
 
-// SAVE (FIXED SAFE)
-function saveAll(){
+// CSV
+function parseCSV(t){
+    if(!t) return [];
+    let lines=t.replace(/^\uFEFF/,"").split("\n");
+    let h=lines[0].split(",");
 
-    let tx1=db.transaction("stops","readwrite");
-    let s=tx1.objectStore("stops");
-    gtfs.stops.forEach(x=>{
-        let k=safe(x.stop_id);
-        if(!k) return;
-        x.stop_id=k;
-        s.put(x);
-    });
-
-    let tx2=db.transaction("routes","readwrite");
-    let r=tx2.objectStore("routes");
-    gtfs.routes.forEach(x=>{
-        let k=safe(x.route_id);
-        if(!k) return;
-        x.route_id=k;
-        r.put(x);
-    });
-
-    let tx3=db.transaction("trips","readwrite");
-    let t=tx3.objectStore("trips");
-    gtfs.trips.forEach(x=>{
-        let k=safe(x.trip_id);
-        if(!k) return;
-        x.trip_id=k;
-        t.put(x);
-    });
-
-    let tx4=db.transaction("stop_times","readwrite");
-    let st=tx4.objectStore("stop_times");
-    gtfs.stop_times.forEach(x=>{
-        st.put(x);
-    });
+    return lines.slice(1).map(l=>{
+        let o={},c=l.split(",");
+        h.forEach((x,i)=>o[x]=c[i]);
+        return o;
+    }).filter(x=>Object.values(x).join("")!="");
 }
 
-// RENDER
-function render(){
-    document.getElementById("stops").innerHTML =
-    gtfs.stops.slice(0,5).map(s=>
-    `${s.stop_id} ${s.stop_name}`).join("<br>");
-
-    document.getElementById("routes").innerHTML =
-    gtfs.routes.slice(0,5).map(r=>
-    `${r.route_id} ${r.route_short_name}`).join("<br>");
+// FIND TRIP PATH
+function getTripPath(tripId){
+    return gtfs.stop_times
+        .filter(t=>t.trip_id==tripId)
+        .sort((a,b)=>a.stop_sequence-b.stop_sequence);
 }
 
-// SEARCH
-function search(){
-    let q=document.getElementById("q").value.toLowerCase();
+// TRACKING ENGINE
+function startTracking(){
 
-    let stops=gtfs.stops.filter(s=>
-        (s.stop_name||"").toLowerCase().includes(q)
-    );
+    let id=document.getElementById("tripId").value;
+    let path=getTripPath(id);
 
-    let routes=gtfs.routes.filter(r=>
-        (r.route_short_name||"").toLowerCase().includes(q)
-    );
+    if(!path.length){
+        document.getElementById("trackOut").innerText="No trip found";
+        return;
+    }
 
-    document.getElementById("out").innerHTML=
-    `Stops: ${stops.length}<br>Routes: ${routes.length}`;
-}
+    let i=0;
+    activeTracking=setInterval(()=>{
 
-// ⏱ REAL TIMETABLE + ETA CORE
-function getTimetable(){
-    let stop=document.getElementById("stopQuery").value;
+        if(i>=path.length-1){
+            clearInterval(activeTracking);
+            document.getElementById("state").innerText="ARRIVED";
+            return;
+        }
 
-    let times=gtfs.stop_times.filter(t=>t.stop_id==stop);
+        let from=path[i];
+        let to=path[i+1];
 
-    // join trips
-    let enriched=times.map(t=>{
-        let trip=gtfs.trips.find(tr=>tr.trip_id==t.trip_id);
-        return {
-            time:t.arrival_time,
-            trip:t.trip_id,
-            route:trip?.route_id || "?"
-        };
-    }).slice(0,10);
+        // SIMULATED PROGRESS
+        let progress=(Date.now()%10000)/10000;
 
-    let now=new Date();
-    let currentHour=now.getHours();
+        document.getElementById("map").innerText=
+        `🚍 Moving\nStop ${from.stop_id} → ${to.stop_id}\nProgress ${(progress*100).toFixed(0)}%`;
 
-    let out=enriched.map(e=>{
-        let hour=parseInt((e.time||"0").split(":")[0]);
+        // ETA MODEL (simple delta time)
+        let etaMinutes=(path.length-i)*2;
 
-        // SIMPLE ETA MODEL
-        let eta=Math.max(0,hour-currentHour);
+        document.getElementById("eta").innerText=
+        `ETA: ~${etaMinutes} min`;
 
-        return `
-        <div>
-        🕒 ${e.time} | 🚍 ${e.route} | ⏳ ETA ~ ${eta}h
-        </div>`;
-    }).join("");
+        document.getElementById("state").innerText=
+        `TRIP ${id} | segment ${i}/${path.length}`;
 
-    document.getElementById("timetable").innerHTML=
-    out || "No stop_times found";
+        i++;
+
+    },2000);
 }
 
 </script>
