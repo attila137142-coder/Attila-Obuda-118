@@ -1,275 +1,205 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>🚦 FUTÁR V5 UNIVERSAL GTFS ENGINE</title>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<meta charset="UTF-8">
+<title>FUTÁR V4 REALTIME ENGINE</title>
 
 <style>
 body{
-  margin:0;
-  font-family:Arial;
-  background:#05080d;
-  color:#d7e1ea;
+    margin:0;
+    background:#000;
+    color:#fff;
+    font-family:Consolas,monospace;
 }
 
-header{
-  background:#0f1621;
-  padding:10px;
-  display:flex;
-  justify-content:space-between;
-  border-bottom:2px solid #1f2a3a;
+/* ================= HEADER ================= */
+#top{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    padding:10px;
+    border-bottom:2px solid #00ff66;
 }
 
 #clock{
-  font-size:20px;
-  color:#00e5ff;
-  font-weight:bold;
+    font-size:40px;
+    color:#00ff66;
+    text-shadow:0 0 15px #00ff66;
 }
 
-.container{
-  display:grid;
-  grid-template-columns:360px 1fr;
-  height:calc(100vh - 50px);
+#gps{
+    font-size:12px;
+    color:#ffd000;
+    max-width:50%;
 }
 
-.panel{
-  background:#0f1621;
-  padding:10px;
-  border-right:1px solid #1f2a3a;
-  overflow:auto;
+/* ================= DROP AREA ================= */
+#drop{
+    margin:10px;
+    padding:20px;
+    border:2px dashed #00ff66;
+    text-align:center;
+    color:#00ff66;
 }
 
-.main{
-  padding:10px;
-  overflow:auto;
+/* ================= SEARCH ================= */
+#search{
+    width:95%;
+    margin:10px;
+    padding:10px;
+    font-size:16px;
+    border:none;
 }
 
-input,button{
-  width:100%;
-  padding:8px;
-  margin-top:6px;
-  background:#111826;
-  border:1px solid #2b3b52;
-  color:white;
+/* ================= STOPS ================= */
+.stop{
+    padding:8px;
+    border-bottom:1px solid #222;
 }
 
-button{
-  background:#1e88e5;
-  font-weight:bold;
-}
-
-table{
-  width:100%;
-  border-collapse:collapse;
-  margin-top:10px;
-}
-
-td,th{
-  border:1px solid #2b3b52;
-  padding:6px;
-  font-size:12px;
-}
-
-th{
-  background:#111826;
-  color:#4dd0e1;
-}
-
-.badge{
-  background:#1e88e5;
-  padding:2px 6px;
-  border-radius:4px;
-}
-
-.warn{
-  color:#ffeb3b;
-}
-
-.ok{
-  color:#00e676;
+.dist{
+    color:#7dff7d;
 }
 </style>
 </head>
 
 <body>
 
-<header>
-<div>🚦 FUTÁR V5 UNIVERSAL ENGINE (ZERO FAIL MODE)</div>
-<div id="clock"></div>
-</header>
-
-<div class="container">
-
-<div class="panel">
-
-<h3>📦 GTFS ZIP (ANY FORMAT)</h3>
-<input type="file" id="zip"/>
-<button onclick="loadGTFS()">LOAD & NORMALIZE</button>
-
-<hr/>
-
-<h3>🔍 STOP SEARCH</h3>
-<input id="search" oninput="searchStops()"/>
-<div id="results"></div>
-
+<div id="top">
+    <div id="clock">00:00:00</div>
+    <div id="gps">GPS inicializálás...</div>
 </div>
 
-<div class="main">
+<div id="drop">📦 GTFS ZIP DROP ZONE (dobd ide a fájlt)</div>
 
-<h2>🚏 STOP VIEW (AUTO FIX MODE)</h2>
-<div id="stopInfo">No stop selected</div>
+<input id="search" placeholder="🔍 megálló keresése...">
 
-<table>
-<thead>
-<tr>
-<th>Járat</th>
-<th>Irány</th>
-<th>Indulás</th>
-<th>Status</th>
-</tr>
-</thead>
-<tbody id="table"></tbody>
-</table>
+<div id="stops"></div>
 
-</div>
-
-</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
+/* ================= CLOCK ================= */
+function tick(){
+    document.getElementById("clock").innerText =
+        new Date().toLocaleTimeString('hu-HU',{hour12:false});
+}
+setInterval(tick,1000); tick();
 
-let GTFS={
-  stops:[],
-  routes:[],
-  trips:[],
-  stopTimes:[]
+/* ================= GPS ================= */
+let myLat=null, myLon=null;
+
+navigator.geolocation.getCurrentPosition(pos=>{
+    myLat = pos.coords.latitude;
+    myLon = pos.coords.longitude;
+
+    document.getElementById("gps").innerHTML =
+        `📍 ${myLat.toFixed(5)}, ${myLon.toFixed(5)}`;
+
+    renderStops();
+});
+
+/* ================= GTFS STORAGE ================= */
+let GTFS = {
+    stops:[]
 };
 
-// CLOCK
-setInterval(()=>{
-  document.getElementById("clock").innerText=
-    new Date().toLocaleTimeString();
-},1000);
+/* ================= ZIP LOAD ================= */
+document.getElementById("drop").ondragover = e=>{
+    e.preventDefault();
+};
 
-// ---------------- LOAD + NORMALIZE ----------------
-async function loadGTFS(){
-  const file=document.getElementById("zip").files[0];
-  const zip=await JSZip.loadAsync(file);
+document.getElementById("drop").ondrop = async e=>{
+    e.preventDefault();
 
-  GTFS.stops = normalize(
-    await zip.file("stops.txt").async("string")
-  );
+    const file = e.dataTransfer.files[0];
+    const zip = await JSZip.loadAsync(file);
 
-  GTFS.routes = normalize(
-    await zip.file("routes.txt").async("string")
-  );
+    const stopsFile = zip.file("stops.txt");
+    if(!stopsFile){
+        alert("Nincs stops.txt a GTFS-ben!");
+        return;
+    }
 
-  GTFS.trips = normalize(
-    await zip.file("trips.txt").async("string")
-  );
+    const text = await stopsFile.async("string");
 
-  GTFS.stopTimes = normalize(
-    await zip.file("stop_times.txt").async("string")
-  );
+    parseStops(text);
+    renderStops();
+};
 
-  alert("GTFS loaded + normalized ✔");
+/* ================= GTFS PARSER ================= */
+function parseStops(csv){
+    const lines = csv.split("\n");
+    const headers = lines[0].split(",");
+
+    const idx = {
+        id: headers.indexOf("stop_id"),
+        name: headers.indexOf("stop_name"),
+        lat: headers.indexOf("stop_lat"),
+        lon: headers.indexOf("stop_lon")
+    };
+
+    GTFS.stops = [];
+
+    for(let i=1;i<lines.length;i++){
+        const c = lines[i].split(",");
+        if(c.length < 3) continue;
+
+        GTFS.stops.push({
+            stop_id: c[idx.id],
+            stop_name: c[idx.name],
+            stop_lat: parseFloat(c[idx.lat]),
+            stop_lon: parseFloat(c[idx.lon])
+        });
+    }
 }
 
-// ---------------- UNIVERSAL NORMALIZER ----------------
-function normalize(text){
-  const lines = text
-    .replace(/\r/g,"")
-    .split("\n")
-    .filter(l=>l.trim());
+/* ================= DISTANCE ================= */
+function dist(lat1,lon1,lat2,lon2){
+    const R = 6371000;
+    const dLat = (lat2-lat1)*Math.PI/180;
+    const dLon = (lon2-lon1)*Math.PI/180;
 
-  const headers = lines[0].split(",").map(h=>h.trim());
+    const a =
+        Math.sin(dLat/2)**2 +
+        Math.cos(lat1*Math.PI/180) *
+        Math.cos(lat2*Math.PI/180) *
+        Math.sin(dLon/2)**2;
 
-  return lines.slice(1).map(line=>{
-    const values = line.match(/(".*?"|[^",]+)(?=\s*,|\s*$)/g) || [];
-
-    const obj = {};
-
-    headers.forEach((h,i)=>{
-      obj[h] = (values[i] || "")
-        .replace(/"/g,"")
-        .trim();
-    });
-
-    return obj;
-  });
+    return 2 * R * Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
-// ---------------- SEARCH (SAFE) ----------------
-function searchStops(){
-  const q=(document.getElementById("search").value||"").toLowerCase();
+/* ================= RENDER ================= */
+function renderStops(){
+    const q = document.getElementById("search").value.toLowerCase();
+    const out = document.getElementById("stops");
 
-  const res = GTFS.stops.filter(s =>
-    (s.stop_name||"").toLowerCase().includes(q)
-  );
+    if(!GTFS.stops.length){
+        out.innerHTML = "Nincs GTFS betöltve...";
+        return;
+    }
 
-  document.getElementById("results").innerHTML =
-    res.slice(0,50).map(s=>`
-      <div onclick="selectStop('${s.stop_id}','${s.stop_name}')"
-           style="padding:6px;border-bottom:1px solid #1f2a3a;cursor:pointer">
-        🚏 ${s.stop_name}
-      </div>
-    `).join("");
+    out.innerHTML = GTFS.stops
+        .filter(s => s.stop_name?.toLowerCase().includes(q))
+        .slice(0,200)
+        .map(s=>{
+
+            let d = "";
+            if(myLat){
+                const m = dist(myLat,myLon,s.stop_lat,s.stop_lon);
+                d = m < 1000 ? Math.round(m)+" m" : (m/1000).toFixed(2)+" km";
+            }
+
+            return `
+            <div class="stop">
+                🚏 ${s.stop_name}<br>
+                <span style="color:#888">${s.stop_id}</span><br>
+                📏 <span class="dist">${d}</span>
+            </div>`;
+        }).join("");
 }
 
-// ---------------- STOP SELECT ----------------
-function selectStop(id,name){
-
-  document.getElementById("stopInfo").innerHTML=
-    `<h3>🚏 ${name}</h3><span class="badge">${id}</span>`;
-
-  const base = GTFS.stopTimes.filter(t =>
-    String(t.stop_id||"").trim() === String(id).trim()
-  );
-
-  render(base);
-}
-
-// ---------------- SAFE JOIN ENGINE ----------------
-function render(list){
-
-  if(!list || list.length===0){
-    document.getElementById("table").innerHTML=
-      `<tr><td colspan="4" class="warn">Nincs adat ehhez a megállóhoz (GTFS mismatch vagy hiányzó kapcsolat)</td></tr>`;
-    return;
-  }
-
-  document.getElementById("table").innerHTML =
-    list.slice(0,40).map(t=>{
-
-      const trip = GTFS.trips.find(x =>
-        String(x.trip_id||"").trim() === String(t.trip_id||"").trim()
-      );
-
-      const route = trip
-        ? GTFS.routes.find(r =>
-            String(r.route_id||"").trim() === String(trip.route_id||"").trim()
-          )
-        : null;
-
-      const line = route?.route_short_name || "UNKNOWN";
-      const dir  = trip?.trip_headsign || t.stop_headsign || "→ UNKNOWN";
-
-      const status = "LIVE OK";
-
-      return `
-        <tr>
-          <td><span class="badge">${line}</span></td>
-          <td>${dir}</td>
-          <td>${t.arrival_time||"-"}</td>
-          <td class="ok">${status}</td>
-        </tr>
-      `;
-    }).join("");
-}
-
+document.getElementById("search").oninput = renderStops;
 </script>
 
 </body>
-</html>
