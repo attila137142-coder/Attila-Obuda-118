@@ -2,7 +2,7 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>FUTÁR V4 REALTIME ENGINE</title>
+<title>FUTÁR CORE V1</title>
 
 <style>
 body{
@@ -12,194 +12,165 @@ body{
     font-family:Consolas,monospace;
 }
 
-/* ================= HEADER ================= */
-#top{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
+/* ================= ÓRA ================= */
+#clockPanel{
+    background:#000;
     padding:10px;
+    text-align:center;
     border-bottom:2px solid #00ff66;
 }
 
 #clock{
-    font-size:40px;
+    font-size:54px;
+    font-weight:bold;
     color:#00ff66;
-    text-shadow:0 0 15px #00ff66;
+    text-shadow:0 0 20px #00ff66;
 }
 
-#gps{
-    font-size:12px;
+/* =============== HELYZET =============== */
+#locationPanel{
+    background:#2d2600;
     color:#ffd000;
-    max-width:50%;
+    padding:12px;
+    font-size:14px;
+    border-bottom:2px solid #665500;
 }
 
-/* ================= DROP AREA ================= */
-#drop{
-    margin:10px;
-    padding:20px;
-    border:2px dashed #00ff66;
-    text-align:center;
-    color:#00ff66;
-}
-
-/* ================= SEARCH ================= */
-#search{
-    width:95%;
-    margin:10px;
-    padding:10px;
-    font-size:16px;
-    border:none;
-}
-
-/* ================= STOPS ================= */
-.stop{
-    padding:8px;
-    border-bottom:1px solid #222;
-}
-
-.dist{
+.distance{
     color:#7dff7d;
+    font-weight:bold;
+}
+
+.stop{
+    padding:6px;
+    border-bottom:1px solid #222;
 }
 </style>
 </head>
 
 <body>
 
-<div id="top">
+<div id="clockPanel">
     <div id="clock">00:00:00</div>
-    <div id="gps">GPS inicializálás...</div>
 </div>
 
-<div id="drop">📦 GTFS ZIP DROP ZONE (dobd ide a fájlt)</div>
-
-<input id="search" placeholder="🔍 megálló keresése...">
+<div id="locationPanel">
+    <div class="title">📍 HELYZETEM</div>
+    <div id="address">Pozíció keresése...</div>
+</div>
 
 <div id="stops"></div>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
 <script>
-/* ================= CLOCK ================= */
-function tick(){
-    document.getElementById("clock").innerText =
-        new Date().toLocaleTimeString('hu-HU',{hour12:false});
+/* ================= ÓRA ================= */
+function updateClock(){
+    const now = new Date();
+    document.getElementById("clock").innerHTML =
+        now.toLocaleTimeString('hu-HU', { hour12:false });
 }
-setInterval(tick,1000); tick();
+setInterval(updateClock,1000);
+updateClock();
 
 /* ================= GPS ================= */
-let myLat=null, myLon=null;
+let myLat = null;
+let myLon = null;
 
-navigator.geolocation.getCurrentPosition(pos=>{
-    myLat = pos.coords.latitude;
-    myLon = pos.coords.longitude;
-
-    document.getElementById("gps").innerHTML =
-        `📍 ${myLat.toFixed(5)}, ${myLon.toFixed(5)}`;
-
-    renderStops();
-});
-
-/* ================= GTFS STORAGE ================= */
-let GTFS = {
-    stops:[]
-};
-
-/* ================= ZIP LOAD ================= */
-document.getElementById("drop").ondragover = e=>{
-    e.preventDefault();
-};
-
-document.getElementById("drop").ondrop = async e=>{
-    e.preventDefault();
-
-    const file = e.dataTransfer.files[0];
-    const zip = await JSZip.loadAsync(file);
-
-    const stopsFile = zip.file("stops.txt");
-    if(!stopsFile){
-        alert("Nincs stops.txt a GTFS-ben!");
+async function updateLocation(){
+    if(!navigator.geolocation){
+        document.getElementById("address").innerHTML = "GPS nem elérhető";
         return;
     }
 
-    const text = await stopsFile.async("string");
+    navigator.geolocation.getCurrentPosition(async pos=>{
+        myLat = pos.coords.latitude;
+        myLon = pos.coords.longitude;
 
-    parseStops(text);
-    renderStops();
-};
+        let city="", road="", house="";
 
-/* ================= GTFS PARSER ================= */
-function parseStops(csv){
-    const lines = csv.split("\n");
-    const headers = lines[0].split(",");
+        try{
+            const url =
+`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${myLat}&lon=${myLon}`;
 
-    const idx = {
-        id: headers.indexOf("stop_id"),
-        name: headers.indexOf("stop_name"),
-        lat: headers.indexOf("stop_lat"),
-        lon: headers.indexOf("stop_lon")
-    };
+            const res = await fetch(url);
+            const data = await res.json();
 
-    GTFS.stops = [];
+            city = data.address.city || data.address.town || data.address.village || "";
+            road = data.address.road || "";
+            house = data.address.house_number || "";
+        }catch(e){}
 
-    for(let i=1;i<lines.length;i++){
-        const c = lines[i].split(",");
-        if(c.length < 3) continue;
+        document.getElementById("address").innerHTML =
+        `🏙️ ${city}<br>
+         🛣️ ${road} ${house}<br><br>
+         🌍 ${myLat.toFixed(6)}<br>
+         🌍 ${myLon.toFixed(6)}<br><br>
+         🎯 ±${Math.round(pos.coords.accuracy)} m`;
 
-        GTFS.stops.push({
-            stop_id: c[idx.id],
-            stop_name: c[idx.name],
-            stop_lat: parseFloat(c[idx.lat]),
-            stop_lon: parseFloat(c[idx.lon])
-        });
-    }
+        renderStops();
+
+    }, err=>{
+        document.getElementById("address").innerHTML = "GPS nem elérhető";
+    },{
+        enableHighAccuracy:true
+    });
 }
 
-/* ================= DISTANCE ================= */
-function dist(lat1,lon1,lat2,lon2){
-    const R = 6371000;
-    const dLat = (lat2-lat1)*Math.PI/180;
-    const dLon = (lon2-lon1)*Math.PI/180;
+updateLocation();
+setInterval(updateLocation,30000);
+
+/* ================= TÁVOLSÁG ================= */
+function distanceMeters(lat1, lon1, lat2, lon2){
+    const R = 6371000; // Föld sugár méterben
+
+    const dLat = (lat2-lat1) * Math.PI/180;
+    const dLon = (lon2-lon1) * Math.PI/180;
 
     const a =
-        Math.sin(dLat/2)**2 +
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
         Math.cos(lat1*Math.PI/180) *
         Math.cos(lat2*Math.PI/180) *
-        Math.sin(dLon/2)**2;
+        Math.sin(dLon/2) * Math.sin(dLon/2);
 
-    return 2 * R * Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c;
 }
+
+/* ================= DEMO GTFS STOPOK ================= */
+const stops = [
+    {stop_name:"Deák Ferenc tér", stop_id:"A001", stop_lat:47.4979, stop_lon:19.0546},
+    {stop_name:"Blaha Lujza tér", stop_id:"A002", stop_lat:47.4963, stop_lon:19.0700},
+    {stop_name:"Keleti pályaudvar", stop_id:"A003", stop_lat:47.5009, stop_lon:19.0835}
+];
 
 /* ================= RENDER ================= */
 function renderStops(){
-    const q = document.getElementById("search").value.toLowerCase();
     const out = document.getElementById("stops");
-
-    if(!GTFS.stops.length){
-        out.innerHTML = "Nincs GTFS betöltve...";
+    if(!myLat || !myLon){
+        out.innerHTML = "";
         return;
     }
 
-    out.innerHTML = GTFS.stops
-        .filter(s => s.stop_name?.toLowerCase().includes(q))
-        .slice(0,200)
-        .map(s=>{
+    out.innerHTML = stops.map(s=>{
+        let dist = "";
 
-            let d = "";
-            if(myLat){
-                const m = dist(myLat,myLon,s.stop_lat,s.stop_lon);
-                d = m < 1000 ? Math.round(m)+" m" : (m/1000).toFixed(2)+" km";
-            }
+        if(s.stop_lat && s.stop_lon){
+            const d = distanceMeters(myLat,myLon,s.stop_lat,s.stop_lon);
+            dist = d < 1000
+                ? Math.round(d) + " m"
+                : (d/1000).toFixed(2) + " km";
+        }
 
-            return `
-            <div class="stop">
-                🚏 ${s.stop_name}<br>
-                <span style="color:#888">${s.stop_id}</span><br>
-                📏 <span class="dist">${d}</span>
-            </div>`;
-        }).join("");
+        return `
+        <div class="stop">
+            🚏 ${s.stop_name}<br>
+            ID: ${s.stop_id}<br>
+            📏 <span class="distance">${dist}</span>
+        </div>`;
+    }).join("");
 }
-
-document.getElementById("search").oninput = renderStops;
 </script>
 
 </body>
+</html>
+
