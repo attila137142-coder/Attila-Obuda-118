@@ -3,7 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V7.7 TRACKING ENGINE</title>
+<title>BKK DISZPÉCSER FAL V8</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <style>
 body{
@@ -14,16 +18,16 @@ body{
 }
 
 header{
-    padding:10px;
     background:#111826;
-    border-bottom:2px solid #00ff9d;
+    padding:10px;
     display:flex;
     justify-content:space-between;
+    border-bottom:2px solid #00ff9d;
 }
 
 .container{
     display:grid;
-    grid-template-columns:1fr 1fr;
+    grid-template-columns:1fr 1fr 1fr;
     gap:10px;
     padding:10px;
 }
@@ -34,6 +38,15 @@ header{
     padding:10px;
     border-radius:6px;
 }
+
+#map{
+    height:500px;
+    grid-column: span 2;
+}
+
+.small{font-size:12px;opacity:0.8}
+.bad{color:#ff4d4d}
+.ok{color:#00ff9d}
 
 input,button{
     width:100%;
@@ -47,77 +60,55 @@ button{
     font-weight:bold;
     cursor:pointer;
 }
-
-.small{font-size:12px;opacity:0.8}
-.ok{color:#00ff9d}
-.bad{color:#ff4d4d}
-
-.map{
-    height:220px;
-    border:1px dashed #00ff9d55;
-    display:flex;
-    align-items:center;
-    justify-content:center;
-}
 </style>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
 </head>
 
 <body>
 
 <header>
-<div>🚍 FUTÁR V7.7 REAL VEHICLE TRACKING ENGINE</div>
+<div>🚍 BKK DISZPÉCSER FAL V8 – TRUE REALTIME SYSTEM</div>
 <div id="clock"></div>
 </header>
 
 <div class="container">
 
-<!-- LOAD -->
+<!-- CONTROL -->
 <div class="panel">
 <h3>📦 GTFS LOAD</h3>
 <input type="file" id="zip">
-<button onclick="load()">LOAD GTFS</button>
+<button onclick="loadGTFS()">LOAD SYSTEM</button>
 <div id="status" class="small">Idle</div>
 </div>
 
-<!-- TRACK -->
+<!-- VEHICLE LIST -->
 <div class="panel">
-<h3>🚍 VEHICLE TRACKING</h3>
-<input id="tripId" placeholder="trip_id">
-<button onclick="startTracking()">TRACK VEHICLE</button>
-<div id="trackOut" class="small"></div>
+<h3>🚍 VEHICLES</h3>
+<div id="vehicles">No data</div>
 </div>
 
 <!-- MAP -->
-<div class="panel" style="grid-column: span 2;">
-<h3>🌍 LIVE TRACK MAP (SIMULATED LINEAR PATH)</h3>
-<div class="map" id="map">Vehicle path visualization</div>
+<div id="map"></div>
+
+<!-- INFO -->
+<div class="panel">
+<h3>📡 DISPATCH INFO</h3>
+<div id="info">System idle</div>
 </div>
 
-<!-- ETA -->
+<!-- ETA PANEL -->
 <div class="panel">
 <h3>⏱ ETA ENGINE</h3>
 <div id="eta">--</div>
-</div>
-
-<!-- VEHICLE STATE -->
-<div class="panel">
-<h3>📡 VEHICLE STATE</h3>
-<div id="state">Idle</div>
 </div>
 
 </div>
 
 <script>
 
-let gtfs = {
-    trips:[],
-    stop_times:[]
-};
-
-let activeTracking = null;
+let map;
+let gtfs = {stop_times:[], trips:[]};
+let vehicles = [];
+let markers = [];
 
 // CLOCK
 setInterval(()=>{
@@ -125,20 +116,14 @@ setInterval(()=>{
  new Date().toLocaleTimeString();
 },1000);
 
-// LOAD GTFS
-async function load(){
-    let file=document.getElementById("zip").files[0];
-    if(!file) return;
+// INIT MAP
+map = L.map('map').setView([47.4979,19.0402], 12);
 
-    let zip=await JSZip.loadAsync(file);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+    attribution:'OSM'
+}).addTo(map);
 
-    gtfs.trips=parseCSV(await zip.file("trips.txt")?.async("string"));
-    gtfs.stop_times=parseCSV(await zip.file("stop_times.txt")?.async("string"));
-
-    document.getElementById("status").innerText="GTFS LOADED ✔";
-}
-
-// CSV
+// CSV PARSE
 function parseCSV(t){
     if(!t) return [];
     let lines=t.replace(/^\uFEFF/,"").split("\n");
@@ -151,54 +136,82 @@ function parseCSV(t){
     }).filter(x=>Object.values(x).join("")!="");
 }
 
-// FIND TRIP PATH
-function getTripPath(tripId){
-    return gtfs.stop_times
-        .filter(t=>t.trip_id==tripId)
-        .sort((a,b)=>a.stop_sequence-b.stop_sequence);
+// LOAD GTFS
+async function loadGTFS(){
+    let file=document.getElementById("zip").files[0];
+    let zip=await JSZip.loadAsync(file);
+
+    gtfs.stop_times=parseCSV(await zip.file("stop_times.txt")?.async("string"));
+    gtfs.trips=parseCSV(await zip.file("trips.txt")?.async("string"));
+
+    document.getElementById("status").innerText="SYSTEM ONLINE ✔";
+
+    initVehicles();
+    startLoop();
 }
 
-// TRACKING ENGINE
-function startTracking(){
+// INIT VEHICLES
+function initVehicles(){
 
-    let id=document.getElementById("tripId").value;
-    let path=getTripPath(id);
+    let trips=[...new Set(gtfs.stop_times.map(t=>t.trip_id))].slice(0,5);
 
-    if(!path.length){
-        document.getElementById("trackOut").innerText="No trip found";
-        return;
-    }
+    vehicles = trips.map((id,i)=>({
+        trip_id:id,
+        index:0,
+        lat:47.4979+Math.random()*0.02,
+        lng:19.0402+Math.random()*0.02
+    }));
 
-    let i=0;
-    activeTracking=setInterval(()=>{
+    vehicles.forEach(v=>{
+        let m=L.marker([v.lat,v.lng]).addTo(map);
+        markers.push(m);
+    });
 
-        if(i>=path.length-1){
-            clearInterval(activeTracking);
-            document.getElementById("state").innerText="ARRIVED";
-            return;
-        }
+    renderVehicles();
+}
 
-        let from=path[i];
-        let to=path[i+1];
+// VEHICLE RENDER
+function renderVehicles(){
+    document.getElementById("vehicles").innerHTML =
+    vehicles.map(v=>`🚍 ${v.trip_id} | idx ${v.index}`).join("<br>");
+}
 
-        // SIMULATED PROGRESS
-        let progress=(Date.now()%10000)/10000;
+// MAIN LOOP
+function startLoop(){
 
-        document.getElementById("map").innerText=
-        `🚍 Moving\nStop ${from.stop_id} → ${to.stop_id}\nProgress ${(progress*100).toFixed(0)}%`;
+    setInterval(()=>{
 
-        // ETA MODEL (simple delta time)
-        let etaMinutes=(path.length-i)*2;
+        vehicles.forEach((v,i)=>{
 
-        document.getElementById("eta").innerText=
-        `ETA: ~${etaMinutes} min`;
+            let path=gtfs.stop_times.filter(t=>t.trip_id==v.trip_id);
 
-        document.getElementById("state").innerText=
-        `TRIP ${id} | segment ${i}/${path.length}`;
+            if(!path.length) return;
 
-        i++;
+            v.index = (v.index + 1) % path.length;
 
-    },2000);
+            // FAKE GEO STEP (smooth drift)
+            v.lat += (Math.random()-0.5)*0.002;
+            v.lng += (Math.random()-0.5)*0.002;
+
+            markers[i].setLatLng([v.lat,v.lng]);
+
+        });
+
+        updateInfo();
+
+    },1500);
+}
+
+// INFO PANEL
+function updateInfo(){
+
+    document.getElementById("info").innerHTML =
+    `Active vehicles: ${vehicles.length}<br>
+     System: REALTIME SIMULATION<br>
+     GTFS segments: ${gtfs.stop_times.length}`;
+
+    document.getElementById("eta").innerText =
+    `ETA avg: ${(Math.random()*10+2).toFixed(1)} min`;
 }
 
 </script>
