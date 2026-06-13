@@ -3,17 +3,17 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V7 GTFS ENGINE</title>
+<title>FUTÁR V7.6 TIMETABLE ENGINE</title>
 
 <style>
-body {
+body{
     margin:0;
-    font-family: Arial;
+    font-family:Arial;
     background:#0b0f14;
     color:#00ff9d;
 }
 
-header {
+header{
     padding:10px;
     background:#111826;
     border-bottom:2px solid #00ff9d;
@@ -21,59 +21,46 @@ header {
     justify-content:space-between;
 }
 
-.container {
+.container{
     display:grid;
     grid-template-columns:1fr 1fr;
     gap:10px;
     padding:10px;
 }
 
-.panel {
+.panel{
     background:#121a24;
+    border:1px solid #00ff9d33;
     padding:10px;
     border-radius:6px;
-    border:1px solid #00ff9d33;
 }
 
-input, button {
+input,button{
     width:100%;
     padding:8px;
     margin-top:5px;
-    border:none;
 }
 
-button {
+button{
     background:#00ff9d;
-    color:#000;
+    border:none;
     font-weight:bold;
     cursor:pointer;
 }
 
-button:hover { background:#00cc7a; }
+.small{font-size:12px;opacity:0.8}
+.ok{color:#00ff9d}
+.bad{color:#ff4d4d}
 
-.small { font-size:12px; opacity:0.8; }
-
-.ok { color:#00ff9d; }
-.bad { color:#ff4d4d; }
-
-table {
+table{
     width:100%;
-    border-collapse:collapse;
     font-size:12px;
+    border-collapse:collapse;
 }
 
-td,th {
+td,th{
     border-bottom:1px solid #00ff9d22;
     padding:4px;
-    text-align:left;
-}
-
-.map {
-    height:200px;
-    border:1px dashed #00ff9d55;
-    display:flex;
-    align-items:center;
-    justify-content:center;
 }
 </style>
 
@@ -84,58 +71,45 @@ td,th {
 <body>
 
 <header>
-<div>🚍 FUTÁR V7 FULL GTFS ENGINE</div>
-<div id="clock">--:--:--</div>
+<div>🚍 FUTÁR V7.6 REAL TIMETABLE ENGINE</div>
+<div id="clock"></div>
 </header>
 
 <div class="container">
 
-<!-- GTFS LOAD -->
+<!-- LOAD -->
 <div class="panel">
-<h3>📦 GTFS LOADER</h3>
-<input type="file" id="zipFile" accept=".zip">
-<button onclick="loadGTFS()">LOAD GTFS ZIP</button>
-<div id="status" class="small">Waiting for GTFS...</div>
+<h3>📦 GTFS LOAD (FIXED ENGINE)</h3>
+<input type="file" id="zip">
+<button onclick="loadGTFS()">LOAD GTFS</button>
+<div id="status" class="small">Waiting...</div>
 </div>
 
 <!-- SEARCH -->
 <div class="panel">
-<h3>🔎 DISPATCH SEARCH</h3>
-<input id="query" placeholder="route / stop / trip id">
-<button onclick="searchGTFS()">SEARCH</button>
-<div id="results" class="small"></div>
+<h3>🔎 STOP / ROUTE SEARCH</h3>
+<input id="q">
+<button onclick="search()">SEARCH</button>
+<div id="out" class="small"></div>
 </div>
 
-<!-- MAP PLACEHOLDER -->
+<!-- STOP TIMES ETA -->
 <div class="panel" style="grid-column: span 2;">
-<h3>🌍 LIVE MAP (placeholder)</h3>
-<div class="map">Leaflet / GTFS overlay ready slot</div>
+<h3>⏱ REAL TIMETABLE + ETA CORE</h3>
+<input id="stopQuery" placeholder="stop_id (pl: 04567)">
+<button onclick="getTimetable()">GET TIMETABLE</button>
+<div id="timetable" class="small"></div>
 </div>
 
-<!-- STOPS -->
+<!-- DATA -->
 <div class="panel">
 <h3>🚏 STOPS</h3>
-<div id="stops">No data</div>
+<div id="stops">-</div>
 </div>
 
-<!-- ROUTES -->
 <div class="panel">
 <h3>🚍 ROUTES</h3>
-<div id="routes">No data</div>
-</div>
-
-<!-- LIVE ENGINE -->
-<div class="panel">
-<h3>📡 LIVE ENGINE</h3>
-<div id="live">Idle</div>
-<button onclick="startSim()">START SIMULATION</button>
-</div>
-
-<!-- CACHE -->
-<div class="panel">
-<h3>💾 CACHE</h3>
-<button onclick="clearDB()">CLEAR DATABASE</button>
-<div id="cacheStatus" class="small"></div>
+<div id="routes">-</div>
 </div>
 
 </div>
@@ -143,10 +117,11 @@ td,th {
 <script>
 
 let db;
-let gtfsData = {
-    stops: [],
-    routes: [],
-    trips: []
+let gtfs = {
+    stops:[],
+    routes:[],
+    trips:[],
+    stop_times:[]
 };
 
 // CLOCK
@@ -155,122 +130,168 @@ setInterval(()=>{
  new Date().toLocaleTimeString();
 },1000);
 
-// INIT DB
-function initDB(){
-    let req = indexedDB.open("gtfs_v7",1);
+// SAFE KEY
+function safe(v){
+    if(v===undefined||v===null) return null;
+    v=String(v).trim();
+    return v===""?null:v;
+}
 
-    req.onupgradeneeded = e=>{
-        db = e.target.result;
+// CLEAN BOM
+function clean(t){
+    return (t||"").replace(/^\uFEFF/,"");
+}
+
+// INIT DB (FIXED)
+function initDB(){
+    let req=indexedDB.open("futar_v76",1);
+
+    req.onupgradeneeded=e=>{
+        db=e.target.result;
+
         db.createObjectStore("stops",{keyPath:"stop_id"});
         db.createObjectStore("routes",{keyPath:"route_id"});
         db.createObjectStore("trips",{keyPath:"trip_id"});
+        db.createObjectStore("stop_times",{keyPath:"id",autoIncrement:true});
     };
 
-    req.onsuccess = e=>{
-        db = e.target.result;
-        document.getElementById("cacheStatus").innerText="DB READY";
-    };
+    req.onsuccess=e=>db=e.target.result;
 }
 initDB();
 
-// LOAD ZIP
+// PARSE CSV
+function parseCSV(t){
+    if(!t) return [];
+    t=clean(t);
+
+    let lines=t.split("\n");
+    let headers=lines[0].split(",");
+
+    return lines.slice(1).map(l=>{
+        let o={};
+        let c=l.split(",");
+        headers.forEach((h,i)=>o[h]=c[i]);
+        return o;
+    }).filter(x=>Object.values(x).join("")!="");
+}
+
+// LOAD GTFS
 async function loadGTFS(){
-    let file = document.getElementById("zipFile").files[0];
-    if(!file){ alert("No ZIP"); return; }
+    let file=document.getElementById("zip").files[0];
+    if(!file) return;
 
-    let zip = await JSZip.loadAsync(file);
-    document.getElementById("status").innerText="Parsing GTFS...";
+    let zip=await JSZip.loadAsync(file);
+    document.getElementById("status").innerText="Loading...";
 
-    try {
-        let stopsFile = await zip.file("stops.txt")?.async("string");
-        let routesFile = await zip.file("routes.txt")?.async("string");
-        let tripsFile = await zip.file("trips.txt")?.async("string");
+    gtfs.stops=parseCSV(await zip.file("stops.txt")?.async("string"));
+    gtfs.routes=parseCSV(await zip.file("routes.txt")?.async("string"));
+    gtfs.trips=parseCSV(await zip.file("trips.txt")?.async("string"));
+    gtfs.stop_times=parseCSV(await zip.file("stop_times.txt")?.async("string"));
 
-        gtfsData.stops = parseCSV(stopsFile);
-        gtfsData.routes = parseCSV(routesFile);
-        gtfsData.trips = parseCSV(tripsFile);
+    saveAll();
 
-        saveDB();
+    render();
 
-        render();
-        document.getElementById("status").innerText="GTFS LOADED ✔";
-
-    } catch(e){
-        document.getElementById("status").innerText="ERROR: "+e;
-    }
+    document.getElementById("status").innerText="GTFS READY ✔";
 }
 
-// CSV PARSER
-function parseCSV(text){
-    if(!text) return [];
-    let lines = text.split("\n");
-    let headers = lines[0].split(",");
-    let out = [];
+// SAVE (FIXED SAFE)
+function saveAll(){
 
-    for(let i=1;i<lines.length;i++){
-        let obj = {};
-        let cols = lines[i].split(",");
-        headers.forEach((h,j)=>obj[h]=cols[j]);
-        out.push(obj);
-    }
-    return out;
-}
+    let tx1=db.transaction("stops","readwrite");
+    let s=tx1.objectStore("stops");
+    gtfs.stops.forEach(x=>{
+        let k=safe(x.stop_id);
+        if(!k) return;
+        x.stop_id=k;
+        s.put(x);
+    });
 
-// SAVE DB
-function saveDB(){
-    let tx1 = db.transaction("stops","readwrite");
-    let s = tx1.objectStore("stops");
-    gtfsData.stops.forEach(x=>s.put(x));
+    let tx2=db.transaction("routes","readwrite");
+    let r=tx2.objectStore("routes");
+    gtfs.routes.forEach(x=>{
+        let k=safe(x.route_id);
+        if(!k) return;
+        x.route_id=k;
+        r.put(x);
+    });
 
-    let tx2 = db.transaction("routes","readwrite");
-    let r = tx2.objectStore("routes");
-    gtfsData.routes.forEach(x=>r.put(x));
+    let tx3=db.transaction("trips","readwrite");
+    let t=tx3.objectStore("trips");
+    gtfs.trips.forEach(x=>{
+        let k=safe(x.trip_id);
+        if(!k) return;
+        x.trip_id=k;
+        t.put(x);
+    });
 
-    let tx3 = db.transaction("trips","readwrite");
-    let t = tx3.objectStore("trips");
-    gtfsData.trips.forEach(x=>t.put(x));
-}
-
-// SEARCH
-function searchGTFS(){
-    let q = document.getElementById("query").value.toLowerCase();
-
-    let stops = gtfsData.stops.filter(s=> (s.stop_name||"").toLowerCase().includes(q));
-    let routes = gtfsData.routes.filter(r=> (r.route_short_name||"").toLowerCase().includes(q));
-
-    document.getElementById("results").innerHTML =
-        "Stops: "+stops.length+" | Routes: "+routes.length;
+    let tx4=db.transaction("stop_times","readwrite");
+    let st=tx4.objectStore("stop_times");
+    gtfs.stop_times.forEach(x=>{
+        st.put(x);
+    });
 }
 
 // RENDER
 function render(){
     document.getElementById("stops").innerHTML =
-        gtfsData.stops.slice(0,5).map(s=>
-        `${s.stop_id} - ${s.stop_name}`).join("<br>");
+    gtfs.stops.slice(0,5).map(s=>
+    `${s.stop_id} ${s.stop_name}`).join("<br>");
 
     document.getElementById("routes").innerHTML =
-        gtfsData.routes.slice(0,5).map(r=>
-        `${r.route_id} - ${r.route_short_name}`).join("<br>");
+    gtfs.routes.slice(0,5).map(r=>
+    `${r.route_id} ${r.route_short_name}`).join("<br>");
 }
 
-// LIVE SIM
-function startSim(){
-    document.getElementById("live").innerText="SIM RUNNING...";
+// SEARCH
+function search(){
+    let q=document.getElementById("q").value.toLowerCase();
 
-    setInterval(()=>{
-        let delay = Math.floor(Math.random()*10);
+    let stops=gtfs.stops.filter(s=>
+        (s.stop_name||"").toLowerCase().includes(q)
+    );
 
-        document.getElementById("live").innerHTML =
-        `Vehicles: ${Math.floor(Math.random()*120)}<br>
-        Avg speed: ${30+Math.floor(Math.random()*40)} km/h<br>
-        Delay index: ${delay}`;
-    },2000);
+    let routes=gtfs.routes.filter(r=>
+        (r.route_short_name||"").toLowerCase().includes(q)
+    );
+
+    document.getElementById("out").innerHTML=
+    `Stops: ${stops.length}<br>Routes: ${routes.length}`;
 }
 
-// CLEAR DB
-function clearDB(){
-    indexedDB.deleteDatabase("gtfs_v7");
-    document.getElementById("cacheStatus").innerText="DB CLEARED";
+// ⏱ REAL TIMETABLE + ETA CORE
+function getTimetable(){
+    let stop=document.getElementById("stopQuery").value;
+
+    let times=gtfs.stop_times.filter(t=>t.stop_id==stop);
+
+    // join trips
+    let enriched=times.map(t=>{
+        let trip=gtfs.trips.find(tr=>tr.trip_id==t.trip_id);
+        return {
+            time:t.arrival_time,
+            trip:t.trip_id,
+            route:trip?.route_id || "?"
+        };
+    }).slice(0,10);
+
+    let now=new Date();
+    let currentHour=now.getHours();
+
+    let out=enriched.map(e=>{
+        let hour=parseInt((e.time||"0").split(":")[0]);
+
+        // SIMPLE ETA MODEL
+        let eta=Math.max(0,hour-currentHour);
+
+        return `
+        <div>
+        🕒 ${e.time} | 🚍 ${e.route} | ⏳ ETA ~ ${eta}h
+        </div>`;
+    }).join("");
+
+    document.getElementById("timetable").innerHTML=
+    out || "No stop_times found";
 }
 
 </script>
