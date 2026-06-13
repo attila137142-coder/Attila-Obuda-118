@@ -3,192 +3,276 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>FUTÁR V7 Control Room</title>
+<title>FUTÁR V7 GTFS ENGINE</title>
 
 <style>
 body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #0b0f14;
-    color: #00ff9d;
+    margin:0;
+    font-family: Arial;
+    background:#0b0f14;
+    color:#00ff9d;
 }
 
 header {
-    background: #111826;
-    padding: 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    border-bottom: 2px solid #00ff9d;
-}
-
-.clock {
-    font-size: 22px;
-    font-weight: bold;
-    color: #00ff9d;
+    padding:10px;
+    background:#111826;
+    border-bottom:2px solid #00ff9d;
+    display:flex;
+    justify-content:space-between;
 }
 
 .container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    padding: 10px;
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:10px;
+    padding:10px;
 }
 
 .panel {
-    background: #121a24;
-    border: 1px solid #00ff9d33;
-    padding: 10px;
-    border-radius: 6px;
+    background:#121a24;
+    padding:10px;
+    border-radius:6px;
+    border:1px solid #00ff9d33;
 }
 
-h3 {
-    margin-top: 0;
-    color: #00ff9d;
-}
-
-.alert {
-    color: #ff4d4d;
-}
-
-.ok {
-    color: #00ff9d;
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-}
-
-td, th {
-    border-bottom: 1px solid #00ff9d22;
-    padding: 4px;
-    text-align: left;
+input, button {
+    width:100%;
+    padding:8px;
+    margin-top:5px;
+    border:none;
 }
 
 button {
-    background: #00ff9d;
-    color: #000;
-    border: none;
-    padding: 8px;
-    cursor: pointer;
-    font-weight: bold;
-    width: 100%;
-    margin-top: 5px;
+    background:#00ff9d;
+    color:#000;
+    font-weight:bold;
+    cursor:pointer;
 }
 
-button:hover {
-    background: #00cc7a;
+button:hover { background:#00cc7a; }
+
+.small { font-size:12px; opacity:0.8; }
+
+.ok { color:#00ff9d; }
+.bad { color:#ff4d4d; }
+
+table {
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
+}
+
+td,th {
+    border-bottom:1px solid #00ff9d22;
+    padding:4px;
+    text-align:left;
 }
 
 .map {
-    height: 200px;
-    background: #0a0f14;
-    border: 1px dashed #00ff9d55;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 14px;
-}
-
-.small {
-    font-size: 12px;
-    opacity: 0.8;
+    height:200px;
+    border:1px dashed #00ff9d55;
+    display:flex;
+    align-items:center;
+    justify-content:center;
 }
 </style>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 </head>
 
 <body>
 
 <header>
-    <div>🚍 FUTÁR V7 CONTROL ROOM</div>
-    <div class="clock" id="clock">--:--:--</div>
+<div>🚍 FUTÁR V7 FULL GTFS ENGINE</div>
+<div id="clock">--:--:--</div>
 </header>
 
 <div class="container">
 
-    <div class="panel">
-        <h3>🔎 DISPATCH SEARCH</h3>
-        <input id="search" placeholder="Járat / megálló / jármű..." style="width:100%; padding:6px;">
-        <div class="small">Query ID: 243</div>
-    </div>
+<!-- GTFS LOAD -->
+<div class="panel">
+<h3>📦 GTFS LOADER</h3>
+<input type="file" id="zipFile" accept=".zip">
+<button onclick="loadGTFS()">LOAD GTFS ZIP</button>
+<div id="status" class="small">Waiting for GTFS...</div>
+</div>
 
-    <div class="panel">
-        <h3>⚠️ LIVE ALERTS</h3>
-        <div class="alert">Járat 133E +6 perc késés (forgalmi dugó)</div>
-        <div class="alert">M3 vonalon szakasz instabil GPS jel</div>
-    </div>
+<!-- SEARCH -->
+<div class="panel">
+<h3>🔎 DISPATCH SEARCH</h3>
+<input id="query" placeholder="route / stop / trip id">
+<button onclick="searchGTFS()">SEARCH</button>
+<div id="results" class="small"></div>
+</div>
 
-    <div class="panel" style="grid-column: span 2;">
-        <h3>🌍 LIVE CONTROL MAP</h3>
-        <div class="map">Leaflet / GTFS overlay placeholder</div>
-    </div>
+<!-- MAP PLACEHOLDER -->
+<div class="panel" style="grid-column: span 2;">
+<h3>🌍 LIVE MAP (placeholder)</h3>
+<div class="map">Leaflet / GTFS overlay ready slot</div>
+</div>
 
-    <div class="panel">
-        <h3>📡 SYSTEM STATUS</h3>
-        <div>GTFS: <span class="ok">ONLINE</span></div>
-        <div>GPS: <span class="ok">SYNC</span></div>
-        <div>Vehicles: 128</div>
-        <div>Errors: 2</div>
-    </div>
+<!-- STOPS -->
+<div class="panel">
+<h3>🚏 STOPS</h3>
+<div id="stops">No data</div>
+</div>
 
-    <div class="panel">
-        <h3>🚏 STOPS LIVE</h3>
-        <table>
-            <tr><th>ID</th><th>Név</th><th>Status</th></tr>
-            <tr><td>01123</td><td>Központ</td><td class="ok">OK</td></tr>
-            <tr><td>04567</td><td>Deák tér</td><td class="alert">Delay</td></tr>
-            <tr><td>07890</td><td>Újbuda</td><td class="ok">OK</td></tr>
-        </table>
-    </div>
+<!-- ROUTES -->
+<div class="panel">
+<h3>🚍 ROUTES</h3>
+<div id="routes">No data</div>
+</div>
 
-    <div class="panel">
-        <h3>🚍 VEHICLE FLEET LIVE</h3>
-        <div>Active routes: 64</div>
-        <div>Late vehicles: 7</div>
-        <div>Critical: 1</div>
+<!-- LIVE ENGINE -->
+<div class="panel">
+<h3>📡 LIVE ENGINE</h3>
+<div id="live">Idle</div>
+<button onclick="startSim()">START SIMULATION</button>
+</div>
 
-        <button onclick="syncGTFS()">GTFS RELOAD FORCE SYNC</button>
-        <div id="synclog" class="small"></div>
-    </div>
-
-    <div class="panel">
-        <h3>📊 TELEMETRY</h3>
-        <div>Avg speed: <span id="speed">42</span> km/h</div>
-        <div id="pulse">System stable</div>
-    </div>
+<!-- CACHE -->
+<div class="panel">
+<h3>💾 CACHE</h3>
+<button onclick="clearDB()">CLEAR DATABASE</button>
+<div id="cacheStatus" class="small"></div>
+</div>
 
 </div>
 
 <script>
+
+let db;
+let gtfsData = {
+    stops: [],
+    routes: [],
+    trips: []
+};
+
 // CLOCK
-function updateClock() {
-    const now = new Date();
-    document.getElementById("clock").textContent =
-        now.toLocaleTimeString();
+setInterval(()=>{
+ document.getElementById("clock").innerText =
+ new Date().toLocaleTimeString();
+},1000);
+
+// INIT DB
+function initDB(){
+    let req = indexedDB.open("gtfs_v7",1);
+
+    req.onupgradeneeded = e=>{
+        db = e.target.result;
+        db.createObjectStore("stops",{keyPath:"stop_id"});
+        db.createObjectStore("routes",{keyPath:"route_id"});
+        db.createObjectStore("trips",{keyPath:"trip_id"});
+    };
+
+    req.onsuccess = e=>{
+        db = e.target.result;
+        document.getElementById("cacheStatus").innerText="DB READY";
+    };
 }
-setInterval(updateClock, 1000);
-updateClock();
+initDB();
 
-// TELEMETRY SIMULATION
-setInterval(() => {
-    let speed = 35 + Math.floor(Math.random() * 25);
-    document.getElementById("speed").textContent = speed;
+// LOAD ZIP
+async function loadGTFS(){
+    let file = document.getElementById("zipFile").files[0];
+    if(!file){ alert("No ZIP"); return; }
 
-    document.getElementById("pulse").textContent =
-        speed > 50 ? "HIGH LOAD" : "System stable";
-}, 3000);
+    let zip = await JSZip.loadAsync(file);
+    document.getElementById("status").innerText="Parsing GTFS...";
 
-// FAKE GTFS SYNC
-function syncGTFS() {
-    const log = document.getElementById("synclog");
-    log.innerHTML = "SYNCING GTFS...";
-    
-    setTimeout(() => {
-        log.innerHTML = "✔ GTFS UPDATED | Vehicles refreshed | Stops reloaded";
-    }, 1500);
+    try {
+        let stopsFile = await zip.file("stops.txt")?.async("string");
+        let routesFile = await zip.file("routes.txt")?.async("string");
+        let tripsFile = await zip.file("trips.txt")?.async("string");
+
+        gtfsData.stops = parseCSV(stopsFile);
+        gtfsData.routes = parseCSV(routesFile);
+        gtfsData.trips = parseCSV(tripsFile);
+
+        saveDB();
+
+        render();
+        document.getElementById("status").innerText="GTFS LOADED ✔";
+
+    } catch(e){
+        document.getElementById("status").innerText="ERROR: "+e;
+    }
 }
+
+// CSV PARSER
+function parseCSV(text){
+    if(!text) return [];
+    let lines = text.split("\n");
+    let headers = lines[0].split(",");
+    let out = [];
+
+    for(let i=1;i<lines.length;i++){
+        let obj = {};
+        let cols = lines[i].split(",");
+        headers.forEach((h,j)=>obj[h]=cols[j]);
+        out.push(obj);
+    }
+    return out;
+}
+
+// SAVE DB
+function saveDB(){
+    let tx1 = db.transaction("stops","readwrite");
+    let s = tx1.objectStore("stops");
+    gtfsData.stops.forEach(x=>s.put(x));
+
+    let tx2 = db.transaction("routes","readwrite");
+    let r = tx2.objectStore("routes");
+    gtfsData.routes.forEach(x=>r.put(x));
+
+    let tx3 = db.transaction("trips","readwrite");
+    let t = tx3.objectStore("trips");
+    gtfsData.trips.forEach(x=>t.put(x));
+}
+
+// SEARCH
+function searchGTFS(){
+    let q = document.getElementById("query").value.toLowerCase();
+
+    let stops = gtfsData.stops.filter(s=> (s.stop_name||"").toLowerCase().includes(q));
+    let routes = gtfsData.routes.filter(r=> (r.route_short_name||"").toLowerCase().includes(q));
+
+    document.getElementById("results").innerHTML =
+        "Stops: "+stops.length+" | Routes: "+routes.length;
+}
+
+// RENDER
+function render(){
+    document.getElementById("stops").innerHTML =
+        gtfsData.stops.slice(0,5).map(s=>
+        `${s.stop_id} - ${s.stop_name}`).join("<br>");
+
+    document.getElementById("routes").innerHTML =
+        gtfsData.routes.slice(0,5).map(r=>
+        `${r.route_id} - ${r.route_short_name}`).join("<br>");
+}
+
+// LIVE SIM
+function startSim(){
+    document.getElementById("live").innerText="SIM RUNNING...";
+
+    setInterval(()=>{
+        let delay = Math.floor(Math.random()*10);
+
+        document.getElementById("live").innerHTML =
+        `Vehicles: ${Math.floor(Math.random()*120)}<br>
+        Avg speed: ${30+Math.floor(Math.random()*40)} km/h<br>
+        Delay index: ${delay}`;
+    },2000);
+}
+
+// CLEAR DB
+function clearDB(){
+    indexedDB.deleteDatabase("gtfs_v7");
+    document.getElementById("cacheStatus").innerText="DB CLEARED";
+}
+
 </script>
 
 </body>
