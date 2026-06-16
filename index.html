@@ -2,134 +2,178 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS TAKARÍTÓ PRO V2.0</title>
+<title>GTFS TAKARÍTÓ PRO V3</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
 body{
-    font-family: Arial;
-    background:#0f172a;
-    color:#e2e8f0;
+    background:#0b1220;
+    color:#d1d5db;
+    font-family:Arial;
     padding:20px;
 }
+
 h1{color:#38bdf8}
-.box{
-    border:1px solid #334155;
-    padding:15px;
-    border-radius:10px;
-    margin-bottom:15px;
+
+.panel{
     background:#111827;
+    border:1px solid #1f2937;
+    padding:15px;
+    border-radius:12px;
+    margin-bottom:15px;
 }
+
 button{
-    padding:10px 15px;
-    margin:5px;
-    border:none;
+    padding:10px 14px;
     border-radius:8px;
+    border:none;
+    margin:5px;
     cursor:pointer;
     font-weight:bold;
 }
+
 #log{
-    white-space:pre-wrap;
     background:#000;
     padding:10px;
-    height:200px;
+    height:220px;
     overflow:auto;
+    white-space:pre-wrap;
+    font-family:monospace;
 }
+
 .ok{color:#22c55e}
 .warn{color:#facc15}
 .err{color:#ef4444}
+.info{color:#38bdf8}
+
+.badge{
+    display:inline-block;
+    padding:5px 10px;
+    border-radius:6px;
+    margin-top:10px;
+    font-weight:bold;
+}
+.green{background:#14532d;color:#22c55e}
+.yellow{background:#3b2f0b;color:#facc15}
+.red{background:#3b0b0b;color:#ef4444}
 </style>
 </head>
+
 <body>
 
-<h1>🚍 GTFS TAKARÍTÓ PRO V2.0</h1>
+<h1>🚍 GTFS TAKARÍTÓ PRO V3</h1>
 
-<div class="box">
+<div class="panel">
 <input type="file" id="zipFile" accept=".zip">
 <button onclick="loadZip()">📦 ZIP betöltés</button>
-<button onclick="cleanGtfs()">🧹 TAKARÍTÁS INDÍTÁSA</button>
-<button onclick="downloadZip()">⬇ LETÖLTÉS</button>
+<button onclick="runCheck()">🧠 VALIDÁLÁS INDÍTÁSA</button>
+<button onclick="downloadClean()">⬇ EXPORT CLEAN ZIP</button>
 </div>
 
-<div class="box">
-<h3>📄 Állapot</h3>
-<div id="log">Várakozás...</div>
+<div class="panel">
+<h3>📊 DISZPÉCSER ÁLLAPOT</h3>
+<div id="status" class="badge yellow">VÁRAKOZÁS...</div>
 </div>
 
-<div class="box">
-<h3>📁 Fájl lista</h3>
-<ul id="fileList"></ul>
+<div class="panel">
+<h3>📡 LOG (LIVE)</h3>
+<div id="log">Rendszer indítás...\n</div>
+</div>
+
+<div class="panel">
+<h3>📁 FÁJL AUDIT</h3>
+<ul id="files"></ul>
 </div>
 
 <script>
 let zip = new JSZip();
-let loadedZipName = "";
-let cleanedZip = new JSZip();
-
-const requiredFiles = [
-"agency.txt","stops.txt","routes.txt","trips.txt",
-"stop_times.txt","calendar.txt","calendar_dates.txt",
-"shapes.txt","feed_info.txt"
-];
+let loaded = false;
 
 function log(msg, cls=""){
     const el = document.getElementById("log");
     el.innerHTML += "\n" + msg;
+    el.scrollTop = el.scrollHeight;
+}
+
+function setStatus(text, type){
+    const el = document.getElementById("status");
+    el.innerText = text;
+    el.className = "badge " + type;
 }
 
 function loadZip(){
     const file = document.getElementById("zipFile").files[0];
-    if(!file) return alert("Válassz ZIP-et!");
+    if(!file) return alert("Nincs ZIP kiválasztva!");
 
-    loadedZipName = file.name;
     zip = new JSZip();
-    document.getElementById("log").innerHTML = "ZIP betöltve: " + file.name;
+    document.getElementById("files").innerHTML = "";
 
-    zip.loadAsync(file).then(function(){
-        log("OK: ZIP feldolgozva");
+    zip.loadAsync(file).then(()=>{
+        loaded = true;
+        log("📦 ZIP betöltve: " + file.name, "info");
         listFiles();
     });
 }
 
 function listFiles(){
-    const list = document.getElementById("fileList");
+    const list = document.getElementById("files");
     list.innerHTML = "";
 
-    zip.forEach(function(path){
-        let li = document.createElement("li");
+    zip.forEach((path)=>{
+        const li = document.createElement("li");
         li.textContent = path;
         list.appendChild(li);
     });
 }
 
-function cleanGtfs(){
-    cleanedZip = new JSZip();
+function runCheck(){
+    if(!loaded) return alert("Előbb tölts be ZIP-et!");
 
-    document.getElementById("log").innerHTML += "\nTakarítás indul...";
+    log("🧠 VALIDÁLÁS INDUL...", "info");
 
-    let found = [];
+    let files = [];
+    zip.forEach((p)=>files.push(p));
 
-    zip.forEach(function(path, file){
-        found.push(path);
-        cleanedZip.file(path, file.async("string"));
-    });
+    const hasCalendar = files.includes("calendar.txt");
+    const hasDates = files.includes("calendar_dates.txt");
 
-    // ellenőrzés
-    requiredFiles.forEach(f=>{
-        if(found.includes(f)){
-            log("OK: " + f, "ok");
-        } else {
-            log("HIÁNYZIK: " + f, "err");
-        }
-    });
+    // MODE DETECTION
+    if(hasCalendar && hasDates){
+        setStatus("CLASSIC GTFS MODE", "green");
+        log("🟢 MODE: CLASSIC (teljes menetrend rendszer)");
+    }
+    else if(!hasCalendar && hasDates){
+        setStatus("DATES-ONLY GTFS MODE", "yellow");
+        log("🟡 MODE: DATES-ONLY (modern GTFS)");
+    }
+    else if(!hasCalendar && !hasDates){
+        setStatus("BROKEN GTFS FEED", "red");
+        log("🔴 MODE: BROKEN (nincs időmenetrend adat)");
+    }
 
-    log("Takarítás kész!");
+    // service_id check
+    if(files.includes("trips.txt")){
+        log("🚍 trips.txt OK");
+    }
+
+    if(!hasCalendar){
+        log("⚠ calendar.txt hiányzik (nem mindig hiba!)", "warn");
+    }
+
+    if(!hasDates){
+        log("⚠ calendar_dates.txt hiányzik (kritikus lehet)", "warn");
+    }
+
+    log("✔ VALIDÁLÁS KÉSZ");
 }
 
-function downloadZip(){
-    cleanedZip.generateAsync({type:"blob"}).then(function(content){
+function downloadClean(){
+    if(!loaded) return;
+
+    zip.generateAsync({type:"blob"}).then(blob=>{
         const a = document.createElement("a");
-        a.href = URL.createObjectURL(content);
-        a.download = "GTFS_CLEAN_" + loadedZipName;
+        a.href = URL.createObjectURL(blob);
+        a.download = "GTFS_V3_CLEAN.zip";
         a.click();
     });
 }
