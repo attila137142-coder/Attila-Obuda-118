@@ -1,252 +1,139 @@
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FUTÁR V5.5 STABLE HYBRID</title>
+<style>
+body{margin:0;background:#0b0f14;color:#00ff9d;font-family:Arial}
+header{padding:10px;background:#111826;border-bottom:2px solid #00ff9d;text-align:center}
+#clock{font-size:48px;font-weight:bold;color:#00ff66}
+.wrap{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:10px}
+.card{background:#111826;padding:10px;border-left:4px solid #00ff9d}
+input,button{width:100%;padding:8px;margin:4px 0;background:#0b0f14;color:#00ff9d;border:1px solid #00ff9d}
+#results div,#nearStops div{padding:6px;cursor:pointer;border-bottom:1px solid #233}
+@media(max-width:900px){.wrap{grid-template-columns:1fr} #clock{font-size:36px}}
+</style>
+</head>
+<body>
+<header>
+<div>🚍 FUTÁR V5.5 STABLE HYBRID</div>
+<div id="clock">--:--:--</div>
+</header>
+
+<div class="wrap">
+<div class="card">
+<h3>📦 GTFS / Stops betöltés</h3>
+<input type="file" id="file">
+<button onclick="loadFile()">Betöltés</button>
+<div id="status">Nincs adat</div>
+
+<h3>🔎 Megálló kereső</h3>
+<input id="search" placeholder="Megálló neve">
+<button onclick="searchStops()">Keresés</button>
+<div id="results"></div>
+</div>
+
+<div class="card">
+<h3>📍 Helyzet</h3>
+<button onclick="getLocation()">Helyzet frissítése</button>
+<div id="coords">Koordináta: --</div>
+<div id="speed">Sebesség: --</div>
+<div id="alt">Magasság: --</div>
+<div id="acc">Pontosság: --</div>
+<div id="address">Cím: --</div>
+</div>
+
+<div class="card">
+<h3>🚏 Legközelebbi megállók</h3>
+<div id="nearStops">Nincs adat</div>
+<h3>🚌 Stop Board</h3>
+<div id="stopBoard">Válassz megállót</div>
+</div>
+</div>
+
 <script>
+let GTFS={stops:[]};
 
-// ==========================
-// GTFS ADATBÁZIS
-// ==========================
-let GTFS = {
-    stops:[]
-};
-
-// ==========================
-// GTFS PARSER JAVÍTOTT
-// ==========================
-function parseGTFS(text){
-
-    const lines = text.split(/\r?\n/);
-
-    for(let i=1;i<lines.length;i++){
-
-        const line = lines[i].trim();
-
-        if(!line) continue;
-
-        const parts = line.split(",");
-
-        if(parts.length < 5) continue;
-
-        const lat = parseFloat(parts[3]);
-        const lon = parseFloat(parts[4]);
-
-        if(isNaN(lat) || isNaN(lon)) continue;
-
-        let name = (parts[2] || "")
-            .replace(/^"/,"")
-            .replace(/"$/,"")
-            .trim();
-
-        if(!name) continue;
-
-        if(name.includes("�")) continue;
-
-        GTFS.stops.push({
-            id: parts[0],
-            name,
-            lat,
-            lon
-        });
-    }
-}
-
-// ==========================
-// KERESÉS
-// ==========================
-function searchStops(){
-
-    const q =
-        document.getElementById("search")
-        .value
-        .toLowerCase()
-        .trim();
-
-    if(!q){
-        document.getElementById("results").innerHTML="";
-        return;
-    }
-
-    const res = GTFS.stops.filter(s =>
-        s.name &&
-        s.name.toLowerCase().includes(q)
-    );
-
-    document.getElementById("results").innerHTML =
-        res.slice(0,50).map(r => `
-            <div
-                style="
-                    padding:8px;
-                    margin-bottom:2px;
-                    background:#0b0f14;
-                    border-left:3px solid #00ff9d;
-                    cursor:pointer;
-                "
-                onclick="selectStop('${r.name.replace(/'/g,'')}')">
-
-                <b>${r.name}</b><br>
-                <small>ID: ${r.id}</small>
-
-            </div>
-        `).join("");
-}
-
-// ==========================
-// STOP KIJELÖLÉS
-// ==========================
-function selectStop(name){
-
-    const stop =
-        GTFS.stops.find(s => s.name === name);
-
-    if(!stop) return;
-
-    document.getElementById("stopBoard").innerHTML = `
-
-        <div style="font-size:22px">
-            📍 ${stop.name}
-        </div>
-
-        <hr>
-
-        <div>ID: ${stop.id}</div>
-        <div>Lat: ${stop.lat}</div>
-        <div>Lon: ${stop.lon}</div>
-
-    `;
-}
-
-// ==========================
-// GPS
-// ==========================
-function getLocation(){
-
-    if(!navigator.geolocation){
-        alert("GPS nem támogatott");
-        return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-
-        async pos => {
-
-            const lat = pos.coords.latitude;
-            const lon = pos.coords.longitude;
-
-            document.getElementById("coords").innerHTML =
-                `${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-
-            try{
-
-                const r = await fetch(
-                    `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`
-                );
-
-                const d = await r.json();
-
-                document.getElementById("address").innerText =
-                    d.display_name || "Nincs cím";
-
-            }catch(e){
-
-                document.getElementById("address").innerText =
-                    "Cím nem elérhető";
-
-            }
-
-            calculateNearestStops(lat,lon);
-
-        },
-
-        err => {
-
-            alert("GPS hiba");
-
-        }
-
-    );
-}
-
-// ==========================
-// TÁVOLSÁG
-// ==========================
-function dist(lat1, lon1, lat2, lon2){
-
-    const R = 6371000;
-
-    const dLat =
-        (lat2-lat1) * Math.PI/180;
-
-    const dLon =
-        (lon2-lon1) * Math.PI/180;
-
-    const a =
-        Math.sin(dLat/2)**2 +
-        Math.cos(lat1*Math.PI/180) *
-        Math.cos(lat2*Math.PI/180) *
-        Math.sin(dLon/2)**2;
-
-    return R * 2 *
-        Math.atan2(
-            Math.sqrt(a),
-            Math.sqrt(1-a)
-        );
-}
-
-// ==========================
-// LEGKÖZELEBBI MEGÁLLÓK
-// ==========================
-function calculateNearestStops(lat,lon){
-
-    if(!GTFS.stops.length){
-
-        document.getElementById("nearStops")
-            .innerHTML =
-            "Nincs GTFS betöltve";
-
-        return;
-    }
-
-    const nearest =
-        GTFS.stops
-        .map(s => ({
-            ...s,
-            d: dist(
-                lat,
-                lon,
-                s.lat,
-                s.lon
-            )
-        }))
-        .sort((a,b)=>a.d-b.d)
-        .slice(0,10);
-
-    document.getElementById("nearStops").innerHTML =
-        nearest.map(s => `
-
-            <div
-                style="
-                    padding:8px;
-                    margin-bottom:4px;
-                    background:#111826;
-                "
-                onclick="selectStop('${s.name.replace(/'/g,'')}')">
-
-                <b>${s.name}</b><br>
-
-                <small>
-                    ${Math.round(s.d)} m
-                </small>
-
-            </div>
-
-        `).join("");
-}
-
-// ==========================
-// ÓRA
-// ==========================
-setInterval(() => {
-
-    document.getElementById("clock").innerText =
-        new Date().toLocaleTimeString("hu-HU");
-
+setInterval(()=>{
+document.getElementById('clock').textContent=new Date().toLocaleTimeString('hu-HU');
 },1000);
 
+function loadFile(){
+const f=document.getElementById('file').files[0];
+if(!f){alert('Válassz stops.txt fájlt');return;}
+const r=new FileReader();
+r.onload=e=>{
+parseStops(e.target.result);
+localStorage.setItem('futarStops',JSON.stringify(GTFS.stops));
+document.getElementById('status').innerText='Betöltve: '+GTFS.stops.length+' megálló';
+};
+r.readAsText(f,'utf-8');
+}
+
+(function(){
+try{
+const s=localStorage.getItem('futarStops');
+if(s){GTFS.stops=JSON.parse(s);document.getElementById('status').innerText='Cache: '+GTFS.stops.length+' megálló';}
+}catch(e){}
+})();
+
+function parseStops(txt){
+GTFS.stops=[];
+const lines=txt.split(/\r?\n/);
+for(let i=1;i<lines.length;i++){
+const p=lines[i].split(',');
+if(p.length<5) continue;
+const lat=parseFloat(p[3]), lon=parseFloat(p[4]);
+if(isNaN(lat)||isNaN(lon)) continue;
+GTFS.stops.push({id:p[0],name:(p[2]||'').replace(/"/g,''),lat,lon});
+}
+}
+
+function searchStops(){
+const q=document.getElementById('search').value.toLowerCase();
+const res=GTFS.stops.filter(s=>s.name.toLowerCase().includes(q)).slice(0,30);
+document.getElementById('results').innerHTML=res.map(s=>
+`<div onclick="selectStop('${s.id}')">${s.name}</div>`).join('');
+}
+
+function selectStop(id){
+const s=GTFS.stops.find(x=>x.id==id);
+if(!s) return;
+document.getElementById('stopBoard').innerHTML=
+`<b>${s.name}</b><br>ID:${s.id}<br>${s.lat}, ${s.lon}`;
+}
+
+function getLocation(){
+navigator.geolocation.getCurrentPosition(async p=>{
+const lat=p.coords.latitude, lon=p.coords.longitude;
+document.getElementById('coords').innerText=`Koordináta: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
+document.getElementById('speed').innerText=`Sebesség: ${((p.coords.speed||0)*3.6).toFixed(1)} km/h`;
+document.getElementById('alt').innerText=`Magasság: ${p.coords.altitude??'--'} m`;
+document.getElementById('acc').innerText=`Pontosság: ${p.coords.accuracy} m`;
+nearest(lat,lon);
+try{
+const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
+const d=await r.json();
+document.getElementById('address').innerText='Cím: '+(d.display_name||'--');
+}catch(e){}
+});
+}
+
+function dist(a,b,c,d){
+const R=6371000;
+const to=x=>x*Math.PI/180;
+const dLat=to(c-a), dLon=to(d-b);
+const q=Math.sin(dLat/2)**2+Math.cos(to(a))*Math.cos(to(c))*Math.sin(dLon/2)**2;
+return R*2*Math.atan2(Math.sqrt(q),Math.sqrt(1-q));
+}
+
+function nearest(lat,lon){
+const n=GTFS.stops.map(s=>({...s,d:dist(lat,lon,s.lat,s.lon)}))
+.sort((a,b)=>a.d-b.d).slice(0,10);
+document.getElementById('nearStops').innerHTML=n.map(s=>
+`<div onclick="selectStop('${s.id}')">${s.name}<br><small>${Math.round(s.d)} m</small></div>`).join('');
+}
 </script>
+</body>
+</html>
