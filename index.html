@@ -2,181 +2,225 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<title>GTFS TAKARÍTÓ PRO V3</title>
+<title>GTFS TAKARÍTÓ PRO V4 CONTROL ROOM</title>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <style>
 body{
-    background:#0b1220;
-    color:#d1d5db;
+    margin:0;
     font-family:Arial;
-    padding:20px;
+    background:#070b14;
+    color:#d1d5db;
 }
 
-h1{color:#38bdf8}
+header{
+    padding:15px;
+    background:#0b1220;
+    border-bottom:1px solid #1f2937;
+}
+
+h1{color:#38bdf8; margin:0}
+
+.container{
+    display:grid;
+    grid-template-columns: 1fr 1fr;
+    gap:10px;
+    padding:10px;
+}
 
 .panel{
-    background:#111827;
+    background:#0f172a;
     border:1px solid #1f2937;
-    padding:15px;
-    border-radius:12px;
-    margin-bottom:15px;
+    border-radius:10px;
+    padding:10px;
 }
 
 button{
-    padding:10px 14px;
-    border-radius:8px;
-    border:none;
+    padding:10px;
     margin:5px;
+    border:none;
+    border-radius:8px;
     cursor:pointer;
     font-weight:bold;
 }
 
 #log{
-    background:#000;
-    padding:10px;
-    height:220px;
+    background:black;
+    height:200px;
     overflow:auto;
     white-space:pre-wrap;
     font-family:monospace;
 }
 
-.ok{color:#22c55e}
-.warn{color:#facc15}
-.err{color:#ef4444}
-.info{color:#38bdf8}
-
 .badge{
-    display:inline-block;
-    padding:5px 10px;
+    padding:6px 10px;
     border-radius:6px;
-    margin-top:10px;
+    display:inline-block;
     font-weight:bold;
 }
+
 .green{background:#14532d;color:#22c55e}
 .yellow{background:#3b2f0b;color:#facc15}
 .red{background:#3b0b0b;color:#ef4444}
+
+#map{height:300px;border-radius:10px}
+table{
+    width:100%;
+    font-size:12px;
+}
+td{padding:3px;border-bottom:1px solid #1f2937}
 </style>
 </head>
 
 <body>
 
-<h1>🚍 GTFS TAKARÍTÓ PRO V3</h1>
+<header>
+<h1>🚍 GTFS TAKARÍTÓ PRO V4 – CONTROL ROOM</h1>
+<input type="file" id="zipFile">
+<button onclick="loadZip()">📦 ZIP BETÖLTÉS</button>
+<button onclick="analyze()">🧠 ANALÍZIS INDÍTÁS</button>
+</header>
+
+<div class="container">
 
 <div class="panel">
-<input type="file" id="zipFile" accept=".zip">
-<button onclick="loadZip()">📦 ZIP betöltés</button>
-<button onclick="runCheck()">🧠 VALIDÁLÁS INDÍTÁSA</button>
-<button onclick="downloadClean()">⬇ EXPORT CLEAN ZIP</button>
+<h3>📡 DISZPÉCSER ÁLLAPOT</h3>
+<div id="status" class="badge yellow">VÁRAKOZÁS</div>
+<div id="log"></div>
 </div>
 
 <div class="panel">
-<h3>📊 DISZPÉCSER ÁLLAPOT</h3>
-<div id="status" class="badge yellow">VÁRAKOZÁS...</div>
+<h3>📊 GTFS STATISZTIKA</h3>
+<div id="stats"></div>
 </div>
 
 <div class="panel">
-<h3>📡 LOG (LIVE)</h3>
-<div id="log">Rendszer indítás...\n</div>
+<h3>🧠 SERVICE GRAPH</h3>
+<div id="graph"></div>
 </div>
 
 <div class="panel">
-<h3>📁 FÁJL AUDIT</h3>
-<ul id="files"></ul>
+<h3>🗺️ STOP MAP</h3>
+<div id="map"></div>
+</div>
+
 </div>
 
 <script>
-let zip = new JSZip();
-let loaded = false;
 
-function log(msg, cls=""){
-    const el = document.getElementById("log");
-    el.innerHTML += "\n" + msg;
-    el.scrollTop = el.scrollHeight;
+let zip;
+let files = {};
+let parsed = {};
+
+function log(msg){
+    document.getElementById("log").innerHTML += "\n" + msg;
 }
 
-function setStatus(text, type){
-    const el = document.getElementById("status");
-    el.innerText = text;
-    el.className = "badge " + type;
+function setStatus(text,color){
+    let el=document.getElementById("status");
+    el.innerText=text;
+    el.className="badge "+color;
 }
 
 function loadZip(){
-    const file = document.getElementById("zipFile").files[0];
-    if(!file) return alert("Nincs ZIP kiválasztva!");
-
-    zip = new JSZip();
-    document.getElementById("files").innerHTML = "";
-
-    zip.loadAsync(file).then(()=>{
-        loaded = true;
-        log("📦 ZIP betöltve: " + file.name, "info");
-        listFiles();
+    let f=document.getElementById("zipFile").files[0];
+    zip=new JSZip();
+    zip.loadAsync(f).then(()=>{
+        log("📦 ZIP betöltve");
     });
 }
 
-function listFiles(){
-    const list = document.getElementById("files");
-    list.innerHTML = "";
-
-    zip.forEach((path)=>{
-        const li = document.createElement("li");
-        li.textContent = path;
-        list.appendChild(li);
-    });
+function parseCSV(text){
+    return text.split("\n").map(l=>l.split(","));
 }
 
-function runCheck(){
-    if(!loaded) return alert("Előbb tölts be ZIP-et!");
+async function analyze(){
 
-    log("🧠 VALIDÁLÁS INDUL...", "info");
+files = {};
 
-    let files = [];
-    zip.forEach((p)=>files.push(p));
+await Promise.all(
+Object.keys(zip.files).map(async k=>{
+files[k]=await zip.files[k].async("string");
+})
+);
 
-    const hasCalendar = files.includes("calendar.txt");
-    const hasDates = files.includes("calendar_dates.txt");
+log("🧠 ANALÍZIS INDUL...");
 
-    // MODE DETECTION
-    if(hasCalendar && hasDates){
-        setStatus("CLASSIC GTFS MODE", "green");
-        log("🟢 MODE: CLASSIC (teljes menetrend rendszer)");
-    }
-    else if(!hasCalendar && hasDates){
-        setStatus("DATES-ONLY GTFS MODE", "yellow");
-        log("🟡 MODE: DATES-ONLY (modern GTFS)");
-    }
-    else if(!hasCalendar && !hasDates){
-        setStatus("BROKEN GTFS FEED", "red");
-        log("🔴 MODE: BROKEN (nincs időmenetrend adat)");
-    }
+// parse core files
+let trips = parseCSV(files["trips.txt"] || "");
+let stop_times = parseCSV(files["stop_times.txt"] || "");
+let routes = parseCSV(files["routes.txt"] || "");
 
-    // service_id check
-    if(files.includes("trips.txt")){
-        log("🚍 trips.txt OK");
-    }
+// indexes
+let serviceMap = {};
+let routeCount = {};
+let tripCount = trips.length;
 
-    if(!hasCalendar){
-        log("⚠ calendar.txt hiányzik (nem mindig hiba!)", "warn");
-    }
+for(let i=1;i<trips.length;i++){
+let service = trips[i][1];
+let route = trips[i][0];
 
-    if(!hasDates){
-        log("⚠ calendar_dates.txt hiányzik (kritikus lehet)", "warn");
-    }
-
-    log("✔ VALIDÁLÁS KÉSZ");
+serviceMap[service]=(serviceMap[service]||0)+1;
+routeCount[route]=(routeCount[route]||0)+1;
 }
 
-function downloadClean(){
-    if(!loaded) return;
-
-    zip.generateAsync({type:"blob"}).then(blob=>{
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "GTFS_V3_CLEAN.zip";
-        a.click();
-    });
+// STATUS MODE
+if(files["calendar_dates.txt"] && !files["calendar.txt"]){
+setStatus("DATES-ONLY MODE","yellow");
+log("🟡 Modern GTFS (calendar_dates alapú)");
+}else{
+setStatus("CLASSIC MODE","green");
+log("🟢 Klasszikus GTFS");
 }
+
+// STATS
+document.getElementById("stats").innerHTML=`
+<table>
+<tr><td>Trips</td><td>${tripCount}</td></tr>
+<tr><td>Routes</td><td>${Object.keys(routeCount).length}</td></tr>
+<tr><td>Service ID-k</td><td>${Object.keys(serviceMap).length}</td></tr>
+</table>
+`;
+
+// GRAPH
+let g="";
+Object.keys(serviceMap).slice(0,10).forEach(s=>{
+g+=`<div>🧩 ${s} → ${serviceMap[s]} trips</div>`;
+});
+document.getElementById("graph").innerHTML=g;
+
+log("✔ ANALÍZIS KÉSZ");
+
+initMap();
+
+}
+
+function initMap(){
+
+let map=L.map('map').setView([47.4979,19.0402],11);
+
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{
+attribution:'OSM'
+}).addTo(map);
+
+// try stops
+if(files["stops.txt"]){
+let lines=parseCSV(files["stops.txt"]);
+for(let i=1;i<lines.length;i++){
+let lat=parseFloat(lines[i][4]);
+let lon=parseFloat(lines[i][5]);
+if(!isNaN(lat)&&!isNaN(lon)){
+L.circleMarker([lat,lon],{radius:3}).addTo(map);
+}
+}
+}
+
+log("🗺️ MAP betöltve");
+}
+
 </script>
 
 </body>
