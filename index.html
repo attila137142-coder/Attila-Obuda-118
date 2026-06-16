@@ -1,133 +1,284 @@
-
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V6 Leaflet Core</title>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
-
+<meta charset="UTF-8">
+<title>FUTÁR V5.4 TURBO PRO</title>
 <style>
 body {
   margin:0;
   font-family: Arial;
   background:#0b0f14;
-  color:#fff;
+  color:#00ff9d;
 }
 
-#map {
-  height: 70vh;
-  width: 100%;
-}
-
-#panel {
-  height: 30vh;
-  overflow:auto;
-  padding:10px;
+header {
   background:#111826;
-  border-top:2px solid #1f2a3a;
+  padding:10px;
+  display:flex;
+  justify-content:space-between;
+  border-bottom:2px solid #00ff9d;
+  font-weight:bold;
 }
 
-.input {
-  width: 100%;
+.container {
+  display:grid;
+  grid-template-columns: 1fr 2fr 1fr;
+  height:calc(100vh - 50px);
+}
+
+.panel {
+  border-right:1px solid #1f2a3a;
   padding:10px;
-  border:none;
-  outline:none;
-  background:#1a2433;
-  color:white;
-  margin-bottom:8px;
+  overflow:auto;
 }
 
 .card {
-  background:#1a2433;
-  padding:8px;
-  margin-bottom:6px;
-  border-radius:6px;
-  font-size:13px;
+  background:#111826;
+  padding:10px;
+  margin-bottom:10px;
+  border-left:3px solid #00ff9d;
 }
 
-.badge {
-  background:#00c853;
-  padding:2px 6px;
-  border-radius:4px;
-  font-size:11px;
+input, button {
+  width:100%;
+  padding:8px;
+  margin-top:5px;
+  background:#0b0f14;
+  border:1px solid #00ff9d;
+  color:#00ff9d;
 }
+
+button {
+  cursor:pointer;
+  font-weight:bold;
+  background:#00ff9d;
+  color:#000;
+}
+small { color:#aaa; }
 </style>
 </head>
 
 <body>
 
-<div id="map"></div>
+<header>
+  <div>🚍 FUTÁR V5.4 TURBO PRO (GTFS + GPS FUSION)</div>
+  <div id="clock"></div>
+</header>
 
-<div id="panel">
-  <input class="input" id="search" placeholder="🔎 Megálló / járat keresés..."/>
-  <div id="info">Betöltés...</div>
+<div class="container">
+
+<!-- LEFT -->
+<div class="panel">
+
+  <div class="card">
+    <h3>📦 GTFS BETÖLTÉS</h3>
+    <input type="file" id="gtfsFile" multiple>
+    <button onclick="loadGTFS()">Betöltés</button>
+    <small id="gtfsStatus">Nincs adat</small>
+  </div>
+
+  <div class="card">
+    <h3>🔎 STOP SEARCH</h3>
+    <input id="search" placeholder="megálló neve...">
+    <button onclick="searchStops()">Keresés</button>
+    <div id="results"></div>
+  </div>
+
 </div>
 
-<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<!-- CENTER -->
+<div class="panel">
+
+  <div class="card">
+    <h3>🧭 GPS HELYZET</h3>
+    <div id="coords">--</div>
+    <div id="address">--</div>
+    <button onclick="getLocation()">Helyzet frissítés</button>
+  </div>
+
+  <div class="card">
+    <h3>📍 LEGKÖZELEBBI MEGÁLLÓK</h3>
+    <div id="nearStops">Nincs adat</div>
+  </div>
+
+</div>
+
+<!-- RIGHT -->
+<div class="panel">
+
+  <div class="card">
+    <h3>🚍 STOP BOARD</h3>
+    <div id="stopBoard">Válassz megállót</div>
+  </div>
+
+</div>
+
+</div>
 
 <script>
-// 🌍 MAP INIT
-const map = L.map('map').setView([47.4979, 19.0402], 13);
 
-// 🗺️ Tile layer (lightweight)
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap'
-}).addTo(map);
+let GTFS = {
+  stops: []
+};
 
-// 📍 DEMO GTFS STOPOK (később JSON/GTFS-ből jön)
-const stops = [
-  {name:"Deák Ferenc tér", lat:47.4975, lon:19.0540},
-  {name:"Kálvin tér", lat:47.4893, lon:19.0619},
-  {name:"Blaha Lujza tér", lat:47.4970, lon:19.0707},
-  {name:"Nyugati pályaudvar", lat:47.5100, lon:19.0560}
-];
-
-let markers = [];
-
-stops.forEach(s => {
-  const m = L.marker([s.lat, s.lon]).addTo(map)
-    .bindPopup(`<b>${s.name}</b>`);
-  markers.push({m, s});
-});
-
-// 🚍 SIMULÁLT JÁRMŰ
-let bus = L.marker([47.4979, 19.0402]).addTo(map);
-
-let t = 0;
+// ⏰ CLOCK
 setInterval(() => {
-  t += 0.001;
+  document.getElementById("clock").innerText =
+    new Date().toLocaleTimeString();
+},1000);
 
-  const lat = 47.4979 + Math.sin(t) * 0.01;
-  const lon = 19.0402 + Math.cos(t) * 0.02;
+// ==========================
+// 📦 GTFS LOADER (simple mock parser)
+// ==========================
+function loadGTFS(){
+  const files = document.getElementById("gtfsFile").files;
 
-  bus.setLatLng([lat, lon]);
-}, 500);
+  if(!files.length){
+    alert("Nincs fájl kiválasztva");
+    return;
+  }
 
-// 🔎 KERESŐ
-document.getElementById("search").addEventListener("input", (e) => {
-  const q = e.target.value.toLowerCase();
+  GTFS.stops = [];
 
-  const results = stops.filter(s => s.name.toLowerCase().includes(q));
+  let loaded = 0;
 
-  document.getElementById("info").innerHTML =
-    results.map(r =>
-      `<div class="card">
-        🚏 <b>${r.name}</b><br>
-        <span class="badge">STOP</span>
-      </div>`
-    ).join("") || "Nincs találat";
-});
+  for(let f of files){
+    const reader = new FileReader();
 
-// 📊 DISPATCHER INFO
-document.getElementById("info").innerHTML = `
-<div class="card">
-🟢 FUTÁR Leaflet Core aktív<br>
-📡 GTFS modul: DEMO<br>
-🚍 Live vehicle: SIMULATED<br>
-</div>
-`;
+    reader.onload = function(e){
+      const text = e.target.result;
+      parseGTFS(text);
+      loaded++;
+
+      if(loaded === files.length){
+        document.getElementById("gtfsStatus").innerText =
+          "✔ GTFS betöltve: " + GTFS.stops.length + " megálló";
+      }
+    };
+
+    reader.readAsText(f);
+  }
+}
+
+// simple stops.txt parser
+function parseGTFS(text){
+  const lines = text.split("\n");
+
+  for(let line of lines){
+    const parts = line.split(",");
+
+    if(parts.length > 2){
+      GTFS.stops.push({
+        id: parts[0],
+        name: parts[2],
+        lat: parseFloat(parts[3]),
+        lon: parseFloat(parts[4])
+      });
+    }
+  }
+}
+
+// ==========================
+// 🔎 STOP SEARCH
+// ==========================
+function searchStops(){
+  const q = document.getElementById("search").value.toLowerCase();
+
+  const res = GTFS.stops.filter(s =>
+    s.name && s.name.toLowerCase().includes(q)
+  );
+
+  document.getElementById("results").innerHTML =
+    res.slice(0,10).map(r =>
+      `<div onclick="selectStop('${r.name}')">${r.name}</div>`
+    ).join("");
+}
+
+function selectStop(name){
+  const stop = GTFS.stops.find(s => s.name === name);
+  if(!stop) return;
+
+  document.getElementById("stopBoard").innerHTML =
+    "📍 " + stop.name + "<br>ID: " + stop.id;
+}
+
+// ==========================
+// 📍 GPS + REVERSE GEOCODE
+// ==========================
+function getLocation(){
+  navigator.geolocation.getCurrentPosition(async pos => {
+
+    const lat = pos.coords.latitude;
+    const lon = pos.coords.longitude;
+
+    document.getElementById("coords").innerText =
+      lat.toFixed(6) + ", " + lon.toFixed(6);
+
+    // reverse geocode
+    try{
+      const r = await fetch(
+        `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json`
+      );
+
+      const d = await r.json();
+      const a = d.address;
+
+      const city = a.city || a.town || a.village || "";
+      const road = a.road || "";
+      const house = a.house_number || "";
+
+      document.getElementById("address").innerText =
+        city + " " + road + " " + house;
+
+    } catch(e){
+      document.getElementById("address").innerText =
+        "Cím nem elérhető";
+    }
+
+    calculateNearestStops(lat, lon);
+
+  });
+}
+
+// ==========================
+// 📏 DISTANCE (Haversine)
+// ==========================
+function dist(lat1, lon1, lat2, lon2){
+  const R = 6371e3;
+  const toRad = x => x * Math.PI / 180;
+
+  const dLat = toRad(lat2-lat1);
+  const dLon = toRad(lon2-lon1);
+
+  const a =
+    Math.sin(dLat/2)**2 +
+    Math.cos(toRad(lat1)) *
+    Math.cos(toRad(lat2)) *
+    Math.sin(dLon/2)**2;
+
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+}
+
+// ==========================
+// 📍 NEAREST STOPS
+// ==========================
+function calculateNearestStops(lat, lon){
+
+  if(!GTFS.stops.length) return;
+
+  const nearest = GTFS.stops
+    .map(s => ({
+      ...s,
+      d: dist(lat, lon, s.lat, s.lon)
+    }))
+    .sort((a,b)=>a.d-b.d)
+    .slice(0,5);
+
+  document.getElementById("nearStops").innerHTML =
+    nearest.map(n =>
+      `${n.name}<br><small>${Math.round(n.d)} m</small><br><br>`
+    ).join("");
+}
 
 </script>
 
