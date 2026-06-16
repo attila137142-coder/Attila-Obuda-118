@@ -2,167 +2,134 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GTFS TAKARÍTÓ PRO V2.0</title>
-
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
 <style>
-body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #0b0f14;
-    color: #d7e1ea;
+body{
+    font-family: Arial;
+    background:#0f172a;
+    color:#e2e8f0;
+    padding:20px;
 }
-
-header {
-    background: #111a24;
-    padding: 12px;
-    font-size: 18px;
-    font-weight: bold;
-    border-bottom: 2px solid #1f2d3a;
+h1{color:#38bdf8}
+.box{
+    border:1px solid #334155;
+    padding:15px;
+    border-radius:10px;
+    margin-bottom:15px;
+    background:#111827;
 }
-
-.container {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    padding: 10px;
+button{
+    padding:10px 15px;
+    margin:5px;
+    border:none;
+    border-radius:8px;
+    cursor:pointer;
+    font-weight:bold;
 }
-
-.panel {
-    background: #121b26;
-    border: 1px solid #223244;
-    border-radius: 8px;
-    padding: 10px;
-    overflow: auto;
-    max-height: 80vh;
+#log{
+    white-space:pre-wrap;
+    background:#000;
+    padding:10px;
+    height:200px;
+    overflow:auto;
 }
-
-button {
-    background: #1f6feb;
-    color: white;
-    border: none;
-    padding: 10px;
-    margin: 5px 0;
-    border-radius: 6px;
-    cursor: pointer;
-}
-
-button:hover {
-    background: #2b7fff;
-}
-
-pre {
-    white-space: pre-wrap;
-    font-size: 12px;
-}
-
-.bad {
-    color: #ff5c5c;
-}
-
-.good {
-    color: #4ade80;
-}
-
-input {
-    width: 100%;
-    padding: 8px;
-    margin: 5px 0;
-    background: #0e1620;
-    border: 1px solid #2a3b4d;
-    color: white;
-}
+.ok{color:#22c55e}
+.warn{color:#facc15}
+.err{color:#ef4444}
 </style>
 </head>
-
 <body>
 
-<header>🚍 GTFS TAKARÍTÓ PRO V2.0 – JSZIP CLEAN ENGINE</header>
+<h1>🚍 GTFS TAKARÍTÓ PRO V2.0</h1>
 
-<div class="container">
-
-<div class="panel">
-<h3>📦 GTFS ZIP betöltés</h3>
-<input type="file" id="zipFile" accept=".zip"/>
-<button onclick="loadZip()">ZIP betöltése</button>
-<button onclick="cleanGTFS()">TAKARÍTÁS INDÍTÁSA</button>
-<button onclick="downloadClean()">LETÖLTÉS</button>
-
-<h4>Állapot</h4>
-<pre id="status">Várakozás...</pre>
+<div class="box">
+<input type="file" id="zipFile" accept=".zip">
+<button onclick="loadZip()">📦 ZIP betöltés</button>
+<button onclick="cleanGtfs()">🧹 TAKARÍTÁS INDÍTÁSA</button>
+<button onclick="downloadZip()">⬇ LETÖLTÉS</button>
 </div>
 
-<div class="panel">
-<h3>📄 Fájl lista</h3>
-<pre id="fileList"></pre>
+<div class="box">
+<h3>📄 Állapot</h3>
+<div id="log">Várakozás...</div>
 </div>
 
+<div class="box">
+<h3>📁 Fájl lista</h3>
+<ul id="fileList"></ul>
 </div>
 
 <script>
-let zipData;
+let zip = new JSZip();
+let loadedZipName = "";
 let cleanedZip = new JSZip();
 
-function log(msg) {
-    document.getElementById("status").innerText += "\\n" + msg;
+const requiredFiles = [
+"agency.txt","stops.txt","routes.txt","trips.txt",
+"stop_times.txt","calendar.txt","calendar_dates.txt",
+"shapes.txt","feed_info.txt"
+];
+
+function log(msg, cls=""){
+    const el = document.getElementById("log");
+    el.innerHTML += "\n" + msg;
 }
 
-function loadZip() {
-    const file = document.getElementById('zipFile').files[0];
-    if (!file) return alert("Nincs fájl kiválasztva!");
+function loadZip(){
+    const file = document.getElementById("zipFile").files[0];
+    if(!file) return alert("Válassz ZIP-et!");
 
-    JSZip.loadAsync(file).then(zip => {
-        zipData = zip;
-        document.getElementById("fileList").innerText = "";
-        log("ZIP betöltve: " + file.name);
+    loadedZipName = file.name;
+    zip = new JSZip();
+    document.getElementById("log").innerHTML = "ZIP betöltve: " + file.name;
 
-        zip.forEach((relativePath, zipEntry) => {
-            document.getElementById("fileList").innerText += relativePath + "\\n";
-        });
+    zip.loadAsync(file).then(function(){
+        log("OK: ZIP feldolgozva");
+        listFiles();
     });
 }
 
-function cleanCSV(text) {
-    return text
-        .split("\\n")
-        .map(l => l.trim())
-        .filter(l => l.length > 0)
-        .join("\\n");
+function listFiles(){
+    const list = document.getElementById("fileList");
+    list.innerHTML = "";
+
+    zip.forEach(function(path){
+        let li = document.createElement("li");
+        li.textContent = path;
+        list.appendChild(li);
+    });
 }
 
-async function cleanGTFS() {
-    if (!zipData) return alert("Nincs ZIP!");
-
+function cleanGtfs(){
     cleanedZip = new JSZip();
-    log("Takarítás indul...");
 
-    const entries = Object.keys(zipData.files);
+    document.getElementById("log").innerHTML += "\nTakarítás indul...";
 
-    for (let name of entries) {
-        const file = zipData.files[name];
+    let found = [];
 
-        if (file.dir) continue;
+    zip.forEach(function(path, file){
+        found.push(path);
+        cleanedZip.file(path, file.async("string"));
+    });
 
-        let content = await file.async("string");
-
-        if (name.endsWith(".txt")) {
-            content = cleanCSV(content);
+    // ellenőrzés
+    requiredFiles.forEach(f=>{
+        if(found.includes(f)){
+            log("OK: " + f, "ok");
+        } else {
+            log("HIÁNYZIK: " + f, "err");
         }
-
-        cleanedZip.file(name, content);
-        log("OK: " + name);
-    }
+    });
 
     log("Takarítás kész!");
 }
 
-function downloadClean() {
-    cleanedZip.generateAsync({ type: "blob" }).then(blob => {
+function downloadZip(){
+    cleanedZip.generateAsync({type:"blob"}).then(function(content){
         const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = "gtfs_clean_v2.zip";
+        a.href = URL.createObjectURL(content);
+        a.download = "GTFS_CLEAN_" + loadedZipName;
         a.click();
     });
 }
