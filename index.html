@@ -2,138 +2,171 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FUTÁR V5.5 STABLE HYBRID</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GTFS TAKARÍTÓ PRO V2.0</title>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 <style>
-body{margin:0;background:#0b0f14;color:#00ff9d;font-family:Arial}
-header{padding:10px;background:#111826;border-bottom:2px solid #00ff9d;text-align:center}
-#clock{font-size:48px;font-weight:bold;color:#00ff66}
-.wrap{display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;padding:10px}
-.card{background:#111826;padding:10px;border-left:4px solid #00ff9d}
-input,button{width:100%;padding:8px;margin:4px 0;background:#0b0f14;color:#00ff9d;border:1px solid #00ff9d}
-#results div,#nearStops div{padding:6px;cursor:pointer;border-bottom:1px solid #233}
-@media(max-width:900px){.wrap{grid-template-columns:1fr} #clock{font-size:36px}}
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #0b0f14;
+    color: #d7e1ea;
+}
+
+header {
+    background: #111a24;
+    padding: 12px;
+    font-size: 18px;
+    font-weight: bold;
+    border-bottom: 2px solid #1f2d3a;
+}
+
+.container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    padding: 10px;
+}
+
+.panel {
+    background: #121b26;
+    border: 1px solid #223244;
+    border-radius: 8px;
+    padding: 10px;
+    overflow: auto;
+    max-height: 80vh;
+}
+
+button {
+    background: #1f6feb;
+    color: white;
+    border: none;
+    padding: 10px;
+    margin: 5px 0;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+button:hover {
+    background: #2b7fff;
+}
+
+pre {
+    white-space: pre-wrap;
+    font-size: 12px;
+}
+
+.bad {
+    color: #ff5c5c;
+}
+
+.good {
+    color: #4ade80;
+}
+
+input {
+    width: 100%;
+    padding: 8px;
+    margin: 5px 0;
+    background: #0e1620;
+    border: 1px solid #2a3b4d;
+    color: white;
+}
 </style>
 </head>
+
 <body>
-<header>
-<div>🚍 FUTÁR V5.5 STABLE HYBRID</div>
-<div id="clock">--:--:--</div>
-</header>
 
-<div class="wrap">
-<div class="card">
-<h3>📦 GTFS / Stops betöltés</h3>
-<input type="file" id="file">
-<button onclick="loadFile()">Betöltés</button>
-<div id="status">Nincs adat</div>
+<header>🚍 GTFS TAKARÍTÓ PRO V2.0 – JSZIP CLEAN ENGINE</header>
 
-<h3>🔎 Megálló kereső</h3>
-<input id="search" placeholder="Megálló neve">
-<button onclick="searchStops()">Keresés</button>
-<div id="results"></div>
+<div class="container">
+
+<div class="panel">
+<h3>📦 GTFS ZIP betöltés</h3>
+<input type="file" id="zipFile" accept=".zip"/>
+<button onclick="loadZip()">ZIP betöltése</button>
+<button onclick="cleanGTFS()">TAKARÍTÁS INDÍTÁSA</button>
+<button onclick="downloadClean()">LETÖLTÉS</button>
+
+<h4>Állapot</h4>
+<pre id="status">Várakozás...</pre>
 </div>
 
-<div class="card">
-<h3>📍 Helyzet</h3>
-<button onclick="getLocation()">Helyzet frissítése</button>
-<div id="coords">Koordináta: --</div>
-<div id="speed">Sebesség: --</div>
-<div id="alt">Magasság: --</div>
-<div id="acc">Pontosság: --</div>
-<div id="address">Cím: --</div>
+<div class="panel">
+<h3>📄 Fájl lista</h3>
+<pre id="fileList"></pre>
 </div>
 
-<div class="card">
-<h3>🚏 Legközelebbi megállók</h3>
-<div id="nearStops">Nincs adat</div>
-<h3>🚌 Stop Board</h3>
-<div id="stopBoard">Válassz megállót</div>
-</div>
 </div>
 
 <script>
-let GTFS={stops:[]};
+let zipData;
+let cleanedZip = new JSZip();
 
-setInterval(()=>{
-document.getElementById('clock').textContent=new Date().toLocaleTimeString('hu-HU');
-},1000);
-
-function loadFile(){
-const f=document.getElementById('file').files[0];
-if(!f){alert('Válassz stops.txt fájlt');return;}
-const r=new FileReader();
-r.onload=e=>{
-parseStops(e.target.result);
-localStorage.setItem('futarStops',JSON.stringify(GTFS.stops));
-document.getElementById('status').innerText='Betöltve: '+GTFS.stops.length+' megálló';
-};
-r.readAsText(f,'utf-8');
+function log(msg) {
+    document.getElementById("status").innerText += "\\n" + msg;
 }
 
-(function(){
-try{
-const s=localStorage.getItem('futarStops');
-if(s){GTFS.stops=JSON.parse(s);document.getElementById('status').innerText='Cache: '+GTFS.stops.length+' megálló';}
-}catch(e){}
-})();
+function loadZip() {
+    const file = document.getElementById('zipFile').files[0];
+    if (!file) return alert("Nincs fájl kiválasztva!");
 
-function parseStops(txt){
-GTFS.stops=[];
-const lines=txt.split(/\r?\n/);
-for(let i=1;i<lines.length;i++){
-const p=lines[i].split(',');
-if(p.length<5) continue;
-const lat=parseFloat(p[3]), lon=parseFloat(p[4]);
-if(isNaN(lat)||isNaN(lon)) continue;
-GTFS.stops.push({id:p[0],name:(p[2]||'').replace(/"/g,''),lat,lon});
-}
+    JSZip.loadAsync(file).then(zip => {
+        zipData = zip;
+        document.getElementById("fileList").innerText = "";
+        log("ZIP betöltve: " + file.name);
+
+        zip.forEach((relativePath, zipEntry) => {
+            document.getElementById("fileList").innerText += relativePath + "\\n";
+        });
+    });
 }
 
-function searchStops(){
-const q=document.getElementById('search').value.toLowerCase();
-const res=GTFS.stops.filter(s=>s.name.toLowerCase().includes(q)).slice(0,30);
-document.getElementById('results').innerHTML=res.map(s=>
-`<div onclick="selectStop('${s.id}')">${s.name}</div>`).join('');
+function cleanCSV(text) {
+    return text
+        .split("\\n")
+        .map(l => l.trim())
+        .filter(l => l.length > 0)
+        .join("\\n");
 }
 
-function selectStop(id){
-const s=GTFS.stops.find(x=>x.id==id);
-if(!s) return;
-document.getElementById('stopBoard').innerHTML=
-`<b>${s.name}</b><br>ID:${s.id}<br>${s.lat}, ${s.lon}`;
+async function cleanGTFS() {
+    if (!zipData) return alert("Nincs ZIP!");
+
+    cleanedZip = new JSZip();
+    log("Takarítás indul...");
+
+    const entries = Object.keys(zipData.files);
+
+    for (let name of entries) {
+        const file = zipData.files[name];
+
+        if (file.dir) continue;
+
+        let content = await file.async("string");
+
+        if (name.endsWith(".txt")) {
+            content = cleanCSV(content);
+        }
+
+        cleanedZip.file(name, content);
+        log("OK: " + name);
+    }
+
+    log("Takarítás kész!");
 }
 
-function getLocation(){
-navigator.geolocation.getCurrentPosition(async p=>{
-const lat=p.coords.latitude, lon=p.coords.longitude;
-document.getElementById('coords').innerText=`Koordináta: ${lat.toFixed(6)}, ${lon.toFixed(6)}`;
-document.getElementById('speed').innerText=`Sebesség: ${((p.coords.speed||0)*3.6).toFixed(1)} km/h`;
-document.getElementById('alt').innerText=`Magasság: ${p.coords.altitude??'--'} m`;
-document.getElementById('acc').innerText=`Pontosság: ${p.coords.accuracy} m`;
-nearest(lat,lon);
-try{
-const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`);
-const d=await r.json();
-document.getElementById('address').innerText='Cím: '+(d.display_name||'--');
-}catch(e){}
-});
-}
-
-function dist(a,b,c,d){
-const R=6371000;
-const to=x=>x*Math.PI/180;
-const dLat=to(c-a), dLon=to(d-b);
-const q=Math.sin(dLat/2)**2+Math.cos(to(a))*Math.cos(to(c))*Math.sin(dLon/2)**2;
-return R*2*Math.atan2(Math.sqrt(q),Math.sqrt(1-q));
-}
-
-function nearest(lat,lon){
-const n=GTFS.stops.map(s=>({...s,d:dist(lat,lon,s.lat,s.lon)}))
-.sort((a,b)=>a.d-b.d).slice(0,10);
-document.getElementById('nearStops').innerHTML=n.map(s=>
-`<div onclick="selectStop('${s.id}')">${s.name}<br><small>${Math.round(s.d)} m</small></div>`).join('');
+function downloadClean() {
+    cleanedZip.generateAsync({ type: "blob" }).then(blob => {
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = "gtfs_clean_v2.zip";
+        a.click();
+    });
 }
 </script>
+
 </body>
 </html>
