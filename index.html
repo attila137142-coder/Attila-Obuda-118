@@ -1,96 +1,127 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
+<meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR CONTROL ROOM V1</title>
+<title>FUTÁR V11 VEZÉRLŐTEREM</title>
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
-body {
-    margin: 0;
-    font-family: Arial, sans-serif;
-    background: #0b0f14;
-    color: #d7e1ea;
+body{
+    margin:0;
+    background:#070b10;
+    color:#d7e1ea;
+    font-family:Arial;
 }
 
-.header {
-    display: flex;
-    justify-content: space-between;
-    padding: 10px 15px;
-    background: #111826;
-    border-bottom: 2px solid #1f2a3a;
+/* HEADER */
+.header{
+    display:flex;
+    justify-content:space-between;
+    padding:10px 14px;
+    background:#0f1622;
+    border-bottom:2px solid #1e2a3a;
 }
 
-.clock {
-    font-size: 32px;
-    font-weight: bold;
-    color: #00ff88;
+.title{
+    font-weight:bold;
+    color:#7fb3ff;
 }
 
-.container {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 10px;
-    padding: 10px;
+.clock{
+    font-size:26px;
+    color:#00ff88;
 }
 
-.panel {
-    background: #121b27;
-    border: 1px solid #243447;
-    border-radius: 8px;
-    padding: 10px;
-    overflow: auto;
+/* GRID */
+.grid{
+    display:grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    grid-template-rows: auto auto auto;
+    gap:10px;
+    padding:10px;
 }
 
-.panel h2 {
-    margin-top: 0;
-    font-size: 14px;
-    color: #7fb3ff;
+/* PANELS */
+.panel{
+    background:#0e1622;
+    border:1px solid #243447;
+    border-radius:8px;
+    padding:10px;
+    overflow:auto;
 }
 
-input, button {
-    width: 100%;
-    padding: 8px;
-    margin-top: 5px;
-    border-radius: 6px;
-    border: none;
+h2{
+    margin:0 0 8px 0;
+    font-size:12px;
+    color:#7fb3ff;
 }
 
-button {
-    background: #00aaff;
-    color: white;
-    cursor: pointer;
+/* MAP */
+#map{
+    height:520px;
+    border-radius:8px;
 }
 
-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
+/* TABLE */
+table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
 }
 
-td, th {
-    border-bottom: 1px solid #243447;
-    padding: 4px;
-    text-align: left;
+td,th{
+    border-bottom:1px solid #243447;
+    padding:4px;
 }
 
-.status {
-    color: #00ff88;
+/* STATUS */
+.ok{ color:#00ff88; }
+.warn{ color:#ffcc00; }
+.bad{ color:#ff4d4d; }
+
+/* LOG */
+.log{
+    font-size:11px;
+    color:#9bb3c7;
+    height:200px;
+    overflow:auto;
 }
 
-.map {
-    height: 250px;
-    background: linear-gradient(135deg, #0e1622, #0a0f16);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #555;
-    border: 1px dashed #2a3b52;
+/* INPUTS */
+input,button{
+    width:100%;
+    padding:7px;
+    margin-top:6px;
+    border-radius:6px;
+    border:none;
 }
 
-.small {
-    font-size: 11px;
-    color: #8aa0b6;
+button{
+    background:#00aaff;
+    color:white;
+    cursor:pointer;
+}
+
+/* HEALTH BARS */
+.health{
+    display:grid;
+    grid-template-columns:1fr 1fr;
+    gap:6px;
+    font-size:11px;
+}
+
+.box{
+    background:#111c2a;
+    padding:6px;
+    border-radius:6px;
+}
+
+.badge{
+    padding:2px 6px;
+    background:#1d2a3b;
+    border-radius:4px;
 }
 </style>
 </head>
@@ -98,113 +129,204 @@ td, th {
 <body>
 
 <div class="header">
-    <div>🚍 FUTÁR CONTROL ROOM V1</div>
-    <div class="clock" id="clock">00:00:00</div>
+    <div class="title">🚍 FUTÁR V11 – VEZÉRLŐTEREM</div>
+    <div class="clock" id="clock">--:--:--</div>
 </div>
 
-<div class="container">
+<div class="grid">
 
-    <!-- GTFS -->
-    <div class="panel">
-        <h2>📦 GTFS Loader</h2>
-        <input type="file" id="fileInput" />
-        <div class="small">ZIP / TXT betöltés (mock parser)</div>
-        <div id="gtfsStatus" class="status">Nincs betöltve</div>
-    </div>
+<!-- SYSTEM HEALTH -->
+<div class="panel">
+<h2>🧠 SYSTEM HEALTH</h2>
+<div class="health">
+    <div class="box">GTFS<br><span class="ok" id="h1">READY</span></div>
+    <div class="box">MAP<br><span class="ok">ONLINE</span></div>
+    <div class="box">ROUTES<br><span class="warn" id="h2">0</span></div>
+    <div class="box">STOPS<br><span class="warn" id="h3">0</span></div>
+</div>
+</div>
 
-    <!-- SEARCH -->
-    <div class="panel">
-        <h2>🚏 Megálló kereső</h2>
-        <input type="text" id="search" placeholder="pl. Kocka utca"/>
-        <button onclick="searchStop()">Keresés</button>
-        <div id="searchResult" class="small"></div>
-    </div>
+<!-- GTFS -->
+<div class="panel">
+<h2>📦 GTFS LOADER</h2>
+<input type="file" id="zip"/>
+<div id="status" style="font-size:11px;">Nincs GTFS</div>
+</div>
 
-    <!-- GPS -->
-    <div class="panel">
-        <h2>📍 Helyzet modul</h2>
-        <button onclick="getLocation()">Pozíció lekérés</button>
-        <div id="gps" class="small">Nincs adat</div>
-    </div>
+<!-- ROUTE FILTER -->
+<div class="panel">
+<h2>🚍 ROUTE FILTER</h2>
+<input id="rq"/>
+<button onclick="routeSearch()">KERESÉS</button>
+<div id="routeOut" style="font-size:11px;"></div>
+</div>
 
-    <!-- MAP -->
-    <div class="panel">
-        <h2>🗺️ Térkép (placeholder)</h2>
-        <div class="map">Leaflet map helye (V2-ben aktív)</div>
-    </div>
+<!-- MAP -->
+<div class="panel" style="grid-column:span 2;">
+<h2>🗺️ LIVE DISPATCH MAP</h2>
+<div id="map"></div>
+</div>
 
-    <!-- DISPATCH -->
-    <div class="panel" style="grid-column: span 2;">
-        <h2>🚍 Dispatcher tábla</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Idő</th>
-                    <th>Járat</th>
-                    <th>Státusz</th>
-                </tr>
-            </thead>
-            <tbody id="dispatchTable">
-                <tr><td>07:01:00</td><td>D114081</td><td class="status">ON TIME</td></tr>
-                <tr><td>07:05:00</td><td>D114082</td><td class="status">DELAY +2</td></tr>
-                <tr><td>07:10:00</td><td>D114083</td><td class="status">EARLY -1</td></tr>
-            </tbody>
-        </table>
-    </div>
+<!-- DISPATCH -->
+<div class="panel">
+<h2>📊 DISPATCH BOARD</h2>
+<table>
+<thead>
+<tr><th>Idő</th><th>Járat</th><th>Status</th></tr>
+</thead>
+<tbody id="board"></tbody>
+</table>
+</div>
 
-    <!-- LOG -->
-    <div class="panel">
-        <h2>📡 LIVE LOG</h2>
-        <div id="log" class="small">Rendszer indul...</div>
-    </div>
+<!-- STOP -->
+<div class="panel">
+<h2>🚏 STOP SEARCH</h2>
+<input id="sq"/>
+<button onclick="stopSearch()">KERESÉS</button>
+<div id="stopOut" style="font-size:11px;"></div>
+</div>
+
+<!-- LOG -->
+<div class="panel">
+<h2>📡 EVENT LOG</h2>
+<div class="log" id="log"></div>
+</div>
 
 </div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
-// CLOCK
-function updateClock() {
-    const now = new Date();
-    document.getElementById("clock").innerText =
-        now.toLocaleTimeString();
-}
-setInterval(updateClock, 1000);
-updateClock();
 
-// GTFS MOCK
-document.getElementById("fileInput").addEventListener("change", function() {
-    document.getElementById("gtfsStatus").innerText = "GTFS betöltve (mock)";
-    log("GTFS fájl betöltve");
+// CLOCK
+setInterval(()=>{
+    document.getElementById("clock").innerText = new Date().toLocaleTimeString();
+},1000);
+
+// MAP
+const map = L.map("map").setView([47.4979,19.0402],12);
+
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+    maxZoom:19
+}).addTo(map);
+
+let layer = L.layerGroup().addTo(map);
+
+// DATA CORE
+let GTFS = {stops:[],routes:[]};
+
+// LOG
+function log(msg){
+    const el=document.getElementById("log");
+    el.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}<br>` + el.innerHTML;
+}
+
+// LOAD GTFS
+document.getElementById("zip").addEventListener("change", async (e)=>{
+    const zip = await JSZip.loadAsync(e.target.files[0]);
+
+    GTFS.stops = await csv(zip,"stops.txt");
+    GTFS.routes = await csv(zip,"routes.txt");
+
+    document.getElementById("status").innerText =
+        "GTFS LOADED";
+
+    document.getElementById("h2").innerText = GTFS.routes.length;
+    document.getElementById("h3").innerText = GTFS.stops.length;
+
+    draw();
+    board();
+
+    log("GTFS loaded");
 });
 
-// SEARCH MOCK
-function searchStop() {
-    const val = document.getElementById("search").value;
-    document.getElementById("searchResult").innerText =
-        "Találat: 🚏 " + val + " (demo adat)";
-    log("Keresés: " + val);
-}
+// CSV
+async function csv(zip,f){
+    const file = zip.file(f);
+    if(!file) return [];
 
-// GPS MOCK
-function getLocation() {
-    if (!navigator.geolocation) {
-        document.getElementById("gps").innerText = "GPS nem támogatott";
-        return;
-    }
+    const text = await file.async("string");
+    const lines = text.split("\n").filter(Boolean);
 
-    navigator.geolocation.getCurrentPosition((pos) => {
-        document.getElementById("gps").innerText =
-            "Lat: " + pos.coords.latitude.toFixed(5) +
-            " | Lon: " + pos.coords.longitude.toFixed(5);
-        log("GPS frissítve");
+    const h = lines[0].split(",");
+
+    return lines.slice(1).map(l=>{
+        const v=l.split(",");
+        let o={};
+        h.forEach((hh,i)=>o[hh]=v[i]);
+        return o;
     });
 }
 
-// LOG
-function log(msg) {
-    const el = document.getElementById("log");
-    const time = new Date().toLocaleTimeString();
-    el.innerHTML = `[${time}] ${msg}<br>` + el.innerHTML;
+// DRAW STOPS
+function draw(){
+    layer.clearLayers();
+
+    GTFS.stops.forEach(s=>{
+        if(!s.stop_lat) return;
+
+        L.circleMarker([s.stop_lat,s.stop_lon],{
+            radius:4,
+            color:"#00aaff"
+        }).addTo(layer);
+    });
 }
+
+// ROUTE SEARCH
+function routeSearch(){
+    const q=document.getElementById("rq").value.toLowerCase();
+
+    const res = GTFS.routes
+    .filter(r=>(r.route_short_name||"").toLowerCase().includes(q))
+    .slice(0,12)
+    .map(r=>"🚍 "+r.route_short_name)
+    .join("<br>");
+
+    document.getElementById("routeOut").innerHTML=res||"nincs";
+    log("Route search: "+q);
+}
+
+// STOP SEARCH
+function stopSearch(){
+    const q=document.getElementById("sq").value.toLowerCase();
+
+    const res = GTFS.stops
+    .filter(s=>(s.stop_name||"").toLowerCase().includes(q))
+    .slice(0,12)
+    .map(s=>"🚏 "+s.stop_name)
+    .join("<br>");
+
+    document.getElementById("stopOut").innerHTML=res||"nincs";
+    log("Stop search: "+q);
+}
+
+// BOARD
+function board(){
+    const el=document.getElementById("board");
+    el.innerHTML="";
+
+    GTFS.routes.slice(0,10).forEach((r,i)=>{
+        const row=document.createElement("tr");
+
+        row.innerHTML=`
+        <td>${8+i}:00</td>
+        <td><span class="badge">${r.route_short_name||r.route_id}</span></td>
+        <td class="ok">ON TIME</td>
+        `;
+
+        el.appendChild(row);
+    });
+}
+
+// LIVE STATUS SIM
+setInterval(()=>{
+    document.querySelectorAll("#board td:last-child").forEach(td=>{
+        const s=["ON TIME","DELAY +1","DELAY +2","EARLY -1"];
+        td.innerText=s[Math.floor(Math.random()*s.length)];
+    });
+},3000);
+
 </script>
 
 </body>
