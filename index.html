@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V11 VEZÉRLŐTEREM</title>
+<title>FUTÁR V12 IRÁNYÍTÓKÖZPONT</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
 
 <style>
 body{
     margin:0;
-    background:#070b10;
+    background:#060a10;
     color:#d7e1ea;
     font-family:Arial;
 }
@@ -20,7 +20,7 @@ body{
     display:flex;
     justify-content:space-between;
     padding:10px 14px;
-    background:#0f1622;
+    background:#0d1420;
     border-bottom:2px solid #1e2a3a;
 }
 
@@ -37,13 +37,13 @@ body{
 /* GRID */
 .grid{
     display:grid;
-    grid-template-columns: 1.4fr 1fr 1fr;
-    grid-template-rows: auto auto auto;
+    grid-template-columns: 1.5fr 1fr 1fr;
+    grid-template-rows:auto auto auto;
     gap:10px;
     padding:10px;
 }
 
-/* PANELS */
+/* PANEL */
 .panel{
     background:#0e1622;
     border:1px solid #243447;
@@ -60,7 +60,7 @@ h2{
 
 /* MAP */
 #map{
-    height:520px;
+    height:560px;
     border-radius:8px;
 }
 
@@ -77,19 +77,19 @@ td,th{
 }
 
 /* STATUS */
-.ok{ color:#00ff88; }
-.warn{ color:#ffcc00; }
-.bad{ color:#ff4d4d; }
+.ok{color:#00ff88;}
+.warn{color:#ffcc00;}
+.bad{color:#ff4d4d;}
 
 /* LOG */
 .log{
+    height:220px;
+    overflow:auto;
     font-size:11px;
     color:#9bb3c7;
-    height:200px;
-    overflow:auto;
 }
 
-/* INPUTS */
+/* INPUT */
 input,button{
     width:100%;
     padding:7px;
@@ -104,24 +104,18 @@ button{
     cursor:pointer;
 }
 
-/* HEALTH BARS */
-.health{
+/* MINI CARDS */
+.cards{
     display:grid;
     grid-template-columns:1fr 1fr;
     gap:6px;
     font-size:11px;
 }
 
-.box{
+.card{
     background:#111c2a;
     padding:6px;
     border-radius:6px;
-}
-
-.badge{
-    padding:2px 6px;
-    background:#1d2a3b;
-    border-radius:4px;
 }
 </style>
 </head>
@@ -129,50 +123,50 @@ button{
 <body>
 
 <div class="header">
-    <div class="title">🚍 FUTÁR V11 – VEZÉRLŐTEREM</div>
+    <div class="title">🚍 FUTÁR V12 – BKK IRÁNYÍTÓKÖZPONT</div>
     <div class="clock" id="clock">--:--:--</div>
 </div>
 
 <div class="grid">
 
-<!-- SYSTEM HEALTH -->
+<!-- SYSTEM CORE -->
 <div class="panel">
-<h2>🧠 SYSTEM HEALTH</h2>
-<div class="health">
-    <div class="box">GTFS<br><span class="ok" id="h1">READY</span></div>
-    <div class="box">MAP<br><span class="ok">ONLINE</span></div>
-    <div class="box">ROUTES<br><span class="warn" id="h2">0</span></div>
-    <div class="box">STOPS<br><span class="warn" id="h3">0</span></div>
+<h2>🧠 CONTROL CORE</h2>
+<div class="cards">
+    <div class="card">GTFS<br><span class="ok" id="gtfsState">READY</span></div>
+    <div class="card">MAP<br><span class="ok">LIVE</span></div>
+    <div class="card">ROUTES<br><span class="warn" id="routesCount">0</span></div>
+    <div class="card">STOPS<br><span class="warn" id="stopsCount">0</span></div>
 </div>
 </div>
 
 <!-- GTFS -->
 <div class="panel">
-<h2>📦 GTFS LOADER</h2>
+<h2>📦 GTFS INPUT</h2>
 <input type="file" id="zip"/>
-<div id="status" style="font-size:11px;">Nincs GTFS</div>
+<div style="font-size:11px;" id="status">Nincs adat</div>
 </div>
 
-<!-- ROUTE FILTER -->
+<!-- ROUTE SEARCH -->
 <div class="panel">
-<h2>🚍 ROUTE FILTER</h2>
+<h2>🚍 ROUTE CONTROL</h2>
 <input id="rq"/>
-<button onclick="routeSearch()">KERESÉS</button>
+<button onclick="routeSearch()">FILTER</button>
 <div id="routeOut" style="font-size:11px;"></div>
 </div>
 
 <!-- MAP -->
 <div class="panel" style="grid-column:span 2;">
-<h2>🗺️ LIVE DISPATCH MAP</h2>
+<h2>🗺️ LIVE CONTROL MAP</h2>
 <div id="map"></div>
 </div>
 
 <!-- DISPATCH -->
 <div class="panel">
-<h2>📊 DISPATCH BOARD</h2>
+<h2>📊 DISPATCH WALL</h2>
 <table>
 <thead>
-<tr><th>Idő</th><th>Járat</th><th>Status</th></tr>
+<tr><th>Time</th><th>Route</th><th>Status</th></tr>
 </thead>
 <tbody id="board"></tbody>
 </table>
@@ -180,15 +174,15 @@ button{
 
 <!-- STOP -->
 <div class="panel">
-<h2>🚏 STOP SEARCH</h2>
+<h2>🚏 STOP CONTROL</h2>
 <input id="sq"/>
-<button onclick="stopSearch()">KERESÉS</button>
+<button onclick="stopSearch()">SEARCH</button>
 <div id="stopOut" style="font-size:11px;"></div>
 </div>
 
 <!-- LOG -->
 <div class="panel">
-<h2>📡 EVENT LOG</h2>
+<h2>📡 EVENT STREAM</h2>
 <div class="log" id="log"></div>
 </div>
 
@@ -213,13 +207,13 @@ L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
 
 let layer = L.layerGroup().addTo(map);
 
-// DATA CORE
+// DATA
 let GTFS = {stops:[],routes:[]};
 
 // LOG
-function log(msg){
+function log(m){
     const el=document.getElementById("log");
-    el.innerHTML = `[${new Date().toLocaleTimeString()}] ${msg}<br>` + el.innerHTML;
+    el.innerHTML=`[${new Date().toLocaleTimeString()}] ${m}<br>`+el.innerHTML;
 }
 
 // LOAD GTFS
@@ -229,27 +223,25 @@ document.getElementById("zip").addEventListener("change", async (e)=>{
     GTFS.stops = await csv(zip,"stops.txt");
     GTFS.routes = await csv(zip,"routes.txt");
 
-    document.getElementById("status").innerText =
-        "GTFS LOADED";
-
-    document.getElementById("h2").innerText = GTFS.routes.length;
-    document.getElementById("h3").innerText = GTFS.stops.length;
+    document.getElementById("status").innerText="GTFS LOADED";
+    document.getElementById("routesCount").innerText=GTFS.routes.length;
+    document.getElementById("stopsCount").innerText=GTFS.stops.length;
 
     draw();
     board();
 
-    log("GTFS loaded");
+    log("GTFS loaded into control system");
 });
 
 // CSV
 async function csv(zip,f){
-    const file = zip.file(f);
+    const file=zip.file(f);
     if(!file) return [];
 
-    const text = await file.async("string");
-    const lines = text.split("\n").filter(Boolean);
+    const text=await file.async("string");
+    const lines=text.split("\n").filter(Boolean);
 
-    const h = lines[0].split(",");
+    const h=lines[0].split(",");
 
     return lines.slice(1).map(l=>{
         const v=l.split(",");
@@ -259,7 +251,7 @@ async function csv(zip,f){
     });
 }
 
-// DRAW STOPS
+// DRAW MAP
 function draw(){
     layer.clearLayers();
 
@@ -267,38 +259,42 @@ function draw(){
         if(!s.stop_lat) return;
 
         L.circleMarker([s.stop_lat,s.stop_lon],{
-            radius:4,
+            radius:3,
             color:"#00aaff"
         }).addTo(layer);
     });
+
+    log("Map layer refreshed");
 }
 
 // ROUTE SEARCH
 function routeSearch(){
     const q=document.getElementById("rq").value.toLowerCase();
 
-    const res = GTFS.routes
+    const res=GTFS.routes
     .filter(r=>(r.route_short_name||"").toLowerCase().includes(q))
-    .slice(0,12)
+    .slice(0,10)
     .map(r=>"🚍 "+r.route_short_name)
     .join("<br>");
 
-    document.getElementById("routeOut").innerHTML=res||"nincs";
-    log("Route search: "+q);
+    document.getElementById("routeOut").innerHTML=res||"no match";
+
+    log("Route filter executed: "+q);
 }
 
 // STOP SEARCH
 function stopSearch(){
     const q=document.getElementById("sq").value.toLowerCase();
 
-    const res = GTFS.stops
+    const res=GTFS.stops
     .filter(s=>(s.stop_name||"").toLowerCase().includes(q))
-    .slice(0,12)
+    .slice(0,10)
     .map(s=>"🚏 "+s.stop_name)
     .join("<br>");
 
-    document.getElementById("stopOut").innerHTML=res||"nincs";
-    log("Stop search: "+q);
+    document.getElementById("stopOut").innerHTML=res||"no match";
+
+    log("Stop search executed: "+q);
 }
 
 // BOARD
@@ -306,26 +302,26 @@ function board(){
     const el=document.getElementById("board");
     el.innerHTML="";
 
-    GTFS.routes.slice(0,10).forEach((r,i)=>{
+    GTFS.routes.slice(0,12).forEach((r,i)=>{
         const row=document.createElement("tr");
 
         row.innerHTML=`
-        <td>${8+i}:00</td>
-        <td><span class="badge">${r.route_short_name||r.route_id}</span></td>
-        <td class="ok">ON TIME</td>
+        <td>${6+i}:00</td>
+        <td>${r.route_short_name||r.route_id}</td>
+        <td class="ok">ACTIVE</td>
         `;
 
         el.appendChild(row);
     });
 }
 
-// LIVE STATUS SIM
+// LIVE SIM
 setInterval(()=>{
     document.querySelectorAll("#board td:last-child").forEach(td=>{
-        const s=["ON TIME","DELAY +1","DELAY +2","EARLY -1"];
+        const s=["ACTIVE","DELAY +1","DELAY +2","EARLY -1"];
         td.innerText=s[Math.floor(Math.random()*s.length)];
     });
-},3000);
+},2500);
 
 </script>
 
