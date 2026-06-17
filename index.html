@@ -1,153 +1,210 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<title>Attila Közlekedés V10 Unified Transit Engine</title>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FUTÁR CONTROL ROOM V1</title>
 
 <style>
-body{
-    margin:0;
-    background:#0b0f14;
-    color:#00ff88;
-    font-family:monospace;
+body {
+    margin: 0;
+    font-family: Arial, sans-serif;
+    background: #0b0f14;
+    color: #d7e1ea;
 }
-header{
-    background:#111824;
-    padding:10px;
-    display:flex;
-    justify-content:space-between;
-    border-bottom:2px solid #00ff88;
-}
-#clock{font-size:20px;font-weight:bold;}
-.container{display:grid;grid-template-columns:320px 1fr;height:calc(100vh - 50px);}
-.sidebar{border-right:1px solid #1f2a3a;padding:10px;overflow:auto;}
-.main{padding:10px;overflow:auto;}
-input,button{
-    width:100%;
-    padding:8px;
-    margin-top:6px;
-    background:#0f1722;
-    color:#00ff88;
-    border:1px solid #00ff88;
-}
-table{width:100%;border-collapse:collapse;margin-top:10px;font-size:12px;}
-th,td{border:1px solid #1f2a3a;padding:6px;}
-th{background:#111824;}
-.highlight{color:#ffcc00;}
-.small{font-size:11px;color:#7CFFB2;}
-</style>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+.header {
+    display: flex;
+    justify-content: space-between;
+    padding: 10px 15px;
+    background: #111826;
+    border-bottom: 2px solid #1f2a3a;
+}
+
+.clock {
+    font-size: 32px;
+    font-weight: bold;
+    color: #00ff88;
+}
+
+.container {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+    padding: 10px;
+}
+
+.panel {
+    background: #121b27;
+    border: 1px solid #243447;
+    border-radius: 8px;
+    padding: 10px;
+    overflow: auto;
+}
+
+.panel h2 {
+    margin-top: 0;
+    font-size: 14px;
+    color: #7fb3ff;
+}
+
+input, button {
+    width: 100%;
+    padding: 8px;
+    margin-top: 5px;
+    border-radius: 6px;
+    border: none;
+}
+
+button {
+    background: #00aaff;
+    color: white;
+    cursor: pointer;
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+td, th {
+    border-bottom: 1px solid #243447;
+    padding: 4px;
+    text-align: left;
+}
+
+.status {
+    color: #00ff88;
+}
+
+.map {
+    height: 250px;
+    background: linear-gradient(135deg, #0e1622, #0a0f16);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #555;
+    border: 1px dashed #2a3b52;
+}
+
+.small {
+    font-size: 11px;
+    color: #8aa0b6;
+}
+</style>
 </head>
 
 <body>
 
-<header>
-<div>🚆 Attila Közlekedés V10 Unified Transit Engine</div>
-<div id="clock">--:--:--</div>
-</header>
+<div class="header">
+    <div>🚍 FUTÁR CONTROL ROOM V1</div>
+    <div class="clock" id="clock">00:00:00</div>
+</div>
 
 <div class="container">
 
-<div class="sidebar">
-<h3>GTFS Loader</h3>
-<input type="file" id="zipFile" accept=".zip">
+    <!-- GTFS -->
+    <div class="panel">
+        <h2>📦 GTFS Loader</h2>
+        <input type="file" id="fileInput" />
+        <div class="small">ZIP / TXT betöltés (mock parser)</div>
+        <div id="gtfsStatus" class="status">Nincs betöltve</div>
+    </div>
 
-<h3>Stop Search</h3>
-<input type="text" id="search" placeholder="Stop name...">
-<button onclick="searchStops()">Search</button>
+    <!-- SEARCH -->
+    <div class="panel">
+        <h2>🚏 Megálló kereső</h2>
+        <input type="text" id="search" placeholder="pl. Kocka utca"/>
+        <button onclick="searchStop()">Keresés</button>
+        <div id="searchResult" class="small"></div>
+    </div>
 
-<div id="stopList"></div>
-</div>
+    <!-- GPS -->
+    <div class="panel">
+        <h2>📍 Helyzet modul</h2>
+        <button onclick="getLocation()">Pozíció lekérés</button>
+        <div id="gps" class="small">Nincs adat</div>
+    </div>
 
-<div class="main">
-<h3>Dispatcher Board</h3>
-<div id="board" class="small">GTFS nincs betöltve.</div>
-</div>
+    <!-- MAP -->
+    <div class="panel">
+        <h2>🗺️ Térkép (placeholder)</h2>
+        <div class="map">Leaflet map helye (V2-ben aktív)</div>
+    </div>
+
+    <!-- DISPATCH -->
+    <div class="panel" style="grid-column: span 2;">
+        <h2>🚍 Dispatcher tábla</h2>
+        <table>
+            <thead>
+                <tr>
+                    <th>Idő</th>
+                    <th>Járat</th>
+                    <th>Státusz</th>
+                </tr>
+            </thead>
+            <tbody id="dispatchTable">
+                <tr><td>07:01:00</td><td>D114081</td><td class="status">ON TIME</td></tr>
+                <tr><td>07:05:00</td><td>D114082</td><td class="status">DELAY +2</td></tr>
+                <tr><td>07:10:00</td><td>D114083</td><td class="status">EARLY -1</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- LOG -->
+    <div class="panel">
+        <h2>📡 LIVE LOG</h2>
+        <div id="log" class="small">Rendszer indul...</div>
+    </div>
 
 </div>
 
 <script>
-
 // CLOCK
-setInterval(()=> {
- document.getElementById("clock").innerText = new Date().toLocaleTimeString();
-},1000);
+function updateClock() {
+    const now = new Date();
+    document.getElementById("clock").innerText =
+        now.toLocaleTimeString();
+}
+setInterval(updateClock, 1000);
+updateClock();
 
-// DATA
-let gtfs = {stops:[],stopTimes:[]};
-
-// ZIP LOAD
-document.getElementById("zipFile").addEventListener("change", async e=>{
- const file=e.target.files[0];
- if(!file)return;
-
- const zip=await JSZip.loadAsync(file);
-
- const read=async (n)=>{
-  const f=zip.file(n);
-  if(!f)return[];
-  const t=await f.async("string");
-  return parseCSV(t);
- };
-
- gtfs.stops=await read("stops.txt");
- gtfs.stopTimes=await read("stop_times.txt");
-
- document.getElementById("board").innerHTML="GTFS betöltve ✔ Stops: "+gtfs.stops.length;
+// GTFS MOCK
+document.getElementById("fileInput").addEventListener("change", function() {
+    document.getElementById("gtfsStatus").innerText = "GTFS betöltve (mock)";
+    log("GTFS fájl betöltve");
 });
 
-// SAFE CSV PARSER
-function parseCSV(text){
- const lines=text.split("\n").filter(x=>x.trim());
- if(lines.length<2)return[];
- const headers=lines[0].split(",");
- return lines.slice(1).map(l=>{
-  const cols=l.split(",");
-  let o={};
-  headers.forEach((h,i)=>o[h?.trim()]=cols[i]);
-  return o;
- });
+// SEARCH MOCK
+function searchStop() {
+    const val = document.getElementById("search").value;
+    document.getElementById("searchResult").innerText =
+        "Találat: 🚏 " + val + " (demo adat)";
+    log("Keresés: " + val);
 }
 
-// SEARCH
-function searchStops(){
- const q=document.getElementById("search").value.toLowerCase();
- const list=document.getElementById("stopList");
- list.innerHTML="";
+// GPS MOCK
+function getLocation() {
+    if (!navigator.geolocation) {
+        document.getElementById("gps").innerText = "GPS nem támogatott";
+        return;
+    }
 
- gtfs.stops.filter(s=>(s.stop_name||"").toLowerCase().includes(q))
- .slice(0,40)
- .forEach(s=>{
-  const d=document.createElement("div");
-  d.className="small";
-  d.style.padding="6px";
-  d.style.borderBottom="1px solid #1f2a3a";
-  d.style.cursor="pointer";
-  d.innerHTML="🚏 "+s.stop_name;
-  d.onclick=()=>openStop(s.stop_id,s.stop_name);
-  list.appendChild(d);
- });
+    navigator.geolocation.getCurrentPosition((pos) => {
+        document.getElementById("gps").innerText =
+            "Lat: " + pos.coords.latitude.toFixed(5) +
+            " | Lon: " + pos.coords.longitude.toFixed(5);
+        log("GPS frissítve");
+    });
 }
 
-// STOP VIEW
-function openStop(id,name){
- const board=document.getElementById("board");
- const rows=gtfs.stopTimes.filter(t=>t.stop_id===id).slice(0,60);
-
- board.innerHTML=`
- <h3>🚏 ${name}</h3>
- <table>
- <tr><th>Departure</th><th>Trip</th><th>Seq</th></tr>
- ${rows.map(r=>`
- <tr>
- <td class="highlight">${r.departure_time||"--"}</td>
- <td>${r.trip_id||""}</td>
- <td>${r.stop_sequence||""}</td>
- </tr>`).join("")}
- </table>`;
+// LOG
+function log(msg) {
+    const el = document.getElementById("log");
+    const time = new Date().toLocaleTimeString();
+    el.innerHTML = `[${time}] ${msg}<br>` + el.innerHTML;
 }
-
 </script>
 
 </body>
