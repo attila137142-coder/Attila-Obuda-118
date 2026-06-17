@@ -1,132 +1,122 @@
-<!DOCTYPE html>
-<html lang="hu">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FUTÁR V9 GTFS MENETRENDI MOTOR</title>
-<style>
-body{margin:0;background:#0b0f14;color:#00ff9d;font-family:Arial}
-header{padding:12px;background:#111826;display:flex;justify-content:space-between;border-bottom:2px solid #00ff9d}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px}
-.panel{background:#121a24;padding:10px;border:1px solid #1f3b35;border-radius:6px}
-input,button{width:100%;padding:8px;margin-top:6px}
-button{font-weight:bold}
-#results,#departures{max-height:300px;overflow:auto}
-.bigclock{font-size:28px;font-weight:bold}
-@media(max-width:800px){.grid{grid-template-columns:1fr}}
-</style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-</head>
-<body>
-<header>
-<div>🚍 FUTÁR V9 GTFS MENETRENDI MOTOR</div>
-<div class="bigclock" id="clock"></div>
-</header>
 
-<div class="grid">
 <div class="panel">
-<h3>📦 GTFS ZIP</h3>
-<input type="file" id="zipFile" accept=".zip">
+<h2>📦 GTFS ZIP</h2>
+<input type="file" id="zipFile">
 <button onclick="loadGTFS()">GTFS betöltése</button>
 <div id="status">Várakozás...</div>
 </div>
 
 <div class="panel">
-<h3>🔎 Megálló kereső</h3>
-<input id="searchBox" placeholder="pl. Szentendre">
+<h2>🔎 Megálló kereső</h2>
+<input id="searchBox" placeholder="Szentendre">
 <button onclick="searchStops()">Keresés</button>
 <div id="results"></div>
 </div>
 
 <div class="panel" style="grid-column:span 2">
-<h3>🚏 Indulási tábla</h3>
-<div id="departures">Nincs kiválasztott megálló.</div>
+<h2>🚏 FUTÁR Indulási Tábla</h2>
+<div id="board">Válassz megállót.</div>
 </div>
 </div>
 
 <script>
-let gtfs={stops:[],routes:[],trips:[],stop_times:[],calendar:[]};
+const gtfs={stops:[],routes:[],trips:[],stop_times:[]};
+const tripIndex={},routeIndex={};
 
-function tick(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('hu-HU');}
-setInterval(tick,1000); tick();
+setInterval(()=>{
+ document.getElementById('clock').textContent=new Date().toLocaleTimeString('hu-HU');
+},1000);
 
-function parseCSV(text){
- if(!text) return [];
- text=text.replace(/^\uFEFF/,"");
- const lines=text.split(/\r?\n/).filter(x=>x.trim());
- const headers=parseLine(lines[0]);
- return lines.slice(1).map(line=>{
-   const cols=parseLine(line);
-   const obj={};
-   headers.forEach((h,i)=>obj[h]=cols[i]||"");
-   return obj;
+function parseLine(line){
+ let a=[],c='',q=false;
+ for(let ch of line){
+  if(ch=='"'){q=!q;continue;}
+  if(ch===','&&!q){a.push(c);c='';continue;}
+  c+=ch;
+ }
+ a.push(c); return a;
+}
+
+function parseCSV(txt){
+ if(!txt) return [];
+ txt=txt.replace(/^\uFEFF/,'');
+ const lines=txt.split(/\r?\n/).filter(x=>x.trim());
+ const h=parseLine(lines[0]);
+ return lines.slice(1).map(l=>{
+  const c=parseLine(l),o={};
+  h.forEach((k,i)=>o[k]=c[i]||'');
+  return o;
  });
 }
 
-function parseLine(line){
- const out=[]; let cur=""; let q=false;
- for(let i=0;i<line.length;i++){
-   const c=line[i];
-   if(c=='"'){ q=!q; continue; }
-   if(c==',' && !q){ out.push(cur); cur=""; continue; }
-   cur+=c;
- }
- out.push(cur);
- return out;
-}
-
 async function loadGTFS(){
- const file=document.getElementById('zipFile').files[0];
- if(!file) return;
- document.getElementById('status').textContent='Betöltés...';
+ const f=document.getElementById('zipFile').files[0];
+ if(!f) return;
+ const zip=await JSZip.loadAsync(f);
 
- const zip=await JSZip.loadAsync(file);
-
- async function read(name){
-   const f=zip.file(name);
-   return f ? await f.async('string') : "";
+ async function read(n){
+   const z=zip.file(n);
+   return z?await z.async('string'):'';
  }
 
  gtfs.stops=parseCSV(await read('stops.txt'));
  gtfs.routes=parseCSV(await read('routes.txt'));
  gtfs.trips=parseCSV(await read('trips.txt'));
  gtfs.stop_times=parseCSV(await read('stop_times.txt'));
- gtfs.calendar=parseCSV(await read('calendar.txt'));
+
+ gtfs.trips.forEach(t=>tripIndex[t.trip_id]=t);
+ gtfs.routes.forEach(r=>routeIndex[r.route_id]=r);
 
  document.getElementById('status').innerHTML=
- `✔ Megállók: ${gtfs.stops.length} |
-  ✔ Járatok: ${gtfs.routes.length} |
-  ✔ Menetrendi sorok: ${gtfs.stop_times.length}`;
+ `✅ Megállók: ${gtfs.stops.length}<br>
+  ✅ Járatok: ${gtfs.routes.length}<br>
+  ✅ Menetrendi sorok: ${gtfs.stop_times.length}`;
 }
 
 function searchStops(){
  const q=document.getElementById('searchBox').value.toLowerCase();
- const hits=gtfs.stops.filter(s=>(s.stop_name||"").toLowerCase().includes(q)).slice(0,50);
+ const seen=new Set();
+ const hits=gtfs.stops.filter(s=>{
+   const n=(s.stop_name||'');
+   if(!n.toLowerCase().includes(q)) return false;
+   if(seen.has(n)) return false;
+   seen.add(n);
+   return true;
+ }).slice(0,50);
 
  document.getElementById('results').innerHTML=hits.map(s=>
-   `<div><button onclick="showDepartures('${s.stop_id}')">${s.stop_name} (${s.stop_id})</button></div>`
- ).join('') || "Nincs találat";
+ `<button onclick="showBoard('${s.stop_id}')">${s.stop_name}</button>`
+ ).join('');
 }
 
-function showDepartures(stopId){
- const rows=gtfs.stop_times.filter(x=>x.stop_id===stopId).slice(0,100);
+function minsUntil(t){
+ const p=t.split(':');
+ if(p.length<2) return '';
+ let now=new Date();
+ let target=Number(p[0])*60+Number(p[1]);
+ let cur=now.getHours()*60+now.getMinutes();
+ let d=target-cur;
+ if(d<0) d+=1440;
+ return d+' perc múlva';
+}
 
- const enriched=rows.map(r=>{
-   const trip=gtfs.trips.find(t=>t.trip_id===r.trip_id) || {};
-   const route=gtfs.routes.find(ro=>ro.route_id===trip.route_id) || {};
-   return {
-      time:r.departure_time || r.arrival_time || "--",
-      route:route.route_short_name || trip.route_id || "?",
-      trip:r.trip_id
-   };
- });
+function showBoard(stopId){
+ const rows=gtfs.stop_times.filter(x=>x.stop_id===stopId).slice(0,50);
 
- enriched.sort((a,b)=>a.time.localeCompare(b.time));
+ const html=rows.map(r=>{
+   const trip=tripIndex[r.trip_id]||{};
+   const route=routeIndex[trip.route_id]||{};
 
- document.getElementById('departures').innerHTML=
- enriched.slice(0,30).map(e=>
-  `🕒 ${e.time} | 🚍 ${e.route} | Trip: ${e.trip}`
- ).join("<br>") || "Ehhez a megállóhoz nincs adat.";
+   return `<div class="dep">
+      <div>🕒 ${r.departure_time||r.arrival_time||'--'} (${minsUntil(r.departure_time||'00:00:00')})</div>
+      <div class="route">🚍 ${route.route_short_name||'?'}</div>
+      <div class="headsign">➡️ ${trip.trip_headsign||'Ismeretlen célállomás'}</div>
+      <div>🔄 Forda: ${trip.block_id||'N/A'}</div>
+      <div class="small">🧭 Irány: ${trip.direction_id||0} | Trip: ${trip.trip_id||''}</div>
+   </div>`;
+ }).join('');
+
+ document.getElementById('board').innerHTML=html||'Nincs indulás.';
 }
 </script>
 </body>
