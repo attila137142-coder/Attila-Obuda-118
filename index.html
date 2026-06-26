@@ -2,104 +2,174 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>GTFS STOP SEARCH CORE V1</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<title>FUTÁR CORE V1</title>
+
 <style>
-body{margin:0;font-family:Arial;background:#0b0f14;color:#00ff9d}
-header{padding:12px;background:#111824}
-.container{padding:12px}
-input,button{padding:8px;margin:4px 0}
-#search{width:100%}
-.row{padding:8px;border-bottom:1px solid #223;cursor:pointer}
-.small{color:#9ab}
+body{
+    margin:0;
+    background:#000;
+    color:#fff;
+    font-family:Consolas,monospace;
+}
+
+/* ================= ÓRA ================= */
+#clockPanel{
+    background:#000;
+    padding:10px;
+    text-align:center;
+    border-bottom:2px solid #00ff66;
+}
+
+#clock{
+    font-size:54px;
+    font-weight:bold;
+    color:#00ff66;
+    text-shadow:0 0 20px #00ff66;
+}
+
+/* =============== HELYZET =============== */
+#locationPanel{
+    background:#2d2600;
+    color:#ffd000;
+    padding:12px;
+    font-size:14px;
+    border-bottom:2px solid #665500;
+}
+
+.distance{
+    color:#7dff7d;
+    font-weight:bold;
+}
+
+.stop{
+    padding:6px;
+    border-bottom:1px solid #222;
+}
 </style>
 </head>
+
 <body>
-<header>🚦 GTFS STOP SEARCH CORE V1</header>
-<div class="container">
-<input type="file" id="zipFile" accept=".zip">
-<button id="clearBtn">Tárolt GTFS törlése</button>
-<br>
-<input id="search" placeholder="Megállónév vagy stop_id keresése...">
-<div class="small" id="status">Nincs GTFS betöltve.</div>
-<div id="results"></div>
+
+<div id="clockPanel">
+    <div id="clock">00:00:00</div>
 </div>
 
+<div id="locationPanel">
+    <div class="title">📍 HELYZETEM</div>
+    <div id="address">Pozíció keresése...</div>
+</div>
+
+<div id="stops"></div>
+
 <script>
-let STOPS=[];
+/* ================= ÓRA ================= */
+function updateClock(){
+    const now = new Date();
+    document.getElementById("clock").innerHTML =
+        now.toLocaleTimeString('hu-HU', { hour12:false });
+}
+setInterval(updateClock,1000);
+updateClock();
 
-function saveStops(){
- localStorage.setItem("gtfs_stops_v1", JSON.stringify(STOPS));
+/* ================= GPS ================= */
+let myLat = null;
+let myLon = null;
+
+async function updateLocation(){
+    if(!navigator.geolocation){
+        document.getElementById("address").innerHTML = "GPS nem elérhető";
+        return;
+    }
+
+    navigator.geolocation.getCurrentPosition(async pos=>{
+        myLat = pos.coords.latitude;
+        myLon = pos.coords.longitude;
+
+        let city="", road="", house="";
+
+        try{
+            const url =
+`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${myLat}&lon=${myLon}`;
+
+            const res = await fetch(url);
+            const data = await res.json();
+
+            city = data.address.city || data.address.town || data.address.village || "";
+            road = data.address.road || "";
+            house = data.address.house_number || "";
+        }catch(e){}
+
+        document.getElementById("address").innerHTML =
+        `🏙️ ${city}<br>
+         🛣️ ${road} ${house}<br><br>
+         🌍 ${myLat.toFixed(6)}<br>
+         🌍 ${myLon.toFixed(6)}<br><br>
+         🎯 ±${Math.round(pos.coords.accuracy)} m`;
+
+        renderStops();
+
+    }, err=>{
+        document.getElementById("address").innerHTML = "GPS nem elérhető";
+    },{
+        enableHighAccuracy:true
+    });
 }
 
-function loadSaved(){
- const s=localStorage.getItem("gtfs_stops_v1");
- if(s){
-   STOPS=JSON.parse(s);
-   document.getElementById("status").textContent="Betöltve: "+STOPS.length+" megálló (helyi tárhelyről)";
- }
+updateLocation();
+setInterval(updateLocation,30000);
+
+/* ================= TÁVOLSÁG ================= */
+function distanceMeters(lat1, lon1, lat2, lon2){
+    const R = 6371000; // Föld sugár méterben
+
+    const dLat = (lat2-lat1) * Math.PI/180;
+    const dLon = (lon2-lon1) * Math.PI/180;
+
+    const a =
+        Math.sin(dLat/2) * Math.sin(dLat/2) +
+        Math.cos(lat1*Math.PI/180) *
+        Math.cos(lat2*Math.PI/180) *
+        Math.sin(dLon/2) * Math.sin(dLon/2);
+
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+
+    return R * c;
 }
-loadSaved();
 
-document.getElementById("clearBtn").onclick=()=>{
- localStorage.removeItem("gtfs_stops_v1");
- location.reload();
-};
+/* ================= DEMO GTFS STOPOK ================= */
+const stops = [
+    {stop_name:"Deák Ferenc tér", stop_id:"A001", stop_lat:47.4979, stop_lon:19.0546},
+    {stop_name:"Blaha Lujza tér", stop_id:"A002", stop_lat:47.4963, stop_lon:19.0700},
+    {stop_name:"Keleti pályaudvar", stop_id:"A003", stop_lat:47.5009, stop_lon:19.0835}
+];
 
-document.getElementById("zipFile").addEventListener("change", async e=>{
- const file=e.target.files[0];
- if(!file) return;
+/* ================= RENDER ================= */
+function renderStops(){
+    const out = document.getElementById("stops");
+    if(!myLat || !myLon){
+        out.innerHTML = "";
+        return;
+    }
 
- const zip=await JSZip.loadAsync(file);
+    out.innerHTML = stops.map(s=>{
+        let dist = "";
 
- let stopsFile=null;
- Object.keys(zip.files).forEach(name=>{
-   if(name.toLowerCase().endsWith("stops.txt")) stopsFile=name;
- });
+        if(s.stop_lat && s.stop_lon){
+            const d = distanceMeters(myLat,myLon,s.stop_lat,s.stop_lon);
+            dist = d < 1000
+                ? Math.round(d) + " m"
+                : (d/1000).toFixed(2) + " km";
+        }
 
- if(!stopsFile){
-   alert("stops.txt nem található a ZIP-ben.");
-   return;
- }
-
- const text=await zip.file(stopsFile).async("string");
- const lines=text.split(/\r?\n/).filter(Boolean);
-
- const headers=lines[0].split(",");
- const idx={};
- headers.forEach((h,i)=>idx[h]=i);
-
- STOPS=[];
- for(let i=1;i<lines.length;i++){
-   const c=lines[i].split(",");
-   STOPS.push({
-     stop_id:c[idx["stop_id"]]||"",
-     stop_name:c[idx["stop_name"]]||""
-   });
- }
-
- saveStops();
-
- document.getElementById("status").textContent=
-   "Betöltve: "+STOPS.length+" megálló";
-});
-
-document.getElementById("search").addEventListener("input", e=>{
- const q=e.target.value.toLowerCase().trim();
- const out=document.getElementById("results");
-
- if(!q){ out.innerHTML=""; return; }
-
- const res=STOPS.filter(s=>
-   (s.stop_name||"").toLowerCase().includes(q) ||
-   (s.stop_id||"").toLowerCase().includes(q)
- ).slice(0,300);
-
- out.innerHTML=res.map(s=>
-   `<div class="row"><b>${s.stop_name}</b><br><span class="small">${s.stop_id}</span></div>`
- ).join("");
-});
+        return `
+        <div class="stop">
+            🚏 ${s.stop_name}<br>
+            ID: ${s.stop_id}<br>
+            📏 <span class="distance">${dist}</span>
+        </div>`;
+    }).join("");
+}
 </script>
+
 </body>
 </html>
