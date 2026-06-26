@@ -1,272 +1,105 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>FUTÁR V6 TRUE SYSTEM</title>
-
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GTFS STOP SEARCH CORE V1</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <style>
-body {
-margin: 0;
-font-family: Arial, sans-serif;
-background: #0b0f14;
-color: #d7e1ee;
-}
-
-/* TOP BAR */
-.topbar {
-background: #111826;
-padding: 10px;
-display: flex;
-justify-content: space-between;
-align-items: center;
-border-bottom: 2px solid #1f2a3a;
-}
-
-.clock {
-font-size: 18px;
-font-weight: bold;
-color: #4df0ff;
-}
-
-.status {
-color: #7CFF6B;
-}
-
-/* LAYOUT */
-.container {
-display: grid;
-grid-template-columns: 320px 1fr 360px;
-height: calc(100vh - 50px);
-}
-
-/* PANELS */
-.panel {
-border-right: 1px solid #1f2a3a;
-padding: 10px;
-overflow-y: auto;
-}
-
-.panel h3 {
-color: #4df0ff;
-}
-
-/* INPUT */
-input, button {
-width: 100%;
-padding: 8px;
-margin: 5px 0;
-background: #111826;
-border: 1px solid #2b3a50;
-color: white;
-}
-
-/* LIST */
-.item {
-padding: 6px;
-border-bottom: 1px solid #1b2635;
-cursor: pointer;
-}
-
-.item:hover {
-background: #152233;
-}
-
-/* MAP */
-.map {
-position: relative;
-background: radial-gradient(#111, #05070a);
-}
-
-/* RIGHT PANEL */
-.right {
-border-left: 1px solid #1f2a3a;
-}
-
-/* SMALL TAGS */
-.tag {
-display: inline-block;
-padding: 2px 6px;
-background: #1d2a3d;
-margin: 2px;
-font-size: 12px;
-border-radius: 4px;
-}
-
+body{margin:0;font-family:Arial;background:#0b0f14;color:#00ff9d}
+header{padding:12px;background:#111824}
+.container{padding:12px}
+input,button{padding:8px;margin:4px 0}
+#search{width:100%}
+.row{padding:8px;border-bottom:1px solid #223;cursor:pointer}
+.small{color:#9ab}
 </style>
 </head>
-
 <body>
-
-<div class="topbar">
-<div>🚦 FUTÁR V6 TRUE SYSTEM</div>
-<div class="clock" id="clock"></div>
-<div class="status" id="status">GTFS READY</div>
-</div>
-
+<header>🚦 GTFS STOP SEARCH CORE V1</header>
 <div class="container">
-
-<!-- LEFT -->
-<div class="panel">
-<h3>📦 GTFS LOAD</h3>
-<input type="file" id="gtfsFile" accept=".zip"/>
-<button onclick="saveGTFS()">💾 Mentés rendszerbe</button>
-<button onclick="loadSaved()">📂 Betöltött GTFS</button>
-
-<h3>🔎 STOP SEARCH</h3>
-<input id="search" placeholder="Stop név / ID..." oninput="searchStops()"/>
-
-<div id="stopList"></div>
-</div>
-
-<!-- CENTER MAP -->
-<div class="panel map">
-<h3>🗺️ DISPATCH MAP CORE</h3>
-<div id="mapInfo">
-<p>GTFS nincs betöltve</p>
-</div>
-</div>
-
-<!-- RIGHT -->
-<div class="panel right">
-<h3>🚍 JÁRAT PANEL</h3>
-<div id="routePanel"></div>
-
-<h3>📊 LIVE ENGINE</h3>
-<div id="live">
-<span class="tag">SIM MODE</span>
-<span class="tag">NO GTFS-RT</span>
-</div>
-</div>
-
+<input type="file" id="zipFile" accept=".zip">
+<button id="clearBtn">Tárolt GTFS törlése</button>
+<br>
+<input id="search" placeholder="Megállónév vagy stop_id keresése...">
+<div class="small" id="status">Nincs GTFS betöltve.</div>
+<div id="results"></div>
 </div>
 
 <script>
-let gtfsData = {
-stops: [],
-routes: [],
-trips: []
+let STOPS=[];
+
+function saveStops(){
+ localStorage.setItem("gtfs_stops_v1", JSON.stringify(STOPS));
+}
+
+function loadSaved(){
+ const s=localStorage.getItem("gtfs_stops_v1");
+ if(s){
+   STOPS=JSON.parse(s);
+   document.getElementById("status").textContent="Betöltve: "+STOPS.length+" megálló (helyi tárhelyről)";
+ }
+}
+loadSaved();
+
+document.getElementById("clearBtn").onclick=()=>{
+ localStorage.removeItem("gtfs_stops_v1");
+ location.reload();
 };
 
-// CLOCK
-function updateClock() {
-document.getElementById("clock").innerText =
-new Date().toLocaleTimeString();
-}
-setInterval(updateClock, 1000);
-updateClock();
+document.getElementById("zipFile").addEventListener("change", async e=>{
+ const file=e.target.files[0];
+ if(!file) return;
 
-// LOAD FILE
-document.getElementById("gtfsFile").addEventListener("change", async (e) => {
-const file = e.target.files[0];
-if (!file) return;
+ const zip=await JSZip.loadAsync(file);
 
-document.getElementById("status").innerText = "LOADING GTFS...";
+ let stopsFile=null;
+ Object.keys(zip.files).forEach(name=>{
+   if(name.toLowerCase().endsWith("stops.txt")) stopsFile=name;
+ });
 
-const text = await file.text();
+ if(!stopsFile){
+   alert("stops.txt nem található a ZIP-ben.");
+   return;
+ }
 
-// VERY SIMPLE PARSER (CSV-like GTFS inside zip is NOT extracted here)
-parseGTFS(text);
+ const text=await zip.file(stopsFile).async("string");
+ const lines=text.split(/\r?\n/).filter(Boolean);
 
-document.getElementById("status").innerText = "GTFS LOADED";
+ const headers=lines[0].split(",");
+ const idx={};
+ headers.forEach((h,i)=>idx[h]=i);
+
+ STOPS=[];
+ for(let i=1;i<lines.length;i++){
+   const c=lines[i].split(",");
+   STOPS.push({
+     stop_id:c[idx["stop_id"]]||"",
+     stop_name:c[idx["stop_name"]]||""
+   });
+ }
+
+ saveStops();
+
+ document.getElementById("status").textContent=
+   "Betöltve: "+STOPS.length+" megálló";
 });
 
-function parseGTFS(text) {
-const lines = text.split("\n");
+document.getElementById("search").addEventListener("input", e=>{
+ const q=e.target.value.toLowerCase().trim();
+ const out=document.getElementById("results");
 
-gtfsData.stops = [];
-gtfsData.routes = [];
+ if(!q){ out.innerHTML=""; return; }
 
-for (let line of lines) {
-if (line.includes("stop_id") || line.includes("route_id")) continue;
+ const res=STOPS.filter(s=>
+   (s.stop_name||"").toLowerCase().includes(q) ||
+   (s.stop_id||"").toLowerCase().includes(q)
+ ).slice(0,300);
 
-const parts = line.split(",");
-
-if (parts.length > 3) {
-gtfsData.stops.push({
-id: parts[0],
-name: parts[1] || "STOP",
-lat: parts[2],
-lon: parts[3]
+ out.innerHTML=res.map(s=>
+   `<div class="row"><b>${s.stop_name}</b><br><span class="small">${s.stop_id}</span></div>`
+ ).join("");
 });
-}
-}
-
-renderStops();
-renderRoutes();
-}
-
-// SAVE
-function saveGTFS() {
-localStorage.setItem("gtfs_v6", JSON.stringify(gtfsData));
-alert("GTFS elmentve V6 rendszerbe!");
-}
-
-function loadSaved() {
-const data = localStorage.getItem("gtfs_v6");
-if (!data) return alert("Nincs mentett GTFS");
-
-gtfsData = JSON.parse(data);
-renderStops();
-renderRoutes();
-}
-
-// SEARCH
-function searchStops() {
-const q = document.getElementById("search").value.toLowerCase();
-
-const filtered = gtfsData.stops.filter(s =>
-(s.name || "").toLowerCase().includes(q) ||
-(s.id || "").toLowerCase().includes(q)
-);
-
-renderStopList(filtered);
-}
-
-function renderStops() {
-renderStopList(gtfsData.stops);
-}
-
-function renderStopList(list) {
-const el = document.getElementById("stopList");
-el.innerHTML = "";
-
-list.slice(0, 50).forEach(s => {
-const div = document.createElement("div");
-div.className = "item";
-div.innerHTML = `
-<b>${s.name}</b><br/>
-<small>ID: ${s.id}</small>
-`;
-div.onclick = () => selectStop(s);
-el.appendChild(div);
-});
-}
-
-function selectStop(stop) {
-document.getElementById("mapInfo").innerHTML = `
-<h3>${stop.name}</h3>
-<p>STOP ID: ${stop.id}</p>
-<p>LAT: ${stop.lat}</p>
-<p>LON: ${stop.lon}</p>
-`;
-}
-
-// ROUTES MOCK
-function renderRoutes() {
-const el = document.getElementById("routePanel");
-el.innerHTML = "";
-
-const routes = ["BKK 7", "BKK 105", "BKK 133E", "MÁV IC", "VOLÁN 500"];
-
-routes.forEach(r => {
-const div = document.createElement("div");
-div.className = "item";
-div.innerHTML = `<b>${r}</b> <span class="tag">LIVE SIM</span>`;
-el.appendChild(div);
-});
-}
 </script>
-
 </body>
 </html>
