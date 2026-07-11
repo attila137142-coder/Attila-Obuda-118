@@ -5,9 +5,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>Attila Multi GTFS V5.3 GTFS Loader</title>
+<title>Attila Multi GTFS V5.4 Dispatcher</title>
+
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
@@ -17,11 +19,14 @@
 <style>
 
 body{
+
 margin:0;
 font-family:Arial;
 background:#111;
 color:white;
+
 }
+
 
 .header{
 
@@ -31,11 +36,12 @@ padding:10px;
 
 }
 
+
 .clock{
 
 font-size:34px;
-color:#00ff66;
 font-weight:bold;
+color:#00ff66;
 
 }
 
@@ -43,19 +49,21 @@ font-weight:bold;
 .layout{
 
 display:grid;
-grid-template-columns:300px 1fr 300px;
-height:calc(100vh - 100px);
+grid-template-columns:300px 1fr 340px;
+height:calc(100vh - 105px);
 
 }
+
 
 
 .panel{
 
-background:#1c1c1c;
+background:#1b1b1b;
 padding:12px;
 overflow:auto;
 
 }
+
 
 
 #map{
@@ -64,6 +72,7 @@ height:100%;
 width:100%;
 
 }
+
 
 
 input,button{
@@ -82,18 +91,20 @@ background:#0066cc;
 color:white;
 border:0;
 border-radius:6px;
+cursor:pointer;
 
 }
 
 
 .card{
 
-background:#222;
+background:#242424;
 padding:10px;
 margin-top:10px;
 border-radius:8px;
 
 }
+
 
 
 .green{
@@ -102,11 +113,34 @@ color:#00ff66;
 
 }
 
+
+.yellow{
+
+color:#ffff00;
+
+}
+
+
 .red{
 
 color:red;
 
 }
+
+
+.stop{
+
+cursor:pointer;
+
+}
+
+
+.stop:hover{
+
+background:#333;
+
+}
+
 
 
 </style>
@@ -117,15 +151,21 @@ color:red;
 <body>
 
 
+
 <div class="header">
 
+
 <h2>
-🚦 Attila Multi GTFS V5.3
+🚦 Attila Multi GTFS V5.4
 </h2>
+
 
 <div id="clock" class="clock"></div>
 
+
 </div>
+
+
 
 
 
@@ -133,11 +173,16 @@ color:red;
 
 
 
+
+
+<!-- BAL OLDAL -->
+
+
 <div class="panel">
 
 
 <h3>
-📂 GTFS ZIP betöltés
+📂 GTFS ZIP
 </h3>
 
 
@@ -148,27 +193,34 @@ accept=".zip">
 
 
 <button onclick="loadGTFS()">
+
 ⬇ GTFS betöltése
+
 </button>
 
 
-<div id="status"
-class="card">
 
-Nincs GTFS betöltve
+<div id="status" class="card">
+
+Nincs adat betöltve
 
 </div>
 
 
 
+
 <h3>
+
 🚏 Megálló kereső
+
 </h3>
+
 
 
 <input
 id="search"
-placeholder="Név vagy GTFS ID">
+placeholder="Nád utca vagy STOP ID">
+
 
 
 <button onclick="searchStop()">
@@ -179,7 +231,10 @@ placeholder="Név vagy GTFS ID">
 
 
 
-<div id="results"></div>
+<div id="results">
+
+</div>
+
 
 
 
@@ -187,6 +242,11 @@ placeholder="Név vagy GTFS ID">
 
 
 
+
+
+
+
+<!-- TÉRKÉP -->
 
 
 <div id="map"></div>
@@ -195,15 +255,25 @@ placeholder="Név vagy GTFS ID">
 
 
 
+
+
+
+<!-- JOBB OLDAL -->
+
+
 <div class="panel">
 
 
+
 <h3>
-🚏 Megálló adatok
+
+🚏 Kiválasztott megálló
+
 </h3>
 
 
-<div id="info"
+
+<div id="stopInfo"
 class="card">
 
 Nincs kiválasztva
@@ -211,36 +281,50 @@ Nincs kiválasztva
 </div>
 
 
-<h3>
-🚏 Indulások
-</h3>
-
-
-<div class="card">
-
-GTFS stop_times modul következik
-
-</div>
 
 
 <h3>
-🚍 Jármű
+
+🚍 Indulások
 
 </h3>
 
 
-<div class="card">
+<div id="departures"
+class="card">
 
-GTFS-RT modul következik
+
+GTFS betöltés után jelenik meg
+
+
+</div>
+
+
+
+
+<h3>
+
+🚦 Rendszer
+
+</h3>
+
+
+<div id="engine"
+class="card yellow">
+
+GTFS motor várakozik
 
 </div>
 
 
+
+</div>
+
+
+
 </div>
 
 
-
-</div>
 
 
 
@@ -248,21 +332,29 @@ GTFS-RT modul következik
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 
+
 <script>
 
 
+// =======================
 // ÓRA
+// =======================
 
 
 function clock(){
 
+
 let d=new Date();
 
+
 document.getElementById("clock").innerHTML=
+
 d.toLocaleDateString("hu-HU")
-+" "
++
+" "
 +
 d.toLocaleTimeString("hu-HU");
+
 
 }
 
@@ -275,10 +367,14 @@ clock();
 
 
 
+
+// =======================
 // TÉRKÉP
+// =======================
 
 
-let map=L.map("map")
+let map =
+L.map("map")
 .setView(
 [47.55,19.05],
 10
@@ -288,7 +384,13 @@ let map=L.map("map")
 
 L.tileLayer(
 
-"https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+"https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+
+{
+
+maxZoom:19
+
+}
 
 ).addTo(map);
 
@@ -296,16 +398,41 @@ L.tileLayer(
 
 
 
-let stops=[];
-
 let markers=[];
 
 
 
+
+
+// =======================
+// GTFS ADATTÁR
+// =======================
+
+
+
+let STOPS=[];
+
+let ROUTES=[];
+
+let TRIPS=[];
+
+let STOP_TIMES=[];
+
+
+let selectedStop=null;
+
+
+
+
+
+// =======================
 // GTFS BETÖLTÉS
+// =======================
+
 
 
 async function loadGTFS(){
+
 
 
 let file=
@@ -313,13 +440,21 @@ document.getElementById("gtfsFile")
 .files[0];
 
 
+
 if(!file){
 
-alert("Válassz GTFS ZIP fájlt!");
+alert(
+"Válassz GTFS ZIP fájlt!"
+);
 
 return;
 
 }
+
+
+
+document.getElementById("status").innerHTML=
+"⏳ GTFS feldolgozás...";
 
 
 
@@ -328,46 +463,106 @@ await JSZip.loadAsync(file);
 
 
 
-let txt=
+
+// STOPS
+
+
+if(zip.file("stops.txt")){
+
+
+let text=
 await zip.file("stops.txt")
 .async("string");
 
 
 
-Papa.parse(txt,{
+Papa.parse(text,{
 
 header:true,
 
-complete:function(data){
+complete:(r)=>{
 
 
-stops=data.data.filter(
-
-x=>x.stop_id && x.stop_name
-
+STOPS=
+r.data.filter(
+x=>x.stop_id
 );
-
-
-
-document.getElementById("status")
-.innerHTML=
-
-`
-<span class="green">
-✅ GTFS betöltve
-</span>
-
-<br><br>
-
-Megállók:
-${stops.length}
-
-`;
 
 
 
 }
 
+});
+
+
+
+}
+
+
+
+
+
+// ROUTES
+
+
+if(zip.file("routes.txt")){
+
+
+let text=
+await zip.file("routes.txt")
+.async("string");
+
+
+
+Papa.parse(text,{
+
+header:true,
+
+complete:(r)=>{
+
+
+ROUTES=
+r.data.filter(
+x=>x.route_id
+);
+
+
+}
+
+});
+
+
+}
+
+
+
+
+// TRIPS
+
+
+if(zip.file("trips.txt")){
+
+
+let text=
+await zip.file("trips.txt")
+.async("string");
+
+
+
+Papa.parse(text,{
+
+header:true,
+
+complete:(r)=>{
+
+
+TRIPS=
+r.data.filter(
+x=>x.trip_id
+);
+
+
+}
 
 });
 
@@ -378,13 +573,94 @@ ${stops.length}
 
 
 
-// KERESÉS
+
+// STOP TIMES
+
+
+if(zip.file("stop_times.txt")){
+
+
+let text=
+await zip.file("stop_times.txt")
+.async("string");
+
+
+
+Papa.parse(text,{
+
+header:true,
+
+complete:(r)=>{
+
+
+STOP_TIMES=
+r.data.filter(
+x=>x.trip_id
+);
+
+
+
+}
+
+});
+
+
+}
+
+
+
+
+document.getElementById("status").innerHTML=
+
+`
+
+<span class="green">
+
+✅ GTFS aktív
+
+</span>
+
+<br><br>
+
+Megállók:
+${STOPS.length}
+
+<br>
+
+Járatok:
+${TRIPS.length}
+
+<br>
+
+Menetrendi sor:
+${STOP_TIMES.length}
+
+`;
+
+
+
+document.getElementById("engine").innerHTML=
+
+"🟢 GTFS MOTOR AKTÍV";
+
+
+}
+
+
+
+
+
+// =======================
+// KERESŐ
+// =======================
+
 
 
 function searchStop(){
 
 
 let q=
+
 document.getElementById("search")
 .value
 .toLowerCase()
@@ -392,9 +668,16 @@ document.getElementById("search")
 
 
 
-let found=
-stops.filter(s=>
+if(!q) return;
 
+
+
+let result=
+STOPS.filter(s=>
+
+
+s.stop_name &&
+(
 
 s.stop_name
 .toLowerCase()
@@ -404,36 +687,132 @@ s.stop_name
 
 s.stop_id
 .toLowerCase()
-.includes(q)
+includes(q)
+
+)
 
 
-).slice(0,20);
+)
+.slice(0,20);
 
 
 
-
-markers.forEach(m=>
-map.removeLayer(m)
-);
+showResults(result);
 
 
-markers=[];
 
+}
+
+
+// =======================
+// TALÁLATI LISTA
+// =======================
+
+
+function showResults(list){
 
 
 let html="";
 
 
+if(list.length===0){
 
-found.forEach(s=>{
+
+document.getElementById("results").innerHTML=
+
+`
+<div class="card red">
+❌ Nincs találat
+</div>
+`;
+
+return;
+
+
+}
+
+
+
+list.forEach(s=>{
+
+
+html+=`
+
+<div class="card stop"
+onclick="selectStop('${s.stop_id}')">
+
+
+🚏 ${s.stop_name}
+
+<br>
+
+GTFS ID:
+<b>${s.stop_id}</b>
+
+<br>
+
+📍 ${Number(s.stop_lat).toFixed(6)}
+
+<br>
+
+${Number(s.stop_lon).toFixed(6)}
+
+</div>
+
+`;
+
+
+});
+
+
+document.getElementById("results")
+.innerHTML=html;
+
+
+}
+
+
+
+
+// =======================
+// MEGÁLLÓ KIVÁLASZTÁS
+// =======================
+
+
+function selectStop(id){
+
+
+let stop=
+STOPS.find(
+s=>s.stop_id===id
+);
+
+
+
+if(!stop) return;
+
+
+
+selectedStop=stop;
+
 
 
 let lat=
-Number(s.stop_lat);
+Number(stop.stop_lat);
 
 
 let lon=
-Number(s.stop_lon);
+Number(stop.stop_lon);
+
+
+
+
+markers.forEach(
+m=>map.removeLayer(m)
+);
+
+
+markers=[];
 
 
 
@@ -443,8 +822,9 @@ L.marker(
 )
 .addTo(map)
 .bindPopup(
-s.stop_name
-);
+stop.stop_name
+)
+.openPopup();
 
 
 
@@ -452,37 +832,181 @@ markers.push(marker);
 
 
 
-marker.on(
-"click",
-()=>showInfo(s)
+map.setView(
+[lat,lon],
+16
 );
 
 
 
-html+=`
-
-<div class="card">
 
 
-🚏 ${s.stop_name}
+document.getElementById("stopInfo")
+.innerHTML=
+
+`
+
+🚏 <b>${stop.stop_name}</b>
+
+<br><br>
+
+GTFS STOP ID:
 
 <br>
 
-GTFS:
-${s.stop_id}
+${stop.stop_id}
+
+<br><br>
+
+📍 Koordináta:
 
 <br>
 
-📍 ${lat.toFixed(6)}
+${lat.toFixed(6)}
 
 <br>
 
 ${lon.toFixed(6)}
 
+`;
+
+
+
+loadDepartures(stop.stop_id);
+
+
+
+}
+
+
+
+
+// =======================
+// INDULÁSI MOTOR
+// =======================
+
+
+
+function loadDepartures(stopId){
+
+
+
+let rows=
+STOP_TIMES.filter(
+x=>x.stop_id===stopId
+);
+
+
+
+
+if(rows.length===0){
+
+
+document.getElementById("departures")
+.innerHTML=
+
+`
+❌ Nincs indulási adat
+`;
+
+return;
+
+
+}
+
+
+
+
+// idő szerinti rendezés
+
+
+rows.sort(
+(a,b)=>
+a.departure_time
+.localeCompare(
+b.departure_time
+)
+);
+
+
+
+
+
+let html="";
+
+
+
+rows.slice(0,15)
+.forEach(st=>{
+
+
+
+let trip=
+TRIPS.find(
+t=>t.trip_id===st.trip_id
+);
+
+
+
+if(!trip) return;
+
+
+
+let route=
+ROUTES.find(
+r=>r.route_id===trip.route_id
+);
+
+
+
+let routeName=
+route
+?
+(
+route.route_short_name
+||
+route.route_long_name
+)
+:
+"-";
+
+
+
+
+
+let direction=
+trip.trip_headsign
+||
+"";
+
+
+
+
+html+=
+
+`
+
+<div class="card">
+
+
+🚌 <b>${routeName}</b>
+
+<br>
+
+
+⏰ ${st.departure_time}
+
+<br>
+
+
+➡ ${direction}
+
 
 </div>
 
+
 `;
+
 
 
 
@@ -490,69 +1014,43 @@ ${lon.toFixed(6)}
 
 
 
-if(found.length){
 
-map.setView(
-[
-Number(found[0].stop_lat),
-Number(found[0].stop_lon)
-],
-14
+
+document.getElementById("departures")
+.innerHTML=html;
+
+
+
+}
+
+
+
+// =======================
+// SEBESSÉG ÁTVÁLTÁS
+// =======================
+
+
+function showSpeed(kmh){
+
+
+let ms=
+(kmh/3.6)
+.toFixed(2);
+
+
+
+console.log(
+kmh+" km/h = "+ms+" m/s"
 );
 
-}
-
-
-
-document.getElementById("results")
-.innerHTML=
-
-html || 
-"<div class='card red'>Nincs találat</div>";
-
-
 
 }
 
-
-
-
-function showInfo(s){
-
-
-document.getElementById("info")
-.innerHTML=
-
-`
-
-🚏 ${s.stop_name}
-
-<br><br>
-
-GTFS ID:
-${s.stop_id}
-
-<br><br>
-
-Koordináta:
-
-<br>
-
-${Number(s.stop_lat).toFixed(6)}
-
-<br>
-
-${Number(s.stop_lon).toFixed(6)}
-
-`;
-
-
-
-}
 
 
 </script>
 
 
 </body>
+
 </html>
