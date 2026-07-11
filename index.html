@@ -5,10 +5,13 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>Attila Multi GTFS V5.2.1</title>
+<title>Attila Multi GTFS V5.3 GTFS Loader</title>
 
-<link rel="stylesheet" 
-href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
 
 <style>
@@ -20,7 +23,6 @@ background:#111;
 color:white;
 }
 
-
 .header{
 
 background:#003300;
@@ -29,35 +31,31 @@ padding:10px;
 
 }
 
-
 .clock{
 
-font-size:36px;
-font-weight:bold;
+font-size:34px;
 color:#00ff66;
+font-weight:bold;
 
 }
-
 
 
 .layout{
 
 display:grid;
-grid-template-columns:280px 1fr 300px;
+grid-template-columns:300px 1fr 300px;
 height:calc(100vh - 100px);
 
 }
 
 
-
 .panel{
 
-background:#1d1d1d;
+background:#1c1c1c;
 padding:12px;
 overflow:auto;
 
 }
-
 
 
 #map{
@@ -68,30 +66,24 @@ width:100%;
 }
 
 
-
-input{
+input,button{
 
 width:100%;
 padding:10px;
-font-size:17px;
+margin-top:8px;
 box-sizing:border-box;
 
 }
 
 
-
 button{
 
-width:100%;
-padding:12px;
-margin-top:8px;
 background:#0066cc;
 color:white;
 border:0;
 border-radius:6px;
 
 }
-
 
 
 .card{
@@ -104,14 +96,16 @@ border-radius:8px;
 }
 
 
-
 .green{
+
 color:#00ff66;
+
 }
 
-
 .red{
+
 color:red;
+
 }
 
 
@@ -126,7 +120,7 @@ color:red;
 <div class="header">
 
 <h2>
-🚦 Attila Multi GTFS V5.2.1
+🚦 Attila Multi GTFS V5.3
 </h2>
 
 <div id="clock" class="clock"></div>
@@ -135,11 +129,36 @@ color:red;
 
 
 
-
 <div class="layout">
 
 
+
 <div class="panel">
+
+
+<h3>
+📂 GTFS ZIP betöltés
+</h3>
+
+
+<input 
+type="file"
+id="gtfsFile"
+accept=".zip">
+
+
+<button onclick="loadGTFS()">
+⬇ GTFS betöltése
+</button>
+
+
+<div id="status"
+class="card">
+
+Nincs GTFS betöltve
+
+</div>
+
 
 
 <h3>
@@ -147,48 +166,25 @@ color:red;
 </h3>
 
 
-<input id="search"
-placeholder="Nád utca vagy 008939,044192">
+<input
+id="search"
+placeholder="Név vagy GTFS ID">
 
 
-<button onclick="keres()">
+<button onclick="searchStop()">
+
 🔎 Keresés
+
 </button>
 
 
-<div id="result"></div>
+
+<div id="results"></div>
 
 
-
-<h3>
-🗺 Rétegek
-</h3>
-
-
-<div class="card">
-
-☑ Utca térkép
-
-<br><br>
-
-☐ Vasúti pálya
-
-<br><br>
-
-☐ Topográf
-
-<br><br>
-
-☐ Volán
-
-<br><br>
-
-☐ Vonatkövetés
 
 </div>
 
-
-</div>
 
 
 
@@ -198,18 +194,31 @@ placeholder="Nád utca vagy 008939,044192">
 
 
 
+
 <div class="panel">
 
 
 <h3>
-🚏 Találatok
+🚏 Megálló adatok
 </h3>
 
 
-<div id="departures"
+<div id="info"
 class="card">
 
-Nincs indulási adat
+Nincs kiválasztva
+
+</div>
+
+
+<h3>
+🚏 Indulások
+</h3>
+
+
+<div class="card">
+
+GTFS stop_times modul következik
 
 </div>
 
@@ -222,36 +231,7 @@ Nincs indulási adat
 
 <div class="card">
 
-Járat:
--
-
-<br><br>
-
-Jármű:
--
-
-<br><br>
-
-GPS:
--
-
-</div>
-
-
-
-<h3>
-🚦 Sebesség
-
-</h3>
-
-
-<div class="card green">
-
-0 km/h
-
-<br>
-
-0 m/s
+GTFS-RT modul következik
 
 </div>
 
@@ -261,7 +241,6 @@ GPS:
 
 
 </div>
-
 
 
 
@@ -274,7 +253,8 @@ GPS:
 
 // ÓRA
 
-function ora(){
+
+function clock(){
 
 let d=new Date();
 
@@ -286,9 +266,10 @@ d.toLocaleTimeString("hu-HU");
 
 }
 
-setInterval(ora,1000);
 
-ora();
+setInterval(clock,1000);
+
+clock();
 
 
 
@@ -297,13 +278,7 @@ ora();
 // TÉRKÉP
 
 
-let map;
-
-
-try{
-
-
-map=L.map("map")
+let map=L.map("map")
 .setView(
 [47.55,19.05],
 10
@@ -312,115 +287,137 @@ map=L.map("map")
 
 
 L.tileLayer(
-"https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-{
 
-maxZoom:19,
-attribution:"OpenStreetMap"
-
-}
+"https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 
 ).addTo(map);
 
 
 
+
+
+let stops=[];
+
+let markers=[];
+
+
+
+// GTFS BETÖLTÉS
+
+
+async function loadGTFS(){
+
+
+let file=
+document.getElementById("gtfsFile")
+.files[0];
+
+
+if(!file){
+
+alert("Válassz GTFS ZIP fájlt!");
+
+return;
+
 }
 
-catch(e){
 
-alert(
-"A térkép nem töltődött be!"
+
+let zip=
+await JSZip.loadAsync(file);
+
+
+
+let txt=
+await zip.file("stops.txt")
+.async("string");
+
+
+
+Papa.parse(txt,{
+
+header:true,
+
+complete:function(data){
+
+
+stops=data.data.filter(
+
+x=>x.stop_id && x.stop_name
+
 );
 
+
+
+document.getElementById("status")
+.innerHTML=
+
+`
+<span class="green">
+✅ GTFS betöltve
+</span>
+
+<br><br>
+
+Megállók:
+${stops.length}
+
+`;
+
+
+
+}
+
+
+});
+
+
 }
 
 
 
 
 
-// TESZT GTFS ADAT
+// KERESÉS
 
 
-let stops={
+function searchStop(){
 
 
-"008939":
-{
-name:"160 busz megálló",
-lat:47.562000,
-lon:19.045000
-},
-
-
-"044192":
-{
-name:"243 busz megálló",
-lat:47.570000,
-lon:19.050000
-},
-
-
-"09183208":
-{
-name:"H8 HÉV",
-lat:47.670000,
-lon:19.070000
-},
-
-
-"Nád utca":
-{
-name:"Nád utca",
-lat:47.560000,
-lon:19.030000
-}
-
-};
-
-
-
-let markerGroup=[];
-
-
-
-
-function keres(){
-
-
-let text=
+let q=
 document.getElementById("search")
 .value
+.toLowerCase()
 .trim();
 
 
-let keresett=[];
+
+let found=
+stops.filter(s=>
 
 
+s.stop_name
+.toLowerCase()
+.includes(q)
 
-if(text.includes(","))
-{
+||
 
-keresett=text
-.split(",")
-.map(x=>x.trim());
+s.stop_id
+.toLowerCase()
+.includes(q)
 
-}
 
-else
-{
-
-keresett=[text];
-
-}
+).slice(0,20);
 
 
 
 
-markerGroup.forEach(m=>
+markers.forEach(m=>
 map.removeLayer(m)
 );
 
-markerGroup=[];
+
+markers=[];
 
 
 
@@ -428,34 +425,36 @@ let html="";
 
 
 
-keresett.forEach(id=>{
+found.forEach(s=>{
 
 
-let s=stops[id];
+let lat=
+Number(s.stop_lat);
 
 
+let lon=
+Number(s.stop_lon);
 
-if(s){
 
 
 let marker=
 L.marker(
-[s.lat,s.lon]
+[lat,lon]
 )
 .addTo(map)
 .bindPopup(
-s.name
+s.stop_name
 );
 
 
 
-markerGroup.push(marker);
+markers.push(marker);
 
 
 
-map.setView(
-[s.lat,s.lon],
-14
+marker.on(
+"click",
+()=>showInfo(s)
 );
 
 
@@ -464,45 +463,26 @@ html+=`
 
 <div class="card">
 
-🚏 ${s.name}
+
+🚏 ${s.stop_name}
 
 <br>
 
-ID:
-<b>${id}</b>
-
-<br><br>
-
-📍 ${s.lat.toFixed(6)}
+GTFS:
+${s.stop_id}
 
 <br>
 
-${s.lon.toFixed(6)}
+📍 ${lat.toFixed(6)}
+
+<br>
+
+${lon.toFixed(6)}
+
 
 </div>
 
 `;
-
-
-
-}
-
-else{
-
-
-html+=`
-
-<div class="card red">
-
-❌ Nincs találat:
-
-${id}
-
-</div>
-
-`;
-
-}
 
 
 
@@ -510,13 +490,65 @@ ${id}
 
 
 
-document.getElementById("result")
-.innerHTML=html;
+if(found.length){
+
+map.setView(
+[
+Number(found[0].stop_lat),
+Number(found[0].stop_lon)
+],
+14
+);
+
+}
+
+
+
+document.getElementById("results")
+.innerHTML=
+
+html || 
+"<div class='card red'>Nincs találat</div>";
 
 
 
 }
 
+
+
+
+function showInfo(s){
+
+
+document.getElementById("info")
+.innerHTML=
+
+`
+
+🚏 ${s.stop_name}
+
+<br><br>
+
+GTFS ID:
+${s.stop_id}
+
+<br><br>
+
+Koordináta:
+
+<br>
+
+${Number(s.stop_lat).toFixed(6)}
+
+<br>
+
+${Number(s.stop_lon).toFixed(6)}
+
+`;
+
+
+
+}
 
 
 </script>
