@@ -5,13 +5,17 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>Attila Multi GTFS V5 Hybrid Dispatcher</title>
+<title>Attila Multi GTFS V5.2.1</title>
+
+<link rel="stylesheet" 
+href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
 
 <style>
 
 body{
 margin:0;
-font-family:Arial,sans-serif;
+font-family:Arial;
 background:#111;
 color:white;
 }
@@ -20,43 +24,46 @@ color:white;
 .header{
 
 background:#003300;
-padding:15px;
 text-align:center;
+padding:10px;
 
 }
 
 
 .clock{
 
-font-size:38px;
+font-size:36px;
 font-weight:bold;
 color:#00ff66;
 
 }
 
 
+
 .layout{
 
 display:grid;
-grid-template-columns:280px 1fr 320px;
-height:calc(100vh - 120px);
+grid-template-columns:280px 1fr 300px;
+height:calc(100vh - 100px);
 
 }
 
 
+
 .panel{
 
-background:#1c1c1c;
-padding:15px;
+background:#1d1d1d;
+padding:12px;
 overflow:auto;
 
 }
 
 
-.map{
 
-background:#333;
-position:relative;
+#map{
+
+height:100%;
+width:100%;
 
 }
 
@@ -66,16 +73,17 @@ input{
 
 width:100%;
 padding:10px;
-font-size:16px;
+font-size:17px;
 box-sizing:border-box;
 
 }
 
 
+
 button{
 
 width:100%;
-padding:10px;
+padding:12px;
 margin-top:8px;
 background:#0066cc;
 color:white;
@@ -85,7 +93,8 @@ border-radius:6px;
 }
 
 
-.box{
+
+.card{
 
 background:#222;
 padding:10px;
@@ -95,40 +104,15 @@ border-radius:8px;
 }
 
 
-.online{
 
+.green{
 color:#00ff66;
-
-}
-
-.cache{
-
-color:#ffff00;
-
-}
-
-.offline{
-
-color:#66ccff;
-
 }
 
 
-.speed{
-
-font-size:28px;
-color:#00ff66;
-text-align:center;
-
+.red{
+color:red;
 }
-
-
-.layer{
-
-margin:8px 0;
-
-}
-
 
 
 </style>
@@ -142,105 +126,65 @@ margin:8px 0;
 <div class="header">
 
 <h2>
-🚦 Attila Multi GTFS V5 Hybrid Dispatcher
+🚦 Attila Multi GTFS V5.2.1
 </h2>
 
-
-<div class="clock" id="clock">
-
---:--:--
+<div id="clock" class="clock"></div>
 
 </div>
 
-
-</div>
 
 
 
 <div class="layout">
 
 
-<!-- BAL PANEL -->
-
 <div class="panel">
 
 
 <h3>
-🚏 Multi Stop GTFS
+🚏 Megálló kereső
 </h3>
 
 
-<input id="stops"
-placeholder="008939,044192,09183208">
+<input id="search"
+placeholder="Nád utca vagy 008939,044192">
 
 
-<button onclick="searchStops()">
+<button onclick="keres()">
 🔎 Keresés
 </button>
 
 
-
-<div class="box">
-
-🌐 Online
-
-<div class="online">
-BKK GTFS-RT
-</div>
-
-
-<br>
-
-🔌 Cache
-
-<div class="cache">
-GTFS Light
-</div>
-
-
-<br>
-
-📦 Offline
-
-<div class="offline">
-IndexedDB
-</div>
-
-
-</div>
+<div id="result"></div>
 
 
 
 <h3>
-🗺 Térkép rétegek
+🗺 Rétegek
 </h3>
 
 
-<div class="box">
+<div class="card">
 
+☑ Utca térkép
 
-<div class="layer">
-☑ 🚆 Vasúti pálya + szelvény
-</div>
+<br><br>
 
+☐ Vasúti pálya
 
-<div class="layer">
-☐ 🏔 Topográf
-</div>
+<br><br>
 
+☐ Topográf
 
-<div class="layer">
-☐ 🏙 Utca / házszám
-</div>
+<br><br>
 
+☐ Volán
 
-<div class="layer">
-☐ 🚌 Volán UTAS
-</div>
+<br><br>
 
+☐ Vonatkövetés
 
-<div class="layer">
-☐ 🚆 Vonatkövetés
 </div>
 
 
@@ -248,134 +192,48 @@ IndexedDB
 
 
 
-</div>
+
+<div id="map"></div>
 
 
 
-
-<!-- TÉRKÉP -->
-
-<div class="map">
-
-
-<h2 style="text-align:center">
-
-🗺 TÉRKÉP HELYE
-
-</h2>
-
-
-<p style="text-align:center">
-
-Leaflet / OSM / Vasúti GIS réteg ide kerül
-
-</p>
-
-
-</div>
-
-
-
-
-<!-- JOBB PANEL -->
 
 <div class="panel">
 
 
 <h3>
-🚏 Élő indulási tábla
+🚏 Találatok
 </h3>
 
 
-<div id="departures">
+<div id="departures"
+class="card">
 
-
-Nincs élő adat
+Nincs indulási adat
 
 </div>
 
 
-
 <h3>
-🚍 Jármű információ
+🚍 Jármű
+
 </h3>
 
 
-<div class="box">
-
+<div class="card">
 
 Járat:
 -
 
-
 <br><br>
 
-
-Jármű ID:
+Jármű:
 -
 
-
 <br><br>
-
-
-Rendszám:
-ha publikus
-
-
-<br><br>
-
-
-Típus:
--
-
-
-<br><br>
-
-
-Forda:
--
-
-
-</div>
-
-
-
-<h3>
-📍 Helyadat
-</h3>
-
-
-<div class="box">
-
 
 GPS:
-
-<br>
-
-47.000000
-
-<br>
-
-19.000000
-
-
-<br><br>
-
-
-Cím:
-
-<br>
-
-Város:
-
-<br>
-
-Utca:
-
-<br>
-
-Házszám:
-
+-
 
 </div>
 
@@ -383,11 +241,11 @@ Házszám:
 
 <h3>
 🚦 Sebesség
+
 </h3>
 
 
-<div class="box speed">
-
+<div class="card green">
 
 0 km/h
 
@@ -395,6 +253,8 @@ Házszám:
 
 0 m/s
 
+</div>
+
 
 </div>
 
@@ -404,10 +264,9 @@ Házszám:
 
 
 
-</div>
 
 
-
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 
 <script>
@@ -415,96 +274,245 @@ Házszám:
 
 // ÓRA
 
+function ora(){
 
-function updateClock(){
+let d=new Date();
 
-
-let now=new Date();
-
-
-document.getElementById(
-"clock"
-).innerHTML=
-
-
-now.getFullYear()
-+"."
-+
-String(now.getMonth()+1).padStart(2,"0")
-+"."
-+
-String(now.getDate()).padStart(2,"0")
+document.getElementById("clock").innerHTML=
+d.toLocaleDateString("hu-HU")
 +" "
-
 +
-now.toLocaleTimeString(
-"hu-HU"
+d.toLocaleTimeString("hu-HU");
+
+}
+
+setInterval(ora,1000);
+
+ora();
+
+
+
+
+
+// TÉRKÉP
+
+
+let map;
+
+
+try{
+
+
+map=L.map("map")
+.setView(
+[47.55,19.05],
+10
 );
 
 
+
+L.tileLayer(
+"https://tile.openstreetmap.org/{z}/{x}/{y}.png",
+{
+
+maxZoom:19,
+attribution:"OpenStreetMap"
+
 }
 
-
-setInterval(updateClock,1000);
-
-updateClock();
-
-
-
-
-// MULTI STOP
-
-
-function searchStops(){
-
-
-let data=
-document.getElementById(
-"stops"
-).value;
-
-
-let list=
-data.split(/[,; ]+/)
-.filter(x=>x);
-
-
-
-document.getElementById(
-"departures"
-).innerHTML=
-
-
-"🚏 Keresett megállók:<br><br>"
-+
-list.join("<br>");
+).addTo(map);
 
 
 
 }
 
+catch(e){
+
+alert(
+"A térkép nem töltődött be!"
+);
+
+}
 
 
-// sebesség átváltás példa
 
 
-function setSpeed(kmh){
+
+// TESZT GTFS ADAT
 
 
-let ms=
-(kmh/3.6).toFixed(2);
+let stops={
 
 
-document.querySelector(
-".speed"
-).innerHTML=
+"008939":
+{
+name:"160 busz megálló",
+lat:47.562000,
+lon:19.045000
+},
 
 
-kmh+
-" km/h<br>"
-+
-ms+
-" m/s";
+"044192":
+{
+name:"243 busz megálló",
+lat:47.570000,
+lon:19.050000
+},
+
+
+"09183208":
+{
+name:"H8 HÉV",
+lat:47.670000,
+lon:19.070000
+},
+
+
+"Nád utca":
+{
+name:"Nád utca",
+lat:47.560000,
+lon:19.030000
+}
+
+};
+
+
+
+let markerGroup=[];
+
+
+
+
+function keres(){
+
+
+let text=
+document.getElementById("search")
+.value
+.trim();
+
+
+let keresett=[];
+
+
+
+if(text.includes(","))
+{
+
+keresett=text
+.split(",")
+.map(x=>x.trim());
+
+}
+
+else
+{
+
+keresett=[text];
+
+}
+
+
+
+
+markerGroup.forEach(m=>
+map.removeLayer(m)
+);
+
+markerGroup=[];
+
+
+
+let html="";
+
+
+
+keresett.forEach(id=>{
+
+
+let s=stops[id];
+
+
+
+if(s){
+
+
+let marker=
+L.marker(
+[s.lat,s.lon]
+)
+.addTo(map)
+.bindPopup(
+s.name
+);
+
+
+
+markerGroup.push(marker);
+
+
+
+map.setView(
+[s.lat,s.lon],
+14
+);
+
+
+
+html+=`
+
+<div class="card">
+
+🚏 ${s.name}
+
+<br>
+
+ID:
+<b>${id}</b>
+
+<br><br>
+
+📍 ${s.lat.toFixed(6)}
+
+<br>
+
+${s.lon.toFixed(6)}
+
+</div>
+
+`;
+
+
+
+}
+
+else{
+
+
+html+=`
+
+<div class="card red">
+
+❌ Nincs találat:
+
+${id}
+
+</div>
+
+`;
+
+}
+
+
+
+});
+
+
+
+document.getElementById("result")
+.innerHTML=html;
+
 
 
 }
