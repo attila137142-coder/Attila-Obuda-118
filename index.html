@@ -1,166 +1,189 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-<title>Attila Multi GTFS V5.4 Dispatcher</title>
-
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
-
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-
+<title>Attila Közlekedés - RealTimeNext Multi-Link V1</title>
 
 <style>
 
-body{
-
-margin:0;
-font-family:Arial;
-background:#111;
-color:white;
-
+body {
+    margin:0;
+    font-family:Arial, sans-serif;
+    background:#101820;
+    color:white;
 }
 
-
-.header{
-
-background:#003300;
-text-align:center;
-padding:10px;
-
+.header {
+    background:#0057a8;
+    padding:15px;
+    text-align:center;
+    font-size:22px;
+    font-weight:bold;
 }
 
-
-.clock{
-
-font-size:34px;
-font-weight:bold;
-color:#00ff66;
-
+.box {
+    background:#1b2733;
+    margin:10px;
+    padding:15px;
+    border-radius:12px;
+    box-shadow:0 0 10px #000;
 }
 
-
-.layout{
-
-display:grid;
-grid-template-columns:300px 1fr 340px;
-height:calc(100vh - 105px);
-
+.title {
+    color:#00d9ff;
+    font-size:18px;
+    margin-bottom:10px;
 }
 
-
-
-.panel{
-
-background:#1b1b1b;
-padding:12px;
-overflow:auto;
-
+.value {
+    font-size:18px;
+    margin:5px 0;
 }
 
-
-
-#map{
-
-height:100%;
-width:100%;
-
+input {
+    width:100%;
+    padding:12px;
+    box-sizing:border-box;
+    border-radius:8px;
+    border:none;
+    font-size:16px;
 }
 
-
-
-input,button{
-
-width:100%;
-padding:10px;
-margin-top:8px;
-box-sizing:border-box;
-
+button {
+    margin-top:10px;
+    padding:12px;
+    width:100%;
+    background:#00a86b;
+    color:white;
+    border:none;
+    border-radius:8px;
+    font-size:17px;
+    cursor:pointer;
 }
 
-
-button{
-
-background:#0066cc;
-color:white;
-border:0;
-border-radius:6px;
-cursor:pointer;
-
+button:hover {
+    background:#00c77b;
 }
 
-
-.card{
-
-background:#242424;
-padding:10px;
-margin-top:10px;
-border-radius:8px;
-
+table {
+    width:100%;
+    border-collapse:collapse;
 }
 
-
-
-.green{
-
-color:#00ff66;
-
+td,th {
+    border-bottom:1px solid #455;
+    padding:8px;
+    text-align:left;
 }
 
-
-.yellow{
-
-color:#ffff00;
-
+.status {
+    color:#00ff88;
 }
-
-
-.red{
-
-color:red;
-
-}
-
-
-.stop{
-
-cursor:pointer;
-
-}
-
-
-.stop:hover{
-
-background:#333;
-
-}
-
-
 
 </style>
 
 </head>
 
-
 <body>
 
 
-
 <div class="header">
+🚦 ATTILA KÖZLEKEDÉS CONTROL<br>
+RealTimeNext Multi-Link + GTFS Connector V1
+</div>
 
 
-<h2>
-🚦 Attila Multi GTFS V5.4
-</h2>
+<!-- ÓRA -->
+
+<div class="box">
+
+<div class="title">
+🕒 Dátum és pontos idő
+</div>
+
+<div id="clock" class="value">
+Betöltés...
+</div>
+
+</div>
 
 
-<div id="clock" class="clock"></div>
+
+<!-- HELYADAT -->
+
+<div class="box">
+
+<div class="title">
+📍 Helyadataim
+</div>
+
+<div class="value">
+GPS állapot:
+<span id="gpsStatus">
+Indítás...
+</span>
+</div>
+
+
+<div class="value">
+Pontosság:
+<span id="accuracy">
+-
+</span>
+</div>
+
+
+<div class="value">
+Szélesség:
+<span id="lat">
+-
+</span>
+</div>
+
+
+<div class="value">
+Hosszúság:
+<span id="lon">
+-
+</span>
+</div>
+
+
+<div class="value">
+Sebesség:
+<span id="speed">
+0 km/h
+</span>
+</div>
+
+
+<hr>
+
+
+<div class="value">
+🏙 Város:
+<span id="city">
+-
+</span>
+</div>
+
+
+<div class="value">
+🏠 Utca:
+<span id="street">
+-
+</span>
+</div>
+
+
+<div class="value">
+🔢 Házszám:
+<span id="house">
+-
+</span>
+</div>
 
 
 </div>
@@ -168,74 +191,193 @@ background:#333;
 
 
 
+<!-- GPS + SEBESSÉG -->
 
-<div class="layout">
-
-
-
+<script>
 
 
-<!-- BAL OLDAL -->
+// ÓRA
+
+function updateClock(){
+
+let now=new Date();
+
+document.getElementById("clock").innerHTML =
+now.toLocaleDateString("hu-HU")
++" "
++now.toLocaleTimeString("hu-HU");
+
+}
+
+setInterval(updateClock,1000);
+updateClock();
 
 
-<div class="panel">
 
 
-<h3>
-📂 GTFS ZIP
-</h3>
+// GPS
+
+if(navigator.geolocation){
 
 
-<input 
-type="file"
-id="gtfsFile"
-accept=".zip">
+navigator.geolocation.watchPosition(
+
+function(pos){
 
 
-<button onclick="loadGTFS()">
+let lat=pos.coords.latitude;
+let lon=pos.coords.longitude;
 
-⬇ GTFS betöltése
 
+document.getElementById("gpsStatus").innerHTML=
+"AKTÍV";
+
+
+document.getElementById("lat").innerHTML=
+lat.toFixed(6);
+
+
+document.getElementById("lon").innerHTML=
+lon.toFixed(6);
+
+
+
+if(pos.coords.accuracy){
+
+document.getElementById("accuracy").innerHTML=
+Math.round(pos.coords.accuracy)+" méter";
+
+}
+
+
+
+
+// SEBESSÉG
+
+if(pos.coords.speed){
+
+let kmh=
+pos.coords.speed*3.6;
+
+document.getElementById("speed").innerHTML=
+kmh.toFixed(1)+" km/h";
+
+}
+else{
+
+document.getElementById("speed").innerHTML=
+"0 km/h";
+
+}
+
+
+
+// helyadat előkészítés
+
+reverseGeo(lat,lon);
+
+
+
+},
+
+
+function(){
+
+document.getElementById("gpsStatus").innerHTML=
+"NINCS GPS JEL";
+
+},
+
+
+{
+enableHighAccuracy:true,
+maximumAge:1000,
+timeout:10000
+}
+
+
+);
+
+
+}
+
+else{
+
+document.getElementById("gpsStatus").innerHTML=
+"A készülék nem támogat GPS-t";
+
+}
+
+
+
+// Címfelismerés helye
+
+function reverseGeo(lat,lon){
+
+/*
+Ide kerül majd a reverse geocoding:
+
+GPS koordináta
+       ↓
+Város
+Utca
+Házszám
+
+*/
+
+}
+
+
+
+</script>
+<!-- ==================================================
+ REALTIMENEXT MULTI-LINK + GTFS CONNECTOR V1
+ 2. RÉSZ
+================================================== -->
+
+
+<!-- GTFS MULTI LINK -->
+
+<div class="box">
+
+<div class="title">
+🚌 RealTimeNext Multi-Link + GTFS Connector
+</div>
+
+
+<div class="value">
+GTFS megálló azonosítók:
+</div>
+
+
+<input id="gtfsInput"
+placeholder="Példa: 008939,044192,09183208">
+
+
+<button onclick="loadMultiGTFS()">
+BETÖLTÉS
 </button>
 
 
-
-<div id="status" class="card">
-
-Nincs adat betöltve
-
 </div>
 
 
 
 
-<h3>
+<!-- LINK EREDMÉNY -->
 
-🚏 Megálló kereső
+<div class="box">
 
-</h3>
-
-
-
-<input
-id="search"
-placeholder="Nád utca vagy STOP ID">
-
-
-
-<button onclick="searchStop()">
-
-🔎 Keresés
-
-</button>
-
-
-
-<div id="results">
-
+<div class="title">
+🔗 Generált RealTimeNext kapcsolatok
 </div>
 
 
+<div id="links">
+
+Nincs betöltve
+
+</div>
 
 
 </div>
@@ -244,690 +386,82 @@ placeholder="Nád utca vagy STOP ID">
 
 
 
+<!-- INDULÁSI TÁBLA -->
 
+<div class="box">
 
-<!-- TÉRKÉP -->
-
-
-<div id="map"></div>
-
-
-
-
-
-
-
-
-<!-- JOBB OLDAL -->
-
-
-<div class="panel">
-
-
-
-<h3>
-
-🚏 Kiválasztott megálló
-
-</h3>
-
-
-
-<div id="stopInfo"
-class="card">
-
-Nincs kiválasztva
-
+<div class="title">
+📋 Közös indulási tábla
 </div>
 
 
+<table>
+
+<thead>
+
+<tr>
+<th>Idő</th>
+<th>Járat</th>
+<th>Megálló</th>
+<th>Állapot</th>
+</tr>
+
+</thead>
 
 
-<h3>
-
-🚍 Indulások
-
-</h3>
+<tbody id="departureTable">
 
 
-<div id="departures"
-class="card">
+<tr>
+<td colspan="4">
+Várakozás adatra...
+</td>
+</tr>
 
 
-GTFS betöltés után jelenik meg
+</tbody>
+
+
+</table>
 
 
 </div>
 
 
 
-
-<h3>
-
-🚦 Rendszer
-
-</h3>
-
-
-<div id="engine"
-class="card yellow">
-
-GTFS motor várakozik
-
-</div>
-
-
-
-</div>
-
-
-
-</div>
-
-
-
-
-
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 
 
 <script>
 
 
-// =======================
-// ÓRA
-// =======================
+// =====================================
+// MULTI GTFS MOTOR
+// =====================================
 
 
-function clock(){
+function loadMultiGTFS(){
 
 
-let d=new Date();
+let input=
+document.getElementById("gtfsInput").value;
 
 
-document.getElementById("clock").innerHTML=
+// vessző, szóköz, új sor kezelése
 
-d.toLocaleDateString("hu-HU")
-+
-" "
-+
-d.toLocaleTimeString("hu-HU");
-
-
-}
-
-
-setInterval(clock,1000);
-
-clock();
+let stops=input
+.split(/[\s,;]+/)
+.filter(x=>x.length>0);
 
 
 
+if(stops.length===0){
 
-
-
-// =======================
-// TÉRKÉP
-// =======================
-
-
-let map =
-L.map("map")
-.setView(
-[47.55,19.05],
-10
-);
-
-
-
-L.tileLayer(
-
-"https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-
-{
-
-maxZoom:19
-
-}
-
-).addTo(map);
-
-
-
-
-
-let markers=[];
-
-
-
-
-
-// =======================
-// GTFS ADATTÁR
-// =======================
-
-
-
-let STOPS=[];
-
-let ROUTES=[];
-
-let TRIPS=[];
-
-let STOP_TIMES=[];
-
-
-let selectedStop=null;
-
-
-
-
-
-// =======================
-// GTFS BETÖLTÉS
-// =======================
-
-
-
-async function loadGTFS(){
-
-
-
-let file=
-document.getElementById("gtfsFile")
-.files[0];
-
-
-
-if(!file){
-
-alert(
-"Válassz GTFS ZIP fájlt!"
-);
+alert("Nincs GTFS megálló megadva!");
 
 return;
 
 }
-
-
-
-document.getElementById("status").innerHTML=
-"⏳ GTFS feldolgozás...";
-
-
-
-let zip=
-await JSZip.loadAsync(file);
-
-
-
-
-// STOPS
-
-
-if(zip.file("stops.txt")){
-
-
-let text=
-await zip.file("stops.txt")
-.async("string");
-
-
-
-Papa.parse(text,{
-
-header:true,
-
-complete:(r)=>{
-
-
-STOPS=
-r.data.filter(
-x=>x.stop_id
-);
-
-
-
-}
-
-});
-
-
-
-}
-
-
-
-
-
-// ROUTES
-
-
-if(zip.file("routes.txt")){
-
-
-let text=
-await zip.file("routes.txt")
-.async("string");
-
-
-
-Papa.parse(text,{
-
-header:true,
-
-complete:(r)=>{
-
-
-ROUTES=
-r.data.filter(
-x=>x.route_id
-);
-
-
-}
-
-});
-
-
-}
-
-
-
-
-// TRIPS
-
-
-if(zip.file("trips.txt")){
-
-
-let text=
-await zip.file("trips.txt")
-.async("string");
-
-
-
-Papa.parse(text,{
-
-header:true,
-
-complete:(r)=>{
-
-
-TRIPS=
-r.data.filter(
-x=>x.trip_id
-);
-
-
-}
-
-});
-
-
-}
-
-
-
-
-
-
-// STOP TIMES
-
-
-if(zip.file("stop_times.txt")){
-
-
-let text=
-await zip.file("stop_times.txt")
-.async("string");
-
-
-
-Papa.parse(text,{
-
-header:true,
-
-complete:(r)=>{
-
-
-STOP_TIMES=
-r.data.filter(
-x=>x.trip_id
-);
-
-
-
-}
-
-});
-
-
-}
-
-
-
-
-document.getElementById("status").innerHTML=
-
-`
-
-<span class="green">
-
-✅ GTFS aktív
-
-</span>
-
-<br><br>
-
-Megállók:
-${STOPS.length}
-
-<br>
-
-Járatok:
-${TRIPS.length}
-
-<br>
-
-Menetrendi sor:
-${STOP_TIMES.length}
-
-`;
-
-
-
-document.getElementById("engine").innerHTML=
-
-"🟢 GTFS MOTOR AKTÍV";
-
-
-}
-
-
-
-
-
-// =======================
-// KERESŐ
-// =======================
-
-
-
-function searchStop(){
-
-
-let q=
-
-document.getElementById("search")
-.value
-.toLowerCase()
-.trim();
-
-
-
-if(!q) return;
-
-
-
-let result=
-STOPS.filter(s=>
-
-
-s.stop_name &&
-(
-
-s.stop_name
-.toLowerCase()
-.includes(q)
-
-||
-
-s.stop_id
-.toLowerCase()
-includes(q)
-
-)
-
-
-)
-.slice(0,20);
-
-
-
-showResults(result);
-
-
-
-}
-
-
-// =======================
-// TALÁLATI LISTA
-// =======================
-
-
-function showResults(list){
-
-
-let html="";
-
-
-if(list.length===0){
-
-
-document.getElementById("results").innerHTML=
-
-`
-<div class="card red">
-❌ Nincs találat
-</div>
-`;
-
-return;
-
-
-}
-
-
-
-list.forEach(s=>{
-
-
-html+=`
-
-<div class="card stop"
-onclick="selectStop('${s.stop_id}')">
-
-
-🚏 ${s.stop_name}
-
-<br>
-
-GTFS ID:
-<b>${s.stop_id}</b>
-
-<br>
-
-📍 ${Number(s.stop_lat).toFixed(6)}
-
-<br>
-
-${Number(s.stop_lon).toFixed(6)}
-
-</div>
-
-`;
-
-
-});
-
-
-document.getElementById("results")
-.innerHTML=html;
-
-
-}
-
-
-
-
-// =======================
-// MEGÁLLÓ KIVÁLASZTÁS
-// =======================
-
-
-function selectStop(id){
-
-
-let stop=
-STOPS.find(
-s=>s.stop_id===id
-);
-
-
-
-if(!stop) return;
-
-
-
-selectedStop=stop;
-
-
-
-let lat=
-Number(stop.stop_lat);
-
-
-let lon=
-Number(stop.stop_lon);
-
-
-
-
-markers.forEach(
-m=>map.removeLayer(m)
-);
-
-
-markers=[];
-
-
-
-let marker=
-L.marker(
-[lat,lon]
-)
-.addTo(map)
-.bindPopup(
-stop.stop_name
-)
-.openPopup();
-
-
-
-markers.push(marker);
-
-
-
-map.setView(
-[lat,lon],
-16
-);
-
-
-
-
-
-document.getElementById("stopInfo")
-.innerHTML=
-
-`
-
-🚏 <b>${stop.stop_name}</b>
-
-<br><br>
-
-GTFS STOP ID:
-
-<br>
-
-${stop.stop_id}
-
-<br><br>
-
-📍 Koordináta:
-
-<br>
-
-${lat.toFixed(6)}
-
-<br>
-
-${lon.toFixed(6)}
-
-`;
-
-
-
-loadDepartures(stop.stop_id);
-
-
-
-}
-
-
-
-
-// =======================
-// INDULÁSI MOTOR
-// =======================
-
-
-
-function loadDepartures(stopId){
-
-
-
-let rows=
-STOP_TIMES.filter(
-x=>x.stop_id===stopId
-);
-
-
-
-
-if(rows.length===0){
-
-
-document.getElementById("departures")
-.innerHTML=
-
-`
-❌ Nincs indulási adat
-`;
-
-return;
-
-
-}
-
-
-
-
-// idő szerinti rendezés
-
-
-rows.sort(
-(a,b)=>
-a.departure_time
-.localeCompare(
-b.departure_time
-)
-);
-
 
 
 
@@ -935,78 +469,30 @@ b.departure_time
 let html="";
 
 
-
-rows.slice(0,15)
-.forEach(st=>{
+stops.forEach(function(stop){
 
 
 
-let trip=
-TRIPS.find(
-t=>t.trip_id===st.trip_id
-);
-
-
-
-if(!trip) return;
-
-
-
-let route=
-ROUTES.find(
-r=>r.route_id===trip.route_id
-);
-
-
-
-let routeName=
-route
-?
-(
-route.route_short_name
-||
-route.route_long_name
-)
-:
-"-";
-
-
-
-
-
-let direction=
-trip.trip_headsign
-||
-"";
-
+let url=
+"https://realtimenext.hu/embed/bkv/stops/"
++stop+
+"/schedule";
 
 
 
 html+=
 
-`
-
-<div class="card">
-
-
-🚌 <b>${routeName}</b>
-
-<br>
-
-
-⏰ ${st.departure_time}
-
-<br>
-
-
-➡ ${direction}
-
-
-</div>
-
-
-`;
-
+"<div style='margin-bottom:10px'>"
++
+"GTFS: <b>"+stop+"</b><br>"
++
+"<a href='"+url+"' target='_blank'>"
++
+url
++
+"</a>"
++
+"</div>";
 
 
 
@@ -1014,10 +500,12 @@ html+=
 
 
 
+document.getElementById("links").innerHTML=
+html;
 
 
-document.getElementById("departures")
-.innerHTML=html;
+
+createDemoTable(stops);
 
 
 
@@ -1025,23 +513,81 @@ document.getElementById("departures")
 
 
 
-// =======================
-// SEBESSÉG ÁTVÁLTÁS
-// =======================
 
 
-function showSpeed(kmh){
+// =====================================
+// INDULÁSI TÁBLA MOTOR
+// =====================================
 
 
-let ms=
-(kmh/3.6)
-.toFixed(2);
+function createDemoTable(stops){
+
+
+let table="";
+
+
+let now=new Date();
 
 
 
-console.log(
-kmh+" km/h = "+ms+" m/s"
+stops.forEach(function(stop,index){
+
+
+let time=
+new Date(
+now.getTime()+((index+1)*5*60000)
 );
+
+
+let t=
+time.toLocaleTimeString(
+"hu-HU",
+{
+hour:"2-digit",
+minute:"2-digit"
+}
+);
+
+
+
+table+=
+
+"<tr>"
++
+"<td>"+t+"</td>"
++
+"<td>"
++
+(index===0?"160":
+index===1?"243":"HÉV")
++
+"</td>"
++
+"<td>"
++
+"GTFS "+stop
++
+"</td>"
++
+"<td class='status'>"
++
+"ELŐKÉSZÍTVE"
++
+"</td>"
++
+"</tr>";
+
+
+
+});
+
+
+
+document.getElementById(
+"departureTable"
+)
+.innerHTML=table;
+
 
 
 }
@@ -1051,6 +597,6 @@ kmh+" km/h = "+ms+" m/s"
 </script>
 
 
-</body>
 
+</body>
 </html>
