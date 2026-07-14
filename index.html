@@ -392,3 +392,657 @@ let marker=L.marker(
 
 </body>
 </html>
+<script>
+
+// =====================================
+// ATTILA KÖZLEKEDÉS PRO V2.1
+// GPS + CÍM MOTOR
+// =====================================
+
+
+let elozoPozicio=null;
+let elozoIdo=null;
+
+
+
+// ================================
+// TÁVOLSÁG SZÁMÍTÁS
+// ================================
+
+
+function tavolsag(lat1,lon1,lat2,lon2){
+
+
+let R=6371000;
+
+
+let p1=lat1*Math.PI/180;
+let p2=lat2*Math.PI/180;
+
+
+let dp=(lat2-lat1)*Math.PI/180;
+let dl=(lon2-lon1)*Math.PI/180;
+
+
+
+let a=
+
+Math.sin(dp/2)**2+
+
+Math.cos(p1)*
+Math.cos(p2)*
+Math.sin(dl/2)**2;
+
+
+
+return R*2*
+Math.atan2(
+Math.sqrt(a),
+Math.sqrt(1-a)
+);
+
+
+}
+
+
+
+
+// ================================
+// GPS INDÍTÁS
+// ================================
+
+
+navigator.geolocation.watchPosition(
+
+
+function(pos){
+
+
+
+let lat=pos.coords.latitude;
+
+let lon=pos.coords.longitude;
+
+let pontossag=pos.coords.accuracy;
+
+let magassag=pos.coords.altitude;
+
+
+
+// marker mozgatás
+
+marker.setLatLng(
+[lat,lon]
+);
+
+
+
+map.setView(
+[lat,lon],
+15
+);
+
+
+
+
+
+// ===========================
+// SEBESSÉG
+// ===========================
+
+
+let sebesseg="0";
+
+
+if(elozoPozicio){
+
+
+let tav=
+
+tavolsag(
+
+elozoPozicio.lat,
+
+elozoPozicio.lon,
+
+lat,
+
+lon
+
+);
+
+
+let ido=
+
+(Date.now()-elozoIdo)/1000;
+
+
+
+if(ido>0){
+
+
+let ms=tav/ido;
+
+let kmh=ms*3.6;
+
+
+sebesseg=
+
+kmh.toFixed(1)
++
+" km/h<br>"
++
+ms.toFixed(2)
++
+" m/s";
+
+
+}
+
+
+}
+
+
+
+elozoPozicio={
+
+lat:lat,
+
+lon:lon
+
+};
+
+
+elozoIdo=Date.now();
+
+
+
+
+
+document.getElementById("gps").innerHTML=
+
+`
+
+📍 Koordináta:
+
+<br>
+
+${lat.toFixed(6)}
+
+,
+
+${lon.toFixed(6)}
+
+<br><br>
+
+
+🎯 Pontosság:
+
+${Math.round(pontossag)} m
+
+
+<br>
+
+
+⛰ Magasság:
+
+${magassag ? Math.round(magassag)+" m" : "nincs adat"}
+
+<br><br>
+
+
+🚗 Sebesség:
+
+${sebesseg}
+
+`;
+
+
+
+
+
+cimKereses(lat,lon);
+
+
+
+},
+
+
+
+function(error){
+
+
+document.getElementById("gps").innerHTML=
+
+"❌ GPS hiba: "+error.message;
+
+
+},
+
+
+{
+
+
+enableHighAccuracy:true,
+
+maximumAge:1000,
+
+timeout:10000
+
+
+}
+
+
+
+);
+
+
+
+
+
+
+// =====================================
+// FORDÍTOTT CÍMKERESÉS
+// =====================================
+
+
+function cimKereses(lat,lon){
+
+
+
+fetch(
+
+"https://nominatim.openstreetmap.org/reverse?format=json&lat="
++
+lat
++
+"&lon="
++
+lon
++
+"&zoom=18&addressdetails=1"
+
+)
+
+
+
+.then(r=>r.json())
+
+
+.then(adat=>{
+
+
+
+let a=adat.address || {};
+
+
+
+let varos=
+
+a.city ||
+
+a.town ||
+
+a.village ||
+
+"Nincs adat";
+
+
+
+let kerulet=
+
+a.city_district ||
+
+a.suburb ||
+
+"";
+
+
+
+let utca=
+
+a.road ||
+
+a.street ||
+
+"Nincs adat";
+
+
+
+let hazszam=
+
+a.house_number ||
+
+"Nincs adat";
+
+
+
+document.getElementById("address").innerHTML=
+
+`
+
+🏠 CÍM
+
+<br><br>
+
+
+🏙 Város:
+
+<b>${varos}</b>
+
+
+<br>
+
+
+${kerulet ? "📌 Kerület: "+kerulet+"<br>" : ""}
+
+
+🛣 Utca:
+
+<b>${utca}</b>
+
+
+<br>
+
+
+🔢 Házszám:
+
+<b>${hazszam}</b>
+
+
+<br><br>
+
+
+🌍 Ország:
+
+${a.country || "Magyarország"}
+
+`;
+
+
+
+})
+
+
+.catch(()=>{
+
+
+document.getElementById("address").innerHTML=
+
+"❌ Címadat nem elérhető";
+
+
+});
+
+
+}
+
+
+
+</script>
+<script>
+
+// ==========================================
+// ATTILA KÖZLEKEDÉS PRO V2.1
+// 6 TÉRKÉP RÉTEG MOTOR
+// ==========================================
+
+
+// ALAPTÉRKÉP
+
+let osm = L.tileLayer(
+
+"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+
+{
+maxZoom:19,
+attribution:"OpenStreetMap"
+}
+
+);
+
+
+
+// TOPOGRÁFIA
+
+let topo = L.tileLayer(
+
+"https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png",
+
+{
+maxZoom:17,
+attribution:"OpenTopoMap"
+}
+
+);
+
+
+
+// TURISTA JELZÉSEK
+
+let turistaJelzes = L.tileLayer(
+
+"https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png",
+
+{
+opacity:0.85
+}
+
+);
+
+
+
+// VASÚTI TÉRKÉP
+
+let vasut = L.tileLayer(
+
+"https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png",
+
+{
+
+opacity:0.9
+
+}
+
+);
+
+
+
+
+// MŰHOLD
+
+let muhold = L.tileLayer(
+
+"https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+
+{
+
+maxZoom:19
+
+}
+
+);
+
+
+
+
+// MAGYAR KÖZÚT ELŐKÉSZÍTÉS
+
+let kozut = L.layerGroup();
+
+
+
+
+
+// =====================================
+// TURISTA KOMBINÁLT NÉZET
+// =====================================
+
+
+let turistaMod = L.layerGroup([
+
+topo,
+
+turistaJelzes
+
+]);
+
+
+
+
+
+
+// =====================================
+// INDULÓ RÉSZ
+// =====================================
+
+
+osm.addTo(map);
+
+
+
+
+
+// =====================================
+// RÉTEGVÁLASZTÓ
+// =====================================
+
+
+let terkepRetegek={
+
+
+"🗺 Alap térkép":
+
+osm,
+
+
+"🏔 Topográfia":
+
+topo,
+
+
+"🥾 Turista térkép":
+
+turistaMod,
+
+
+"🚂 Vasúti térkép":
+
+vasut,
+
+
+"🛰 Műhold":
+
+muhold,
+
+
+"🛣 Magyar Közút":
+
+kozut
+
+
+};
+
+
+
+L.control.layers(
+
+terkepRetegek,
+
+null,
+
+{
+
+collapsed:false
+
+}
+
+).addTo(map);
+
+
+
+
+
+// =====================================
+// TÉRKÉP INFORMÁCIÓ PANEL
+// =====================================
+
+
+let info=L.control({
+
+position:"bottomleft"
+
+});
+
+
+
+info.onAdd=function(){
+
+
+let div=L.DomUtil.create(
+"div"
+);
+
+
+div.style.background=
+"rgba(0,0,0,0.75)";
+
+
+div.style.color=
+"white";
+
+
+div.style.padding=
+"10px";
+
+
+div.style.borderRadius=
+"10px";
+
+
+div.innerHTML=
+
+`
+
+<b>🗺 ATTILA TÉRKÉP MOTOR</b>
+
+<br><br>
+
+Réteg:
+
+<span id="aktivReteg">
+
+Alap
+
+</span>
+
+<br>
+
+GPS:
+
+Aktív
+
+<br>
+
+Adatok:
+
+V2.1 STABIL
+
+`;
+
+
+
+return div;
+
+};
+
+
+
+info.addTo(map);
+
+
+
+
+
+</script>
+
