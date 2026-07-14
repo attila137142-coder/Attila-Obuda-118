@@ -1045,4 +1045,432 @@ info.addTo(map);
 
 
 </script>
+<div class="card">
+
+<h2>
+🔎 HELY / MEGÁLLÓ / ÁLLOMÁS KERESŐ
+</h2>
+
+
+<input 
+id="kereso"
+placeholder="Pl: Csóványos, Batthyány tér, Szépjuhászné"
+style="
+width:95%;
+padding:12px;
+font-size:18px;
+border-radius:10px;
+">
+
+
+<button 
+class="blue"
+onclick="keres()">
+
+🔎 KERESÉS
+
+</button>
+
+
+<div 
+id="talalatok">
+
+Nincs keresés
+
+</div>
+
+
+</div>
+<script>
+
+
+// =====================================
+// ATTILA KÖZLEKEDÉS PRO V2.1
+// KERESŐ MOTOR
+// =====================================
+
+
+
+let keresesiMarker=null;
+
+
+
+
+
+// ================================
+// HELY KERESÉS
+// ================================
+
+
+function keres(){
+
+
+let szoveg=
+
+document.getElementById("kereso").value.trim();
+
+
+
+if(szoveg==""){
+
+alert(
+"Írj be egy helyet!"
+);
+
+return;
+
+}
+
+
+
+
+
+fetch(
+
+"https://nominatim.openstreetmap.org/search?format=json&limit=5&q="
++
+encodeURIComponent(szoveg+", Hungary")
+
+)
+
+
+
+.then(r=>r.json())
+
+
+.then(adatok=>{
+
+
+let html="";
+
+
+
+if(adatok.length==0){
+
+
+html="❌ Nincs találat";
+
+
+}
+
+else{
+
+
+adatok.forEach(
+
+x=>{
+
+
+let tav="";
+
+
+
+if(aktualisGPS){
+
+
+tav=
+
+Math.round(
+
+tavolsag(
+
+aktualisGPS[0],
+
+aktualisGPS[1],
+
+Number(x.lat),
+
+Number(x.lon)
+
+)
+
+)
++
+" m";
+
+}
+
+
+
+
+html+=`
+
+<div class="info">
+
+
+<b>
+
+${x.display_name}
+
+</b>
+
+
+<br>
+
+
+📍
+
+${Number(x.lat).toFixed(6)}
+
+,
+
+${Number(x.lon).toFixed(6)}
+
+
+<br>
+
+
+📏 Távolság:
+
+${tav || "nincs GPS"}
+
+
+<br><br>
+
+
+<button
+
+class="green"
+
+onclick="mutat(
+${x.lat},
+${x.lon}
+)">
+
+🗺 Mutasd a térképen
+
+</button>
+
+
+</div>
+
+
+`;
+
+
+
+}
+
+
+);
+
+
+}
+
+
+
+
+document.getElementById("talalatok").innerHTML=html;
+
+
+
+});
+
+
+}
+
+
+
+
+
+
+
+
+// ================================
+// TÉRKÉPRE UGRÁS
+// ================================
+
+
+function mutat(lat,lon){
+
+
+
+map.setView(
+
+[lat,lon],
+
+16
+
+);
+
+
+
+
+if(keresesiMarker){
+
+map.removeLayer(
+keresesiMarker
+);
+
+}
+
+
+
+
+keresesiMarker=
+
+L.marker(
+
+[lat,lon]
+
+)
+
+.addTo(map)
+
+.bindPopup(
+
+"📍 Keresett hely<br>"+
+lat.toFixed(6)
++
+", "
++
+lon.toFixed(6)
+
+)
+
+.openPopup();
+
+
+
+}
+
+
+
+
+
+
+
+
+// ================================
+// KÖZELI MEGÁLLÓK ALAP
+// ================================
+
+
+function kozeliMegallok(){
+
+
+if(!aktualisGPS){
+
+alert(
+"Nincs GPS helyzet"
+);
+
+return;
+
+}
+
+
+
+let lat=
+
+aktualisGPS[0];
+
+
+let lon=
+
+aktualisGPS[1];
+
+
+
+
+fetch(`
+
+https://overpass-api.de/api/interpreter?
+
+data=[out:json];
+
+node(around:1000,${lat},${lon})
+
+["highway"="bus_stop"];
+
+out;
+
+`)
+
+
+
+.then(r=>r.json())
+
+
+.then(d=>{
+
+
+let html="<h3>🚏 Közeli megállók</h3>";
+
+
+
+d.elements.forEach(e=>{
+
+
+let tav=
+
+Math.round(
+
+tavolsag(
+
+lat,
+
+lon,
+
+e.lat,
+
+e.lon
+
+)
+
+);
+
+
+
+html+=`
+
+<div class="info">
+
+🚏
+
+<b>
+
+${e.tags.name || "Ismeretlen megálló"}
+
+</b>
+
+
+<br>
+
+
+📏 Légvonal:
+
+${tav} m
+
+
+<br>
+
+
+🛣 Becsült út:
+
+${Math.round(tav*1.25)} m
+
+
+</div>
+
+`;
+
+
+
+});
+
+
+
+document.getElementById("talalatok").innerHTML=html;
+
+
+});
+
+
+}
+
+
+
+
+</script>
 
