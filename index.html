@@ -578,3 +578,536 @@ alert("⚙ Beállítás modul következik");
 
 
 </script>
+<!-- =====================================
+ ATTILA KÖZLEKEDÉS PRO V2.1
+ 2. RÉSZ
+ LEAFLET + GPS + 6 TÉRKÉP
+===================================== -->
+
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+
+<style>
+
+.gpsbox{
+
+background:#09141c;
+
+padding:12px;
+
+border-radius:10px;
+
+margin-top:10px;
+
+font-size:18px;
+
+color:#00ffff;
+
+}
+
+.layerbox{
+
+background:#13212b;
+
+padding:10px;
+
+border-radius:10px;
+
+margin-bottom:10px;
+
+}
+
+</style>
+
+
+
+<div class="card">
+
+
+<h2>
+📍 GPS helyzet
+</h2>
+
+
+<div class="gpsbox">
+
+Koordináta:
+
+<div id="gps">
+
+Nincs adat
+
+</div>
+
+
+</div>
+
+
+
+<div class="gpsbox">
+
+Pontosság:
+
+<div id="accuracy">
+
+-
+
+</div>
+
+
+</div>
+
+
+
+<div class="gpsbox">
+
+Sebesség:
+
+<div id="speed">
+
+0 km/h
+
+</div>
+
+
+<div id="speedms">
+
+0 m/s
+
+</div>
+
+
+</div>
+
+
+
+</div>
+
+
+
+
+
+
+<div class="card">
+
+
+<h2>
+🗺 Térkép
+</h2>
+
+
+<div class="layerbox">
+
+Rétegek:
+
+<br><br>
+
+A jobb felső sarokban található a térkép kapcsoló.
+
+</div>
+
+
+<div id="map">
+
+</div>
+
+
+</div>
+
+
+
+
+
+<script>
+
+
+// =====================================
+// LEAFLET TÉRKÉP MOTOR
+// =====================================
+
+
+
+let map=L.map('map').setView(
+
+[47.5,19.05],
+
+13
+
+);
+
+
+
+
+// 1. ALAP
+
+let osm=L.tileLayer(
+
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+
+{
+
+maxZoom:19,
+
+attribution:"OpenStreetMap"
+
+}
+
+);
+
+
+
+
+// 2. TOPO
+
+let topo=L.tileLayer(
+
+'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+
+{
+
+maxZoom:17,
+
+attribution:"OpenTopoMap"
+
+}
+
+);
+
+
+
+
+// 3. TURISTA JELZÉSEK
+
+let turista=L.tileLayer(
+
+'https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png',
+
+{
+
+opacity:0.8
+
+}
+
+);
+
+
+
+
+// 4. VASÚTI TÉRKÉP
+
+let vasut=L.tileLayer(
+
+'https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png',
+
+{
+
+opacity:0.9
+
+}
+
+);
+
+
+
+
+// 5. MŰHOLD
+
+let muhold=L.tileLayer(
+
+'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+
+{
+
+maxZoom:19
+
+}
+
+);
+
+
+
+
+// 6. MAGYAR KÖZÚT HELYE
+
+// később hivatalos réteggel cserélhető
+
+let kozut=L.tileLayer(
+
+'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+
+{
+
+opacity:0.25
+
+}
+
+);
+
+
+
+
+// induló
+
+osm.addTo(map);
+
+
+
+
+
+L.control.layers(
+
+{
+
+"🗺 Alap":osm,
+
+"🏔 Topo":topo,
+
+"🥾 Turista":turista,
+
+"🚂 Vasút":vasut,
+
+"🛰 Műhold":muhold,
+
+"🛣 Magyar Közút":kozut
+
+}
+
+)
+
+.addTo(map);
+
+
+
+
+
+// =====================================
+// GPS IKON
+// =====================================
+
+
+let gpsMarker=L.circleMarker(
+
+[47.5,19.05],
+
+{
+
+radius:9,
+
+color:"red",
+
+fillColor:"red",
+
+fillOpacity:0.8
+
+}
+
+)
+
+.addTo(map);
+
+
+
+
+
+
+
+let elozo=null;
+
+let elozoIdo=null;
+
+
+
+
+
+
+navigator.geolocation.watchPosition(
+
+
+
+function(pos){
+
+
+
+let lat=pos.coords.latitude;
+
+let lon=pos.coords.longitude;
+
+
+
+let pont=pos.coords.accuracy;
+
+
+
+
+
+gpsMarker.setLatLng(
+
+[lat,lon]
+
+);
+
+
+
+map.setView(
+
+[lat,lon],
+
+15
+
+);
+
+
+
+
+
+document.getElementById("gps").innerHTML=
+
+lat.toFixed(6)
+
++
+
+", "
+
++
+
+lon.toFixed(6);
+
+
+
+
+
+document.getElementById("accuracy").innerHTML=
+
+Math.round(pont)
+
++
+
+" méter";
+
+
+
+
+
+
+// sebesség számítás
+
+
+
+if(elozo){
+
+
+
+let tav=
+
+map.distance(
+
+[elozo.lat,elozo.lon],
+
+[lat,lon]
+
+);
+
+
+
+let ido=
+
+(Date.now()-elozoIdo)/1000;
+
+
+
+if(ido>0){
+
+
+
+let ms=tav/ido;
+
+let kmh=ms*3.6;
+
+
+
+document.getElementById("speed").innerHTML=
+
+kmh.toFixed(1)
+
++
+
+" km/h";
+
+
+
+document.getElementById("speedms").innerHTML=
+
+ms.toFixed(2)
+
++
+
+" m/s";
+
+
+
+}
+
+
+
+}
+
+
+
+
+elozo={
+
+lat:lat,
+
+lon:lon
+
+};
+
+
+
+elozoIdo=Date.now();
+
+
+
+
+
+},
+
+
+
+function(error){
+
+
+
+document.getElementById("gps").innerHTML=
+
+"GPS hiba: "
+
++
+
+error.message;
+
+
+
+},
+
+
+
+{
+
+enableHighAccuracy:true,
+
+maximumAge:1000,
+
+timeout:10000
+
+}
+
+
+
+);
+
+
+
+
+</script>
