@@ -1,3 +1,114 @@
-<!DOCTYPE html> <html lang="hu"> <head> <meta charset="utf-8"> <meta name="viewport" content="width=device-width, initial-scale=1"> <title>Attila Közlekedés</title> <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/> <style> body{margin:0;font-family:Arial;} #map{height:100vh;width:100%;} .panel{ position:absolute; top:10px; left:10px; width:260px; background:white; z-index:1000; padding:10px; border-radius:8px; box-shadow:0 3px 10px rgba(0,0,0,0.3); } button{ width:100%; margin-top:5px; padding:8px; } </style> </head> <body> <div class="panel"> <h3>Térképek</h3>
-<button onclick="setStreet()">🗺️ Utca</button> <button onclick="setTopo()">⛰️ Domborzat</button> <button onclick="setRail()">🚆 Vasút</button> <hr> <h3>Pozíció</h3> <button onclick="locateMe()">📍 Saját hely</button> <hr> <h3>Megállók</h3> <button onclick="showStops()">🚏 1 km-en belül</button> </div> <div id="map"></div> <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script> <script> var map = L.map('map').setView([47.55,19.03],13); var street = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19}); var topo = L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{maxZoom:17}); var rail = L.tileLayer('https://{s}.tile.openrailwaymap.org/standard/{z}/{x}/{y}.png',{maxZoom:19}); street.addTo(map); function setStreet(){ map.eachLayer(l=>map.removeLayer(l)); street.addTo(map); } function setTopo(){ map.eachLayer(l=>map.removeLayer(l)); topo.addTo(map); }
-function setRail(){ map.eachLayer(l=>map.removeLayer(l)); rail.addTo(map); } function locateMe(){ navigator.geolocation.getCurrentPosition(function(pos){ var lat = pos.coords.latitude; var lon = pos.coords.longitude; L.marker([lat,lon]).addTo(map).bindPopup("Itt vagy").openPopup(); map.setView([lat,lon],15); }); } function showStops(){ alert("Következő lépés: GTFS megállók betöltése"); } </script> </body> </html>
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<title>Attila közlekedés</title>
+
+<style>
+body { font-family: Arial; padding: 20px; }
+button { margin: 5px; padding: 10px; }
+#result { margin-top: 10px; font-weight: bold; }
+.kek { color: blue; }
+.piros { color: red; }
+</style>
+
+</head>
+<body>
+
+<h2>🚍 Attila közlekedés</h2>
+
+<input id="search" placeholder="Megálló neve">
+<button onclick="searchStop()">Keresés</button>
+
+<br><br>
+
+<input id="from" placeholder="Honnan">
+<input id="to" placeholder="Hová">
+<button onclick="calc()">Távolság</button>
+
+<br><br>
+
+<button onclick="setMode('kek')">KÉK</button>
+<button onclick="setMode('piros')">PIROS</button>
+
+<div id="result">Eredmény...</div>
+
+<script>
+
+let mode = "normal";
+
+function setMode(m){
+mode = m;
+}
+
+let stops = [
+{name:"Békásmegyer", lat:47.598, lon:19.055},
+{name:"Batthyány tér", lat:47.507, lon:19.039},
+{name:"Flórián tér", lat:47.541, lon:19.045},
+{name:"Szentendre", lat:47.668, lon:19.075}
+];
+
+function searchStop(){
+let input = document.getElementById("search").value.toLowerCase();
+let found = stops.find(s => s.name.toLowerCase().includes(input));
+
+if(found){
+show(found.name);
+} else {
+show("Nincs találat");
+}
+}
+
+function calc(){
+let from = document.getElementById("from").value.toLowerCase();
+let to = document.getElementById("to").value.toLowerCase();
+
+let a = stops.find(s => s.name.toLowerCase().includes(from));
+let b = stops.find(s => s.name.toLowerCase().includes(to));
+
+if(a && b){
+let d = distance(a.lat,a.lon,b.lat,b.lon);
+show("Távolság: " + (d*1000).toFixed(0) + " m");
+} else {
+show("Hibás megálló");
+}
+}
+
+function distance(lat1, lon1, lat2, lon2){
+let R = 6371;
+let dLat = (lat2-lat1) * Math.PI/180;
+let dLon = (lon2-lon1) * Math.PI/180;
+
+let a = Math.sin(dLat/2)**2 +
+Math.cos(lat1*Math.PI/180) *
+Math.cos(lat2*Math.PI/180) *
+Math.sin(dLon/2)**2;
+
+let c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+return R * c;
+}
+
+function show(text){
+let el = document.getElementById("result");
+el.className = mode;
+el.innerHTML = text;
+}
+let mode = "normal";
+
+function setMode(m) {
+mode = m;
+document.getElementById("status").innerText = "Mód: " + m;
+}
+
+function getColorStyle() {
+if (mode === "keses") return "color: blue;";
+if (mode === "sietes") return "color: red;";
+if (mode === "zold") return "color: green;";
+if (mode === "sarga") return "color: orange;";
+if (mode === "matrix") return "background: black; color: lime; padding:4px;";
+return "color: black;";
+}
+</script>
+
+</body>
+</html>
