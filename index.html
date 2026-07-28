@@ -1,206 +1,608 @@
 <!DOCTYPE html>
 <html lang="hu">
+
 <head>
+
 <meta charset="UTF-8">
-<title>FUTÁR CORE V1</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>
+Attila Közlekedés Control V10
+</title>
+
 
 <style>
+
 body{
     margin:0;
-    background:#000;
-    color:#fff;
-    font-family:Consolas,monospace;
+    font-family:Arial, sans-serif;
+    background:#111827;
+    color:white;
 }
 
-/* ================= ÓRA ================= */
-#clockPanel{
-    background:#000;
-    padding:10px;
+
+header{
+
+    background:#0f766e;
+    padding:15px;
     text-align:center;
-    border-bottom:2px solid #00ff66;
+
 }
 
-#clock{
-    font-size:54px;
-    font-weight:bold;
-    color:#00ff66;
-    text-shadow:0 0 20px #00ff66;
+
+h1{
+    margin:0;
+    font-size:24px;
 }
 
-/* =============== HELYZET =============== */
-#locationPanel{
-    background:#2d2600;
-    color:#ffd000;
+
+.menu{
+
+    display:grid;
+    grid-template-columns:
+    repeat(auto-fit,minmax(180px,1fr));
+
+    gap:12px;
+    padding:15px;
+
+}
+
+
+button{
+
+    padding:15px;
+    border:none;
+    border-radius:10px;
+
+    background:#2563eb;
+    color:white;
+
+    font-size:16px;
+    cursor:pointer;
+
+}
+
+
+button:hover{
+
+    background:#1d4ed8;
+
+}
+
+
+.panel{
+
+    display:none;
+
+    margin:15px;
+    padding:15px;
+
+    background:#1f2937;
+
+    border-radius:12px;
+
+}
+
+
+.active{
+
+    display:block;
+
+}
+
+
+input{
+
+    width:90%;
+
     padding:12px;
-    font-size:14px;
-    border-bottom:2px solid #665500;
+
+    font-size:16px;
+
+    border-radius:8px;
+
 }
 
-.distance{
-    color:#7dff7d;
-    font-weight:bold;
+
+.card{
+
+    background:#374151;
+
+    margin-top:10px;
+
+    padding:12px;
+
+    border-radius:10px;
+
 }
 
-.stop{
-    padding:6px;
-    border-bottom:1px solid #222;
+
+.green{
+
+color:#22c55e;
+
 }
+
+
+.yellow{
+
+color:#eab308;
+
+}
+
+
+.red{
+
+color:#ef4444;
+
+}
+
+
 </style>
+
+
 </head>
+
 
 <body>
 
-<div id="clockPanel">
-    <div id="clock">00:00:00</div>
+
+<header>
+
+<h1>
+🚍 Attila Közlekedés Control V10
+</h1>
+
+<div>
+GTFS • PDF • Megálló • Menetrend
 </div>
 
-<div id="locationPanel">
-    <div class="title">📍 HELYZETEM</div>
-    <div id="address">Pozíció keresése...</div>
+</header>
+
+
+
+<div class="menu">
+
+
+<button onclick="openPanel('pdf')">
+🗂 PDF TÁR
+</button>
+
+
+<button onclick="openPanel('kereso')">
+🔎 MEGÁLLÓ KERESŐ
+</button>
+
+
+<button onclick="openPanel('gtfs')">
+🚌 GTFS ADATOK
+</button>
+
+
+<button onclick="openPanel('kapcsolat')">
+🔗 KÖZÖS MEGÁLLÓK
+</button>
+
+
 </div>
 
-<div id="stops"></div>
+
+
+
+
+<div id="pdf" class="panel">
+
+<h2>
+🗂 PDF Menetrend Tár
+</h2>
+
+
+<div id="pdfLista">
+
+Betöltés...
+
+</div>
+
+
+</div>
+
+
+
+
+
+<div id="kereso" class="panel">
+
+<h2>
+🔎 Megálló kereső
+</h2>
+
+
+<input 
+id="keresoInput"
+placeholder="Megálló neve..."
+onkeyup="keresMegallo()"
+>
+
+
+<div id="talalatok">
+
+</div>
+
+
+</div>
+
+
+
+
+
+<div id="gtfs" class="panel">
+
+
+<h2>
+🚌 GTFS adatbázis
+</h2>
+
+
+<div class="card">
+
+Megállók:
+<span id="gtfsMegallok">
+0
+</span>
+
+</div>
+
+
+<div class="card">
+
+Járatok:
+<span id="gtfsJaratszam">
+0
+</span>
+
+</div>
+
+
+</div>
+
+
+
+
+
+<div id="kapcsolat" class="panel">
+
+
+<h2>
+🔗 Fizikai megálló kapcsolatok
+</h2>
+
+
+<div class="card">
+
+🚏 Nád utca
+
+<br><br>
+
+89725 → 🚌 160
+
+<br>
+F00457 → 🚌 243
+
+<br>
+917 → 🌙 éjszakai
+
+<br><br>
+
+Távolság:
+kb. 45 m
+
+</div>
+
+
+
+<div class="card">
+
+🚏 Békásmegyer H
+
+<br>
+
+1600 + 2430
+
+</div>
+
+
+</div>
+
+
+
 
 <script>
-/* ================= ÓRA ================= */
-function updateClock(){
-    const now = new Date();
-    document.getElementById("clock").innerHTML =
-        now.toLocaleTimeString('hu-HU', { hour12:false });
-}
-setInterval(updateClock,1000);
-updateClock();
 
-/* ================= GPS ================= */
-let myLat = null;
-let myLon = null;
 
-async function updateLocation(){
-    if(!navigator.geolocation){
-        document.getElementById("address").innerHTML = "GPS nem elérhető";
-        return;
-    }
+function openPanel(id){
 
-    navigator.geolocation.getCurrentPosition(async pos=>{
-        myLat = pos.coords.latitude;
-        myLon = pos.coords.longitude;
+let panelek =
+document.querySelectorAll(".panel");
 
-        let city="", road="", house="";
 
-        try{
-            const url =
-`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${myLat}&lon=${myLon}`;
+panelek.forEach(
+p=>p.classList.remove("active")
+);
 
-            const res = await fetch(url);
-            const data = await res.json();
 
-            city = data.address.city || data.address.town || data.address.village || "";
-            road = data.address.road || "";
-            house = data.address.house_number || "";
-        }catch(e){}
+document
+.getElementById(id)
+.classList.add("active");
 
-        document.getElementById("address").innerHTML =
-        `🏙️ ${city}<br>
-         🛣️ ${road} ${house}<br><br>
-         🌍 ${myLat.toFixed(6)}<br>
-         🌍 ${myLon.toFixed(6)}<br><br>
-         🎯 ±${Math.round(pos.coords.accuracy)} m`;
-
-        renderStops();
-
-    }, err=>{
-        document.getElementById("address").innerHTML = "GPS nem elérhető";
-    },{
-        enableHighAccuracy:true
-    });
 }
 
-updateLocation();
-setInterval(updateLocation,30000);
 
-/* ================= TÁVOLSÁG ================= */
-function distanceMeters(lat1, lon1, lat2, lon2){
-    const R = 6371000; // Föld sugár méterben
 
-    const dLat = (lat2-lat1) * Math.PI/180;
-    const dLon = (lon2-lon1) * Math.PI/180;
+<script>
 
-    const a =
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1*Math.PI/180) *
-        Math.cos(lat2*Math.PI/180) *
-        Math.sin(dLon/2) * Math.sin(dLon/2);
 
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+// =====================================
+// PDF TÁR + DÁTUM FIGYELŐ MOTOR
+// =====================================
 
-    return R * c;
+
+const PDF_ADATOK = [
+
+
+{
+nev:"160-as busz menetrend",
+jarat:"160",
+fajl:"pdf/160.pdf",
+
+tol:"2026-07-01",
+ig:"2026-08-31"
+
+},
+
+
+
+{
+nev:"243-as busz menetrend",
+jarat:"243",
+fajl:"pdf/243.pdf",
+
+tol:"2026-07-01",
+ig:"2026-08-31"
+
+},
+
+
+
+{
+nev:"917 éjszakai járat menetrend",
+jarat:"917",
+
+fajl:"pdf/917.pdf",
+
+tol:"2026-07-01",
+ig:"2026-08-31"
+
 }
 
-/* ================= DEMO GTFS STOPOK ================= */
-const stops = [
-    {stop_name:"Nád utca", stop_id:"BKK-F00457",stop_lat: 47.594072, stop_lon: 19.048469},
-    {stop_name:"Békásmegyer HÉV-állomás", stop_id:"H5-09183", stop_lat: 47.598091, stop_lon: 19.054599},
-    {stop_name:"Gulácsy Lajos utca", stop_id:"BKK-00438", stop_lat: 47.602562, stop_lon: 19.048229},
-    {stop_name:"Florián tér_Vörösvári ut", stop_id:"BKK-F00611", stop_lat: 47.542896, stop_lon: 19.042252},
-    {stop_name:"Florián tér_Szentendrei ut", stop_id:"BKK-F00613", stop_lat: 47.541664, stop_lon: 19.040084},
-    {stop_name:"Kisinóci turistaház", stop_id:"VOLAN-778186", stop_lat: 47.890600, stop_lon: 18.927580},
-    {stop_name:"Verecke lépcsö", stop_id:"BKK-F00265",  stop_lat: 47.529117,  stop_lon: 19.003624},
-    {stop_name:"Csobánka tér-243 vá", stop_id:"BKK-F044192", stop_lat: 47.597795,  stop_lon: 19.053787},
-    {stop_name:"Csobánka tér-160 vá", stop_id:"BKK-008939", stop_lat: 47.598425,  stop_lon: 19.054240},
-    {stop_name:"Szentendre, HÉV végállomás", stop_id:"H5-09142221", stop_lat: 47.661038, stop_lon:19.075607},
-    {stop_name:"Szentendre, Autóbusz-állomás", stop_id:"VOLÁN-778806-99",  stop_lat: 47.660403, stop_lon:19.075408},
-    {stop_name:"Szentendre, Skanzen 1", stop_id:"VOLÁN-778840-1",  stop_lat: 47.691135, stop_lon:19.046955},
-    {stop_name:"Szentendre, Skanzen 2",  stop_id:"VOLÁN-778840-2",  stop_lat: 47.691273, stop_lon:19.045667},
-    {stop_name:"Tahitótfalu, hídfő 1",  stop_id:"VOLÁN-779053-1",  stop_lat: 47.751712, stop_lon: 19.078215}, 
-    {stop_name:"Tahitótfalu, hídfő 2",  stop_id:"VOLÁN-779053-2",  stop_lat: 47.751648, stop_lon: 19.078091},
-    {stop_name:"Szentendre, Dömör-kapu", stop_id:"VOLÁN-778803", stop_lat: 47.694900, stop_lon: 19.000210},
-    {stop_name:"Szob, Vasútállomás", stop_id: "VOLAN-779011", stop_lat: 47.821319, stop_lon: 18.862602},
-    {stop_name:"Nagybörzsöny, községháza",  stop_id:"VOLAN-778310",stop_lat: 47.936030, stop_lon: 18.827710},
-    {stop_name:"Királyrét",  stop_id:"VOLAN-779017",stop_lat: 47.895040,stop_lon: 18.977687},
-    {stop_name:"Magastaxi turistaház, Börzsöny", stop_id:"ERDÖ" ,stop_lat:47.92842, stop_lon: 18.92997},
-    {stop_name:"Nagyhideghegyi turistaház, Börzsöny",stop_id:"ERDÖ" ,stop_lat: 47.936111, stop_lon: 18.921944}, 
-    {stop_name:"Csoványos, hegycsucs, Börzsöny,kiláto", stop_id:"ERDÖ" ,stop_lat: 47.94908, stop_lon: 18.9483},
-    {stop_name:"Örs Vezér tér-85-85E", stop_id:"BKK-008030",stop_lat:47.501742, stop_lon:19.135604},
-    {stop_name:"Kocka utca kifelé", stop_id: "BKK-1831",stop_lat: 47.484915, stop_lon: 19.155466}, 
-    {stop_name:"Kocka utca befelé", stop_id: "BKK-1832",stop_lat: 47.484708, stop_lon: 19.155969},
-    {stop_name:"Újhegyi sétány befelé", stop_id: "BKK-F01842", stop_lat: 47.470813, stop_lon: 19.16451}, 
-    {stop_name:"Gőzmozdony utca kifelé",stop_id: "BKK-008863", stop_lat: 47.470028, stop_lon: 19.157173},
-    {stop_name:"Dunapataj, iskola", stop_id: "VOLAN-325369", stop_lat: 46.644280, stop_lon: 19.000233},
-    {stop_name:"Szelidi-tó, autóbusz-forduló", stop_id: "VOLAN-325374", stop_lat: 46.625050, stop_lon: 19.046159},
-    {stop_name:"Héviz, Széchenyi ut, Viztorony", stop_id: "VOLAN-561352-1",  stop_lat: 46.789883,  stop_lon: 17.181239},  
-    {stop_name:"Héviz, Széchenyi ut, Viztorony", stop_id: "VOLAN-561352-2",  stop_lat: 46.790057,  stop_lon: 17.182311}
-    
-    ];
-    
-    
 
-/* ================= RENDER ================= */
-function renderStops(){
-    const out = document.getElementById("stops");
-    if(!myLat || !myLon){
-        out.innerHTML = "";
-        return;
-    }
+];
 
-    out.innerHTML = stops.map(s=>{
-        let dist = "";
 
-        if(s.stop_lat && s.stop_lon){
-            const d = distanceMeters(myLat,myLon,s.stop_lat,s.stop_lon);
-            dist = d < 1000
-                ? Math.round(d) + " m"
-                : (d/1000).toFixed(2) + " km";
-        }
 
-        return `
-        <div class="stop">
-            🚏 ${s.stop_name}<br>
-            ID: ${s.stop_id}<br>
-            📏 <span class="distance">${dist}</span>
-        </div>`;
-    }).join("");
+
+
+function datumSzamitas(vegDatum){
+
+
+let ma =
+new Date();
+
+
+let lej =
+new Date(vegDatum);
+
+
+
+let kulonbseg =
+lej-ma;
+
+
+return Math.ceil(
+kulonbseg /
+(1000*60*60*24)
+);
+
+
 }
+
+
+
+
+
+
+
+function pdfListaBetoltes(){
+
+
+let lista =
+document.getElementById(
+"pdfLista"
+);
+
+
+lista.innerHTML="";
+
+
+
+PDF_ADATOK.forEach(pdf=>{
+
+
+let napok =
+datumSzamitas(pdf.ig);
+
+
+
+let allapot="";
+let osztaly="";
+
+
+
+if(napok < 0){
+
+
+allapot =
+"🔴 LEJÁRT";
+
+osztaly="red";
+
+
+}
+
+else if(napok <=30){
+
+
+allapot =
+"🟡 HAMAROSAN LEJÁR";
+
+
+osztaly="yellow";
+
+
+}
+
+else{
+
+
+allapot =
+"🟢 AKTUÁLIS";
+
+
+osztaly="green";
+
+
+}
+
+
+
+
+
+lista.innerHTML += `
+
+
+<div class="card">
+
+
+<h3>
+
+${pdf.nev}
+
+</h3>
+
+
+
+Járat:
+<b>
+${pdf.jarat}
+</b>
+
+
+<br><br>
+
+
+Érvényes:
+
+<br>
+
+${pdf.tol}
+
+-
+
+${pdf.ig}
+
+
+
+<br><br>
+
+
+
+Állapot:
+
+<span class="${osztaly}">
+
+${allapot}
+
+</span>
+
+
+
+<br>
+
+
+${
+
+napok>=0 ?
+
+"Hátralévő idő: "+napok+" nap"
+
+:
+
+"Friss PDF szükséges!"
+
+}
+
+
+
+<br><br>
+
+
+<button onclick="pdfMegnyitas('${pdf.fajl}')">
+
+📄 PDF MEGNYITÁS
+
+</button>
+
+
+
+</div>
+
+
+`;
+
+
+
+});
+
+
+
+}
+
+
+
+
+
+function pdfMegnyitas(fajl){
+
+
+window.open(
+fajl,
+"_blank"
+);
+
+
+}
+
+
+
+
+
+// induláskor
+
+pdfListaBetoltes();
+
+
 </script>
 
+
 </body>
+
 </html>
