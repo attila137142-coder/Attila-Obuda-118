@@ -1,1750 +1,215 @@
 <!DOCTYPE html>
 <html lang="hu">
-
 <head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Hungary Transit + Forest Rail Cockpit PRO</title>
 
-<meta charset="UTF-8">
-
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-
-
-<title>
-Attila Közlekedés Control V10.1 STABLE CLEAN
-</title>
-
-
+<link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css"/>
 
 <style>
-
-
-body{
-
-margin:0;
-
-font-family:Arial, sans-serif;
-
-background:#111827;
-
-color:white;
-
-}
-
-
-
-header{
-
-background:#0f766e;
-
-padding:15px;
-
-text-align:center;
-
-}
-
-
-
-h1{
-
-margin:0;
-
-font-size:24px;
-
-}
-
-
-
-.menu{
-
-
-display:grid;
-
-grid-template-columns:
-
-repeat(auto-fit,minmax(180px,1fr));
-
-
-gap:12px;
-
-padding:15px;
-
-
-}
-
-
-
-button{
-
-
-padding:14px;
-
-border:none;
-
-border-radius:10px;
-
-
-background:#2563eb;
-
-color:white;
-
-
-font-size:16px;
-
-cursor:pointer;
-
-
-}
-
-
-
-button:hover{
-
-
-background:#1d4ed8;
-
-
-}
-
-
-
-
-.panel{
-
-
-display:none;
-
-
-margin:15px;
-
-
-padding:15px;
-
-
-background:#1f2937;
-
-
-border-radius:12px;
-
-
-}
-
-
-
-.active{
-
-
-display:block;
-
-
-}
-
-
-
-
-input{
-
-
-width:90%;
-
-
-padding:12px;
-
-
-font-size:16px;
-
-
-border-radius:8px;
-
-
-border:none;
-
-
-}
-
-
-
-
-.card{
-
-
-background:#374151;
-
-
-padding:12px;
-
-
-margin-top:10px;
-
-
-border-radius:10px;
-
-
-}
-
-
-
-
-.green{
-
-color:#22c55e;
-
-}
-
-
-
-.yellow{
-
-color:#eab308;
-
-}
-
-
-
-.red{
-
-color:#ef4444;
-
-}
-
-
-
-.blue{
-
-color:#60a5fa;
-
-}
-
-
-
-.small{
-
-
-font-size:14px;
-
-color:#d1d5db;
-
-
-}
-
-
-
+body { margin:0; font-family: Arial; background:#111; color:#fff; }
+#map { height: 60vh; }
+.panel { padding:10px; }
+button { margin:3px; padding:8px; border:0; border-radius:6px; }
+.box { background:#1e1e1e; padding:10px; border-radius:8px; font-size:13px; }
 </style>
-
-
 </head>
-
-
-
 
 <body>
 
+<div class="panel">
 
+<button onclick="setMode('gps')">🧭 GPS</button>
+<button onclick="toggleStops()">🚏 Megállók</button>
+<button onclick="filter('bkk')">🚍 BKK</button>
+<button onclick="filter('volan')">🚌 VOLÁN</button>
+<button onclick="filter('mav')">🚆 MÁV</button>
+<button onclick="filter('forest')">🌲 Kisvasút</button>
 
-
-<header>
-
-
-<h1>
-🚍 Attila Közlekedés Control V10.1
-</h1>
-
-
-<div>
-
-GTFS • PDF • Megálló • Menetrend
+<div id="info" class="box">Indítás...</div>
 
 </div>
 
+<div id="map"></div>
 
-</header>
-
-
-
-
-
-<div class="menu">
-
-
-
-<button onclick="openPanel('pdf')">
-
-🗂 PDF TÁR
-
-</button>
-
-
-
-
-<button onclick="openPanel('kereso')">
-
-🔎 MEGÁLLÓ KERESŐ
-
-</button>
-
-
-
-
-<button onclick="openPanel('gtfs')">
-
-🚌 GTFS ADATOK
-
-</button>
-
-
-
-
-<button onclick="openPanel('kapcsolat')">
-
-🔗 KÖZÖS MEGÁLLÓK
-
-</button>
-
-
-
-
-</div>
-
-
-
-
-
-
-
-<div id="pdf" class="panel">
-
-
-<h2>
-
-🗂 PDF Menetrend Tár
-
-</h2>
-
-
-<div id="pdfLista">
-
-
-Betöltés...
-
-
-</div>
-
-
-</div>
-
-
-
-
-
-
-
-
-
-<div id="kereso" class="panel">
-
-
-<h2>
-
-🔎 Megálló kereső
-
-</h2>
-
-
-
-<input
-
-id="keresoInput"
-
-placeholder="Megálló neve..."
-
-oninput="keresMegallo()"
-
-
->
-
-
-
-<div id="talalatok">
-
-
-</div>
-
-
-</div>
-
-
-
-
-
-
-
-
-
-<div id="gtfs" class="panel">
-
-
-<h2>
-
-🚌 GTFS adatbázis
-
-</h2>
-
-
-
-<div class="card">
-
-
-Megállók:
-
-<span id="gtfsMegallok">
-
-0
-
-</span>
-
-
-</div>
-
-
-
-<div class="card">
-
-
-Járatok:
-
-<span id="gtfsJaratszam">
-
-0
-
-</span>
-
-
-</div>
-
-
-
-</div>
-
-
-
-
-
-
-
-
-
-<div id="kapcsolat" class="panel">
-
-
-<h2>
-
-🔗 Fizikai megálló kapcsolatok
-
-</h2>
-
-
-<div id="kapcsolatLista">
-
-
-</div>
-
-
-</div>
-
-
-
-
-
-
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
 
 <script>
+let map = L.map('map').setView([47.4979,19.0402],8);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
 
+let mode = "gps";
+let showStops = false;
+let userPos = null;
+let markers = L.layerGroup().addTo(map);
 
-// =====================================
-// ALAP VEZÉRLÉS
-// =====================================
+// ---------------- DEMO GTFS LITE ADAT ----------------
+// (EZT később a te GTFS exportjaid töltik fel automatikusan)
+let stops = [
+  {id:"BKK_001", name:"Deák Ferenc tér", lat:47.4975, lng:19.0550, type:"bkk"},
+  {name: "Békásmegyer HÉV-állomás", gtfs: "H5-09183", lat: 47.598091, lon: 19.054599},
+  {name: "Nád utca", gtfs: "BKK-F00457", lat: 47.594072, lon: 19.048469},
+  {name: "Gulácsy Lajos utca", gtfs: "BKK-00438", lat: 47.602562, lon: 19.048229},
+ {name: "Florián tér", gtfs: "BKK-F00611", lat: 47.542896, lon: 19.042252},
+{name: "Florián tér", gtfs: "BKK-F00613", lat: 47.541664, lon: 19.040084},
+{name: "Batthyány tér (villamos)", gtfs: "BKK-F00057", lat: 47.506002, lon: 19.039456},
+{name: "Verecke lépcsö", gtfs: "BKK-F00265", lat: 47.529117, lon: 19.003624},
+{name: "Csobánka tér-243 vá", gtfs: "BKK-F044192", lat: 47.597795, lon: 19.053787},
+{name: "Csobánka tér-160 vá", gtfs: "BKK-008939", lat: 47.598425, lon: 19.054240},
+{name: "Szentendre, HÉV végállomás", gtfs: "H5-09142221", lat: 47.661038, lon: 19.075607},
+{name: "Örs Vezér tér-85-85E", gtfs: "BKK-008030", lat: 47.501742, lon: 19.135604},
+{name: "Kocka utca (kifelé)", gtfs: "BKK-1831", lat: 47.484915, lon: 19.155466},
+{name: "Kocka utca (befelé)", gtfs: "BKK-1832", lat: 47.484708, lon: 19.155969},
+{name: "Újhegyi sétány (befelé)", gtfs: "BKK-F01842", lat: 47.470813, lon: 19.16451},
+{name: "Gőzmozdony utca (kifelé)", gtfs: "BKK-008863", lat: 47.470028, lon: 19.157173},
+{name: "Bojtár utca (kifelé)", gtfs: "VOLÁN-773493-1-BKK-F00520", lat: 47.560099, lon: 19.024711},
+{name: "Bojtár utca (befelé)", gtfs: "VOLÁN-773493-2-BKK-F00521", lat: 47.559047, lon: 19.042921},
+{name: "Szentendre, Autóbusz-állomás", gtfs: "VOLÁN-778806-99", lat: 47.660403, lon: 19.075408},
+{name: "Szentendre, Skanzen (1)", gtfs: "VOLÁN-778840-1", lat: 47.691135, lon: 19.046955},
+{name: "Szentendre, Skanzen (2)", gtfs: "VOLÁN-778840-2", lat: 47.691273, lon: 19.045667},
+{name: "Tahitótfalu, hídfő 1", gtfs: "VOLÁN-779053-1", lat: 47.751712, lon: 19.078215},
+{name: "Tahitótfalu, hídfő 2", gtfs: "VOLÁN-779053-2", lat: 47.751648, lon: 19.078091},
+{name: "Szentendre, Dömör-kapu", gtfs: "VOLÁN-778803", lat: 47.694900, lon: 19.000210},
+{name: "Vác, Autóbusz-állomás", gtfs: "VOLÁN-779365_99", lat: 47.781930, lon: 19.129643},
+{name: "Kóspallag, templom", gtfs: "VOLÁN-778190", lat: 47.877850, lon: 18.932580},
+{name: "Kisinóci turistaház", gtfs: "VOLAN-778186", lat: 47.890600, lon: 18.927580},
+{name: "Királyrét", gtfs: "VOLAN-779017", lat: 47.895040, lon: 18.977687},
+{name: "Szob, Vasútállomás", gtfs: "VOLAN-779011", lat: 47.821319, lon: 18.862602},
+{name: "Nagybörzsöny, községháza", gtfs: "VOLAN-778310", lat: 47.936030, lon: 18.827710},
+{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-1", lat: 48.015915, lon: 18.888468},
+{name: "Kemence, Fő utca 183", gtfs: "VOLAN-778086-2", lat: 48.015710, lon: 18.888021},
+{name: "Pilisborosjenő, buszforduló", gtfs: "VOLAN-778532", lat: 47.609100, lon: 18.989680},
+{name: "Dobogókő, hegytető", gtfs: "VOLAN-778561", lat: 47.719118, lon: 18.897577},
+{name: "Vámosmikola, községháza", gtfs: "VOLAN-779478", lat: 47.978190, lon: 18.785890},
+{name: "Dunapataj, iskola", gtfs: "VOLAN-325369", lat: 46.644280, lon: 19.000233},
+{name: "Szelidi-tó, autóbusz-forduló", gtfs: "VOLAN-325374", lat: 46.625050, lon: 19.046159},
+{name: "Pomáz, HÉV állomás", gtfs: "HEV5-09134", lat: 47.642749, lon: 19.032657},
+{name: "Pomáz, autóbusz-állomás", gtfs: "VOLAN-778618", lat: 47.642749, lon: 19.032657},
+{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-1-BKK-009170", lat: 47.645570, lon: 19.027226},
+{name: "Pomáz, Dózsa György út", gtfs: "VOLAN-778620-2-BKK-009171", lat: 47.645554, lon: 19.027001},
+{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-1", lat: 46.789883, lon: 17.181239},
+{name: "Héviz, Széchenyi ut, Viztorony", gtfs: "VOLAN-561352-2", lat: 46.790057, lon: 17.182311},
+{name: "Héviz, Autobusz állomás", gtfs: "VOLAN-561337", lat: 46.792964, lon: 17.192426},
+{name: "Keszhely,Vasut-és  Autobusz állomás", gtfs: "VOLAN-561442", lat: 46.757976, lon: 17.246480},
+{name: "Magas taxi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.92842, lon: 18.92997},
+{name: "Nagyhideghegyi turistaház, (Börzsöny)", gtfs: "ERDÖ", lat: 47.936111, lon: 18.921944},
+{name: "Csoványos, (hegycsucs,Börzsöny,kiláto)", gtfs: "ERDÖ", lat: 47.94908, lon: 18.9483},
+{name: "Lakás, (Dino lak)", gtfs: "UTCA", lat: 47.594304, lon: 19.048770},
+/* ================= GYERMEKVASÚT ================= */
+{name:"Széchenyi-hegy", lat:47.5007, lon:18.9653, mav_id:"005546912"},
+{name:"Normafa", lat:47.5070, lon:18.9630, mav_id:"005546904"},
+{name:"Csillebérc", lat:47.5109, lon:18.9659, mav_id:"005546896"},
+{name:"Virágvölgy", lat:47.5185, lon:18.9672, mav_id:"005546888"},
+(name:"Jánoshegy", lat:47.5207, lon:18.9646, mav_id:"005546870"},
+{name:"Vadaspark mh.", lat:47.5365, lon:18.9695, mav_id:null},
+{name:"Szépjuhászné", lat:47.5287, lon:18.9683, mav_id:"005546862"},
+{name:"Hárs-hegy", lat:47.5315, lon:18.9712, mav_id:"005546854"},
+{name:"Hűvösvölgy", lat:47.5412, lon:18.9640, mav_id:"005546847"},
 
+/* ================= KIRÁLYRÉT ================= */
+{name:"Kismaros", lat:47.8270, lon:19.0150, mav_id:null},
+{name:"Morgó", lat:47.8440, lon:19.0020, mav_id:null},
+{name:"Börzsönyliget", lat:47.8605, lon:18.9940, mav_id:null},
+{name:"Pap-hegy", lat:47.8830, lon:18.9840, mav_id:null},
+{name:"Királyrét", lat:47.9100, lon:18.9730, mav_id:null},
 
+/* ================= KEMENCE ================= */
+{name:"Kemence", lat:47.9980, lon:18.8910, mav_id:null},
+{name:"Godóvár", lat:47.9905, lon:18.8875, mav_id:null},
+{name:"Feketevölgy", lat:47.9830, lon:18.8830, mav_id:null}, 
+{name: "Hajagos", lat:47.9750, lon:18.8790, mav_id:null},
+{name:"Rózsa-forrás", lat:47.9670, lon:18.8750, mav_id:null},
 
-function openPanel(id){
+/* ================= NAGYBÖRZSÖNY ================= */
+{name:"Nagybörzsöny", lat:47.9360, lon:18.8320, mav_id:null},
+{name:"Nagybörzsöny-Észak", lat:47.9430, lon:18.8280, mav_id:null},
+{name:"Kisirtáspuszta", lat:47.9500, lon:18.8220, mav_id:null},
+{nane:"name:"Nagyirtáspuszta", lat:47.9555, lon:18.8185, mav_id:null},
 
+/* ================= SZOBI KISVASÚT (KIEGÉSZÍTVE!) ================= */
+{ name:"Szob", lat:47.8190, lon:18.8680, mav_id:null},
+{ name:"Márianosztra", lat:47.8730, lon:18.8700, mav_id:null},
+{ name:"Máriakút", lat:47.8850, lon:18.8720, mav_id:null},
+{ name:"Füstös-forrás", lat:47.8950, lon:18.8750, mav_id:null},
+{ name:"Vetett-fű", lat:47.9050, lon:18.8780, mav_id:null}
 
-
-let panelek =
-
-document.querySelectorAll(".panel");
-
-
-
-panelek.forEach(
-
-p => p.classList.remove("active")
-
-);
-
-
-
-document
-
-.getElementById(id)
-
-.classList.add("active");
-
-
-
-}
-
-
-
-</script>
-<script>
-
-
-// =====================================
-// PDF TÁR + ÉRVÉNYESSÉG FIGYELŐ V1
-// =====================================
-
-
-
-const PDF_ADATOK = [
-
-
-
-{
-nev:"160-as busz menetrend",
-
-jarat:"160",
-
-fajl:"pdf/160.pdf",
-
-tol:"2026-07-01",
-
-ig:"2026-08-31"
-
-},
-
-
-
-{
-nev:"243-as busz menetrend",
-
-jarat:"243",
-
-fajl:"pdf/243.pdf",
-
-tol:"2026-07-01",
-
-ig:"2026-08-31"
-
-},
-
-
-
-{
-nev:"917 éjszakai járat menetrend",
-
-jarat:"917",
-
-fajl:"pdf/917.pdf",
-
-tol:"2026-07-01",
-
-ig:"2026-08-31"
-
-}
-
-
-
+  {id:"VOL_120", name:"Érd autóbusz-állomás", lat:47.3840, lng:18.9300, type:"volan"},
+  {id:"KIS_001", name:"Szob kisvasút", lat:47.8190, lng:18.8670, type:"forest"},
 ];
 
-
-
-
-
-
-
-// dátum különbség napokban
-
-function datumSzamitas(vegDatum){
-
-
-let ma = new Date();
-
-
-let veg = new Date(vegDatum);
-
-
-
-let kulonbseg =
-
-veg - ma;
-
-
-
-return Math.ceil(
-
-kulonbseg /
-
-(1000*60*60*24)
-
-);
-
-
-
-}
-
-
-
-
-
-
-
-
-function pdfListaBetoltes(){
-
-
-
-let lista =
-
-document.getElementById(
-"pdfLista"
-);
-
-
-
-if(!lista) return;
-
-
-
-lista.innerHTML="";
-
-
-
-
-
-PDF_ADATOK.forEach(pdf=>{
-
-
-
-let napok =
-
-datumSzamitas(pdf.ig);
-
-
-
-let allapot;
-
-let osztaly;
-
-
-
-
-
-if(napok < 0){
-
-
-
-allapot =
-"🔴 LEJÁRT";
-
-osztaly =
-"red";
-
-
-
-}
-
-else if(napok <=30){
-
-
-
-allapot =
-"🟡 HAMAROSAN LEJÁR";
-
-osztaly =
-"yellow";
-
-
-}
-
-else{
-
-
-allapot =
-"🟢 AKTUÁLIS";
-
-osztaly =
-"green";
-
-
-}
-
-
-
-
-
-
-
-lista.innerHTML +=
-
-
-
-`
-
-
-<div class="card">
-
-
-<h3>
-
-${pdf.nev}
-
-</h3>
-
-
-
-
-Járat:
-
-<b>
-
-${pdf.jarat}
-
-</b>
-
-
-
-<br><br>
-
-
-
-
-Érvényesség:
-
-<br>
-
-
-${pdf.tol}
-
--
-
-${pdf.ig}
-
-
-
-<br><br>
-
-
-
-Állapot:
-
-
-<span class="${osztaly}">
-
-${allapot}
-
-</span>
-
-
-
-<br><br>
-
-
-
-${
-
-napok >= 0
-
-?
-
-"Hátralévő idő: "
-
-+ napok
-
-+" nap"
-
-:
-
-"Új PDF szükséges!"
-
-}
-
-
-
-<br><br>
-
-
-
-<button onclick="pdfMegnyitas('${pdf.fajl}')">
-
-
-📄 PDF MEGNYITÁS
-
-
-</button>
-
-
-
-</div>
-
-
-`;
-
-
-
+// ---------------- GPS ----------------
+navigator.geolocation.watchPosition(pos=>{
+  userPos = {lat:pos.coords.latitude,lng:pos.coords.longitude};
+
+  render();
 });
 
-
-
+// ---------------- MODE ----------------
+function setMode(m){
+  mode = m;
+  render();
 }
 
-
-
-
-
-
-
-
-
-
-function pdfMegnyitas(fajl){
-
-
-
-window.open(
-
-fajl,
-
-"_blank"
-
-);
-
-
-
+// ---------------- TOGGLE ----------------
+function toggleStops(){
+  showStops = !showStops;
+  render();
 }
 
+// ---------------- FILTER ----------------
+function filter(type){
+  markers.clearLayers();
 
+  stops.filter(s=>s.type===type).forEach(s=>{
+    addStop(s);
+  });
 
-
-
-
-
-
-// induláskor betöltés
-
-pdfListaBetoltes();
-
-
-
-
-
-</script>
-<script>
-
-
-// =====================================
-// MEGÁLLÓ KERESŐ MOTOR V1
-// =====================================
-
-
-
-const MEGALLO_ADATOK = [
-
-
-
-// =====================
-// 1600 BUSZ
-// =====================
-
-
-{
-nev:"Forrásliget lakópark",
-kod:"8406",
-jarat:"1600",
-tipus:"busz"
-},
-
-
-{
-nev:"Csillaghegy H",
-kod:"8404",
-jarat:"1600",
-tipus:"busz"
-},
-
-
-{
-nev:"Kert sor",
-kod:"8402",
-jarat:"1600",
-tipus:"busz"
-},
-
-
-{
-nev:"Nád utca",
-kod:"89725",
-jarat:"1600",
-tipus:"busz"
-},
-
-
-{
-nev:"Zemplén Győző utca",
-kod:"F00454",
-jarat:"1600",
-tipus:"busz"
-},
-
-
-{
-nev:"Hősök tere",
-kod:"F00452",
-jarat:"1600",
-tipus:"busz"
-},
-
-
-{
-nev:"Templom utca",
-kod:"F00445",
-jarat:"1600",
-tipus:"busz"
-},
-
-
-{
-nev:"Gulácsy Lajos utca",
-kod:"F00438",
-jarat:"1600",
-tipus:"busz"
-},
-
-
-{
-nev:"Doboz utca",
-kod:"109849",
-jarat:"1600",
-tipus:"busz"
-},
-
-
-{
-nev:"Békásmegyer H",
-kod:"8940",
-jarat:"1600",
-tipus:"busz"
-},
-
-
-
-
-
-// =====================
-// 2430 BUSZ
-// =====================
-
-
-{
-nev:"Békásmegyer H",
-kod:"44192",
-jarat:"2430",
-tipus:"busz"
-},
-
-
-{
-nev:"Nád utca",
-kod:"F00457",
-jarat:"2430",
-tipus:"busz"
-},
-
-
-
-
-
-// =====================
-// ÉJSZAKAI
-// =====================
-
-
-{
-nev:"Nád utca",
-kod:"917",
-jarat:"917",
-tipus:"éjszakai"
+  render();
 }
 
+// ---------------- STOP RENDER ----------------
+function addStop(s){
+  let m = L.marker([s.lat,s.lng]).addTo(markers);
 
+  let dist = userPos ? haversine(userPos.lat,userPos.lng,s.lat,s.lng) : 0;
 
-];
-
-
-
-
-
-
-
-
-// ékezet eltávolítás
-
-function ekezetNelkul(szoveg){
-
-
-return szoveg
-
-.toLowerCase()
-
-.normalize("NFD")
-
-.replace(
-/[\u0300-\u036f]/g,
-""
-);
-
-
+  m.bindPopup(`
+    🚏 ${s.name}<br>
+    🆔 ${s.id}<br>
+    📏 ${dist.toFixed(0)} m
+  `);
 }
 
-
-
-
-
-
-
-
-
-function keresMegallo(){
-
-
-
-let mezo =
-
-document.getElementById(
-"keresoInput"
-);
-
-
-
-let eredmeny =
-
-document.getElementById(
-"talalatok"
-);
-
-
-
-
-if(!mezo || !eredmeny)
-
-return;
-
-
-
-
-
-
-let keres =
-
-mezo.value.trim();
-
-
-
-
-eredmeny.innerHTML="";
-
-
-
-
-
-if(keres.length < 2){
-
-
-return;
-
-
+// ---------------- DISTANCE ----------------
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371000;
+  const dLat=(lat2-lat1)*Math.PI/180;
+  const dLon=(lon2-lon1)*Math.PI/180;
+  const a=Math.sin(dLat/2)**2+
+    Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*
+    Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
 }
 
+// ---------------- MAIN RENDER ----------------
+function render(){
 
+  if(showStops){
+    markers.clearLayers();
+    stops.forEach(s=>addStop(s));
+  }
 
+  let text = `
+    🧭 MODE: ${mode}<br>
+    📍 User: ${userPos ? userPos.lat.toFixed(5)+", "+userPos.lng.toFixed(5) : "no GPS"}<br>
+    🚏 Stops loaded: ${stops.length}<br>
+  `;
 
-
-
-
-let tiszta =
-
-ekezetNelkul(keres);
-
-
-
-
-
-
-
-let talalatok =
-
-MEGALLO_ADATOK.filter(
-
-m =>
-
-ekezetNelkul(m.nev)
-
-.includes(tiszta)
-
-);
-
-
-
-
-
-
-
-if(talalatok.length===0){
-
-
-
-eredmeny.innerHTML =
-
-
-`
-
-<div class="card">
-
-
-❌ Nincs találat
-
-
-</div>
-
-
-`;
-
-return;
-
-
+  document.getElementById("info").innerHTML = text;
 }
-
-
-
-
-
-
-
-
-
-talalatok.forEach(m=>{
-
-
-
-let ikon =
-
-m.tipus==="éjszakai"
-
-?
-
-"🌙"
-
-:
-
-"🚌";
-
-
-
-
-
-
-
-eredmeny.innerHTML +=
-
-
-`
-
-<div class="card">
-
-
-<h3>
-
-🚏 ${m.nev}
-
-</h3>
-
-
-
-GTFS stop_id:
-
-<b>
-
-${m.kod}
-
-</b>
-
-
-
-<br><br>
-
-
-
-Járat:
-
-${ikon}
-
-<b>
-
-${m.jarat}
-
-</b>
-
-
-
-
-<br><br>
-
-
-
-Típus:
-
-${m.tipus}
-
-
-
-</div>
-
-
-`;
-
-
-
-});
-
-
-
-
-}
-
-
-
-</script>
-<script>
-
-
-// =====================================
-// GTFS ADATMODUL V1
-// =====================================
-
-
-
-const GTFS_ADATBAZIS = {
-
-
-forras:
-
-"Attila Közlekedés Control V10.1",
-
-
-
-frissites:
-
-"2026-07-28",
-
-
-
-megallok:
-
-13,
-
-
-
-jaratok:
-
-3,
-
-
-
-adatok:
-
-
-[
-
-
-{
-stop_id:"8406",
-stop_name:"Forrásliget lakópark",
-route:"1600"
-},
-
-
-{
-stop_id:"8404",
-stop_name:"Csillaghegy H",
-route:"1600"
-},
-
-
-{
-stop_id:"8402",
-stop_name:"Kert sor",
-route:"1600"
-},
-
-
-{
-stop_id:"89725",
-stop_name:"Nád utca",
-route:"1600"
-},
-
-
-{
-stop_id:"8940",
-stop_name:"Békásmegyer H",
-route:"1600"
-},
-
-
-{
-stop_id:"44192",
-stop_name:"Békásmegyer H",
-route:"2430"
-},
-
-
-{
-stop_id:"F00457",
-stop_name:"Nád utca",
-route:"2430"
-},
-
-
-{
-stop_id:"917",
-stop_name:"Nád utca",
-route:"917"
-}
-
-
-]
-
-
-
-};
-
-
-
-
-
-
-
-
-function gtfsFrissites(){
-
-
-
-let megalloElem =
-
-document.getElementById(
-"gtfsMegallok"
-);
-
-
-
-let jaratElem =
-
-document.getElementById(
-"gtfsJaratszam"
-);
-
-
-
-
-if(megalloElem)
-
-megalloElem.innerHTML =
-
-GTFS_ADATBAZIS.megallok;
-
-
-
-if(jaratElem)
-
-jaratElem.innerHTML =
-
-GTFS_ADATBAZIS.jaratok;
-
-
-
-
-
-
-
-let panel =
-
-document.getElementById(
-"gtfs"
-);
-
-
-
-panel.insertAdjacentHTML(
-
-"beforeend",
-
-
-`
-
-<div class="card">
-
-
-Forrás:
-
-<b>
-
-${GTFS_ADATBAZIS.forras}
-
-</b>
-
-
-<br><br>
-
-
-Utolsó frissítés:
-
-${GTFS_ADATBAZIS.frissites}
-
-
-
-</div>
-
-
-
-
-<div class="card">
-
-
-Adatformátum:
-
-<br>
-
-
-GTFS kompatibilis
-
-<br>
-
-
-stop_id + stop_name + route
-
-
-</div>
-
-
-`
-
-);
-
-
-
-}
-
-
-
-
-gtfsFrissites();
-
-
-
-
-
-
-
-
-// =====================================
-// KÖZÖS MEGÁLLÓ MOTOR V1
-// =====================================
-
-
-
-const KOZOS_MEGALLOK = [
-
-
-
-{
-
-
-nev:"Nád utca",
-
-
-
-kapcsolatok:[
-
-
-{
-stop_id:"89725",
-
-jarat:"1600"
-
-},
-
-
-
-{
-stop_id:"F00457",
-
-jarat:"2430"
-
-},
-
-
-
-{
-stop_id:"917",
-
-jarat:"917"
-
-}
-
-
-],
-
-
-
-tavolsag:
-
-"kb. 45 méter"
-
-
-
-},
-
-
-
-
-
-
-
-{
-
-
-nev:"Békásmegyer H",
-
-
-
-kapcsolatok:[
-
-
-
-{
-stop_id:"8940",
-
-jarat:"1600"
-
-},
-
-
-
-{
-stop_id:"44192",
-
-jarat:"2430"
-
-}
-
-
-
-],
-
-
-
-tavolsag:
-
-"közös csomópont"
-
-
-
-}
-
-
-
-];
-
-
-
-
-
-
-
-
-
-function kozosMegalloBetoltes(){
-
-
-
-let lista =
-
-document.getElementById(
-"kapcsolatLista"
-);
-
-
-
-if(!lista)
-
-return;
-
-
-
-
-
-lista.innerHTML="";
-
-
-
-
-
-
-
-
-KOZOS_MEGALLOK.forEach(m=>{
-
-
-
-let html =
-
-
-
-`
-
-<div class="card">
-
-
-<h3>
-
-🚏 ${m.nev}
-
-</h3>
-
-
-
-Kapcsolt GTFS megállók:
-
-<br><br>
-
-
-`;
-
-
-
-
-
-
-m.kapcsolatok.forEach(k=>{
-
-
-
-let ikon =
-
-k.jarat==="917"
-
-?
-
-"🌙"
-
-:
-
-"🚌";
-
-
-
-
-
-html +=
-
-
-
-`
-
-${ikon}
-
-Járat:
-
-<b>
-
-${k.jarat}
-
-</b>
-
-
-<br>
-
-
-GTFS stop_id:
-
-<b>
-
-${k.stop_id}
-
-</b>
-
-
-
-<br><br>
-
-
-`;
-
-
-
-});
-
-
-
-
-
-
-
-html +=
-
-
-
-`
-
-Fizikai távolság:
-
-<b>
-
-${m.tavolsag}
-
-</b>
-
-
-
-</div>
-
-
-`;
-
-
-
-
-
-
-
-lista.innerHTML += html;
-
-
-
-});
-
-
-
-}
-
-
-
-
-
-
-
-
-kozosMegalloBetoltes();
-
-
 
 </script>
 
+</body>
+</html>
