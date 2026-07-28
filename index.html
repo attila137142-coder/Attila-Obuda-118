@@ -1690,7 +1690,620 @@ kozelMegallokKeresese();
 
 
 </script> 
-  
+<script>
+
+
+// =====================================
+// KÖZELI MEGÁLLÓ MOTOR V2
+// GTFS ALAPÚ VERZIÓ
+// =====================================
+
+
+
+function gtfsMegallokLekeres(){
+
+
+
+/*
+A végleges GTFS loader ezt tölti majd:
+
+GTFS_DB.stops
+
+vagy
+
+GTFS_ADATBAZIS.megallok
+
+
+A modul mindkettőt kezeli.
+*/
+
+
+if(
+window.GTFS_DB &&
+GTFS_DB.stops
+){
+
+return GTFS_DB.stops;
+
+}
+
+
+
+if(
+window.GTFS_ADATBAZIS &&
+GTFS_ADATBAZIS.megallok
+){
+
+return GTFS_ADATBAZIS.megallok;
+
+}
+
+
+
+return [];
+
+
+
+}
+
+
+
+
+
+
+
+
+// =====================================
+// LÉGVONAL TÁVOLSÁG
+// =====================================
+
+
+function haversine(
+
+lat1,
+lon1,
+lat2,
+lon2
+
+){
+
+
+
+const R=6371000;
+
+
+
+let dLat =
+
+(lat2-lat1)
+
+*
+
+Math.PI/180;
+
+
+
+let dLon =
+
+(lon2-lon1)
+
+*
+
+Math.PI/180;
+
+
+
+
+
+let a =
+
+Math.sin(dLat/2)**2
+
++
+
+Math.cos(lat1*Math.PI/180)
+
+*
+
+Math.cos(lat2*Math.PI/180)
+
+*
+
+Math.sin(dLon/2)**2;
+
+
+
+let c =
+
+2*
+
+Math.atan2(
+
+Math.sqrt(a),
+
+Math.sqrt(1-a)
+
+);
+
+
+
+return Math.round(
+R*c
+);
+
+
+
+}
+
+
+
+
+
+
+
+
+
+// =====================================
+// 5 LEGKÖZELEBBI MEGÁLLÓ
+// =====================================
+
+
+function kozelMegallokKeresese(){
+
+
+
+let listaElem =
+
+document.getElementById(
+"kozeliLista"
+);
+
+
+
+if(
+!GPS_ADAT.lat
+){
+
+
+listaElem.innerHTML=
+
+
+`
+
+<div class="card">
+
+📡 GPS adatokra várakozás...
+
+</div>
+
+`;
+
+
+return;
+
+
+}
+
+
+
+
+
+
+
+let megallok =
+
+gtfsMegallokLekeres();
+
+
+
+
+
+
+if(
+megallok.length===0
+){
+
+
+listaElem.innerHTML=
+
+
+`
+
+<div class="card">
+
+
+⚠️ Nincs betöltött GTFS megálló adat.
+
+
+<br><br>
+
+
+Kérem tölts be GTFS ZIP adatot.
+
+
+</div>
+
+
+`;
+
+
+
+return;
+
+
+
+}
+
+
+
+
+
+
+
+
+
+let talalatok=[];
+
+
+
+
+
+
+
+megallok.forEach(m=>{
+
+
+
+let lat =
+
+Number(
+m.stop_lat ||
+m.lat
+);
+
+
+
+let lon =
+
+Number(
+m.stop_lon ||
+m.lon
+);
+
+
+
+
+
+if(
+!lat ||
+!lon
+)
+
+return;
+
+
+
+
+
+
+
+let tav =
+
+haversine(
+
+GPS_ADAT.lat,
+
+GPS_ADAT.lon,
+
+lat,
+
+lon
+
+);
+
+
+
+
+
+
+talalatok.push({
+
+
+
+nev:
+
+m.stop_name ||
+m.nev ||
+"Ismeretlen megálló",
+
+
+
+
+stop_id:
+
+m.stop_id ||
+m.kod ||
+"-",
+
+
+
+lat:lat,
+
+
+lon:lon,
+
+
+tavolsag:tav
+
+
+
+});
+
+
+
+});
+
+
+
+
+
+
+
+
+
+talalatok.sort(
+
+(a,b)=>
+
+a.tavolsag-b.tavolsag
+
+);
+
+
+
+
+
+
+let top5 =
+
+talalatok.slice(0,5);
+
+
+
+
+
+
+
+
+let html="";
+
+
+
+
+
+
+
+top5.forEach(
+
+(m,i)=>{
+
+
+
+html +=
+
+
+`
+
+<div class="card">
+
+
+<h3>
+
+⭐ ${i+1}. ${m.nev}
+
+</h3>
+
+
+🚏 GTFS stop_id:
+
+<br>
+
+<b>
+
+${m.stop_id}
+
+</b>
+
+
+<br><br>
+
+
+📏 Távolság légvonalban:
+
+<br>
+
+<b>
+
+${m.tavolsag} méter
+
+</b>
+
+
+
+<br><br>
+
+
+📍 Koordináták:
+
+
+<br>
+
+
+${m.lat.toFixed(7)}
+
+
+<br>
+
+
+${m.lon.toFixed(7)}
+
+
+
+<br><br>
+
+
+<button onclick="menetrendKeres('${m.stop_id}')">
+
+
+🚍 MENETREND
+
+
+</button>
+
+
+</div>
+
+
+
+`;
+
+
+
+
+});
+
+
+
+
+
+
+
+listaElem.innerHTML=html;
+
+
+
+}
+
+
+
+
+
+
+
+
+
+// =====================================
+// MENETREND CSATLAKOZÁSI PONT
+// =====================================
+
+
+function menetrendKeres(stop_id){
+
+
+
+alert(
+
+"GTFS stop_id:\n"
+
++
+
+stop_id
+
++
+
+"\n\n"
+
++
+
+"A valós menetrend motor következő modulban kapcsolódik."
+
+);
+
+
+
+}
+
+
+
+
+
+
+
+
+
+// GPS frissítés után automatikus újraszámítás
+
+
+
+let regiHelyModul =
+
+helyAdatokMegjelenites;
+
+
+
+helyAdatokMegjelenites=function(){
+
+
+
+regiHelyModul();
+
+
+
+kozelMegallokKeresese();
+
+
+
+};
+
+
+
+
+
+
+
+// Közeli panel megnyitásakor frissítés
+
+
+
+let regiPanelKozeli =
+
+panelNyitas;
+
+
+
+panelNyitas=function(id){
+
+
+
+regiPanelKozeli(id);
+
+
+
+if(
+id==="kozeli"
+){
+
+
+setTimeout(
+
+kozelMegallokKeresese,
+
+300
+
+);
+
+
+}
+
+
+
+};
+
+
+
+
+
+</script>  
 </body>
 </html>
 
