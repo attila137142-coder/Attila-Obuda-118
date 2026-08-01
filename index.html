@@ -8,7 +8,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>
-Attila PDF → Táblázat Engine V0.2
+Attila PDF Dokumentumkezelő V1.0 STABLE
 </title>
 
 
@@ -18,21 +18,25 @@ Attila PDF → Táblázat Engine V0.2
 <style>
 
 body{
+
 font-family:Arial, sans-serif;
 background:#111;
 color:white;
+margin:0;
 padding:20px;
+
 }
 
 
 h1{
+
 color:#00eaff;
 }
 
 
 .panel{
 
-background:#1c1c1c;
+background:#1b1b1b;
 border:1px solid #444;
 border-radius:12px;
 padding:15px;
@@ -43,47 +47,78 @@ margin-bottom:15px;
 
 button{
 
-padding:10px 20px;
-border:0;
+padding:10px 18px;
+border:none;
 border-radius:8px;
-background:#008cff;
+background:#0078ff;
 color:white;
 cursor:pointer;
+margin:3px;
 
 }
 
 
 button:hover{
 
-background:#00c3ff;
+background:#00bfff;
 
 }
 
 
-table{
 
-border-collapse:collapse;
-background:white;
-color:black;
-width:100%;
+input{
+
+padding:8px;
 
 }
 
 
-td,th{
 
-border:1px solid #555;
-padding:6px;
+#viewer{
+
+background:#333;
+padding:10px;
 text-align:center;
+overflow:auto;
 
 }
+
+
+
+canvas{
+
+background:white;
+max-width:100%;
+
+}
+
+
+
+.info{
+
+display:grid;
+grid-template-columns:repeat(2,1fr);
+gap:10px;
+
+}
+
+
+
+.card{
+
+background:#222;
+padding:10px;
+border-radius:8px;
+
+}
+
 
 
 pre{
 
 background:#000;
 padding:10px;
-max-height:350px;
+max-height:300px;
 overflow:auto;
 
 }
@@ -95,12 +130,15 @@ overflow:auto;
 </head>
 
 
+
 <body>
 
 
+
 <h1>
-🧪 Attila PDF → Táblázat Engine V0.2
+📄 Attila PDF Dokumentumkezelő V1.0 STABLE
 </h1>
+
 
 
 
@@ -108,7 +146,7 @@ overflow:auto;
 
 
 <h3>
-PDF betöltés
+📂 PDF betöltés
 </h3>
 
 
@@ -118,11 +156,8 @@ id="pdfFile"
 accept=".pdf">
 
 
-<br><br>
-
-
-<button onclick="loadPDF()">
-PDF feldolgozás
+<button onclick="openPDF()">
+PDF megnyitása
 </button>
 
 
@@ -130,534 +165,144 @@ PDF feldolgozás
 
 
 
+
 <div class="panel">
 
+
 <h3>
-Állapot
+📑 Dokumentum adatok
 </h3>
 
-<div id="status">
-Várakozás...
+
+<div class="info">
+
+
+<div class="card">
+
+Oldalak:
+
+<span id="pages">
+---
+
+</span>
+
+</div>
+
+
+
+<div class="card">
+
+Aktuális oldal:
+
+<span id="currentPage">
+---
+
+</span>
+
+</div>
+
+
+
+<div class="card">
+
+Fájl:
+
+<span id="filename">
+---
+
+</span>
+
+</div>
+
+
+
+<div class="card">
+
+Állapot:
+
+<span id="status">
+Várakozás
+</span>
+
+</div>
+
+
+
 </div>
 
 </div>
 
 
 
+
+
 <div class="panel">
 
+
 <h3>
-Felismert elemek
+🔍 Keresés
 </h3>
 
-<pre id="debug">
+
+<input 
+id="searchText"
+placeholder="Keresett szöveg">
+
+
+<button onclick="searchPDF()">
+Keresés
+</button>
+
+
+
+<pre id="searchResult">
 ---
 </pre>
 
+
 </div>
+
+
 
 
 
 <div class="panel">
 
+
 <h3>
-Táblázat előnézet
+🖥 PDF nézet
 </h3>
 
 
-<div id="result">
+<button onclick="prevPage()">
+◀ Előző
+</button>
 
----
+
+<button onclick="nextPage()">
+Következő ▶
+</button>
+
+
+<br>
+
+
+<button onclick="zoomOut()">
+➖
+</button>
+
+
+<button onclick="zoomIn()">
+➕
+</button>
+
+
+
+<div id="viewer">
+
+<canvas id="pdfCanvas"></canvas>
 
 </div>
 
 
 </div>
-
-
-
-<script>
-
-
-let pdfItems=[];
-
-let rows=[];
-
-
-
-function setStatus(t){
-
-document.getElementById("status").innerHTML=t;
-
-}
-
-
-
-
-
-async function loadPDF(){
-
-
-let file=
-document.getElementById("pdfFile").files[0];
-
-
-if(!file){
-
-alert("Válassz PDF fájlt!");
-
-return;
-
-}
-
-
-
-setStatus(
-"PDF betöltése..."
-);
-
-
-
-let buffer=
-await file.arrayBuffer();
-
-
-
-let pdf=
-await pdfjsLib.getDocument({
-data:buffer
-}).promise;
-
-
-
-let page=
-await pdf.getPage(1);
-
-
-
-let content=
-await page.getTextContent();
-
-
-
-pdfItems=[];
-
-
-
-content.items.forEach(item=>{
-
-
-pdfItems.push({
-
-text:item.str.trim(),
-
-x:item.transform[4],
-
-y:item.transform[5]
-
-});
-
-
-});
-
-
-
-setStatus(
-"✅ Koordináták feldolgozva"
-);
-
-
-
-showDebug();
-
-
-createRows();
-
-
-createTable();
-
-
-}
-
-
-
-
-
-
-function showDebug(){
-
-
-let out="";
-
-
-pdfItems.forEach(e=>{
-
-
-if(e.text){
-
-out +=
-
-e.text+
-" | X:"+
-e.x.toFixed(1)+
-" Y:"+
-e.y.toFixed(1)
-+
-"\n";
-
-
-}
-
-
-});
-
-
-
-document.getElementById("debug").textContent=out;
-
-
-}
-
-
-
-
-
-// ===============================
-// SOR FELISMERÉS
-// ===============================
-
-
-function createRows(){
-
-
-rows=[];
-
-
-let tolerance=2;
-
-
-
-pdfItems.forEach(item=>{
-
-
-if(!item.text)
-return;
-
-
-
-let found=
-rows.find(r=>
-Math.abs(r.y-item.y)<tolerance
-);
-
-
-
-if(found){
-
-found.items.push(item);
-
-}
-
-else{
-
-rows.push({
-
-y:item.y,
-
-items:[item]
-
-});
-
-}
-
-
-});
-
-
-
-// PDF koordináta miatt fordított sorrend
-
-rows.sort((a,b)=>b.y-a.y);
-
-
-
-rows.forEach(r=>{
-
-
-r.items.sort((a,b)=>a.x-b.x);
-
-
-});
-
-
-}
-
-
-
-
-// ======================================
-// V0.2 / 2. RÉSZ
-// FEJLÉC + OSZLOP FELISMERÉS
-// ======================================
-
-
-let columns = {
-    forgszam:null,
-    be:null,
-    erk:null,
-    ind:null,
-    ki:null
-};
-
-
-
-
-// -------------------------------
-// Fejléc keresése
-// -------------------------------
-
-
-function detectHeader(){
-
-
-rows.forEach(row=>{
-
-
-let texts =
-row.items.map(x=>x.text);
-
-
-
-let joined =
-texts.join(" ");
-
-
-
-if(
-joined.includes("Forg. szám") &&
-joined.includes("Be") &&
-joined.includes("Érk.") &&
-joined.includes("Ind.") &&
-joined.includes("Ki")
-){
-
-
-row.items.forEach(item=>{
-
-
-switch(item.text){
-
-
-case "Forg. szám":
-columns.forgszam=item.x;
-break;
-
-
-case "Be":
-columns.be=item.x;
-break;
-
-
-case "Érk.":
-columns.erk=item.x;
-break;
-
-
-case "Ind.":
-columns.ind=item.x;
-break;
-
-
-case "Ki":
-columns.ki=item.x;
-break;
-
-
-}
-
-
-});
-
-
-}
-
-
-});
-
-
-console.log(
-"Felismert oszlopok:",
-columns
-);
-
-
-}
-
-
-
-
-// -------------------------------
-// Legközelebbi oszlop keresése
-// -------------------------------
-
-
-function findColumn(x){
-
-
-let best=null;
-
-let distance=999;
-
-
-
-let list=[
-
-
-{
-name:"forgszam",
-x:columns.forgszam
-},
-
-
-{
-name:"be",
-x:columns.be
-},
-
-
-{
-name:"erk",
-x:columns.erk
-},
-
-
-{
-name:"ind",
-x:columns.ind
-},
-
-
-{
-name:"ki",
-x:columns.ki
-}
-
-
-];
-
-
-
-list.forEach(c=>{
-
-
-if(c.x!==null){
-
-
-let d=
-Math.abs(x-c.x);
-
-
-
-if(d<distance){
-
-distance=d;
-
-best=c.name;
-
-}
-
-
-}
-
-
-});
-
-
-
-return best;
-
-
-}
-
-
-
-
-
-
-// -------------------------------
-// Táblázat sorok építése
-// -------------------------------
-
-
-function buildGrid(){
-
-
-
-let tableRows=[];
-
-
-
-rows.forEach(row=>{
-
-
-let obj={
-
-forgszam:"",
-be:"",
-erk:"",
-ind:"",
-ki:""
-
-};
-
-
-
-row.items.forEach(item=>{
-
-
-let col=
-findColumn(item.x);
-
-
-
-if(col){
-
-obj[col]+=item.text;
-
-}
-
-
-
-});
-
-
-
-if(
-obj.forgszam ||
-obj.be ||
-obj.erk ||
-obj.ind ||
-obj.ki
-){
-
-tableRows.push(obj);
-
-}
-
-
-});
-
-
-
-return tableRows;
-
-
-}
-
-
-</script>
-
-
-</body>
-
-</html>
