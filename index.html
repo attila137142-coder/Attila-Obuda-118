@@ -5,15 +5,12 @@
 
 <meta charset="UTF-8">
 
-<meta name="viewport"
-content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>
-Attila PDF Menetrend Importer V1.0 STABLE
+Attila PDF → Táblázat Engine V0.1
 </title>
 
-
-<!-- PDF.JS MOTOR -->
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 
@@ -22,14 +19,11 @@ Attila PDF Menetrend Importer V1.0 STABLE
 
 body{
 
-font-family:
-Arial, sans-serif;
+font-family:Arial;
 
 background:#111;
 
 color:white;
-
-margin:0;
 
 padding:20px;
 
@@ -47,54 +41,61 @@ color:#00eaff;
 
 background:#1b1b1b;
 
-border:1px solid #333;
+border:1px solid #444;
 
 border-radius:12px;
 
-padding:20px;
+padding:15px;
 
-margin-bottom:20px;
+margin-bottom:15px;
 
 }
 
 
 button{
 
-background:#0078ff;
+padding:10px 18px;
+
+background:#008cff;
 
 color:white;
 
 border:0;
 
-padding:12px 18px;
-
 border-radius:8px;
 
 cursor:pointer;
-
-font-size:16px;
 
 }
 
 
 button:hover{
 
-background:#009cff;
+background:#00b7ff;
 
 }
 
 
-input{
+table{
 
-padding:10px;
+border-collapse:collapse;
 
-background:#222;
+width:100%;
 
-color:white;
+background:white;
+
+color:black;
+
+}
+
+
+td,th{
 
 border:1px solid #555;
 
-border-radius:6px;
+padding:6px;
+
+text-align:center;
 
 }
 
@@ -103,29 +104,11 @@ pre{
 
 background:#000;
 
-padding:15px;
-
-border-radius:8px;
-
-white-space:pre-wrap;
+padding:10px;
 
 max-height:400px;
 
 overflow:auto;
-
-}
-
-
-.ok{
-
-color:#00ff88;
-
-}
-
-
-.warn{
-
-color:#ffaa00;
 
 }
 
@@ -140,30 +123,29 @@ color:#ffaa00;
 
 
 <h1>
-📄 PDF Menetrend Importer V1.0 STABLE
+🧪 Attila PDF → Táblázat Engine V0.1
 </h1>
 
 
 
 <div class="panel">
 
-
-<h2>
-1. PDF betöltés
-</h2>
+<h3>
+PDF kiválasztás
+</h3>
 
 
 <input 
 type="file"
 id="pdfFile"
-accept="application/pdf">
+accept=".pdf">
 
 
 <br><br>
 
 
-<button onclick="loadPDF()">
-PDF feldolgozás indítása
+<button onclick="startPDF()">
+Feldolgozás indítása
 </button>
 
 
@@ -171,34 +153,27 @@ PDF feldolgozás indítása
 
 
 
-
 <div class="panel">
 
-
-<h2>
+<h3>
 Állapot
-</h2>
-
+</h3>
 
 <div id="status">
-Várakozás PDF fájlra...
+Várakozás...
 </div>
 
-
 </div>
-
 
 
 
 <div class="panel">
 
+<h3>
+Koordináta adatok
+</h3>
 
-<h2>
-Felismert adatok
-</h2>
-
-
-<pre id="result">
+<pre id="coords">
 ---
 </pre>
 
@@ -207,18 +182,18 @@ Felismert adatok
 
 
 
-
 <div class="panel">
 
+<h3>
+Visszaépített táblázat
+</h3>
 
-<h2>
-Nyers PDF szöveg
-</h2>
 
+<div id="table">
 
-<pre id="raw">
 ---
-</pre>
+
+</div>
 
 
 </div>
@@ -228,28 +203,19 @@ Nyers PDF szöveg
 <script>
 
 
-// =====================================
-// ATTILA PDF MENETREND IMPORTER V1.0
-// CORE
-// =====================================
+let items=[];
 
 
 
-let pdfText="";
+function status(t){
 
-
-
-function log(msg){
-
-document.getElementById("status").innerHTML=msg;
+document.getElementById("status").innerHTML=t;
 
 }
 
 
 
-
-
-async function loadPDF(){
+async function startPDF(){
 
 
 const file=
@@ -258,7 +224,7 @@ document.getElementById("pdfFile").files[0];
 
 if(!file){
 
-alert("Nincs PDF kiválasztva!");
+alert("Válassz PDF fájlt!");
 
 return;
 
@@ -266,46 +232,32 @@ return;
 
 
 
-log(
-"⏳ PDF betöltése..."
+status(
+"PDF betöltése..."
 );
 
 
 
-const buffer=
+const data=
 await file.arrayBuffer();
 
 
 
 const pdf=
 await pdfjsLib.getDocument({
-data:buffer
+data:data
 }).promise;
 
 
 
-let text="";
-
-
-
-for(
-let i=1;
-i<=pdf.numPages;
-i++
-){
-
-
-log(
-"📄 Oldal feldolgozás: "
-+i+
-"/"+
-pdf.numPages
+status(
+"Oldal feldolgozása..."
 );
 
 
 
 const page=
-await pdf.getPage(i);
+await pdf.getPage(1);
 
 
 
@@ -314,46 +266,68 @@ await page.getTextContent();
 
 
 
-let pageText=
-content.items
-.map(
-x=>x.str
-)
-.join(" ");
+items=[];
 
 
 
-text+=
-"\n\n--- OLDAL "
-+i+
-" ---\n\n"+
-pageText;
+content.items.forEach(item=>{
 
+
+items.push({
+
+text:item.str,
+
+x:item.transform[4],
+
+y:item.transform[5]
+
+});
+
+
+});
+
+
+
+status(
+"✅ Koordináták kiolvasva"
+);
+
+
+
+showCoords();
+
+
+
+buildTable();
 
 
 }
 
 
 
-pdfText=text;
+function showCoords(){
 
 
-
-document.getElementById("raw").textContent=text;
-
+let out="";
 
 
-log(
-"<span class='ok'>"
+items.forEach(i=>{
+
+
+out+=
+i.text+
+"   X:"+
+i.x.toFixed(1)+
+" Y:"+
+i.y.toFixed(1)
 +
-"✅ PDF kiolvasás kész"
-+
-"</span>"
-);
+"\n";
 
 
+});
 
-parseSchedule(text);
+
+document.getElementById("coords").textContent=out;
 
 
 }
@@ -366,4 +340,3 @@ parseSchedule(text);
 </body>
 
 </html>
-
