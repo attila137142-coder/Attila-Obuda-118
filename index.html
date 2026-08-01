@@ -8,7 +8,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <title>
-Attila PDF → Táblázat Engine V0.1
+Attila PDF → Táblázat Engine V0.2
 </title>
 
 
@@ -18,35 +18,24 @@ Attila PDF → Táblázat Engine V0.1
 <style>
 
 body{
-
-font-family:Arial;
-
+font-family:Arial, sans-serif;
 background:#111;
-
 color:white;
-
 padding:20px;
-
 }
 
 
 h1{
-
 color:#00eaff;
-
 }
 
 
 .panel{
 
-background:#1b1b1b;
-
+background:#1c1c1c;
 border:1px solid #444;
-
 border-radius:12px;
-
 padding:15px;
-
 margin-bottom:15px;
 
 }
@@ -54,16 +43,11 @@ margin-bottom:15px;
 
 button{
 
-padding:10px 18px;
-
-background:#008cff;
-
-color:white;
-
+padding:10px 20px;
 border:0;
-
 border-radius:8px;
-
+background:#008cff;
+color:white;
 cursor:pointer;
 
 }
@@ -71,7 +55,7 @@ cursor:pointer;
 
 button:hover{
 
-background:#00b7ff;
+background:#00c3ff;
 
 }
 
@@ -79,12 +63,9 @@ background:#00b7ff;
 table{
 
 border-collapse:collapse;
-
-width:100%;
-
 background:white;
-
 color:black;
+width:100%;
 
 }
 
@@ -92,9 +73,7 @@ color:black;
 td,th{
 
 border:1px solid #555;
-
 padding:6px;
-
 text-align:center;
 
 }
@@ -103,11 +82,8 @@ text-align:center;
 pre{
 
 background:#000;
-
 padding:10px;
-
-max-height:400px;
-
+max-height:350px;
 overflow:auto;
 
 }
@@ -123,15 +99,16 @@ overflow:auto;
 
 
 <h1>
-🧪 Attila PDF → Táblázat Engine V0.1
+🧪 Attila PDF → Táblázat Engine V0.2
 </h1>
 
 
 
 <div class="panel">
 
+
 <h3>
-PDF kiválasztás
+PDF betöltés
 </h3>
 
 
@@ -144,8 +121,8 @@ accept=".pdf">
 <br><br>
 
 
-<button onclick="startPDF()">
-Feldolgozás indítása
+<button onclick="loadPDF()">
+PDF feldolgozás
 </button>
 
 
@@ -170,13 +147,12 @@ Várakozás...
 <div class="panel">
 
 <h3>
-Koordináta adatok
+Felismert elemek
 </h3>
 
-<pre id="coords">
+<pre id="debug">
 ---
 </pre>
-
 
 </div>
 
@@ -185,11 +161,11 @@ Koordináta adatok
 <div class="panel">
 
 <h3>
-Visszaépített táblázat
+Táblázat előnézet
 </h3>
 
 
-<div id="table">
+<div id="result">
 
 ---
 
@@ -203,11 +179,13 @@ Visszaépített táblázat
 <script>
 
 
-let items=[];
+let pdfItems=[];
+
+let rows=[];
 
 
 
-function status(t){
+function setStatus(t){
 
 document.getElementById("status").innerHTML=t;
 
@@ -215,10 +193,12 @@ document.getElementById("status").innerHTML=t;
 
 
 
-async function startPDF(){
 
 
-const file=
+async function loadPDF(){
+
+
+let file=
 document.getElementById("pdfFile").files[0];
 
 
@@ -232,50 +212,44 @@ return;
 
 
 
-status(
+setStatus(
 "PDF betöltése..."
 );
 
 
 
-const data=
+let buffer=
 await file.arrayBuffer();
 
 
 
-const pdf=
+let pdf=
 await pdfjsLib.getDocument({
-data:data
+data:buffer
 }).promise;
 
 
 
-status(
-"Oldal feldolgozása..."
-);
-
-
-
-const page=
+let page=
 await pdf.getPage(1);
 
 
 
-const content=
+let content=
 await page.getTextContent();
 
 
 
-items=[];
+pdfItems=[];
 
 
 
 content.items.forEach(item=>{
 
 
-items.push({
+pdfItems.push({
 
-text:item.str,
+text:item.str.trim(),
 
 x:item.transform[4],
 
@@ -288,49 +262,138 @@ y:item.transform[5]
 
 
 
-status(
-"✅ Koordináták kiolvasva"
+setStatus(
+"✅ Koordináták feldolgozva"
 );
 
 
 
-showCoords();
+showDebug();
 
 
+createRows();
 
-buildTable();
+
+createTable();
 
 
 }
 
 
 
-function showCoords(){
+
+
+
+function showDebug(){
 
 
 let out="";
 
 
-items.forEach(i=>{
+pdfItems.forEach(e=>{
 
 
-out+=
-i.text+
-"   X:"+
-i.x.toFixed(1)+
+if(e.text){
+
+out +=
+
+e.text+
+" | X:"+
+e.x.toFixed(1)+
 " Y:"+
-i.y.toFixed(1)
+e.y.toFixed(1)
 +
 "\n";
+
+
+}
 
 
 });
 
 
-document.getElementById("coords").textContent=out;
+
+document.getElementById("debug").textContent=out;
 
 
 }
+
+
+
+
+
+// ===============================
+// SOR FELISMERÉS
+// ===============================
+
+
+function createRows(){
+
+
+rows=[];
+
+
+let tolerance=2;
+
+
+
+pdfItems.forEach(item=>{
+
+
+if(!item.text)
+return;
+
+
+
+let found=
+rows.find(r=>
+Math.abs(r.y-item.y)<tolerance
+);
+
+
+
+if(found){
+
+found.items.push(item);
+
+}
+
+else{
+
+rows.push({
+
+y:item.y,
+
+items:[item]
+
+});
+
+}
+
+
+});
+
+
+
+// PDF koordináta miatt fordított sorrend
+
+rows.sort((a,b)=>b.y-a.y);
+
+
+
+rows.forEach(r=>{
+
+
+r.items.sort((a,b)=>a.x-b.x);
+
+
+});
+
+
+}
+
+
+
 
 
 
