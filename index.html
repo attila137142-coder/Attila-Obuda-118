@@ -12,50 +12,73 @@ Attila PDF Dokumentumkezelő V1.0 STABLE
 </title>
 
 
+<!-- PDF.JS MOTOR -->
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
 
 
 <style>
 
+
 body{
 
 font-family:Arial, sans-serif;
+
 background:#111;
+
 color:white;
+
 margin:0;
+
 padding:20px;
 
 }
 
 
+
 h1{
 
 color:#00eaff;
+
 }
+
 
 
 .panel{
 
-background:#1b1b1b;
+background:#1c1c1c;
+
 border:1px solid #444;
+
 border-radius:12px;
+
 padding:15px;
+
 margin-bottom:15px;
 
 }
 
 
+
 button{
 
-padding:10px 18px;
-border:none;
-border-radius:8px;
 background:#0078ff;
+
 color:white;
+
+border:none;
+
+padding:10px 18px;
+
+border-radius:8px;
+
 cursor:pointer;
+
 margin:3px;
 
 }
+
 
 
 button:hover{
@@ -74,30 +97,12 @@ padding:8px;
 
 
 
-#viewer{
-
-background:#333;
-padding:10px;
-text-align:center;
-overflow:auto;
-
-}
-
-
-
-canvas{
-
-background:white;
-max-width:100%;
-
-}
-
-
-
-.info{
+.infoGrid{
 
 display:grid;
+
 grid-template-columns:repeat(2,1fr);
+
 gap:10px;
 
 }
@@ -107,28 +112,57 @@ gap:10px;
 .card{
 
 background:#222;
-padding:10px;
+
+padding:12px;
+
 border-radius:8px;
 
 }
 
 
 
-pre{
+#viewer{
 
-background:#000;
-padding:10px;
-max-height:300px;
+background:#333;
+
+padding:15px;
+
+text-align:center;
+
 overflow:auto;
 
 }
+
+
+
+canvas{
+
+background:white;
+
+max-width:100%;
+
+}
+
+
+
+#searchResult{
+
+background:#000;
+
+padding:10px;
+
+height:180px;
+
+overflow:auto;
+
+}
+
 
 
 </style>
 
 
 </head>
-
 
 
 <body>
@@ -157,7 +191,9 @@ accept=".pdf">
 
 
 <button onclick="openPDF()">
+
 PDF megnyitása
+
 </button>
 
 
@@ -166,24 +202,42 @@ PDF megnyitása
 
 
 
+
 <div class="panel">
 
 
 <h3>
-📑 Dokumentum adatok
+📑 Dokumentum információ
 </h3>
 
 
-<div class="info">
+
+<div class="infoGrid">
+
+
+
+<div class="card">
+
+Fájl:
+
+<br>
+
+<span id="fileName">
+---
+</span>
+
+</div>
+
 
 
 <div class="card">
 
 Oldalak:
 
-<span id="pages">
----
+<br>
 
+<span id="pageCount">
+---
 </span>
 
 </div>
@@ -194,22 +248,10 @@ Oldalak:
 
 Aktuális oldal:
 
+<br>
+
 <span id="currentPage">
 ---
-
-</span>
-
-</div>
-
-
-
-<div class="card">
-
-Fájl:
-
-<span id="filename">
----
-
 </span>
 
 </div>
@@ -220,8 +262,10 @@ Fájl:
 
 Állapot:
 
+<br>
+
 <span id="status">
-Várakozás
+Várakozás...
 </span>
 
 </div>
@@ -230,7 +274,10 @@ Várakozás
 
 </div>
 
+
 </div>
+
+
 
 
 
@@ -240,27 +287,34 @@ Várakozás
 
 
 <h3>
-🔍 Keresés
+🔎 PDF kereső
 </h3>
 
 
 <input 
-id="searchText"
+id="searchBox"
 placeholder="Keresett szöveg">
 
 
+
 <button onclick="searchPDF()">
+
 Keresés
+
 </button>
 
 
 
 <pre id="searchResult">
+
 ---
+
 </pre>
 
 
 </div>
+
+
 
 
 
@@ -274,65 +328,825 @@ Keresés
 </h3>
 
 
+
 <button onclick="prevPage()">
+
 ◀ Előző
+
 </button>
+
 
 
 <button onclick="nextPage()">
+
 Következő ▶
+
 </button>
 
 
-<br>
+<br><br>
 
 
 <button onclick="zoomOut()">
+
 ➖
+
 </button>
+
 
 
 <button onclick="zoomIn()">
+
 ➕
+
 </button>
+
+
 
 
 
 <div id="viewer">
 
+
 <canvas id="pdfCanvas"></canvas>
 
-</div>
-
-
-</div>
-<div class="panel">
-
-<h3>
-📊 PDF → Táblázat Engine V0.2
-</h3>
-
-
-<button onclick="convertCurrentPage()">
-Oldal átalakítása táblázattá
-</button>
-
-
-<div id="tableStatus">
-
-Várakozás...
 
 </div>
 
 
-<br>
-
-
-<div id="tableResult">
-
----
 
 </div>
+<script>
 
 
-</div>
+// ======================================
+// ATTILA PDF DOKUMENTUMKEZELŐ V1.0 STABLE
+// PDF MOTOR
+// 2. RÉSZ
+// ======================================
+
+
+
+let pdfDoc = null;
+
+let currentPage = 1;
+
+let totalPages = 0;
+
+let scale = 1.5;
+
+let currentFileName = "";
+
+let pageTextCache = [];
+
+
+
+
+
+// PDF.js munkás beállítás
+
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+"https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+
+
+
+
+
+
+
+// ======================================
+// PDF MEGNYITÁS
+// ======================================
+
+
+async function openPDF(){
+
+
+
+let fileInput =
+document.getElementById("pdfFile");
+
+
+
+if(!fileInput.files.length){
+
+alert("Válassz ki egy PDF fájlt!");
+
+return;
+
+}
+
+
+
+let file =
+fileInput.files[0];
+
+
+
+currentFileName =
+file.name;
+
+
+
+document.getElementById(
+"fileName"
+).innerHTML =
+currentFileName;
+
+
+
+document.getElementById(
+"status"
+).innerHTML =
+"PDF betöltése...";
+
+
+
+
+let arrayBuffer =
+await file.arrayBuffer();
+
+
+
+pdfDoc =
+await pdfjsLib.getDocument(
+arrayBuffer
+).promise;
+
+
+
+totalPages =
+pdfDoc.numPages;
+
+
+
+document.getElementById(
+"pageCount"
+).innerHTML =
+totalPages;
+
+
+
+currentPage = 1;
+
+
+
+pageTextCache=[];
+
+
+
+await renderPage(currentPage);
+
+
+
+document.getElementById(
+"status"
+).innerHTML =
+"✅ PDF betöltve";
+
+
+
+}
+
+
+
+
+
+
+
+// ======================================
+// OLDAL RAJZOLÁS
+// ======================================
+
+
+async function renderPage(num){
+
+
+
+if(!pdfDoc)
+return;
+
+
+
+let page =
+await pdfDoc.getPage(num);
+
+
+
+let viewport =
+page.getViewport({
+
+scale:scale
+
+});
+
+
+
+let canvas =
+document.getElementById(
+"pdfCanvas"
+);
+
+
+
+let ctx =
+canvas.getContext(
+"2d"
+);
+
+
+
+canvas.width =
+viewport.width;
+
+
+
+canvas.height =
+viewport.height;
+
+
+
+let renderContext = {
+
+
+canvasContext:ctx,
+
+
+viewport:viewport
+
+
+};
+
+
+
+await page.render(
+renderContext
+).promise;
+
+
+
+
+document.getElementById(
+"currentPage"
+).innerHTML =
+num;
+
+
+
+// szöveg eltárolás kereséshez
+
+await extractPageText(
+page,
+num
+);
+
+
+
+}
+
+
+
+
+
+
+
+
+
+// ======================================
+// OLDAL LAPOZÁS
+// ======================================
+
+
+function nextPage(){
+
+
+
+if(!pdfDoc)
+return;
+
+
+
+if(currentPage < totalPages){
+
+
+currentPage++;
+
+
+renderPage(
+currentPage
+);
+
+
+}
+
+
+}
+
+
+
+
+
+function prevPage(){
+
+
+
+if(!pdfDoc)
+return;
+
+
+
+if(currentPage > 1){
+
+
+currentPage--;
+
+
+renderPage(
+currentPage
+);
+
+
+}
+
+
+
+}
+
+
+
+
+
+
+
+
+// ======================================
+// ZOOM
+// ======================================
+
+
+function zoomIn(){
+
+
+scale +=0.25;
+
+
+if(pdfDoc)
+
+renderPage(
+currentPage
+);
+
+
+}
+
+
+
+
+function zoomOut(){
+
+
+if(scale>0.5){
+
+
+scale -=0.25;
+
+
+if(pdfDoc)
+
+renderPage(
+currentPage
+);
+
+
+}
+
+
+}
+
+
+
+
+
+
+
+
+// ======================================
+// PDF SZÖVEG KIOLVASÁS
+// (KÉSŐBB TÁBLÁZAT MOTOR ALAPJA)
+// ======================================
+
+
+async function extractPageText(page,num){
+
+
+
+let content =
+await page.getTextContent();
+
+
+
+let text =
+content.items
+.map(
+item=>item.str
+)
+.join(" ");
+
+
+
+pageTextCache[num]=text;
+
+
+
+console.log(
+"Oldal",
+num,
+text
+);
+
+
+
+}
+
+
+
+</script>
+<script>
+
+
+// ======================================
+// ATTILA PDF DOKUMENTUMKEZELŐ V1.0 STABLE
+// KERESŐ + INDEX MOTOR
+// 3. RÉSZ
+// ======================================
+
+
+
+let coordinateCache = [];
+
+
+
+
+// ======================================
+// KOORDINÁTÁS SZÖVEG KIOLVASÁS
+// ======================================
+
+
+async function extractPageText(page,num){
+
+
+
+let content =
+await page.getTextContent();
+
+
+
+let simpleText =
+[];
+
+let coords =
+[];
+
+
+
+
+content.items.forEach(item=>{
+
+
+let txt =
+item.str.trim();
+
+
+
+if(txt){
+
+
+simpleText.push(txt);
+
+
+
+coords.push({
+
+page:num,
+
+text:txt,
+
+x:item.transform[4],
+
+y:item.transform[5]
+
+});
+
+
+}
+
+
+});
+
+
+
+
+
+pageTextCache[num] =
+simpleText.join(" ");
+
+
+
+coordinateCache =
+coordinateCache.concat(coords);
+
+
+
+console.log(
+"Index oldal:",
+num,
+coords.length,
+"elem"
+);
+
+
+
+}
+
+
+
+
+
+
+
+
+
+// ======================================
+// TELJES PDF INDEXELÉS
+// ======================================
+
+
+async function buildPDFIndex(){
+
+
+
+if(!pdfDoc){
+
+alert("Nincs PDF betöltve!");
+
+return;
+
+}
+
+
+
+document.getElementById(
+"status"
+).innerHTML =
+"🔎 Index készítése...";
+
+
+
+coordinateCache=[];
+
+pageTextCache=[];
+
+
+
+for(
+let i=1;
+i<=totalPages;
+i++
+){
+
+
+let page =
+await pdfDoc.getPage(i);
+
+
+await extractPageText(
+page,
+i
+);
+
+
+}
+
+
+
+
+document.getElementById(
+"status"
+).innerHTML =
+"✅ Keresési index kész";
+
+
+
+console.log(
+"PDF index:",
+coordinateCache
+);
+
+
+
+}
+
+
+
+
+
+
+
+
+// ======================================
+// PDF KERESÉS
+// ======================================
+
+
+async function searchPDF(){
+
+
+
+let query =
+document
+.getElementById(
+"searchBox"
+)
+.value
+.trim()
+.toLowerCase();
+
+
+
+if(!query){
+
+return;
+
+}
+
+
+
+
+if(pageTextCache.length===0){
+
+
+await buildPDFIndex();
+
+
+}
+
+
+
+
+
+let result="";
+
+let count=0;
+
+
+
+pageTextCache.forEach(
+(text,page)=>{
+
+
+if(text && text.toLowerCase().includes(query)){
+
+
+count++;
+
+
+result +=
+
+"✅ Oldal: "
++
+page
++
+"\n\n";
+
+
+let index =
+text.toLowerCase()
+.indexOf(query);
+
+
+
+let start =
+Math.max(
+0,
+index-60
+);
+
+
+
+let end =
+Math.min(
+text.length,
+index+100
+);
+
+
+
+result +=
+text.substring(
+start,
+end
+)
++
+"\n\n";
+
+
+
+}
+
+
+});
+
+
+
+
+
+if(count===0){
+
+
+result =
+"Nincs találat.";
+
+
+}
+
+
+
+document.getElementById(
+"searchResult"
+)
+.innerHTML =
+result;
+
+
+
+}
+
+
+
+
+
+
+
+
+
+// ======================================
+// PDF → TÁBLÁZAT MOTOR CSATLAKOZÁSI PONT
+// ======================================
+
+
+function getPDFData(){
+
+
+
+return {
+
+
+pages:totalPages,
+
+
+filename:currentFileName,
+
+
+text:pageTextCache,
+
+
+coordinates:coordinateCache
+
+
+
+};
+
+
+
+}
+
+
+
+
+console.log(
+"================================="
+);
+
+
+console.log(
+"ATTILA PDF DOKUMENTUMKEZELŐ V1.0 STABLE"
+);
+
+
+console.log(
+"PDF kereső és index motor aktív"
+);
+
+
+console.log(
+"PDF → Táblázat csatlakozás előkészítve"
+);
+
+
+console.log(
+"================================="
+);
+
+
+
+</script>
