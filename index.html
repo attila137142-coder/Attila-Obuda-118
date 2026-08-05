@@ -3,131 +3,450 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>FUTÁR V9 GTFS MENETRENDI MOTOR</title>
+
+<title>
+Attila Közlekedés V11 - Real Location + 10 km Körzetfigyelő CORE V1
+</title>
+
+<link rel="stylesheet"
+href="https://unpkg.com/leaflet/dist/leaflet.css">
+
 <style>
-body{margin:0;background:#0b0f14;color:#00ff9d;font-family:Arial}
-header{padding:12px;background:#111826;display:flex;justify-content:space-between;border-bottom:2px solid #00ff9d}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;padding:10px}
-.panel{background:#121a24;padding:10px;border:1px solid #1f3b35;border-radius:6px}
-input,button{width:100%;padding:8px;margin-top:6px}
-button{font-weight:bold}
-#results,#departures{max-height:300px;overflow:auto}
-.bigclock{font-size:28px;font-weight:bold}
-@media(max-width:800px){.grid{grid-template-columns:1fr}}
+
+body{
+    margin:0;
+    background:#081018;
+    color:white;
+    font-family:Arial,Helvetica,sans-serif;
+}
+
+.header{
+    background:#102438;
+    padding:15px;
+    font-size:20px;
+    font-weight:bold;
+}
+
+.panel{
+    padding:12px;
+    background:#132b40;
+    margin:10px;
+    border-radius:15px;
+}
+
+.data{
+    line-height:1.7;
+}
+
+.ok{
+    color:#00ff88;
+    font-weight:bold;
+}
+
+.warn{
+    color:#ffd000;
+}
+
+button{
+    background:#0066ff;
+    color:white;
+    border:0;
+    padding:12px;
+    border-radius:10px;
+    font-size:16px;
+}
+
+#map{
+    height:55vh;
+    margin:10px;
+    border-radius:15px;
+}
+
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+
 </head>
+
 <body>
-<header>
-<div>🚍 FUTÁR V9 GTFS MENETRENDI MOTOR</div>
-<div class="bigclock" id="clock"></div>
-</header>
 
-<div class="grid">
+<div class="header">
+🚦 Attila Közlekedés V11
+<br>
+📍 Real Location + 10 km Körzetfigyelő CORE V1
+</div>
+
+
+<div class="panel data">
+
+<div id="gps">
+GPS állapot:
+<span class="warn">
+Várakozás...
+</span>
+</div>
+
+<hr>
+
+🌍 Ország:
+<div id="country">-</div>
+
+📮 Irányítószám:
+<div id="postcode">-</div>
+
+🏙 Város:
+<div id="city">-</div>
+
+🏠 Utca:
+<div id="street">-</div>
+
+🚪 Házszám:
+<div id="house">-</div>
+
+<hr>
+
+📌 Koordináta:
+
+<div id="coords">
+-
+</div>
+
+🎯 Pontosság:
+
+<div id="accuracy">
+-
+</div>
+
+</div>
+
+
+<div class="panel data">
+
+📅 Dátum:
+<div id="date">
+-
+</div>
+
+⏰ Idő:
+<div id="time">
+-
+</div>
+
+📆 Hét száma:
+<div id="week">
+-
+</div>
+
+🔢 Év napja:
+<div id="yearday">
+-
+</div>
+
+</div>
+
+
 <div class="panel">
-<h3>📦 GTFS ZIP</h3>
-<input type="file" id="zipFile" accept=".zip">
-<button onclick="loadGTFS()">GTFS betöltése</button>
-<div id="status">Várakozás...</div>
+
+<button onclick="startGPS()">
+📡 GPS INDÍTÁS
+</button>
+
 </div>
 
-<div class="panel">
-<h3>🔎 Megálló kereső</h3>
-<input id="searchBox" placeholder="pl. Szentendre">
-<button onclick="searchStops()">Keresés</button>
-<div id="results"></div>
-</div>
 
-<div class="panel" style="grid-column:span 2">
-<h3>🚏 Indulási tábla</h3>
-<div id="departures">Nincs kiválasztott megálló.</div>
-</div>
-</div>
+<div id="map"></div>
+
+
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+
 
 <script>
-let gtfs={stops:[],routes:[],trips:[],stop_times:[],calendar:[]};
 
-function tick(){document.getElementById('clock').textContent=new Date().toLocaleTimeString('hu-HU');}
-setInterval(tick,1000); tick();
 
-function parseCSV(text){
- if(!text) return [];
- text=text.replace(/^\uFEFF/,"");
- const lines=text.split(/\r?\n/).filter(x=>x.trim());
- const headers=parseLine(lines[0]);
- return lines.slice(1).map(line=>{
-   const cols=parseLine(line);
-   const obj={};
-   headers.forEach((h,i)=>obj[h]=cols[i]||"");
-   return obj;
- });
+let map;
+
+let marker;
+
+let circle;
+
+
+
+function initMap(){
+
+map=L.map('map')
+.setView([47.5,19.05],12);
+
+
+L.tileLayer(
+'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+{
+maxZoom:19
+}
+).addTo(map);
+
 }
 
-function parseLine(line){
- const out=[]; let cur=""; let q=false;
- for(let i=0;i<line.length;i++){
-   const c=line[i];
-   if(c=='"'){ q=!q; continue; }
-   if(c==',' && !q){ out.push(cur); cur=""; continue; }
-   cur+=c;
- }
- out.push(cur);
- return out;
+
+
+function updateClock(){
+
+let now=new Date();
+
+
+document.getElementById("date").innerHTML =
+now.toLocaleDateString("hu-HU");
+
+
+document.getElementById("time").innerHTML =
+now.toLocaleTimeString("hu-HU");
+
+
+document.getElementById("week").innerHTML =
+getWeek(now)+" . hét";
+
+
+document.getElementById("yearday").innerHTML =
+getYearDay(now)+" . nap";
+
 }
 
-async function loadGTFS(){
- const file=document.getElementById('zipFile').files[0];
- if(!file) return;
- document.getElementById('status').textContent='Betöltés...';
 
- const zip=await JSZip.loadAsync(file);
 
- async function read(name){
-   const f=zip.file(name);
-   return f ? await f.async('string') : "";
- }
+function getWeek(date){
 
- gtfs.stops=parseCSV(await read('stops.txt'));
- gtfs.routes=parseCSV(await read('routes.txt'));
- gtfs.trips=parseCSV(await read('trips.txt'));
- gtfs.stop_times=parseCSV(await read('stop_times.txt'));
- gtfs.calendar=parseCSV(await read('calendar.txt'));
+let d=new Date(
+Date.UTC(
+date.getFullYear(),
+date.getMonth(),
+date.getDate()
+));
 
- document.getElementById('status').innerHTML=
- `✔ Megállók: ${gtfs.stops.length} |
-  ✔ Járatok: ${gtfs.routes.length} |
-  ✔ Menetrendi sorok: ${gtfs.stop_times.length}`;
+let dayNum=d.getUTCDay()||7;
+
+d.setUTCDate(
+d.getUTCDate()+4-dayNum
+);
+
+let yearStart=
+new Date(
+Date.UTC(
+d.getUTCFullYear(),
+0,
+1
+));
+
+return Math.ceil(
+(((d-yearStart)/86400000)+1)/7
+);
+
 }
 
-function searchStops(){
- const q=document.getElementById('searchBox').value.toLowerCase();
- const hits=gtfs.stops.filter(s=>(s.stop_name||"").toLowerCase().includes(q)).slice(0,50);
 
- document.getElementById('results').innerHTML=hits.map(s=>
-   `<div><button onclick="showDepartures('${s.stop_id}')">${s.stop_name} (${s.stop_id})</button></div>`
- ).join('') || "Nincs találat";
+
+function getYearDay(date){
+
+let start=
+new Date(
+date.getFullYear(),
+0,
+0
+);
+
+return Math.floor(
+(date-start)/86400000
+);
+
 }
 
-function showDepartures(stopId){
- const rows=gtfs.stop_times.filter(x=>x.stop_id===stopId).slice(0,100);
 
- const enriched=rows.map(r=>{
-   const trip=gtfs.trips.find(t=>t.trip_id===r.trip_id) || {};
-   const route=gtfs.routes.find(ro=>ro.route_id===trip.route_id) || {};
-   return {
-      time:r.departure_time || r.arrival_time || "--",
-      route:route.route_short_name || trip.route_id || "?",
-      trip:r.trip_id
-   };
- });
 
- enriched.sort((a,b)=>a.time.localeCompare(b.time));
+async function getAddress(lat,lon){
 
- document.getElementById('departures').innerHTML=
- enriched.slice(0,30).map(e=>
-  `🕒 ${e.time} | 🚍 ${e.route} | Trip: ${e.trip}`
- ).join("<br>") || "Ehhez a megállóhoz nincs adat.";
+try{
+
+
+let url=
+"https://nominatim.openstreetmap.org/reverse?format=json&lat="
++lat+
+"&lon="+lon+
+"&zoom=18&addressdetails=1";
+
+
+let response=
+await fetch(url);
+
+
+let data=
+await response.json();
+
+
+let a=data.address;
+
+
+document.getElementById("country").innerHTML=
+a.country || "-";
+
+
+document.getElementById("postcode").innerHTML=
+a.postcode || "-";
+
+
+document.getElementById("city").innerHTML=
+a.city ||
+a.town ||
+a.village ||
+"-";
+
+
+document.getElementById("street").innerHTML=
+a.road || "-";
+
+
+document.getElementById("house").innerHTML=
+a.house_number || "-";
+
+
 }
+catch(e){
+
+console.log(e);
+
+}
+
+}
+
+
+
+
+
+function startGPS(){
+
+
+if(!navigator.geolocation){
+
+alert("A készülék nem támogat GPS-t");
+
+return;
+
+}
+
+
+
+navigator.geolocation.watchPosition(
+
+function(pos){
+
+
+let lat=
+pos.coords.latitude;
+
+
+let lon=
+pos.coords.longitude;
+
+
+let acc=
+Math.round(pos.coords.accuracy);
+
+
+
+document.getElementById("gps").innerHTML=
+"GPS állapot: <span class='ok'>🟢 AKTÍV</span>";
+
+
+document.getElementById("coords").innerHTML=
+lat.toFixed(8)+
+"<br>"+
+lon.toFixed(8);
+
+
+document.getElementById("accuracy").innerHTML=
+"± "+acc+" méter";
+
+
+
+if(!marker){
+
+
+marker=L.marker(
+[lat,lon]
+)
+.addTo(map)
+.bindPopup(
+"📍 Saját helyzet"
+);
+
+
+circle=L.circle(
+[lat,lon],
+{
+radius:10000
+}
+)
+.addTo(map);
+
+
+}
+else{
+
+
+marker.setLatLng([lat,lon]);
+
+circle.setLatLng([lat,lon]);
+
+
+}
+
+
+
+map.setView(
+[lat,lon],
+13
+);
+
+
+
+getAddress(lat,lon);
+
+
+
+},
+
+
+function(error){
+
+document.getElementById("gps").innerHTML=
+"GPS hiba: "+error.message;
+
+
+},
+
+
+{
+enableHighAccuracy:true,
+maximumAge:5000,
+timeout:10000
+}
+
+
+);
+
+
+}
+
+
+
+initMap();
+
+updateClock();
+
+setInterval(
+updateClock,
+1000
+);
+
+
 </script>
+
+
 </body>
 </html>
