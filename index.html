@@ -438,3 +438,407 @@ Várakozás...
 
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script>
+
+let map;
+let marker;
+let circle;
+
+
+// TÉRKÉP INDÍTÁS
+
+function initMap(){
+
+    map = L.map('map').setView([47.5,19.05],12);
+
+    L.tileLayer(
+        'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+        {
+            maxZoom:19
+        }
+    ).addTo(map);
+
+}
+
+
+// ÓRA / DÁTUM / HÉT / ÉV NAPJA
+
+function updateClock(){
+
+    let now = new Date();
+
+
+    document.getElementById("date").innerHTML =
+    now.toLocaleDateString("hu-HU");
+
+
+    document.getElementById("time").innerHTML =
+    now.toLocaleTimeString("hu-HU");
+
+
+    document.getElementById("week").innerHTML =
+    getWeek(now)+" . hét";
+
+
+    document.getElementById("yearday").innerHTML =
+    getYearDay(now)+" . nap";
+
+}
+
+
+
+function getWeek(date){
+
+    let d = new Date(
+        Date.UTC(
+            date.getFullYear(),
+            date.getMonth(),
+            date.getDate()
+        )
+    );
+
+    let day = d.getUTCDay() || 7;
+
+    d.setUTCDate(
+        d.getUTCDate()+4-day
+    );
+
+    let yearStart =
+    new Date(
+        Date.UTC(
+            d.getUTCFullYear(),
+            0,
+            1
+        )
+    );
+
+
+    return Math.ceil(
+        (((d-yearStart)/86400000)+1)/7
+    );
+
+}
+
+
+
+function getYearDay(date){
+
+    let start =
+    new Date(
+        date.getFullYear(),
+        0,
+        0
+    );
+
+
+    return Math.floor(
+        (date-start)/86400000
+    );
+
+}
+
+
+
+// CÍM LEKÉRÉS
+
+async function getAddress(lat,lon){
+
+try{
+
+
+let url =
+"https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat="
++lat+
+"&lon="
++lon;
+
+
+let r =
+await fetch(url);
+
+
+let data =
+await r.json();
+
+
+let a=data.address;
+
+
+document.getElementById("country").innerHTML =
+a.country || "-";
+
+
+document.getElementById("postcode").innerHTML =
+a.postcode || "-";
+
+
+document.getElementById("city").innerHTML =
+a.city ||
+a.town ||
+a.village ||
+"-";
+
+
+document.getElementById("street").innerHTML =
+a.road || "-";
+
+
+document.getElementById("house").innerHTML =
+a.house_number || "-";
+
+
+}
+
+catch(e){
+
+console.log(e);
+
+}
+
+}
+
+
+
+
+
+// IDŐJÁRÁS
+
+async function getWeather(lat,lon){
+
+
+try{
+
+
+let url =
+"https://api.open-meteo.com/v1/forecast?latitude="
++lat+
+"&longitude="
++lon+
+"&current="
++
+"temperature_2m,relative_humidity_2m,apparent_temperature,wind_speed_10m,wind_direction_10m,cloud_cover"
++
+"&daily="
++
+"temperature_2m_max,temperature_2m_min,sunrise,sunset"
++
+"&timezone=auto";
+
+
+let r =
+await fetch(url);
+
+
+let w =
+await r.json();
+
+
+
+document.getElementById("temp").innerHTML =
+w.current.temperature_2m.toFixed(1)+" °C";
+
+
+document.getElementById("feel").innerHTML =
+w.current.apparent_temperature.toFixed(1)+" °C";
+
+
+document.getElementById("humidity").innerHTML =
+w.current.relative_humidity_2m+" %";
+
+
+document.getElementById("wind").innerHTML =
+w.current.wind_speed_10m.toFixed(1)+" km/h";
+
+
+document.getElementById("winddir").innerHTML =
+w.current.wind_direction_10m+"°";
+
+
+document.getElementById("condition").innerHTML =
+"Felhőzet: "
++w.current.cloud_cover
++" %";
+
+
+document.getElementById("max24").innerHTML =
+w.daily.temperature_2m_max[0].toFixed(1)
++" °C";
+
+
+document.getElementById("min24").innerHTML =
+w.daily.temperature_2m_min[0].toFixed(1)
++" °C";
+
+
+document.getElementById("sunrise").innerHTML =
+w.daily.sunrise[0];
+
+
+document.getElementById("sunset").innerHTML =
+w.daily.sunset[0];
+
+
+}
+
+catch(e){
+
+console.log(e);
+
+}
+
+}
+
+
+
+
+
+// GPS MOTOR
+
+function startGPS(){
+
+
+if(!navigator.geolocation){
+
+alert("GPS nem támogatott");
+
+return;
+
+}
+
+
+
+navigator.geolocation.watchPosition(
+
+function(pos){
+
+
+let lat =
+pos.coords.latitude;
+
+
+let lon =
+pos.coords.longitude;
+
+
+let acc =
+Math.round(pos.coords.accuracy);
+
+
+
+document.getElementById("gps").innerHTML =
+"GPS: <span class='ok'>🟢 AKTÍV</span>";
+
+
+
+document.getElementById("coords").innerHTML =
+lat.toFixed(8)
++
+"<br>"
++
+lon.toFixed(8);
+
+
+
+document.getElementById("accuracy").innerHTML =
+"± "
++
+acc
++
+" méter";
+
+
+
+
+
+if(!marker){
+
+
+marker =
+L.marker([lat,lon])
+.addTo(map)
+.bindPopup("📍 Saját hely");
+
+
+circle =
+L.circle(
+[lat,lon],
+{
+radius:10000
+}
+)
+.addTo(map);
+
+
+}
+
+else{
+
+
+marker.setLatLng([lat,lon]);
+
+circle.setLatLng([lat,lon]);
+
+}
+
+
+
+map.setView(
+[lat,lon],
+13
+);
+
+
+
+getAddress(lat,lon);
+
+getWeather(lat,lon);
+
+
+
+},
+
+
+function(err){
+
+document.getElementById("gps").innerHTML =
+"GPS hiba: "
++
+err.message;
+
+
+},
+
+
+{
+enableHighAccuracy:true,
+maximumAge:5000,
+timeout:10000
+}
+
+
+);
+
+
+}
+
+
+
+
+// INDÍTÁS
+
+initMap();
+
+updateClock();
+
+setInterval(
+updateClock,
+1000
+);
+
+
+</script>
+
+
+</body>
+
+</html>
