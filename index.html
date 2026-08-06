@@ -1,205 +1,135 @@
 <!DOCTYPE html>
 <html lang="hu">
 <head>
-<meta charset="UTF-8">
-<title>FUTÁR CORE V1</title>
-
-<style>
-body{
-    margin:0;
-    background:#000;
-    color:#fff;
-    font-family:Consolas,monospace;
-}
-
-/* ================= ÓRA ================= */
-#clockPanel{
-    background:#000;
-    padding:10px;
-    text-align:center;
-    border-bottom:2px solid #00ff66;
-}
-
-#clock{
-    font-size:54px;
-    font-weight:bold;
-    color:#00ff66;
-    text-shadow:0 0 20px #00ff66;
-}
-
-/* =============== HELYZET =============== */
-#locationPanel{
-    background:#2d2600;
-    color:#ffd000;
-    padding:12px;
-    font-size:14px;
-    border-bottom:2px solid #665500;
-}
-
-.distance{
-    color:#7dff7d;
-    font-weight:bold;
-}
-
-.stop{
-    padding:6px;
-    border-bottom:1px solid #222;
-}
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>FUTÁR V5 REAL ENGINE CORE</title>
 </head>
+<body style="background:#0b0f14;color:#e6e6e6;font-family:Arial;">
 
-<body>
+<h2>🚍 FUTÁR V5 REAL ENGINE CORE</h2>
+<p>Minimal real-data architecture (GTFS-ready skeleton)</p>
 
-<div id="clockPanel">
-    <div id="clock">00:00:00</div>
-</div>
-
-<div id="locationPanel">
-    <div class="title">📍 HELYZETEM</div>
-    <div id="address">Pozíció keresése...</div>
-</div>
-
-<div id="stops"></div>
+<pre id="log">Engine starting...</pre>
 
 <script>
-/* ================= ÓRA ================= */
-function updateClock(){
-    const now = new Date();
-    document.getElementById("clock").innerHTML =
-        now.toLocaleTimeString('hu-HU', { hour12:false });
-}
-setInterval(updateClock,1000);
-updateClock();
+/**
+ * FUTÁR V5 REAL ENGINE CORE
+ * Goal: DATA FIRST, UI SECOND
+ */
 
-/* ================= GPS ================= */
-let myLat = null;
-let myLon = null;
+const CONFIG = {
+  gtfsStaticUrl: "https://example.com/gtfs/stops.json",   // placeholder
+  gtfsRtUrl: "https://example.com/gtfs/realtime.json",    // placeholder
+  refreshInterval: 15000
+};
 
-async function updateLocation(){
-    if(!navigator.geolocation){
-        document.getElementById("address").innerHTML = "GPS nem elérhető";
-        return;
-    }
+const state = {
+  stops: [],
+  vehicles: [],
+  departures: []
+};
 
-    navigator.geolocation.getCurrentPosition(async pos=>{
-        myLat = pos.coords.latitude;
-        myLon = pos.coords.longitude;
-
-        let city="", road="", house="";
-
-        try{
-            const url =
-`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${myLat}&lon=${myLon}`;
-
-            const res = await fetch(url);
-            const data = await res.json();
-
-            city = data.address.city || data.address.town || data.address.village || "";
-            road = data.address.road || "";
-            house = data.address.house_number || "";
-        }catch(e){}
-
-        document.getElementById("address").innerHTML =
-        `🏙️ ${city}<br>
-         🛣️ ${road} ${house}<br><br>
-         🌍 ${myLat.toFixed(6)}<br>
-         🌍 ${myLon.toFixed(6)}<br><br>
-         🎯 ±${Math.round(pos.coords.accuracy)} m`;
-
-        renderStops();
-
-    }, err=>{
-        document.getElementById("address").innerHTML = "GPS nem elérhető";
-    },{
-        enableHighAccuracy:true
-    });
+function log(msg) {
+  const el = document.getElementById("log");
+  el.innerText += "\n" + msg;
 }
 
-updateLocation();
-setInterval(updateLocation,30000);
-
-/* ================= TÁVOLSÁG ================= */
-function distanceMeters(lat1, lon1, lat2, lon2){
-    const R = 6371000; // Föld sugár méterben
-
-    const dLat = (lat2-lat1) * Math.PI/180;
-    const dLon = (lon2-lon1) * Math.PI/180;
-
-    const a =
-        Math.sin(dLat/2) * Math.sin(dLat/2) +
-        Math.cos(lat1*Math.PI/180) *
-        Math.cos(lat2*Math.PI/180) *
-        Math.sin(dLon/2) * Math.sin(dLon/2);
-
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-
-    return R * c;
+/**
+ * FETCH LAYER (REAL ENGINE CORE)
+ */
+async function fetchJSON(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return await res.json();
+  } catch (err) {
+    log("❌ Fetch error: " + err.message);
+    return null;
+  }
 }
 
-/* ================= DEMO GTFS STOPOK ================= */
-const stops = [
-    {stop_name:"Nád utca", stop_id:"BKK-F00457",stop_lat: 47.594072, stop_lon: 19.048469},
-    {stop_name:"Békásmegyer HÉV-állomás", stop_id:"H5-09183", stop_lat: 47.598091, stop_lon: 19.054599},
-    {stop_name:"Gulácsy Lajos utca", stop_id:"BKK-00438", stop_lat: 47.602562, stop_lon: 19.048229},
-    {stop_name:"Florián tér_Vörösvári ut", stop_id:"BKK-F00611", stop_lat: 47.542896, stop_lon: 19.042252},
-    {stop_name:"Florián tér_Szentendrei ut", stop_id:"BKK-F00613", stop_lat: 47.541664, stop_lon: 19.040084},
-    {stop_name:"Kisinóci turistaház", stop_id:"VOLAN-778186", stop_lat: 47.890600, stop_lon: 18.927580},
-    {stop_name:"Verecke lépcsö", stop_id:"BKK-F00265",  stop_lat: 47.529117,  stop_lon: 19.003624},
-    {stop_name:"Csobánka tér-243 vá", stop_id:"BKK-F044192", stop_lat: 47.597795,  stop_lon: 19.053787},
-    {stop_name:"Csobánka tér-160 vá", stop_id:"BKK-008939", stop_lat: 47.598425,  stop_lon: 19.054240},
-    {stop_name:"Szentendre, HÉV végállomás", stop_id:"H5-09142221", stop_lat: 47.661038, stop_lon:19.075607},
-    {stop_name:"Szentendre, Autóbusz-állomás", stop_id:"VOLÁN-778806-99",  stop_lat: 47.660403, stop_lon:19.075408},
-    {stop_name:"Szentendre, Skanzen 1", stop_id:"VOLÁN-778840-1",  stop_lat: 47.691135, stop_lon:19.046955},
-    {stop_name:"Szentendre, Skanzen 2",  stop_id:"VOLÁN-778840-2",  stop_lat: 47.691273, stop_lon:19.045667},
-    {stop_name:"Tahitótfalu, hídfő 1",  stop_id:"VOLÁN-779053-1",  stop_lat: 47.751712, stop_lon: 19.078215}, 
-    {stop_name:"Tahitótfalu, hídfő 2",  stop_id:"VOLÁN-779053-2",  stop_lat: 47.751648, stop_lon: 19.078091},
-    {stop_name:"Szentendre, Dömör-kapu", stop_id:"VOLÁN-778803", stop_lat: 47.694900, stop_lon: 19.000210},
-    {stop_name:"Szob, Vasútállomás", stop_id: "VOLAN-779011", stop_lat: 47.821319, stop_lon: 18.862602},
-    {stop_name:"Nagybörzsöny, községháza",  stop_id:"VOLAN-778310",stop_lat: 47.936030, stop_lon: 18.827710},
-    {stop_name:"Királyrét",  stop_id:"VOLAN-779017",stop_lat: 47.895040,stop_lon: 18.977687},
-    {stop_name:"Magastaxi turistaház, Börzsöny", stop_id:"ERDÖ" ,stop_lat:47.92842, stop_lon: 18.92997},
-    {stop_name:"Nagyhideghegyi turistaház, Börzsöny",stop_id:"ERDÖ" ,stop_lat: 47.936111, stop_lon: 18.921944}, 
-    {stop_name:"Csoványos, hegycsucs, Börzsöny,kiláto", stop_id:"ERDÖ" ,stop_lat: 47.94908, stop_lon: 18.9483},
-    {stop_name:"Örs Vezér tér-85-85E", stop_id:"BKK-008030",stop_lat:47.501742, stop_lon:19.135604},
-    {stop_name:"Kocka utca kifelé", stop_id: "BKK-1831",stop_lat: 47.484915, stop_lon: 19.155466}, 
-    {stop_name:"Kocka utca befelé", stop_id: "BKK-1832",stop_lat: 47.484708, stop_lon: 19.155969},
-    {stop_name:"Újhegyi sétány befelé", stop_id: "BKK-F01842", stop_lat: 47.470813, stop_lon: 19.16451}, 
-    {stop_name:"Gőzmozdony utca kifelé",stop_id: "BKK-008863", stop_lat: 47.470028, stop_lon: 19.157173},
-    {stop_name:"Dunapataj, iskola", stop_id: "VOLAN-325369", stop_lat: 46.644280, stop_lon: 19.000233},
-    {stop_name:"Szelidi-tó, autóbusz-forduló", stop_id: "VOLAN-325374", stop_lat: 46.625050, stop_lon: 19.046159},
-    {stop_name:"Héviz, Széchenyi ut, Viztorony", stop_id: "VOLAN-561352-1",  stop_lat: 46.789883,  stop_lon: 17.181239},  
-    {stop_name:"Héviz, Széchenyi ut, Viztorony", stop_id: "VOLAN-561352-2",  stop_lat: 46.790057,  stop_lon: 17.182311}
-    
-    ];
-    
-    
+/**
+ * LOAD STATIC GTFS (stops, routes)
+ */
+async function loadStatic() {
+  log("📦 Loading GTFS static...");
 
-/* ================= RENDER ================= */
-function renderStops(){
-    const out = document.getElementById("stops");
-    if(!myLat || !myLon){
-        out.innerHTML = "";
-        return;
-    }
+  const data = await fetchJSON(CONFIG.gtfsStaticUrl);
+  if (!data) return;
 
-    out.innerHTML = stops.map(s=>{
-        let dist = "";
+  state.stops = data.stops || [];
 
-        if(s.stop_lat && s.stop_lon){
-            const d = distanceMeters(myLat,myLon,s.stop_lat,s.stop_lon);
-            dist = d < 1000
-                ? Math.round(d) + " m"
-                : (d/1000).toFixed(2) + " km";
-        }
-
-        return `
-        <div class="stop">
-            🚏 ${s.stop_name}<br>
-            ID: ${s.stop_id}<br>
-            📏 <span class="distance">${dist}</span>
-        </div>`;
-    }).join("");
+  log("✔ Stops loaded: " + state.stops.length);
 }
+
+/**
+ * LOAD REALTIME GTFS (vehicles, delays)
+ */
+async function loadRealtime() {
+  log("📡 Loading GTFS realtime...");
+
+  const data = await fetchJSON(CONFIG.gtfsRtUrl);
+  if (!data) return;
+
+  state.vehicles = data.vehicles || [];
+  state.departures = data.departures || [];
+
+  log("✔ Vehicles: " + state.vehicles.length);
+  log("✔ Departures: " + state.departures.length);
+}
+
+/**
+ * DELAY ENGINE (CORE LOGIC)
+ */
+function calculateDelay(scheduled, actual) {
+  if (!scheduled || !actual) return 0;
+
+  const s = new Date(scheduled).getTime();
+  const a = new Date(actual).getTime();
+
+  return Math.round((a - s) / 60000); // minutes
+}
+
+/**
+ * STATUS CLASSIFIER
+ */
+function getStatusColor(delayMin) {
+  if (delayMin <= 1) return "🟢";
+  if (delayMin <= 4) return "🟡";
+  return "🔴";
+}
+
+/**
+ * ENGINE LOOP
+ */
+async function tick() {
+  log("🔄 Engine tick...");
+
+  await loadRealtime();
+
+  // Example processing
+  state.departures.forEach(d => {
+    const delay = calculateDelay(d.scheduled, d.actual);
+    const status = getStatusColor(delay);
+
+    log(`${status} ${d.route || "?"} delay=${delay}min`);
+  });
+}
+
+/**
+ * BOOT ENGINE
+ */
+async function start() {
+  log("🚀 Starting FUTÁR V5 REAL ENGINE...");
+
+  await loadStatic();
+  await tick();
+
+  setInterval(tick, CONFIG.refreshInterval);
+}
+
+start();
 </script>
 
 </body>
