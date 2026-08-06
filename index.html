@@ -1,3 +1,789 @@
-<!DOCTYPE html><html lang="hu"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>FUTÁR V4 LIVE CORE</title><link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" /><script src="https://unpkg.com/leaflet/dist/leaflet.js"></script><script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script><style>body{margin:0;font-family:Arial;background:#061b17;color:#dff;overflow:hidden;}#topbar{height:50px;background:#0a2a24;display:flex;align-items:center;gap:10px;padding:0 10px;border-bottom:2px solid #00ffb3;font-weight:bold;}#layout{display:flex;height:calc(100vh - 50px);}#panel{width:480px;background:#081f1b;border-right:2px solid #00ffb3;overflow:auto;padding:10px;font-family:monospace;}#map{flex:1;}.row{display:grid;grid-template-columns:70px 1fr 90px;font-size:12px;padding:4px 0;border-bottom:1px solid #0d3b33;}.badge{color:#ffe66d;font-weight:bold;}.green{color:#65ff8f;}.blue{color:#4db7ff;}.red{color:#ff5b5b;}.small{font-size:11px;opacity:0.8;}</style></head><body><div id="topbar">🚍 FUTÁR V4 CORE<input type="file" id="zip"><button onclick="resetPanel()">RESET</button></div><div id="layout"><div id="panel">UPLOAD GTFS ZIP</div><div id="map"></div></div><script>/* =========================🧠 STATE========================= */let GTFS={stops:[],stop_times:[],trips:[],routes:[]};let INDEX={stop:{},trip:{},route:{}};let map=L.map('map').setView([47.55,19.05],11);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);let layer=L.layerGroup().addTo(map);/* =========================🕒 TIME ENGINE========================= */function nowSec(){ let d=new Date(); return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();}function toSec(t){ if(!t) return 0; let p=t.split(':'); return (+p[0])*3600+(+p[1])*60+(+p[2]||0);}/* =========================📦 CSV PARSER========================= */function parseCSVLine(line){ let r=[],c="",q=false; for(let x of line){  if(x=='"') q=!q;  else if(x==','&&!q){r.push(c);c="";}  else c+=x; } r.push(c); return r;}/* =========================🚀 GTFS LOAD========================= */async function loadGTFS(file){ const zip=await JSZip.loadAsync(file); function table(txt){  let l=txt.split(/\r?\n/);  let h=parseCSVLine(l[0]);  let o=[];  for(let i=1;i<l.length;i++){   if(!l[i]) continue;   let r=parseCSVLine(l[i]);   let obj={};   h.forEach((x,j)=>obj[x]=r[j]||"");   o.push(obj);  }  return o; } GTFS.stops=table(await zip.file('stops.txt').async('string')); GTFS.stop_times=table(await zip.file('stop_times.txt').async('string')); GTFS.trips=table(await zip.file('trips.txt').async('string')); GTFS.routes=table(await zip.file('routes.txt').async('string')); buildIndex(); renderMap(); document.getElementById('panel').innerHTML="CLICK A STOP";}/* =========================🧩 INDEX========================= */function buildIndex(){ INDEX.stop={}; INDEX.trip={}; INDEX.route={}; GTFS.trips.forEach(t=>INDEX.trip[t.trip_id]=t); GTFS.routes.forEach(r=>INDEX.route[r.route_id]=r); GTFS.stop_times.forEach(st=>{  if(!INDEX.stop[st.stop_id]) INDEX.stop[st.stop_id]=[];  INDEX.stop[st.stop_id].push(st); });}/* =========================🗺 MAP========================= */function renderMap(){ layer.clearLayers(); GTFS.stops.forEach(s=>{  let lat=parseFloat(s.stop_lat);  let lon=parseFloat(s.stop_lon);  if(!lat||!lon) return;  let m=L.circleMarker([lat,lon],{   radius:5,   color:'#ffee00',   fillColor:'#00ff88',   fillOpacity:0.8  }).addTo(layer);  m.on('click',()=>renderPanel(s.stop_id)); });}/* =========================⏱ NEXT DEPARTURES ENGINE========================= */function getNext(list){ let now=nowSec(); return list  .map(d=>({...d,sec:toSec(d.departure_time)}))  .filter(d=>d.sec>=now-300)  .sort((a,b)=>a.sec-b.sec);}function countdown(sec){ let now=nowSec(); let diff=Math.floor((sec-now)/60); if(diff<0) return "DEPARTED"; if(diff===0) return "NOW"; return diff+" min";}/* =========================📋 PANEL========================= */function renderPanel(stop_id){ let list=INDEX.stop[stop_id]||[]; let meta=GTFS.stops.find(s=>s.stop_id==stop_id)||{}; list=getNext(list); let html=""; html+="<b>"+meta.stop_name+"</b><br>"; html+="GTFS: "+stop_id+"<br><br>"; let seen=new Set(); list=list.filter(x=>{  if(seen.has(x.trip_id)) return false;  seen.add(x.trip_id);  return true; }); for(let i=0;i<Math.min(list.length,20);i++){  let d=list[i];  let trip=INDEX.trip[d.trip_id]||{};  let route=INDEX.route[trip.route_id]||{};  let cls="green";  if(countdown(d.sec)==="NOW") cls="red";  html+=  "<div class='row'>"+   "<div class='badge'>"+(route.route_short_name||"?")+"</div>"+   "<div>"+(trip.trip_headsign||"route")+"</div>"+   "<div class='"+cls+"'>"+     d.departure_time+     "<br><span class='small'>"+countdown(d.sec)+"</span>"+   "</div>"+  "</div>"; } document.getElementById('panel').innerHTML=html;}function resetPanel(){ document.getElementById('panel').innerHTML="CLICK A STOP";}/* =========================🚀 BOOT========================= */document.getElementById('zip').addEventListener('change',e=>{ loadGTFS(e.target.files[0]);});</script></body></html>
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<title>
+ATTILA KÖZLEKEDÉS V10.0 GTFS STABIL MOTOR
+</title>
+
+<style>
+
+body{
+    margin:0;
+    background:#071018;
+    color:white;
+    font-family:Arial,Helvetica,sans-serif;
+}
 
 
+header{
+
+    background:#101c2b;
+    border-bottom:2px solid #00ff99;
+    padding:12px;
+
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+
+    position:sticky;
+    top:0;
+}
+
+
+.title{
+
+    color:#00ff99;
+    font-size:20px;
+    font-weight:bold;
+
+}
+
+
+.clock{
+
+    text-align:right;
+    font-size:18px;
+    font-weight:bold;
+
+}
+
+
+.container{
+
+    padding:12px;
+
+    display:grid;
+    grid-template-columns:
+    repeat(auto-fit,minmax(320px,1fr));
+
+    gap:12px;
+
+}
+
+
+
+.panel{
+
+    background:#101a27;
+
+    border:1px solid #21445a;
+
+    border-radius:12px;
+
+    padding:15px;
+
+}
+
+
+
+.panel h2{
+
+    color:#00ff99;
+    margin-top:0;
+
+}
+
+
+
+.info{
+
+    background:#08131d;
+
+    padding:10px;
+
+    border-radius:8px;
+
+    line-height:1.8;
+
+}
+
+
+
+.green{
+
+    color:#00ff99;
+
+}
+
+
+.yellow{
+
+    color:#ffd43b;
+
+}
+
+
+.blue{
+
+    color:#4da6ff;
+
+}
+
+
+
+button{
+
+    width:100%;
+
+    padding:10px;
+
+    margin-top:8px;
+
+    background:#00a86b;
+
+    color:white;
+
+    border:none;
+
+    border-radius:8px;
+
+    font-weight:bold;
+
+}
+
+
+
+button:hover{
+
+    background:#00cc88;
+
+}
+
+
+
+@media(max-width:700px){
+
+header{
+
+    flex-direction:column;
+
+}
+
+.clock{
+
+    text-align:center;
+
+}
+
+}
+
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+</head>
+
+
+<body>
+
+
+<header>
+
+
+<div class="title">
+
+🚍 ATTILA KÖZLEKEDÉS V10.0<br>
+GTFS STABIL MOTOR
+
+</div>
+
+
+<div class="clock">
+
+<div id="clock">
+--:--:--
+</div>
+
+<div id="date">
+----</div>
+
+
+</div>
+
+
+</header>
+
+
+
+<div class="container">
+
+
+
+<div class="panel">
+
+
+<h2>
+📅 Idő és naptár CORE
+</h2>
+
+
+<div class="info" id="calendar">
+
+Betöltés...
+
+</div>
+
+
+</div>
+
+
+
+
+<div class="panel">
+
+
+<h2>
+📦 GTFS MOTOR
+</h2>
+
+
+<div class="info">
+
+
+<span class="green">
+STABIL CORE AKTÍV
+</span>
+
+<br><br>
+
+
+GTFS adat:
+<br>
+⏳ várakozás betöltésre
+
+
+<br><br>
+
+Későbbi modulok:
+
+<br>
+✔ BKK
+
+<br>
+✔ VOLÁN
+
+<br>
+✔ MÁV
+
+<br>
+✔ HÉV
+
+<br>
+✔ GYV
+
+
+</div>
+
+
+</div>
+
+
+
+
+
+<div class="panel">
+
+
+<h2>
+🚏 Megálló kereső
+</h2>
+
+
+<div class="info">
+
+
+GTFS betöltés után:
+
+<br>
+
+- megálló név
+
+<br>
+
+- GTFS azonosító
+
+<br>
+
+- koordináta
+
+<br>
+
+- indulások
+
+
+</div>
+
+
+</div>
+
+
+
+
+<div class="panel">
+
+
+<h2>
+🚍 Indulási kijelző
+</h2>
+
+
+<div class="info">
+
+
+Még nincs kiválasztott megálló.
+
+
+<br><br>
+
+
+A FUTÁR V10 kijelző ide kerül.
+
+
+</div>
+
+
+</div>
+
+
+
+
+</div>
+
+
+
+
+
+<script>
+
+
+function updateClock(){
+
+
+let now=new Date();
+
+
+
+document.getElementById("clock").innerHTML=
+
+now.toLocaleTimeString(
+"hu-HU",
+{
+hour:"2-digit",
+minute:"2-digit",
+second:"2-digit"
+}
+);
+
+
+
+document.getElementById("date").innerHTML=
+
+now.toLocaleDateString(
+"hu-HU",
+{
+year:"numeric",
+month:"2-digit",
+day:"2-digit",
+weekday:"long"
+}
+);
+
+
+
+let start=new Date(now.getFullYear(),0,1);
+
+let end=new Date(now.getFullYear()+1,0,1);
+
+
+
+let day=Math.floor(
+(now-start)/(1000*60*60*24)
+)+1;
+
+
+
+let total=
+Math.floor(
+(end-start)/(1000*60*60*24)
+);
+
+
+
+let week=getWeek(now);
+
+
+
+let passed=((day/total)*100).toFixed(2);
+
+let remain=(100-passed).toFixed(2);
+
+
+
+document.getElementById("calendar").innerHTML=
+
+
+`
+<b>Nap:</b> ${day} / ${total}
+
+<br>
+
+<b>Hét száma:</b> ${week}
+
+<br>
+
+<b>Eltelt év:</b> ${passed} %
+
+<br>
+
+<b>Hátralévő év:</b> ${remain} %
+
+<br>
+
+<b>Hátralévő nap:</b> ${total-day}
+
+`;
+
+
+
+}
+
+
+
+function getWeek(date){
+
+
+let d=new Date(
+Date.UTC(
+date.getFullYear(),
+date.getMonth(),
+date.getDate()
+));
+
+
+let dayNum=d.getUTCDay()||7;
+
+
+d.setUTCDate(
+d.getUTCDate()+4-dayNum
+);
+
+
+let yearStart=
+new Date(
+Date.UTC(
+d.getUTCFullYear(),
+0,
+1
+)
+);
+
+
+return Math.ceil(
+(
+(
+(d-yearStart)/86400000
+)+1
+)/7
+);
+
+
+}
+
+
+
+
+
+setInterval(
+updateClock,
+1000
+);
+
+
+updateClock();
+
+
+
+</script>
+
+
+</body>
+
+</html>
+
+<div class="panel">
+
+<h2>
+📦 GTFS MOTOR
+</h2>
+
+
+<input 
+type="file"
+id="gtfsFile"
+accept=".zip">
+
+
+<button onclick="loadGTFS()">
+GTFS ZIP BETÖLTÉS
+</button>
+
+
+
+<div class="info" id="gtfsStatus">
+
+Várakozás GTFS fájlra...
+
+</div>
+
+
+</div>
+// ================================
+// V10.0 GTFS STABIL MOTOR
+// GTFS ZIP LOADER CORE
+// ================================
+
+
+let GTFS = {
+
+stops:[],
+routes:[],
+trips:[],
+stop_times:[]
+
+};
+
+
+
+
+// CSV feldolgozó
+function parseCSV(text){
+
+
+text=text.replace(/^\uFEFF/,"");
+
+
+let lines=text
+.split(/\r?\n/)
+.filter(x=>x.trim());
+
+
+if(lines.length===0)
+return [];
+
+
+let headers=parseCSVLine(lines[0]);
+
+
+return lines.slice(1).map(line=>{
+
+
+let values=parseCSVLine(line);
+
+let obj={};
+
+
+headers.forEach(
+(h,i)=>
+obj[h]=values[i] || ""
+);
+
+
+return obj;
+
+
+});
+
+
+}
+
+
+
+
+
+// idézőjeles CSV sor kezelése
+
+function parseCSVLine(line){
+
+
+let result=[];
+
+let current="";
+
+let quote=false;
+
+
+
+for(let i=0;i<line.length;i++){
+
+
+let c=line[i];
+
+
+if(c=='"'){
+
+quote=!quote;
+
+continue;
+
+}
+
+
+
+if(c=="," && !quote){
+
+
+result.push(current);
+
+current="";
+
+continue;
+
+}
+
+
+
+current+=c;
+
+
+}
+
+
+result.push(current);
+
+
+return result;
+
+
+}
+
+
+
+
+
+// GTFS betöltés
+
+async function loadGTFS(){
+
+
+
+let file=
+document.getElementById("gtfsFile").files[0];
+
+
+if(!file){
+
+alert("Nincs kiválasztott GTFS ZIP!");
+
+return;
+
+}
+
+
+
+document.getElementById("gtfsStatus").innerHTML=
+
+"⏳ ZIP feldolgozás...";
+
+
+
+
+
+let zip=
+await JSZip.loadAsync(file);
+
+
+
+
+
+async function readGTFS(name){
+
+
+let f=zip.file(name);
+
+
+if(!f)
+return "";
+
+
+return await f.async("string");
+
+
+}
+
+
+
+
+
+GTFS.stops=
+parseCSV(
+await readGTFS("stops.txt")
+);
+
+
+
+GTFS.routes=
+parseCSV(
+await readGTFS("routes.txt")
+);
+
+
+
+GTFS.trips=
+parseCSV(
+await readGTFS("trips.txt")
+);
+
+
+
+GTFS.stop_times=
+parseCSV(
+await readGTFS("stop_times.txt")
+);
+
+
+
+
+
+document.getElementById("gtfsStatus").innerHTML=
+
+`
+
+<span class="green">
+✔ GTFS BETÖLTVE
+</span>
+
+<br><br>
+
+🚏 Megállók:
+${GTFS.stops.length}
+
+<br>
+
+🛣 Viszonylatok:
+${GTFS.routes.length}
+
+<br>
+
+🚍 Járatok:
+${GTFS.trips.length}
+
+<br>
+
+⏱ Menetrendi sorok:
+${GTFS.stop_times.length}
+
+
+`;
+
+
+
+console.log(
+"GTFS:",
+GTFS
+);
+
+
+
+}
