@@ -2,3214 +2,1039 @@
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport"
-      content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Attila Közlekedés V10.1 GTFS FIX2</title>
 
-<title>Attila Közlekedés V10.1 – GTFS MOTOR FIX1</title>
-
-<!-- =========================================================
-     ATTILA KÖZLEKEDÉS V10.1
-     GTFS MOTOR FIX1
-     
-     BKK/BKV + VOLÁN
-     IndexedDB
-     iPhone XR kompatibilis
-     
-     FONTOS:
-     - nincs rekurzív AUTO-RELOAD
-     - nincs függvény -> önmaga -> önmaga
-     - a ZIP feldolgozás soros
-     - a nagy CSV-k chunkokban kerülnek feldolgozásra
-     ========================================================= -->
+<!--
+  ATTILA KÖZLEKEDÉS V10.1 – GTFS FIX2
+  Fő javítás:
+  - Az egyszer betöltött GTFS ZIP-ekből feldolgozott adat IndexedDB-be kerül.
+  - Induláskor automatikus helyi visszaállítás történik.
+  - Új ZIP csak kézi GTFS BETÖLTÉS / ADATOK FRISSÍTÉSE esetén szükséges.
+  - A helyi GTFS törlése kizárólag a törlés gombbal történik.
+-->
 
 <style>
-
-*{
-    box-sizing:border-box;
-}
-
-html,
+*{box-sizing:border-box}
 body{
-    margin:0;
-    padding:0;
-    min-height:100%;
-    background:#071018;
-    color:#eaf3ff;
-    font-family:Arial,Helvetica,sans-serif;
+  margin:0;background:#071018;color:#eef6fb;
+  font-family:Arial,Helvetica,sans-serif;
 }
-
-body{
-    padding:10px;
-}
-
-.app{
-    width:100%;
-    max-width:1500px;
-    margin:0 auto;
-}
-
 .header{
-    background:
-        linear-gradient(135deg,#10283b,#07131e);
-    border:1px solid #29455c;
-    border-radius:16px;
-    padding:16px;
-    margin-bottom:10px;
-    box-shadow:0 8px 30px rgba(0,0,0,.35);
+  padding:16px;background:linear-gradient(135deg,#09243a,#123e5c);
+  border-bottom:2px solid #1c6d9d;
 }
-
-.header h1{
-    margin:0;
-    font-size:23px;
-    color:#ffffff;
-}
-
-.header .sub{
-    margin-top:5px;
-    color:#8fc7ff;
-    font-size:13px;
-}
-
+h1{margin:0;font-size:25px}
+h2{margin:0 0 10px;font-size:18px}
+h3{margin:10px 0}
+.sub{margin-top:5px;color:#b9d8e9;font-size:13px}
 .status{
-    margin-top:12px;
-    padding:12px;
-    border-radius:12px;
-    background:#050b10;
-    border:1px solid #233b4d;
-    font-weight:bold;
+  margin-top:10px;padding:10px;border-radius:10px;
+  background:#101d26;border:1px solid #29414e;
 }
-
-.status.ok{
-    border-color:#19733b;
-}
-
-.status.error{
-    border-color:#a72a2a;
-}
-
-.status.loading{
-    border-color:#9a7419;
-}
-
+.status.ok{border-color:#1f8f55;color:#8ff0b5}
+.status.warn{border-color:#a7771d;color:#ffd36b}
+.status.err{border-color:#9d3030;color:#ff8e8e}
 .grid{
-    display:grid;
-    grid-template-columns:repeat(4,1fr);
-    gap:8px;
-    margin-bottom:10px;
+  display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding:12px;
 }
-
-.card{
-    background:linear-gradient(145deg,#0d1b27,#09131c);
-    border:1px solid #263e50;
-    border-radius:14px;
-    padding:13px;
-    min-height:82px;
+.card,.panel{
+  background:#0c1821;border:1px solid #243b48;border-radius:14px;
 }
-
-.card .label{
-    font-size:12px;
-    color:#8fa9bc;
-    margin-bottom:8px;
+.card{padding:12px;text-align:center}
+.label{font-size:12px;color:#9eb6c5}
+.value{font-size:24px;font-weight:bold;margin-top:5px}
+.panel{margin:0 12px 12px;padding:14px}
+.small{font-size:12px;color:#a9bdc9;line-height:1.45}
+.controls,.row,.searchRow{
+  display:flex;gap:8px;flex-wrap:wrap;align-items:center;
 }
-
-.card .value{
-    font-size:25px;
-    font-weight:bold;
-    color:#ffffff;
+input,select,button{
+  min-height:42px;border-radius:9px;border:1px solid #3a5361;
+  background:#0d202c;color:#eef6fb;padding:8px 11px;font-size:14px;
 }
-
-.panel{
-    background:linear-gradient(145deg,#0d1b27,#09131c);
-    border:1px solid #263e50;
-    border-radius:15px;
-    padding:14px;
-    margin-bottom:10px;
+input{flex:1;min-width:180px}
+button{cursor:pointer;font-weight:bold}
+button:hover{filter:brightness(1.12)}
+.blue{background:#075f96;border-color:#168bcf}
+.green{background:#09683d;border-color:#16a35f}
+.danger{background:#761f28;border-color:#b83b47}
+.fileBox{margin-top:8px}
+.progress{height:12px;background:#071017;border-radius:8px;overflow:hidden;margin-top:10px}
+.progressBar{height:100%;width:0;background:#1d8bd1;transition:width .2s}
+.progressText{font-size:12px;color:#9db4c1;margin-top:6px}
+.results{margin-top:10px}
+.result{
+  padding:10px;border:1px solid #28424f;border-radius:10px;
+  margin-bottom:7px;background:#0a151d;cursor:pointer;
 }
-
-.panel h2{
-    margin:0 0 12px 0;
-    font-size:17px;
-    color:#ffffff;
-}
-
-.controls{
-    display:flex;
-    flex-wrap:wrap;
-    gap:8px;
-}
-
-button,
-input[type=file]{
-    font-family:Arial,Helvetica,sans-serif;
-}
-
-button{
-    border:1px solid #38556c;
-    background:#142b3d;
-    color:#ffffff;
-    border-radius:10px;
-    padding:11px 14px;
-    cursor:pointer;
-    font-weight:bold;
-}
-
-button:hover{
-    background:#1b3c55;
-}
-
-button:active{
-    transform:translateY(1px);
-}
-
-button.danger{
-    background:#40191d;
-    border-color:#743138;
-}
-
-button.green{
-    background:#123a27;
-    border-color:#286947;
-}
-
-button.blue{
-    background:#12334c;
-    border-color:#275b82;
-}
-
-button.yellow{
-    background:#3d3113;
-    border-color:#756023;
-}
-
-.fileBox{
-    display:flex;
-    flex-direction:column;
-    gap:8px;
-}
-
-input[type=file]{
-    width:100%;
-    padding:12px;
-    background:#071018;
-    color:#dcecff;
-    border:1px dashed #47657b;
-    border-radius:10px;
-}
-
-.dataset{
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    gap:10px;
-    padding:11px;
-    margin-top:8px;
-    border-radius:10px;
-    background:#071018;
-    border:1px solid #263e50;
-}
-
-.datasetName{
-    min-width:0;
-}
-
-.datasetTitle{
-    font-weight:bold;
-    color:#ffffff;
-}
-
-.datasetFile{
-    color:#7fa5c2;
-    font-size:12px;
-    margin-top:3px;
-    word-break:break-all;
-}
-
-.datasetActions{
-    display:flex;
-    gap:6px;
-    flex-shrink:0;
-}
-
-.progress{
-    width:100%;
-    height:14px;
-    border-radius:8px;
-    background:#050a0e;
-    overflow:hidden;
-    border:1px solid #243746;
-    margin-top:10px;
-}
-
-.progressBar{
-    height:100%;
-    width:0%;
-    background:#3e9ae0;
-    transition:width .15s linear;
-}
-
-.progressText{
-    margin-top:7px;
-    font-size:12px;
-    color:#9db4c5;
-}
-
-.searchRow{
-    display:flex;
-    gap:8px;
-}
-
-.searchRow input{
-    flex:1;
-    min-width:0;
-    padding:13px;
-    border-radius:10px;
-    border:1px solid #3a5569;
-    background:#050b10;
-    color:#ffffff;
-    outline:none;
-    font-size:15px;
-}
-
-.searchRow input:focus{
-    border-color:#4a9ad3;
-}
-
-.results{
-    margin-top:10px;
-    max-height:420px;
-    overflow:auto;
-}
-
-.stop{
-    padding:12px;
-    margin-bottom:7px;
-    border:1px solid #284356;
-    border-radius:10px;
-    background:#071018;
-    cursor:pointer;
-}
-
-.stop:hover{
-    background:#0d1c28;
-}
-
-.stopName{
-    font-weight:bold;
-    color:#ffffff;
-}
-
-.stopMeta{
-    margin-top:5px;
-    color:#87a5ba;
-    font-size:12px;
-    line-height:1.5;
-}
-
+.result:hover{border-color:#4f91b7}
+.resultTitle{font-weight:bold}
+.resultMeta{font-size:12px;color:#9eb5c3;margin-top:3px}
 .departure{
-    display:grid;
-    grid-template-columns:90px 1fr 110px;
-    gap:8px;
-    align-items:center;
-    padding:10px;
-    margin-bottom:6px;
-    background:#071018;
-    border:1px solid #263e50;
-    border-radius:9px;
+  display:grid;grid-template-columns:70px 1fr 95px;
+  gap:8px;padding:9px;border-bottom:1px solid #20333e;
 }
-
-.depTime{
-    font-size:18px;
-    font-weight:bold;
-    color:#ffffff;
-}
-
-.depRoute{
-    font-weight:bold;
-}
-
-.depHeadsign{
-    color:#9ab2c3;
-    font-size:12px;
-}
-
-.depSource{
-    text-align:right;
-    color:#70a9d1;
-    font-size:12px;
-}
-
+.early{color:#ff5151}.ontime{color:#72e69d}.late{color:#55a9ff}
 .log{
-    max-height:260px;
-    overflow:auto;
-    font-family:Consolas,monospace;
-    font-size:12px;
-    line-height:1.55;
-    background:#03070a;
-    border:1px solid #1e313f;
-    border-radius:10px;
-    padding:10px;
+  max-height:230px;overflow:auto;background:#050c11;
+  padding:9px;border-radius:9px;font:12px/1.5 Consolas,monospace;
 }
-
-.logLine{
-    border-bottom:1px solid #0d1820;
-    padding:3px 0;
+.log div{border-bottom:1px solid #16252e;padding:2px 0}
+.dataset{
+  padding:10px;border:1px solid #28424f;border-radius:10px;
+  margin-bottom:7px;background:#0a151d;
 }
-
-.logOk{
-    color:#71d39a;
+.badge{
+  display:inline-block;padding:3px 7px;border-radius:999px;
+  background:#173746;color:#9fdcff;font-size:11px;margin-left:5px;
 }
-
-.logWarn{
-    color:#e7c36a;
+.distanceLine{
+  display:flex;justify-content:space-between;gap:10px;
+  padding:8px 0;border-bottom:1px solid #1e303a;
 }
-
-.logErr{
-    color:#ef7777;
-}
-
-.empty{
-    padding:20px;
-    text-align:center;
-    color:#708898;
-}
-
-.small{
-    font-size:12px;
-    color:#819bab;
-}
-
+.distanceValue{font-weight:bold}
+.empty{padding:12px;color:#8399a6}
 .footer{
-    text-align:center;
-    color:#526a79;
-    font-size:11px;
-    padding:12px;
+  padding:15px;text-align:center;color:#78909d;font-size:11px;
 }
-
-@media(max-width:900px){
-    .grid{
-        grid-template-columns:repeat(2,1fr);
-    }
+@media(max-width:700px){
+  .grid{grid-template-columns:repeat(2,1fr)}
+  h1{font-size:21px}
+  .departure{grid-template-columns:60px 1fr}
+  .departure .delay{grid-column:2}
 }
-
-@media(max-width:600px){
-    body{
-        padding:6px;
-    }
-
-    .header h1{
-        font-size:19px;
-    }
-
-    .grid{
-        grid-template-columns:repeat(2,1fr);
-    }
-
-    .card{
-        min-height:70px;
-        padding:10px;
-    }
-
-    .card .value{
-        font-size:21px;
-    }
-
-    .dataset{
-        align-items:flex-start;
-        flex-direction:column;
-    }
-
-    .datasetActions{
-        width:100%;
-    }
-
-    .datasetActions button{
-        flex:1;
-    }
-
-    .departure{
-        grid-template-columns:70px 1fr;
-    }
-
-    .depSource{
-        display:none;
-    }
-}
-
 </style>
 </head>
 
 <body>
 
-<div class="app">
-
-    <div class="header">
-
-        <h1>🚍 ATTILA KÖZLEKEDÉS V10.1</h1>
-
-        <div class="sub">
-            GTFS MOTOR FIX1 • BKK/BKV + VOLÁN • IndexedDB • iPhone XR
-        </div>
-
-        <div id="status"
-             class="status">
-            ⚪ GTFS MOTOR indulásra kész
-        </div>
-
-    </div>
-
-
-    <!-- =====================================================
-         STATISZTIKÁK
-         ===================================================== -->
-
-    <div class="grid">
-
-        <div class="card">
-            <div class="label">Megállók</div>
-            <div id="nStops" class="value">0</div>
-        </div>
-
-        <div class="card">
-            <div class="label">Viszonylatok</div>
-            <div id="nRoutes" class="value">0</div>
-        </div>
-
-        <div class="card">
-            <div class="label">Járatok</div>
-            <div id="nTrips" class="value">0</div>
-        </div>
-
-        <div class="card">
-            <div class="label">Menetrendi sorok</div>
-            <div id="nTimes" class="value">0</div>
-        </div>
-
-    </div>
-
-
-    <!-- =====================================================
-         GTFS BETÖLTÉS
-         ===================================================== -->
-
-    <div class="panel">
-
-        <h2>📦 GTFS BETÖLTÉS</h2>
-
-        <div class="small">
-            BKK/BKV és VOLÁN GTFS ZIP fájlok kiválasztása.
-            A feldolgozás sorosan történik.
-        </div>
-
-        <br>
-
-        <div class="fileBox">
-
-            <input
-                id="gtfsFiles"
-                type="file"
-                accept=".zip,application/zip"
-                multiple
-            >
-
-            <div class="controls">
-
-                <button
-                    id="loadButton"
-                    class="blue">
-                    📦 GTFS BETÖLTÉSE
-                </button>
-
-                <button
-                    id="restoreButton"
-                    class="green">
-                    💾 HELYI GTFS BETÖLTÉSE
-                </button>
-
-                <button
-                    id="refreshButton">
-                    🔄 ADATOK FRISSÍTÉSE
-                </button>
-
-                <button
-                    id="clearDbButton"
-                    class="danger">
-                    🗑 HELYI GTFS TÖRLÉSE
-                </button>
-
-            </div>
-
-            <div class="progress">
-                <div
-                    id="progressBar"
-                    class="progressBar">
-                </div>
-            </div>
-
-            <div
-                id="progressText"
-                class="progressText">
-                Várakozás...
-            </div>
-
-        </div>
-
-    </div>
-
-
-    <!-- =====================================================
-         HELYBEN MEGJEGYZETT GTFS
-         ===================================================== -->
-
-    <div class="panel">
-
-        <h2>💾 Helyben megjegyzett GTFS</h2>
-
-        <div id="datasetList">
-
-            <div class="empty">
-                Nincs helyben tárolt GTFS adat.
-            </div>
-
-        </div>
-
-    </div>
-
-
-    <!-- =====================================================
-         MEGÁLLÓ KERESŐ
-         ===================================================== -->
-
-    <div class="panel">
-
-        <h2>🚏 MEGÁLLÓ KERESŐ</h2>
-
-        <div class="searchRow">
-
-            <input
-                id="stopSearch"
-                type="search"
-                placeholder="Megálló neve vagy GTFS ID..."
-                autocomplete="off">
-
-            <button
-                id="searchButton"
-                class="blue">
-                🔎
-            </button>
-
-        </div>
-
-        <div
-            id="stopResults"
-            class="results">
-
-            <div class="empty">
-                Írj be egy megállónevet vagy GTFS ID-t.
-            </div>
-
-        </div>
-
-    </div>
-
-
-    <!-- =====================================================
-         INDULÁSOK
-         ===================================================== -->
-
-    <div class="panel">
-
-        <h2 id="departureTitle">
-            🕐 INDULÁSI KIJELZŐ
-        </h2>
-
-        <div
-            id="departures"
-            class="results">
-
-            <div class="empty">
-                Válassz ki egy megállót.
-            </div>
-
-        </div>
-
-    </div>
-
-
-    <!-- =====================================================
-         NAPLÓ
-         ===================================================== -->
-
-    <div class="panel">
-
-        <h2>🛠 GTFS MOTOR NAPLÓ</h2>
-
-        <div
-            id="log"
-            class="log">
-        </div>
-
-    </div>
-
-
-    <div class="footer">
-        ATTILA KÖZLEKEDÉS V10.1 FIX1
-        • Stabil GTFS feldolgozó motor
-        • BKK/BKV + VOLÁN
-    </div>
-
+<div class="header">
+  <h1>🚍 ATTILA KÖZLEKEDÉS V10.1</h1>
+  <div class="sub">GTFS MOTOR FIX2 • BKK/BKV + VOLÁN • IndexedDB • iPhone XR</div>
+  <div id="status" class="status">⚪ GTFS MOTOR indulásra kész</div>
 </div>
 
+<div class="grid">
+  <div class="card"><div class="label">Megállók</div><div id="nStops" class="value">0</div></div>
+  <div class="card"><div class="label">Viszonylatok</div><div id="nRoutes" class="value">0</div></div>
+  <div class="card"><div class="label">Járatok</div><div id="nTrips" class="value">0</div></div>
+  <div class="card"><div class="label">Menetrendi sorok</div><div id="nTimes" class="value">0</div></div>
+</div>
 
-<!-- =========================================================
-     KÜLSŐ KÖNYVTÁRAK
-     ========================================================= -->
+<div class="panel">
+  <h2>📦 GTFS BETÖLTÉS</h2>
+  <div class="small">
+    Első alkalommal válaszd ki a GTFS ZIP-eket. A feldolgozott adatot a rendszer
+    tartósan IndexedDB-ben tárolja. Következő indításkor automatikusan visszaállítja.
+    <b>Új ZIP csak frissítéskor szükséges.</b>
+  </div>
+  <br>
+  <div class="fileBox">
+    <input id="gtfsFiles" type="file" accept=".zip,application/zip" multiple>
+    <div class="controls" style="margin-top:8px">
+      <button id="loadButton" class="blue">📦 GTFS BETÖLTÉSE</button>
+      <button id="restoreButton" class="green">💾 HELYI GTFS BETÖLTÉSE</button>
+      <button id="refreshButton">🔄 ADATOK FRISSÍTÉSE</button>
+      <button id="clearDbButton" class="danger">🗑 HELYI GTFS TÖRLÉSE</button>
+    </div>
+    <div class="progress"><div id="progressBar" class="progressBar"></div></div>
+    <div id="progressText" class="progressText">Várakozás...</div>
+  </div>
+</div>
 
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<div class="panel">
+  <h2>💾 Helyben megjegyzett GTFS</h2>
+  <div id="datasetList"><div class="empty">Ellenőrzés...</div></div>
+</div>
 
-<script src="https://cdn.jsdelivr.net/npm/papaparse@5.5.3/papaparse.min.js"></script>
+<div class="panel">
+  <h2>🚏 MEGÁLLÓ KERESŐ</h2>
+  <div class="searchRow">
+    <input id="stopSearch" type="search" placeholder="Megálló neve vagy GTFS ID..." autocomplete="off">
+    <button id="searchButton" class="blue">🔎 KERESÉS</button>
+  </div>
+  <div id="stopResults" class="results">
+    <div class="empty">Írj be egy megállónevet vagy GTFS ID-t.</div>
+  </div>
+</div>
 
+<div class="panel">
+  <h2 id="departureTitle">🕐 INDULÁSI KIJELZŐ</h2>
+
+  <div class="controls">
+    <select id="delayDisplayMode">
+      <option value="sec">Sietés/késés: perc + másodperc</option>
+      <option value="half">Sietés/késés: 0,5 perces intervallum</option>
+    </select>
+    <select id="departureLimit">
+      <option value="15">15 indulás</option>
+      <option value="25">25 indulás</option>
+      <option value="40">40 indulás</option>
+    </select>
+  </div>
+
+  <div class="small" style="margin-top:8px">
+    🔴 Sietés &nbsp; | &nbsp; 🟢 Menetrend szerint &nbsp; | &nbsp; 🔵 Késés
+  </div>
+
+  <div id="departures" class="results">
+    <div class="empty">Válassz ki egy megállót.</div>
+  </div>
+</div>
+
+<div class="panel">
+  <h2>🛰️ GPS / TÁVOLSÁG</h2>
+  <div class="controls">
+    <button id="gpsButton" class="blue">🛰️ GPS HELYZETEM</button>
+    <select id="distanceMode">
+      <option value="auto">AUTO – m / km</option>
+      <option value="meter">MÉTER</option>
+      <option value="km">KM – század km</option>
+    </select>
+  </div>
+  <div class="small" style="margin-top:8px">
+    A kiválasztott megálló távolsága a saját helyedhez képest:
+  </div>
+  <div class="distanceLine"><span>📐 Légvonal</span><span id="ownAirDistance" class="distanceValue">nincs adat</span></div>
+  <div class="distanceLine"><span>🛣️ Közúton</span><span id="ownRoadDistance" class="distanceValue">nincs adat</span></div>
+</div>
+
+<div class="panel">
+  <h2>🚌 VALÓS JÁRMŰ FEED</h2>
+  <div class="row">
+    <input id="vehicleFeedUrl" placeholder="Valós jármű JSON / feed URL – opcionális">
+    <button id="feedButton" class="green">FEED</button>
+  </div>
+  <div class="status" id="vehicleStatus">Nincs betöltött valós járműadat.</div>
+  <div class="distanceLine"><span>📐 Légvonal</span><span id="vehicleAirDistance">nincs adat</span></div>
+  <div class="distanceLine"><span>🛣️ Közúti</span><span id="vehicleRoadDistance">nincs adat</span></div>
+  <div class="distanceLine"><span>📍 Járműpozíció</span><span id="vehiclePosition">nincs adat</span></div>
+</div>
+
+<div class="panel">
+  <h2>🛠 GTFS MOTOR NAPLÓ</h2>
+  <div id="log" class="log"></div>
+</div>
+
+<div class="footer">
+  ATTILA KÖZLEKEDÉS V10.1 FIX2 • Tartós GTFS helyi adatbázis • BKK/BKV + VOLÁN
+</div>
+
+<!-- ZIP kezelés -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 
 <script>
+"use strict";
 
-/* ============================================================
-   ATTILA KÖZLEKEDÉS V10.1 FIX1
-   GTFS CORE
+/* =========================================================
+   ATTILA KÖZLEKEDÉS V10.1 – GTFS FIX2
+   ========================================================= */
 
-   A LEGFONTOSABB JAVÍTÁS:
+const DB_NAME = "AttilaKozlekedes_GTFS_V101_FIX2";
+const DB_VERSION = 1;
+const STORE = "gtfsDatasets";
 
-   NINCS ilyen:
-
-       load()
-         -> restore()
-            -> load()
-               -> restore()
-                  -> load()
-
-   A teljes rendszer Promise + queue alapú.
-
-   Így nincs végtelen rekurzió.
-   ============================================================ */
-
-
-/* ============================================================
-   KONFIGURÁCIÓ
-   ============================================================ */
-
-const CONFIG = {
-
-    DB_NAME:
-        "AttilaKozlekedes_GTFS_V101_FIX1",
-
-    DB_VERSION:
-        1,
-
-    STORE_DATASETS:
-        "datasets",
-
-    STORE_META:
-        "meta",
-
-    MAX_SEARCH_RESULTS:
-        100,
-
-    MAX_DEPARTURES:
-        80
-
+let db = null;
+let app = {
+  datasets: [],
+  stops: [],
+  routes: [],
+  trips: [],
+  stopTimes: [],
+  stopMap: new Map(),
+  routeMap: new Map(),
+  tripMap: new Map(),
+  selectedStop: null,
+  gps: null
 };
 
+/* ---------- UI ---------- */
 
-/* ============================================================
-   GLOBÁLIS ÁLLAPOT
-   ============================================================ */
+function $(id){ return document.getElementById(id); }
 
-const state = {
-
-    db:null,
-
-    loading:false,
-
-    datasets:new Map(),
-
-    stops:new Map(),
-
-    routes:new Map(),
-
-    trips:new Map(),
-
-    stopTimes:[],
-
-    stopTimesByStop:new Map(),
-
-    loaded:false,
-
-    currentStop:null,
-
-    currentDataset:null
-
-};
-
-
-/* ============================================================
-   DOM SEGÉD
-   ============================================================ */
-
-function $(id){
-
-    return document.getElementById(id);
-
+function setStatus(text, type=""){
+  const el = $("status");
+  el.textContent = text;
+  el.className = "status " + type;
 }
 
-
-/* ============================================================
-   NAPLÓ
-   ============================================================ */
-
-function log(message,type=""){
-
-    const box=$("log");
-
-    const line=document.createElement("div");
-
-    line.className="logLine "+(
-        type==="ok" ? "logOk" :
-        type==="warn" ? "logWarn" :
-        type==="err" ? "logErr" : ""
-    );
-
-    const time=
-        new Date().toLocaleTimeString("hu-HU");
-
-    line.textContent=
-        "["+time+"] "+message;
-
-    box.appendChild(line);
-
-    box.scrollTop=box.scrollHeight;
-
+function log(text){
+  const el = $("log");
+  const d = new Date();
+  const t = d.toLocaleTimeString("hu-HU");
+  el.insertAdjacentHTML("afterbegin",
+    "<div>[" + t + "] " + escapeHtml(text) + "</div>");
 }
 
-
-/* ============================================================
-   STÁTUSZ
-   ============================================================ */
-
-function setStatus(text,type=""){
-
-    const el=$("status");
-
-    el.textContent=text;
-
-    el.className="status "+type;
-
+function escapeHtml(s){
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"
+  }[c]));
 }
 
-
-/* ============================================================
-   PROGRESS
-   ============================================================ */
-
-function progress(percent,text){
-
-    const p=Math.max(
-        0,
-        Math.min(100,Number(percent)||0)
-    );
-
-    $("progressBar").style.width=p+"%";
-
-    $("progressText").textContent=
-        text || (p.toFixed(0)+"%");
-
+function setProgress(percent, text){
+  $("progressBar").style.width = Math.max(0,Math.min(100,percent)) + "%";
+  $("progressText").textContent = text;
 }
-
-
-/* ============================================================
-   STATISZTIKÁK
-   ============================================================ */
 
 function updateStats(){
-
-    $("nStops").textContent=
-        state.stops.size.toLocaleString("hu-HU");
-
-    $("nRoutes").textContent=
-        state.routes.size.toLocaleString("hu-HU");
-
-    $("nTrips").textContent=
-        state.trips.size.toLocaleString("hu-HU");
-
-    $("nTimes").textContent=
-        state.stopTimes.length.toLocaleString("hu-HU");
-
+  $("nStops").textContent = app.stops.length.toLocaleString("hu-HU");
+  $("nRoutes").textContent = app.routes.length.toLocaleString("hu-HU");
+  $("nTrips").textContent = app.trips.length.toLocaleString("hu-HU");
+  $("nTimes").textContent = app.stopTimes.length.toLocaleString("hu-HU");
 }
 
-
-/* ============================================================
-   INDEXEDDB NYITÁS
-   ============================================================ */
+/* ---------- IndexedDB ---------- */
 
 function openDB(){
-
-    return new Promise((resolve,reject)=>{
-
-        if(state.db){
-
-            resolve(state.db);
-
-            return;
-
-        }
-
-        if(!window.indexedDB){
-
-            reject(
-                new Error(
-                    "Az IndexedDB nem érhető el ebben a böngészőben."
-                )
-            );
-
-            return;
-
-        }
-
-        const request=
-            indexedDB.open(
-                CONFIG.DB_NAME,
-                CONFIG.DB_VERSION
-            );
-
-
-        request.onupgradeneeded=function(event){
-
-            const db=
-                event.target.result;
-
-
-            if(!db.objectStoreNames.contains(
-                CONFIG.STORE_DATASETS
-            )){
-
-                db.createObjectStore(
-                    CONFIG.STORE_DATASETS,
-                    {keyPath:"id"}
-                );
-
-            }
-
-
-            if(!db.objectStoreNames.contains(
-                CONFIG.STORE_META
-            )){
-
-                db.createObjectStore(
-                    CONFIG.STORE_META,
-                    {keyPath:"id"}
-                );
-
-            }
-
-        };
-
-
-        request.onsuccess=function(event){
-
-            state.db=
-                event.target.result;
-
-            state.db.onversionchange=function(){
-
-                state.db.close();
-
-                state.db=null;
-
-            };
-
-            resolve(state.db);
-
-        };
-
-
-        request.onerror=function(){
-
-            reject(
-                request.error ||
-                new Error("IndexedDB megnyitási hiba.")
-            );
-
-        };
-
-    });
-
-}
-
-
-/* ============================================================
-   DB PUT
-   ============================================================ */
-
-function dbPut(storeName,value){
-
-    return openDB().then(db=>{
-
-        return new Promise((resolve,reject)=>{
-
-            const tx=
-                db.transaction(
-                    storeName,
-                    "readwrite"
-                );
-
-            const store=
-                tx.objectStore(storeName);
-
-            let request;
-
-            try{
-
-                request=
-                    store.put(value);
-
-            }catch(error){
-
-                reject(error);
-
-                return;
-
-            }
-
-            request.onsuccess=function(){
-
-                resolve(request.result);
-
-            };
-
-            request.onerror=function(){
-
-                reject(request.error);
-
-            };
-
-        });
-
-    });
-
-}
-
-
-/* ============================================================
-   DB GET ALL
-   ============================================================ */
-
-function dbGetAll(storeName){
-
-    return openDB().then(db=>{
-
-        return new Promise((resolve,reject)=>{
-
-            const tx=
-                db.transaction(
-                    storeName,
-                    "readonly"
-                );
-
-            const store=
-                tx.objectStore(storeName);
-
-            const request=
-                store.getAll();
-
-            request.onsuccess=function(){
-
-                resolve(request.result || []);
-
-            };
-
-            request.onerror=function(){
-
-                reject(request.error);
-
-            };
-
-        });
-
-    });
-
-}
-
-
-/* ============================================================
-   DB DELETE
-   ============================================================ */
-
-function dbDelete(storeName,id){
-
-    return openDB().then(db=>{
-
-        return new Promise((resolve,reject)=>{
-
-            const tx=
-                db.transaction(
-                    storeName,
-                    "readwrite"
-                );
-
-            const store=
-                tx.objectStore(storeName);
-
-            const request=
-                store.delete(id);
-
-            request.onsuccess=function(){
-
-                resolve();
-
-            };
-
-            request.onerror=function(){
-
-                reject(request.error);
-
-            };
-
-        });
-
-    });
-
-}
-
-
-/* ============================================================
-   DB CLEAR
-   ============================================================ */
-
-function dbClear(storeName){
-
-    return openDB().then(db=>{
-
-        return new Promise((resolve,reject)=>{
-
-            const tx=
-                db.transaction(
-                    storeName,
-                    "readwrite"
-                );
-
-            const request=
-                tx.objectStore(storeName).clear();
-
-            request.onsuccess=function(){
-
-                resolve();
-
-            };
-
-            request.onerror=function(){
-
-                reject(request.error);
-
-            };
-
-        });
-
-    });
-
-}
-
-
-/* ============================================================
-   STRING SEGÉDEK
-   ============================================================ */
-
-function clean(value){
-
-    if(value===undefined || value===null){
-
-        return "";
-
-    }
-
-    return String(value).trim();
-
-}
-
-
-function lower(value){
-
-    return clean(value).toLocaleLowerCase("hu-HU");
-
-}
-
-
-function numberValue(value){
-
-    const n=
-        Number(
-            String(value)
-                .replace(",",".")
-                .trim()
-        );
-
-    return Number.isFinite(n)
-        ? n
-        : 0;
-
-}
-
-
-/* ============================================================
-   GTFS CSV NORMALIZÁLÁS
-   ============================================================ */
-
-function normalizeRow(row){
-
-    const result={};
-
-    for(const key of Object.keys(row)){
-
-        const normalized=
-            clean(key)
-                .replace(/^\uFEFF/,"")
-                .trim();
-
-        result[normalized]=
-            clean(row[key]);
-
-    }
-
-    return result;
-
-}
-
-
-/* ============================================================
-   CSV FELDOLGOZÁS CHUNKOKBAN
-   ============================================================ */
-
-function parseCSV(text,onChunk){
-
-    return new Promise((resolve,reject)=>{
-
-        if(!window.Papa){
-
-            reject(
-                new Error(
-                    "PapaParse könyvtár nem érhető el."
-                )
-            );
-
-            return;
-
-        }
-
-        try{
-
-            Papa.parse(
-                text,
-                {
-
-                    header:true,
-
-                    skipEmptyLines:true,
-
-                    dynamicTyping:false,
-
-                    chunkSize:1024*1024,
-
-                    chunk:function(results){
-
-                        if(
-                            results &&
-                            Array.isArray(results.data)
-                        ){
-
-                            onChunk(
-                                results.data
-                            );
-
-                        }
-
-                    },
-
-                    complete:function(results){
-
-                        resolve(results);
-
-                    },
-
-                    error:function(error){
-
-                        reject(error);
-
-                    }
-
-                }
-            );
-
-        }catch(error){
-
-            reject(error);
-
-        }
-
-    });
-
-}
-
-
-/* ============================================================
-   GTFS TÍPUS MEGHATÁROZÁSA
-   ============================================================ */
-
-function detectProvider(fileName){
-
-    const name=
-        lower(fileName);
-
-    if(
-        name.includes("volan") ||
-        name.includes("volán")
-    ){
-
-        return "VOLÁN";
-
-    }
-
-    if(
-        name.includes("bkk") ||
-        name.includes("bkv")
-    ){
-
-        return "BKK/BKV";
-
-    }
-
-    return "GTFS";
-
-}
-
-
-/* ============================================================
-   UNIQUE ID
-   ============================================================ */
-
-function uid(provider,id){
-
-    return provider+"::"+clean(id);
-
-}
-
-
-/* ============================================================
-   ZIP BEOLVASÁS
-   ============================================================ */
-
-async function readZip(file){
-
-    if(!window.JSZip){
-
-        throw new Error(
-            "JSZip könyvtár nem érhető el."
-        );
-
-    }
-
-    const zip=
-        await JSZip.loadAsync(file);
-
-    const files={};
-
-    const wanted=[
-        "stops.txt",
-        "routes.txt",
-        "trips.txt",
-        "stop_times.txt"
-    ];
-
-    for(const wantedName of wanted){
-
-        let found=null;
-
-        for(const path of Object.keys(zip.files)){
-
-            const base=
-                path.split("/").pop().toLowerCase();
-
-            if(base===wantedName){
-
-                found=zip.files[path];
-
-                break;
-
-            }
-
-        }
-
-        if(found){
-
-            files[wantedName]=
-                await found.async("string");
-
-        }
-
-    }
-
-    return files;
-
-}
-
-
-/* ============================================================
-   STOP FELDOLGOZÁS
-   ============================================================ */
-
-async function processStops(
-    text,
-    provider,
-    datasetId
-){
-
-    let count=0;
-
-    await parseCSV(
-        text,
-        rows=>{
-
-            for(const raw of rows){
-
-                const row=
-                    normalizeRow(raw);
-
-                const id=
-                    clean(row.stop_id);
-
-                if(!id){
-
-                    continue;
-
-                }
-
-                const key=
-                    uid(provider,id);
-
-                const stop={
-
-                    id:key,
-
-                    gtfsId:id,
-
-                    provider:provider,
-
-                    datasetId:datasetId,
-
-                    name:
-                        clean(row.stop_name),
-
-                    lat:
-                        numberValue(row.stop_lat),
-
-                    lon:
-                        numberValue(row.stop_lon),
-
-                    code:
-                        clean(row.stop_code),
-
-                    locationType:
-                        clean(row.location_type),
-
-                    parentStation:
-                        clean(row.parent_station)
-
-                };
-
-                state.stops.set(
-                    key,
-                    stop
-                );
-
-                count++;
-
-            }
-
-        }
-    );
-
-    return count;
-
-}
-
-
-/* ============================================================
-   ROUTES
-   ============================================================ */
-
-async function processRoutes(
-    text,
-    provider,
-    datasetId
-){
-
-    let count=0;
-
-    await parseCSV(
-        text,
-        rows=>{
-
-            for(const raw of rows){
-
-                const row=
-                    normalizeRow(raw);
-
-                const id=
-                    clean(row.route_id);
-
-                if(!id){
-
-                    continue;
-
-                }
-
-                const key=
-                    uid(provider,id);
-
-                state.routes.set(
-                    key,
-                    {
-
-                        id:key,
-
-                        gtfsId:id,
-
-                        provider:provider,
-
-                        datasetId:datasetId,
-
-                        shortName:
-                            clean(row.route_short_name),
-
-                        longName:
-                            clean(row.route_long_name),
-
-                        type:
-                            clean(row.route_type),
-
-                        color:
-                            clean(row.route_color),
-
-                        textColor:
-                            clean(row.route_text_color)
-
-                    }
-                );
-
-                count++;
-
-            }
-
-        }
-    );
-
-    return count;
-
-}
-
-
-/* ============================================================
-   TRIPS
-   ============================================================ */
-
-async function processTrips(
-    text,
-    provider,
-    datasetId
-){
-
-    let count=0;
-
-    await parseCSV(
-        text,
-        rows=>{
-
-            for(const raw of rows){
-
-                const row=
-                    normalizeRow(raw);
-
-                const id=
-                    clean(row.trip_id);
-
-                if(!id){
-
-                    continue;
-
-                }
-
-                const key=
-                    uid(provider,id);
-
-                const routeId=
-                    clean(row.route_id);
-
-                state.trips.set(
-                    key,
-                    {
-
-                        id:key,
-
-                        gtfsId:id,
-
-                        provider:provider,
-
-                        datasetId:datasetId,
-
-                        routeId:
-                            uid(provider,routeId),
-
-                        serviceId:
-                            clean(row.service_id),
-
-                        headsign:
-                            clean(row.trip_headsign),
-
-                        directionId:
-                            clean(row.direction_id),
-
-                        blockId:
-                            clean(row.block_id),
-
-                        shapeId:
-                            clean(row.shape_id)
-
-                    }
-                );
-
-                count++;
-
-            }
-
-        }
-    );
-
-    return count;
-
-}
-
-
-/* ============================================================
-   STOP TIMES
-   ============================================================ */
-
-async function processStopTimes(
-    text,
-    provider,
-    datasetId
-){
-
-    let count=0;
-
-    await parseCSV(
-        text,
-        rows=>{
-
-            for(const raw of rows){
-
-                const row=
-                    normalizeRow(raw);
-
-                const tripId=
-                    clean(row.trip_id);
-
-                const stopId=
-                    clean(row.stop_id);
-
-                if(!tripId || !stopId){
-
-                    continue;
-
-                }
-
-                const tripKey=
-                    uid(provider,tripId);
-
-                const stopKey=
-                    uid(provider,stopId);
-
-                const item={
-
-                    tripId:tripKey,
-
-                    tripGtfsId:tripId,
-
-                    stopId:stopKey,
-
-                    stopGtfsId:stopId,
-
-                    arrival:
-                        clean(row.arrival_time),
-
-                    departure:
-                        clean(row.departure_time),
-
-                    sequence:
-                        Number(
-                            clean(row.stop_sequence)
-                        ) || 0,
-
-                    provider:provider,
-
-                    datasetId:datasetId
-
-                };
-
-                state.stopTimes.push(item);
-
-                let arr=
-                    state.stopTimesByStop.get(stopKey);
-
-                if(!arr){
-
-                    arr=[];
-
-                    state.stopTimesByStop.set(
-                        stopKey,
-                        arr
-                    );
-
-                }
-
-                arr.push(item);
-
-                count++;
-
-            }
-
-        }
-    );
-
-    return count;
-
-}
-
-
-/* ============================================================
-   DATASET BETÖLTÉS
-   ============================================================ */
-
-async function processDataset(file){
-
-    const provider=
-        detectProvider(file.name);
-
-    const datasetId=
-        provider+"_"+Date.now()+"_"+Math.random()
-            .toString(36)
-            .slice(2,8);
-
-    log(
-        "ZIP megnyitása: "+
-        file.name+
-        " ["+
-        provider+
-        "]"
-    );
-
-    progress(
-        5,
-        provider+
-        " – ZIP megnyitása..."
-    );
-
-    const files=
-        await readZip(file);
-
-    const required=[
-        "stops.txt",
-        "routes.txt",
-        "trips.txt",
-        "stop_times.txt"
-    ];
-
-    const missing=
-        required.filter(
-            name=>!files[name]
-        );
-
-    if(missing.length){
-
-        throw new Error(
-            "Hiányzó GTFS fájl(ok): "+
-            missing.join(", ")
-        );
-
-    }
-
-
-    progress(
-        15,
-        provider+
-        " – stops.txt feldolgozása..."
-    );
-
-    const stops=
-        await processStops(
-            files["stops.txt"],
-            provider,
-            datasetId
-        );
-
-
-    progress(
-        35,
-        provider+
-        " – routes.txt feldolgozása..."
-    );
-
-    const routes=
-        await processRoutes(
-            files["routes.txt"],
-            provider,
-            datasetId
-        );
-
-
-    progress(
-        50,
-        provider+
-        " – trips.txt feldolgozása..."
-    );
-
-    const trips=
-        await processTrips(
-            files["trips.txt"],
-            provider,
-            datasetId
-        );
-
-
-    progress(
-        65,
-        provider+
-        " – stop_times.txt feldolgozása..."
-    );
-
-    const times=
-        await processStopTimes(
-            files["stop_times.txt"],
-            provider,
-            datasetId
-        );
-
-
-    const metadata={
-
-        id:datasetId,
-
-        provider:provider,
-
-        fileName:file.name,
-
-        fileSize:file.size,
-
-        loadedAt:
-            new Date().toISOString(),
-
-        counts:{
-
-            stops:stops,
-
-            routes:routes,
-
-            trips:trips,
-
-            stopTimes:times
-
-        }
-
+  return new Promise((resolve,reject)=>{
+    if(db){ resolve(db); return; }
+
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+
+    req.onupgradeneeded = e => {
+      const d = e.target.result;
+      if(!d.objectStoreNames.contains(STORE)){
+        const store = d.createObjectStore(STORE, {keyPath:"id"});
+        store.createIndex("savedAt","savedAt",{unique:false});
+      }
     };
 
+    req.onsuccess = e => {
+      db = e.target.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
 
-    /*
-       FONTOS:
-
-       Nem a teljes state objektumot mentjük!
-       Nem mentjük a Map objektumokat!
-       Nem mentjük a DOM-ot!
-       Nem mentjük a függvényeket!
-
-       Ez megakadályozza az adatstruktúra
-       fölösleges körkörös kapcsolatait.
-    */
-
-    await dbPut(
-        CONFIG.STORE_DATASETS,
-        metadata
-    );
-
-    state.datasets.set(
-        datasetId,
-        metadata
-    );
-
-
-    log(
-        provider+
-        " kész: "+
-        stops.toLocaleString("hu-HU")+
-        " megálló, "+
-        routes.toLocaleString("hu-HU")+
-        " viszonylat, "+
-        trips.toLocaleString("hu-HU")+
-        " járat, "+
-        times.toLocaleString("hu-HU")+
-        " menetrendi sor.",
-        "ok"
-    );
-
-    return metadata;
-
+    req.onerror = () => reject(req.error);
+  });
 }
 
+async function dbPut(dataset){
+  const d = await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx = d.transaction(STORE,"readwrite");
+    tx.objectStore(STORE).put(dataset);
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
 
-/* ============================================================
-   ZIP-EK SOROS FELDOLGOZÁSA
-   ============================================================ */
+async function dbGetAll(){
+  const d = await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx = d.transaction(STORE,"readonly");
+    const req = tx.objectStore(STORE).getAll();
+    req.onsuccess = () => resolve(req.result || []);
+    req.onerror = () => reject(req.error);
+  });
+}
 
-async function loadSelectedFiles(){
+async function dbClear(){
+  const d = await openDB();
+  return new Promise((resolve,reject)=>{
+    const tx = d.transaction(STORE,"readwrite");
+    tx.objectStore(STORE).clear();
+    tx.oncomplete = resolve;
+    tx.onerror = () => reject(tx.error);
+  });
+}
 
-    if(state.loading){
+/*
+  FIX2: nem Blob/File objektumokat tárolunk.
+  Csak a feldolgozott, szükséges GTFS rekordokat.
+  Így az IndexedDB-ben valódi helyi adatbázis marad.
+*/
+async function saveDataset(ds){
+  await dbPut({
+    id: ds.id,
+    sourceName: ds.sourceName,
+    savedAt: Date.now(),
+    stops: ds.stops,
+    routes: ds.routes,
+    trips: ds.trips,
+    stopTimes: ds.stopTimes
+  });
+}
 
-        log(
-            "A GTFS motor már dolgozik – új betöltés figyelmen kívül hagyva.",
-            "warn"
-        );
+/* ---------- CSV parser ---------- */
 
-        return;
+function parseCSV(text){
+  text = text.replace(/^\uFEFF/,"");
+  const rows = [];
+  let row = [], field = "", quoted = false;
 
+  for(let i=0;i<text.length;i++){
+    const c = text[i];
+
+    if(c === '"'){
+      if(quoted && text[i+1] === '"'){
+        field += '"'; i++;
+      }else{
+        quoted = !quoted;
+      }
+    }else if(c === "," && !quoted){
+      row.push(field); field="";
+    }else if((c === "\n" || c === "\r") && !quoted){
+      if(c === "\r" && text[i+1] === "\n") i++;
+      row.push(field);
+      rows.push(row);
+      row=[]; field="";
+    }else{
+      field += c;
+    }
+  }
+
+  if(field.length || row.length){
+    row.push(field);
+    rows.push(row);
+  }
+
+  if(!rows.length) return [];
+
+  const headers = rows[0].map(x => x.trim());
+  const out = [];
+
+  for(let r=1;r<rows.length;r++){
+    const obj = {};
+    const line = rows[r];
+    for(let c=0;c<headers.length;c++){
+      obj[headers[c]] = (line[c] ?? "").trim();
+    }
+    out.push(obj);
+  }
+
+  return out;
+}
+
+/* ---------- GTFS ---------- */
+
+async function readZipFile(file){
+  if(!window.JSZip){
+    throw new Error("A ZIP motor nem töltődött be. Internetkapcsolat szükséges a JSZip betöltéséhez.");
+  }
+
+  const zip = await JSZip.loadAsync(file);
+
+  async function read(name){
+    const entry = zip.file(name) || zip.file("gtfs/" + name);
+    if(!entry) return [];
+    const text = await entry.async("text");
+    return parseCSV(text);
+  }
+
+  const stops = await read("stops.txt");
+  const routes = await read("routes.txt");
+  const trips = await read("trips.txt");
+  const stopTimes = await read("stop_times.txt");
+
+  return {stops,routes,trips,stopTimes};
+}
+
+function namespaceRecords(data, prefix){
+  const stops = data.stops.map(x => ({
+    stop_id: prefix + ":" + (x.stop_id || ""),
+    original_stop_id: x.stop_id || "",
+    stop_name: x.stop_name || "",
+    stop_lat: Number(x.stop_lat),
+    stop_lon: Number(x.stop_lon),
+    stop_code: x.stop_code || "",
+    source: prefix
+  }));
+
+  const routes = data.routes.map(x => ({
+    route_id: prefix + ":" + (x.route_id || ""),
+    original_route_id: x.route_id || "",
+    route_short_name: x.route_short_name || "",
+    route_long_name: x.route_long_name || "",
+    route_type: x.route_type || "",
+    source: prefix
+  }));
+
+  const trips = data.trips.map(x => ({
+    trip_id: prefix + ":" + (x.trip_id || ""),
+    original_trip_id: x.trip_id || "",
+    route_id: prefix + ":" + (x.route_id || ""),
+    service_id: x.service_id || "",
+    trip_headsign: x.trip_headsign || "",
+    direction_id: x.direction_id || "",
+    source: prefix
+  }));
+
+  const stopTimes = data.stopTimes.map(x => ({
+    trip_id: prefix + ":" + (x.trip_id || ""),
+    stop_id: prefix + ":" + (x.stop_id || ""),
+    arrival_time: x.arrival_time || "",
+    departure_time: x.departure_time || "",
+    stop_sequence: Number(x.stop_sequence || 0)
+  }));
+
+  return {stops,routes,trips,stopTimes};
+}
+
+async function loadGTFSFiles(){
+  const input = $("gtfsFiles");
+  const files = [...(input.files || [])];
+
+  if(!files.length){
+    setStatus("🟠 Válassz ki legalább egy GTFS ZIP fájlt.","warn");
+    log("Nincs kiválasztott GTFS ZIP.");
+    return;
+  }
+
+  try{
+    setStatus("🟡 GTFS feldolgozás folyamatban...","warn");
+    setProgress(0,"GTFS ZIP-ek feldolgozása...");
+    log(files.length + " GTFS ZIP feldolgozása indul.");
+
+    const loaded = [];
+
+    for(let i=0;i<files.length;i++){
+      const file = files[i];
+      const name = file.name;
+      const upper = name.toUpperCase();
+      const prefix =
+        upper.includes("VOLAN") || upper.includes("VOLÁN") ? "VOLAN" :
+        upper.includes("BKK") || upper.includes("BKV") ? "BKK" :
+        "GTFS" + (i+1);
+
+      setProgress((i/files.length)*90,
+        "Feldolgozás: " + name);
+
+      const raw = await readZipFile(file);
+      const ns = namespaceRecords(raw,prefix);
+
+      const ds = {
+        id: prefix + "_" + safeId(name),
+        sourceName: name,
+        stops: ns.stops,
+        routes: ns.routes,
+        trips: ns.trips,
+        stopTimes: ns.stopTimes
+      };
+
+      await saveDataset(ds);
+      loaded.push(ds);
+
+      log(name + " → " +
+          ds.stops.length.toLocaleString("hu-HU") +
+          " megálló, " +
+          ds.routes.length.toLocaleString("hu-HU") +
+          " viszonylat, " +
+          ds.trips.length.toLocaleString("hu-HU") +
+          " járat, " +
+          ds.stopTimes.length.toLocaleString("hu-HU") +
+          " menetrendi sor.");
+
+      setProgress(((i+1)/files.length)*90,
+        "Mentve: " + name);
     }
 
+    app.datasets = await dbGetAll();
+    rebuildMemory();
 
-    const input=
-        $("gtfsFiles");
+    await renderDatasetList();
 
-    const files=
-        Array.from(
-            input.files || []
-        );
+    setProgress(100,"GTFS sikeresen betöltve és helyben elmentve.");
+    setStatus("🟢 GTFS KÉSZ – helyben megjegyezve","ok");
+    log("FIX2: GTFS tartós IndexedDB mentés kész.");
 
+  }catch(err){
+    console.error(err);
+    setStatus("🔴 GTFS hiba: " + (err.message || err),"err");
+    setProgress(0,"Hiba történt.");
+    log("HIBA: " + (err.message || err));
+  }
+}
 
-    if(!files.length){
+function safeId(name){
+  return String(name).replace(/[^a-zA-Z0-9_-]+/g,"_").slice(0,80);
+}
 
-        setStatus(
-            "⚠️ Előbb válassz ki legalább egy GTFS ZIP fájlt.",
-            "error"
-        );
+async function restoreGTFS(){
+  try{
+    setStatus("🟡 Helyi GTFS visszaállítása...","warn");
+    setProgress(15,"IndexedDB olvasása...");
 
-        return;
+    app.datasets = await dbGetAll();
 
+    if(!app.datasets.length){
+      setStatus("🟠 Nincs helyben tárolt GTFS. Első alkalommal ZIP-et kell betölteni.","warn");
+      setProgress(0,"Nincs helyi GTFS.");
+      log("IndexedDB üres.");
+      await renderDatasetList();
+      return false;
     }
 
+    rebuildMemory();
+    await renderDatasetList();
 
-    state.loading=true;
-
-    $("loadButton").disabled=true;
-
+    setProgress(100,"Helyi GTFS visszaállítva.");
     setStatus(
-        "🟡 GTFS BETÖLTÉS FOLYAMATBAN...",
-        "loading"
+      "🟢 HELYI GTFS AKTÍV – " +
+      app.datasets.length + " adatcsomag",
+      "ok"
     );
 
-    progress(
-        0,
-        "GTFS motor indul..."
-    );
+    log("Automatikus helyi GTFS visszaállítás kész.");
+    return true;
 
-
-    try{
-
-        /*
-           MINDEN BETÖLTÉS ELEJÉN
-           tiszta RAM állapotot készítünk.
-
-           Az IndexedDB ettől még nem törlődik.
-        */
-
-        clearRuntimeState();
-
-        updateStats();
-
-
-        /*
-           SOROS ciklus.
-
-           Nem Promise.all.
-
-           Nem egymásba ágyazott újrahívás.
-
-           Nem rekurzió.
-        */
-
-        for(
-            let i=0;
-            i<files.length;
-            i++
-        ){
-
-            const file=
-                files[i];
-
-            const base=
-                Math.round(
-                    (i/files.length)*100
-                );
-
-            log(
-                "Betöltés "+
-                (i+1)+"/"+
-                files.length+
-                ": "+
-                file.name
-            );
-
-            await processDataset(file);
-
-            /*
-               Egy rövid aszinkron szünet.
-
-               Mobilon, különösen iPhone XR-en,
-               ez lehetőséget ad a böngészőnek
-               UI-frissítésre.
-            */
-
-            await yieldToBrowser();
-
-        }
-
-
-        state.loaded=true;
-
-        updateStats();
-
-        renderDatasets();
-
-        progress(
-            100,
-            "GTFS betöltés kész."
-        );
-
-        setStatus(
-            "🟢 GTFS BETÖLTÉS KÉSZ",
-            "ok"
-        );
-
-        log(
-            "ÖSSZESÍTÉS: "+
-            state.stops.size.toLocaleString("hu-HU")+
-            " megálló | "+
-            state.routes.size.toLocaleString("hu-HU")+
-            " viszonylat | "+
-            state.trips.size.toLocaleString("hu-HU")+
-            " járat | "+
-            state.stopTimes.length.toLocaleString("hu-HU")+
-            " menetrendi sor.",
-            "ok"
-        );
-
-
-    }catch(error){
-
-        console.error(error);
-
-        setStatus(
-            "❌ GTFS HIBA: "+
-            (
-                error &&
-                error.message
-                ? error.message
-                : String(error)
-            ),
-            "error"
-        );
-
-        log(
-            "GTFS HIBA: "+
-            (
-                error &&
-                error.message
-                ? error.message
-                : String(error)
-            ),
-            "err"
-        );
-
-
-    }finally{
-
-        state.loading=false;
-
-        $("loadButton").disabled=false;
-
-    }
-
+  }catch(err){
+    setStatus("🔴 IndexedDB visszaállítási hiba","err");
+    log("IndexedDB HIBA: " + (err.message || err));
+    return false;
+  }
 }
 
+function rebuildMemory(){
+  app.stops=[];
+  app.routes=[];
+  app.trips=[];
+  app.stopTimes=[];
 
-/* ============================================================
-   BÖNGÉSZŐNEK ÁTADJUK A VEZÉRLÉST
-   ============================================================ */
+  for(const ds of app.datasets){
+    app.stops.push(...(ds.stops||[]));
+    app.routes.push(...(ds.routes||[]));
+    app.trips.push(...(ds.trips||[]));
+    app.stopTimes.push(...(ds.stopTimes||[]));
+  }
 
-function yieldToBrowser(){
+  app.stopMap = new Map(app.stops.map(x=>[x.stop_id,x]));
+  app.routeMap = new Map(app.routes.map(x=>[x.route_id,x]));
+  app.tripMap = new Map(app.trips.map(x=>[x.trip_id,x]));
 
-    return new Promise(resolve=>{
-
-        setTimeout(
-            resolve,
-            0
-        );
-
-    });
-
+  updateStats();
 }
 
+async function renderDatasetList(){
+  const el=$("datasetList");
 
-/* ============================================================
-   RUNTIME TÖRLÉS
-   ============================================================ */
+  if(!app.datasets.length){
+    el.innerHTML='<div class="empty">Nincs helyben tárolt GTFS adat.</div>';
+    return;
+  }
 
-function clearRuntimeState(){
+  el.innerHTML = app.datasets.map(ds => {
+    const date = ds.savedAt ?
+      new Date(ds.savedAt).toLocaleString("hu-HU") : "ismeretlen";
 
-    state.datasets.clear();
-
-    state.stops.clear();
-
-    state.routes.clear();
-
-    state.trips.clear();
-
-    state.stopTimes=[];
-
-    state.stopTimesByStop.clear();
-
-    state.loaded=false;
-
-    state.currentStop=null;
-
+    return `
+      <div class="dataset">
+        <b>${escapeHtml(ds.sourceName || ds.id)}</b>
+        <span class="badge">HELYI</span>
+        <div class="resultMeta">
+          Mentve: ${escapeHtml(date)}
+          • ${Number(ds.stops?.length||0).toLocaleString("hu-HU")} megálló
+          • ${Number(ds.routes?.length||0).toLocaleString("hu-HU")} viszonylat
+          • ${Number(ds.trips?.length||0).toLocaleString("hu-HU")} járat
+        </div>
+      </div>`;
+  }).join("");
 }
 
-
-/* ============================================================
-   HELYI DATASET LISTA
-   ============================================================ */
-
-async function loadDatasetMetadata(){
-
-    const rows=
-        await dbGetAll(
-            CONFIG.STORE_DATASETS
-        );
-
-    state.datasets.clear();
-
-    for(const row of rows){
-
-        if(
-            row &&
-            row.id
-        ){
-
-            state.datasets.set(
-                row.id,
-                row
-            );
-
-        }
-
-    }
-
-    renderDatasets();
-
-    return rows;
-
-}
-
-
-/* ============================================================
-   DATASET KIJELZÉS
-   ============================================================ */
-
-function renderDatasets(){
-
-    const box=
-        $("datasetList");
-
-    box.innerHTML="";
-
-
-    if(
-        state.datasets.size===0
-    ){
-
-        box.innerHTML=
-            '<div class="empty">'+
-            'Nincs helyben tárolt GTFS adat.'+
-            '</div>';
-
-        return;
-
-    }
-
-
-    const rows=
-        Array.from(
-            state.datasets.values()
-        )
-        .sort(
-            (a,b)=>
-                String(b.loadedAt)
-                .localeCompare(
-                    String(a.loadedAt)
-                )
-        );
-
-
-    for(const data of rows){
-
-        const item=
-            document.createElement("div");
-
-        item.className="dataset";
-
-
-        const name=
-            document.createElement("div");
-
-        name.className="datasetName";
-
-
-        const title=
-            document.createElement("div");
-
-        title.className="datasetTitle";
-
-        title.textContent=
-            "📦 "+
-            (
-                data.provider ||
-                "GTFS"
-            );
-
-
-        const file=
-            document.createElement("div");
-
-        file.className="datasetFile";
-
-        file.textContent=
-            data.fileName ||
-            "ismeretlen fájl";
-
-
-        const counts=
-            document.createElement("div");
-
-        counts.className="datasetFile";
-
-        counts.textContent=
-            "Megálló: "+
-            Number(
-                data.counts?.stops || 0
-            ).toLocaleString("hu-HU")+
-            " • Viszonylat: "+
-            Number(
-                data.counts?.routes || 0
-            ).toLocaleString("hu-HU")+
-            " • Járat: "+
-            Number(
-                data.counts?.trips || 0
-            ).toLocaleString("hu-HU");
-
-
-        name.appendChild(title);
-
-        name.appendChild(file);
-
-        name.appendChild(counts);
-
-
-        const actions=
-            document.createElement("div");
-
-        actions.className=
-            "datasetActions";
-
-
-        const deleteButton=
-            document.createElement("button");
-
-        deleteButton.className=
-            "danger";
-
-        deleteButton.textContent=
-            "Törlés";
-
-
-        deleteButton.addEventListener(
-            "click",
-            async function(){
-
-                if(
-                    !confirm(
-                        "Biztosan törlöd ezt a helyben megjegyzett GTFS-t?"
-                    )
-                ){
-
-                    return;
-
-                }
-
-                try{
-
-                    await dbDelete(
-                        CONFIG.STORE_DATASETS,
-                        data.id
-                    );
-
-                    state.datasets.delete(
-                        data.id
-                    );
-
-                    renderDatasets();
-
-                    log(
-                        "Helyi GTFS törölve: "+
-                        (
-                            data.fileName ||
-                            data.provider
-                        ),
-                        "ok"
-                    );
-
-                }catch(error){
-
-                    log(
-                        "Törlési hiba: "+
-                        error.message,
-                        "err"
-                    );
-
-                }
-
-            }
-        );
-
-
-        actions.appendChild(
-            deleteButton
-        );
-
-        item.appendChild(name);
-
-        item.appendChild(actions);
-
-        box.appendChild(item);
-
-    }
-
-}
-
-
-/* ============================================================
-   HELYI ADATBÁZIS TÖRLÉSE
-   ============================================================ */
-
-async function clearLocalDatabase(){
-
-    if(state.loading){
-
-        alert(
-            "A GTFS motor éppen dolgozik."
-        );
-
-        return;
-
-    }
-
-
-    const answer=
-        confirm(
-            "FIGYELEM!\n\n"+
-            "Ez törli a V10.1 FIX1 helyi GTFS rekordjait.\n\n"+
-            "Folytatod?"
-        );
-
-
-    if(!answer){
-
-        return;
-
-    }
-
-
-    try{
-
-        await dbClear(
-            CONFIG.STORE_DATASETS
-        );
-
-
-        clearRuntimeState();
-
-        updateStats();
-
-        renderDatasets();
-
-        $("stopResults").innerHTML=
-            '<div class="empty">'+
-            'A helyi GTFS adatbázis üres.'+
-            '</div>';
-
-        $("departures").innerHTML=
-            '<div class="empty">'+
-            'Nincs betöltött GTFS adat.'+
-            '</div>';
-
-
-        setStatus(
-            "⚪ Helyi GTFS törölve.",
-            ""
-        );
-
-        log(
-            "A helyi GTFS metadata törölve.",
-            "ok"
-        );
-
-
-    }catch(error){
-
-        setStatus(
-            "❌ Törlési hiba: "+
-            error.message,
-            "error"
-        );
-
-        log(
-            "DB törlési hiba: "+
-            error.message,
-            "err"
-        );
-
-    }
-
-}
-
-
-/* ============================================================
-   HELYI GTFS VISSZAÁLLÍTÁS
-   ============================================================ */
-
-async function restoreLocalData(){
-
-    if(state.loading){
-
-        return;
-
-    }
-
-
-    setStatus(
-        "🟡 Helyi GTFS ellenőrzése...",
-        "loading"
-    );
-
-
-    try{
-
-        const rows=
-            await dbGetAll(
-                CONFIG.STORE_DATASETS
-            );
-
-
-        if(!rows.length){
-
-            setStatus(
-                "⚪ Nincs helyben megjegyzett GTFS.",
-                ""
-            );
-
-            log(
-                "IndexedDB-ben nincs feldolgozott GTFS.",
-                "warn"
-            );
-
-            renderDatasets();
-
-            return;
-
-        }
-
-
-        /*
-           FONTOS:
-
-           A metadata önmagában nem tartalmazza
-           a teljes stop_times adatot.
-
-           Ez szándékos FIX1 tervezési döntés:
-
-           nem akarjuk egyetlen óriási, körkörös
-           JavaScript objektumba menteni az egész motort.
-
-           A ZIP újra kiválasztásával a teljes
-           runtime adat felépíthető.
-
-           A helyi lista azonban megmarad.
-        */
-
-        state.datasets.clear();
-
-        for(const row of rows){
-
-            state.datasets.set(
-                row.id,
-                row
-            );
-
-        }
-
-        renderDatasets();
-
-        setStatus(
-            "🟢 Helyi GTFS lista betöltve.",
-            "ok"
-        );
-
-        log(
-            "Helyi GTFS rekordok: "+
-            rows.length,
-            "ok"
-        );
-
-
-    }catch(error){
-
-        setStatus(
-            "❌ Helyi GTFS hiba: "+
-            error.message,
-            "error"
-        );
-
-        log(
-            "IndexedDB hiba: "+
-            error.message,
-            "err"
-        );
-
-    }
-
-}
-
-
-/* ============================================================
-   MEGÁLLÓ KERESÉS
-   ============================================================ */
-
-function searchStops(){
-
-    const query=
-        lower(
-            $("stopSearch").value
-        );
-
-
-    const box=
-        $("stopResults");
-
-
-    box.innerHTML="";
-
-
-    if(!query){
-
-        box.innerHTML=
-            '<div class="empty">'+
-            'Írj be egy megállónevet vagy GTFS ID-t.'+
-            '</div>';
-
-        return;
-
-    }
-
-
-    if(
-        state.stops.size===0
-    ){
-
-        box.innerHTML=
-            '<div class="empty">'+
-            'Nincs betöltött GTFS adat.'+
-            '</div>';
-
-        return;
-
-    }
-
-
-    const results=[];
-
-
-    for(const stop of state.stops.values()){
-
-        const name=
-            lower(stop.name);
-
-        const id=
-            lower(stop.gtfsId);
-
-        const code=
-            lower(stop.code);
-
-
-        if(
-            name.includes(query) ||
-            id.includes(query) ||
-            code.includes(query)
-        ){
-
-            results.push(stop);
-
-            if(
-                results.length >=
-                CONFIG.MAX_SEARCH_RESULTS
-            ){
-
-                break;
-
-            }
-
-        }
-
-    }
-
-
-    if(!results.length){
-
-        box.innerHTML=
-            '<div class="empty">'+
-            'Nincs találat erre: '+
-            escapeHTML(
-                $("stopSearch").value
-            )+
-            '</div>';
-
-        return;
-
-    }
-
-
-    for(const stop of results){
-
-        const item=
-            document.createElement("div");
-
-        item.className="stop";
-
-
-        item.innerHTML=
-            '<div class="stopName">'+
-            escapeHTML(
-                stop.name ||
-                "(névtelen megálló)"
-            )+
-            '</div>'+
-            '<div class="stopMeta">'+
-            'GTFS ID: '+
-            escapeHTML(stop.gtfsId)+
-            ' • '+
-            escapeHTML(stop.provider)+
-            '<br>'+
-            'Koordináta: '+
-            Number(stop.lat).toFixed(6)+
-            ', '+
-            Number(stop.lon).toFixed(6)+
-            (
-                stop.code
-                ? '<br>Stop code: '+
-                  escapeHTML(stop.code)
-                : ''
-            )+
-            '</div>';
-
-
-        item.addEventListener(
-            "click",
-            function(){
-
-                selectStop(stop);
-
-            }
-        );
-
-
-        box.appendChild(item);
-
-    }
-
-}
-
-
-/* ============================================================
-   MEGÁLLÓ KIVÁLASZTÁSA
-   ============================================================ */
-
-function selectStop(stop){
-
-    state.currentStop=
-        stop;
-
-
-    $("departureTitle").textContent=
-        "🕐 INDULÁSI KIJELZŐ – "+
-        (
-            stop.name ||
-            stop.gtfsId
-        );
-
-
-    showDepartures(stop);
-
-
-    log(
-        "Megálló kiválasztva: "+
-        stop.name+
-        " ["+
-        stop.provider+
-        " / "+
-        stop.gtfsId+
-        "]",
-        "ok"
-    );
-
-}
-
-
-/* ============================================================
-   IDŐ PARSZOLÁS
-   ============================================================ */
-
-function parseGTFSSeconds(value){
-
-    const text=
-        clean(value);
-
-    if(!text){
-
-        return null;
-
-    }
-
-    const parts=
-        text.split(":");
-
-    if(parts.length!==3){
-
-        return null;
-
-    }
-
-    const h=
-        Number(parts[0]);
-
-    const m=
-        Number(parts[1]);
-
-    const s=
-        Number(parts[2]);
-
-
-    if(
-        !Number.isFinite(h) ||
-        !Number.isFinite(m) ||
-        !Number.isFinite(s)
-    ){
-
-        return null;
-
-    }
-
-
-    return h*3600+m*60+s;
-
-}
-
-
-/* ============================================================
-   INDULÁSOK
-   ============================================================ */
-
-function showDepartures(stop){
-
-    const box=
-        $("departures");
-
-    box.innerHTML="";
-
-
-    const rows=
-        state.stopTimesByStop.get(
-            stop.id
-        );
-
-
-    if(
-        !rows ||
-        !rows.length
-    ){
-
-        box.innerHTML=
-            '<div class="empty">'+
-            'Ehhez a megállóhoz nincs betöltött menetrendi adat.'+
-            '</div>';
-
-        return;
-
-    }
-
-
-    const now=
-        new Date();
-
-
-    const nowSeconds=
-        now.getHours()*3600+
-        now.getMinutes()*60+
-        now.getSeconds();
-
-
-    const candidates=[];
-
-
-    /*
-       A stop_times listát NEM módosítjuk.
-       Nem sort()-oljuk helyben.
-
-       Ez fontos nagy adatbázisnál.
-    */
-
-    for(const item of rows){
-
-        const trip=
-            state.trips.get(
-                item.tripId
-            );
-
-        if(!trip){
-
-            continue;
-
-        }
-
-
-        const route=
-            state.routes.get(
-                trip.routeId
-            );
-
-        if(!route){
-
-            continue;
-
-        }
-
-
-        const depSeconds=
-            parseGTFSSeconds(
-                item.departure ||
-                item.arrival
-            );
-
-
-        if(depSeconds===null){
-
-            continue;
-
-        }
-
-
-        /*
-           A GTFS-ben a 24:xx idő is érvényes lehet.
-        */
-
-        let diff=
-            depSeconds-nowSeconds;
-
-
-        /*
-           A már elmúlt mai indulásokat
-           nem dobjuk el azonnal.
-
-           24 órás kijelzőhöz:
-           ha elmúlt, a következő naphoz
-           tesszük.
-        */
-
-        if(diff<0){
-
-            diff+=24*3600;
-
-        }
-
-
-        candidates.push({
-
-            item:item,
-
-            trip:trip,
-
-            route:route,
-
-            depSeconds:depSeconds,
-
-            diff:diff
-
-        });
-
-    }
-
-
-    candidates.sort(
-        (a,b)=>
-            a.diff-b.diff
-    );
-
-
-    const limited=
-        candidates.slice(
-            0,
-            CONFIG.MAX_DEPARTURES
-        );
-
-
-    if(!limited.length){
-
-        box.innerHTML=
-            '<div class="empty">'+
-            'Nincs megjeleníthető indulás.'+
-            '</div>';
-
-        return;
-
-    }
-
-
-    for(const item of limited){
-
-        const row=
-            document.createElement("div");
-
-        row.className="departure";
-
-
-        const time=
-            formatGTFSDisplayTime(
-                item.item.departure ||
-                item.item.arrival
-            );
-
-
-        const routeName=
-            item.route.shortName ||
-            item.route.longName ||
-            item.route.gtfsId;
-
-
-        const headsign=
-            item.trip.headsign ||
-            "";
-
-
-        row.innerHTML=
-            '<div class="depTime">'+
-            escapeHTML(time)+
-            '</div>'+
-            '<div>'+
-                '<div class="depRoute">'+
-                escapeHTML(routeName)+
-                '</div>'+
-                '<div class="depHeadsign">'+
-                escapeHTML(headsign)+
-                '</div>'+
-            '</div>'+
-            '<div class="depSource">'+
-            escapeHTML(item.trip.provider)+
-            '</div>';
-
-
-        box.appendChild(row);
-
-    }
-
-}
-
-
-/* ============================================================
-   GTFS IDŐ FORMÁZÁSA
-   ============================================================ */
-
-function formatGTFSDisplayTime(value){
-
-    const text=
-        clean(value);
-
-    if(!text){
-
-        return "--:--";
-
-    }
-
-    const parts=
-        text.split(":");
-
-    if(parts.length<2){
-
-        return text;
-
-    }
-
-    return(
-        String(
-            Number(parts[0])
-        ).padStart(2,"0")
-        +":"+
-        String(
-            Number(parts[1])
-        ).padStart(2,"0")
-    );
-
-}
-
-
-/* ============================================================
-   HTML ESCAPE
-   ============================================================ */
-
-function escapeHTML(value){
-
-    return String(
-        value===undefined ||
-        value===null
-        ? ""
-        : value
-    )
-    .replace(/&/g,"&amp;")
-    .replace(/</g,"&lt;")
-    .replace(/>/g,"&gt;")
-    .replace(/"/g,"&quot;")
-    .replace(/'/g,"&#039;");
-
-}
-
-
-/* ============================================================
-   ADATOK FRISSÍTÉSE
-   ============================================================ */
-
-async function refreshData(){
+async function clearGTFSDatabase(){
+  const ok = confirm(
+    "Biztosan törlöd a telefonon tárolt GTFS adatokat?\n\n" +
+    "Ezután az első indításkor újra ZIP-et kell betölteni."
+  );
+
+  if(!ok) return;
+
+  try{
+    await dbClear();
+
+    app.datasets=[];
+    app.stops=[];
+    app.routes=[];
+    app.trips=[];
+    app.stopTimes=[];
+    app.stopMap.clear();
+    app.routeMap.clear();
+    app.tripMap.clear();
+    app.selectedStop=null;
 
     updateStats();
+    await renderDatasetList();
 
-    renderDatasets();
+    $("stopResults").innerHTML =
+      '<div class="empty">Nincs betöltött GTFS.</div>';
+    $("departures").innerHTML =
+      '<div class="empty">Válassz ki egy megállót.</div>';
 
-    if(state.currentStop){
+    setStatus("⚪ Helyi GTFS törölve","warn");
+    setProgress(0,"Várakozás...");
+    log("A helyi GTFS adatbázis törölve.");
 
-        showDepartures(
-            state.currentStop
-        );
+  }catch(err){
+    setStatus("🔴 Törlési hiba","err");
+    log("TÖRLÉSI HIBA: " + (err.message || err));
+  }
+}
 
+async function refreshGTFS(){
+  /*
+    Fontos FIX2 viselkedés:
+    a frissítés nem próbál régi File objektumot használni.
+    A felhasználónak tudatosan új ZIP-et kell választania.
+  */
+  const files = $("gtfsFiles").files;
+
+  if(!files || !files.length){
+    $("gtfsFiles").click();
+    setStatus("🟡 Válaszd ki az új GTFS ZIP-eket a frissítéshez.","warn");
+    log("GTFS frissítés: új ZIP kiválasztása szükséges.");
+    return;
+  }
+
+  await loadGTFSFiles();
+}
+
+/* ---------- Stop search ---------- */
+
+function searchStops(){
+  const q=$("stopSearch").value.trim().toLowerCase();
+
+  if(!q){
+    $("stopResults").innerHTML =
+      '<div class="empty">Írj be egy megállónevet vagy GTFS ID-t.</div>';
+    return;
+  }
+
+  if(!app.stops.length){
+    $("stopResults").innerHTML =
+      '<div class="empty">Nincs betöltött GTFS adat.</div>';
+    return;
+  }
+
+  const results = app.stops.filter(s =>
+    String(s.stop_name||"").toLowerCase().includes(q) ||
+    String(s.original_stop_id||"").toLowerCase()===q ||
+    String(s.stop_id||"").toLowerCase().includes(q)
+  ).slice(0,100);
+
+  if(!results.length){
+    $("stopResults").innerHTML =
+      '<div class="empty">Nincs találat.</div>';
+    return;
+  }
+
+  $("stopResults").innerHTML = results.map((s,i)=>`
+    <div class="result" data-stop-index="${i}">
+      <div class="resultTitle">🚏 ${escapeHtml(s.stop_name)}</div>
+      <div class="resultMeta">
+        GTFS ID: ${escapeHtml(s.original_stop_id || s.stop_id)}
+        • ${escapeHtml(s.source)}
+        • ${Number(s.stop_lat).toFixed(6)}, ${Number(s.stop_lon).toFixed(6)}
+      </div>
+    </div>
+  `).join("");
+
+  [...$("stopResults").querySelectorAll(".result")].forEach((el,i)=>{
+    el.onclick=()=>selectStop(results[i]);
+  });
+}
+
+function selectStop(stop){
+  app.selectedStop=stop;
+
+  $("departureTitle").textContent =
+    "🕐 INDULÁSI KIJELZŐ – " + (stop.stop_name || "");
+
+  updateSelectedDistances();
+  refreshDepartures();
+
+  log("Megálló kiválasztva: " + stop.stop_name +
+      " (" + stop.original_stop_id + ")");
+}
+
+/* ---------- Departures ---------- */
+
+function parseGTFSSeconds(value){
+  if(!value) return null;
+  const p=String(value).split(":").map(Number);
+  if(p.length!==3 || p.some(Number.isNaN)) return null;
+  return p[0]*3600+p[1]*60+p[2];
+}
+
+function currentGTFSSeconds(){
+  const d=new Date();
+  return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();
+}
+
+function formatDepartureTime(sec){
+  if(sec==null) return "--:--";
+  const day=Math.floor(sec/86400);
+  sec%=86400;
+  const h=Math.floor(sec/3600);
+  const m=Math.floor((sec%3600)/60);
+  return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+
+    (day ? " +" + day : "");
+}
+
+function refreshDepartures(){
+  const box=$("departures");
+
+  if(!app.selectedStop){
+    box.innerHTML='<div class="empty">Válassz ki egy megállót.</div>';
+    return;
+  }
+
+  const limit=Number($("departureLimit").value||15);
+  const target=app.selectedStop.stop_id;
+
+  const now=currentGTFSSeconds();
+
+  const rows=[];
+
+  for(const st of app.stopTimes){
+    if(st.stop_id!==target) continue;
+
+    const t=parseGTFSSeconds(st.departure_time || st.arrival_time);
+    if(t==null) continue;
+
+    let diff=t-now;
+
+    /*
+      GTFS idők 24:00 után is létezhetnek.
+      A következő 28 órás kijelzés miatt a 24h körüli értékeket
+      is engedjük.
+    */
+    if(diff < -120) diff += 86400;
+    if(diff < 0) continue;
+
+    const trip=app.tripMap.get(st.trip_id);
+    if(!trip) continue;
+
+    const route=app.routeMap.get(trip.route_id);
+
+    rows.push({
+      time:t,
+      diff,
+      route:route?.route_short_name || route?.route_long_name || "—",
+      headsign:trip.trip_headsign || "—",
+      trip
+    });
+
+    if(rows.length>limit*4) break;
+  }
+
+  rows.sort((a,b)=>a.diff-b.diff);
+
+  const selected=rows.slice(0,limit);
+
+  if(!selected.length){
+    box.innerHTML='<div class="empty">Nincs következő menetrendi indulás a betöltött GTFS-ben.</div>';
+    return;
+  }
+
+  box.innerHTML=selected.map(r=>{
+    const mins=Math.floor(r.diff/60);
+    const secs=r.diff%60;
+
+    let deltaText;
+    if($("delayDisplayMode").value==="half"){
+      deltaText=(Math.round(mins/0.5)*0.5).toFixed(1).replace(".",",")+" perc";
+    }else{
+      deltaText=mins+" p "+String(secs).padStart(2,"0")+" mp";
     }
 
-    log(
-        "Kijelzés frissítve.",
+    return `
+      <div class="departure">
+        <b>${escapeHtml(r.route)}</b>
+        <span>${escapeHtml(r.headsign)}</span>
+        <span class="ontime">${formatDepartureTime(r.time)}</span>
+        <span></span>
+        <span class="resultMeta">${escapeHtml(r.trip.source || "")}</span>
+        <span class="delay ontime">🟢 ${escapeHtml(deltaText)}</span>
+      </div>
+    `;
+  }).join("");
+}
+
+/* ---------- GPS / distance ---------- */
+
+function locateMe(){
+  if(!navigator.geolocation){
+    setStatus("🔴 A böngésző nem támogatja a GPS-t.","err");
+    return;
+  }
+
+  setStatus("🟡 GPS helyzet meghatározása...","warn");
+
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      app.gps={
+        lat:pos.coords.latitude,
+        lon:pos.coords.longitude,
+        accuracy:pos.coords.accuracy
+      };
+
+      setStatus(
+        "🟢 GPS AKTÍV • " +
+        app.gps.lat.toFixed(6)+", "+
+        app.gps.lon.toFixed(6)+
+        " • ±"+Math.round(app.gps.accuracy)+" m",
         "ok"
-    );
+      );
 
+      updateSelectedDistances();
+      log("GPS aktív.");
+    },
+    err=>{
+      setStatus("🔴 GPS hiba: " + err.message,"err");
+      log("GPS HIBA: " + err.message);
+    },
+    {enableHighAccuracy:true,timeout:15000,maximumAge:10000}
+  );
 }
 
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371000;
+  const p=Math.PI/180;
+  const a=
+    Math.sin((lat2-lat1)*p/2)**2+
+    Math.cos(lat1*p)*Math.cos(lat2*p)*
+    Math.sin((lon2-lon1)*p/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
 
-/* ============================================================
-   EVENTEK
-   ============================================================ */
+function formatDistance(m){
+  if(!Number.isFinite(m)) return "nincs adat";
 
-$("loadButton")
-    .addEventListener(
-        "click",
-        loadSelectedFiles
-    );
+  const mode=$("distanceMode").value;
 
+  if(mode==="meter") return Math.round(m)+" m";
+  if(mode==="km") return (m/1000).toFixed(2).replace(".",",")+" km";
 
-$("restoreButton")
-    .addEventListener(
-        "click",
-        restoreLocalData
-    );
+  if(m<1000) return Math.round(m)+" m";
+  return (m/1000).toFixed(2).replace(".",",")+" km";
+}
 
+function updateSelectedDistances(){
+  if(!app.gps || !app.selectedStop){
+    $("ownAirDistance").textContent="nincs adat";
+    $("ownRoadDistance").textContent="nincs adat";
+    return;
+  }
 
-$("clearDbButton")
-    .addEventListener(
-        "click",
-        clearLocalDatabase
-    );
+  const s=app.selectedStop;
 
+  if(!Number.isFinite(s.stop_lat) || !Number.isFinite(s.stop_lon)){
+    $("ownAirDistance").textContent="nincs adat";
+    $("ownRoadDistance").textContent="nincs adat";
+    return;
+  }
 
-$("refreshButton")
-    .addEventListener(
-        "click",
-        refreshData
-    );
+  const m=haversine(app.gps.lat,app.gps.lon,s.stop_lat,s.stop_lon);
 
+  $("ownAirDistance").textContent=formatDistance(m);
 
-$("searchButton")
-    .addEventListener(
-        "click",
-        searchStops
-    );
+  /*
+    Közúti útvonaltervezést itt nem hazudunk be.
+    Valós útvonalhoz külön routing szolgáltatás kellene.
+  */
+  $("ownRoadDistance").textContent="nincs adat";
+}
 
+/* ---------- Vehicle feed ---------- */
 
-$("stopSearch")
-    .addEventListener(
-        "input",
-        function(){
+async function loadVehicleFeed(){
+  const url=$("vehicleFeedUrl").value.trim();
 
-            /*
-               Nem minden karakterre indítunk
-               nehéz keresést azonnal.
+  if(!url){
+    $("vehicleStatus").textContent="Nincs megadott valós jármű feed URL.";
+    return;
+  }
 
-               Mobilon ez kíméli a CPU-t.
-            */
+  try{
+    $("vehicleStatus").textContent="🟡 Jármű feed betöltése...";
+    const r=await fetch(url,{cache:"no-store"});
 
-            clearTimeout(
-                window.__stopSearchTimer
-            );
+    if(!r.ok) throw new Error("HTTP "+r.status);
 
-            window.__stopSearchTimer=
-                setTimeout(
-                    searchStops,
-                    180
-                );
+    const data=await r.json();
 
-        }
-    );
+    $("vehicleStatus").textContent=
+      "🟢 Valós jármű feed betöltve (" +
+      (Array.isArray(data) ? data.length : "JSON") + ").";
 
+    log("Valós jármű feed betöltve.");
+  }catch(err){
+    $("vehicleStatus").textContent=
+      "🔴 Jármű feed hiba: "+(err.message||err);
+    log("JÁRMŰ FEED HIBA: "+(err.message||err));
+  }
+}
 
-$("stopSearch")
-    .addEventListener(
-        "keydown",
-        function(event){
+/* ---------- Startup ---------- */
 
-            if(event.key==="Enter"){
+async function startup(){
+  try{
+    await openDB();
+    log("IndexedDB kapcsolat kész.");
 
-                event.preventDefault();
+    /*
+      EZ A FIX2 LÉNYEGE:
+      induláskor automatikusan próbáljuk a helyi GTFS-t.
+      Nem nyúlunk a file inputhoz, nem kérünk új ZIP-et.
+    */
+    const restored=await restoreGTFS();
 
-                searchStops();
-
-            }
-
-        }
-    );
-
-
-/* ============================================================
-   INDÍTÁS
-   ============================================================ */
-
-async function boot(){
-
-    setStatus(
-        "🟡 GTFS MOTOR inicializálása...",
-        "loading"
-    );
-
-    progress(
-        0,
-        "Motor indul..."
-    );
-
-
-    try{
-
-        await openDB();
-
-        await loadDatasetMetadata();
-
-        updateStats();
-
-
-        if(state.datasets.size){
-
-            setStatus(
-                "🟢 Helyi GTFS lista megtalálva.",
-                "ok"
-            );
-
-            log(
-                "IndexedDB kapcsolat rendben.",
-                "ok"
-            );
-
-            log(
-                "Helyben megjegyzett GTFS rekordok: "+
-                state.datasets.size,
-                "ok"
-            );
-
-        }else{
-
-            setStatus(
-                "⚪ GTFS motor kész – ZIP betöltésre vár.",
-                ""
-            );
-
-            log(
-                "GTFS motor kész.",
-                "ok"
-            );
-
-        }
-
-
-        progress(
-            0,
-            "Várakozás GTFS ZIP-re..."
-        );
-
-
-    }catch(error){
-
-        console.error(error);
-
-        setStatus(
-            "❌ GTFS MOTOR INDÍTÁSI HIBA: "+
-            error.message,
-            "error"
-        );
-
-        log(
-            "Indítási hiba: "+
-            error.message,
-            "err"
-        );
-
+    if(restored){
+      log("📱 Telefonos automatikus GTFS visszaállítás kész.");
+    }else{
+      setStatus(
+        "⚪ Első használat: válaszd ki a GTFS ZIP-et.",
+        "warn"
+      );
     }
 
+  }catch(err){
+    setStatus("🔴 A GTFS motor indulási hibát kapott.","err");
+    log("INDULÁSI HIBA: "+(err.message||err));
+  }
 }
 
+/* ---------- Events ---------- */
 
-/* ============================================================
-   INDÍTÁS
-   ============================================================ */
+$("loadButton").addEventListener("click",loadGTFSFiles);
 
-boot();
+$("restoreButton").addEventListener("click",async()=>{
+  await restoreGTFS();
+});
 
+$("refreshButton").addEventListener("click",refreshGTFS);
 
+$("clearDbButton").addEventListener("click",clearGTFSDatabase);
+
+$("searchButton").addEventListener("click",searchStops);
+
+$("stopSearch").addEventListener("keydown",e=>{
+  if(e.key==="Enter") searchStops();
+});
+
+$("distanceMode").addEventListener("change",updateSelectedDistances);
+
+$("delayDisplayMode").addEventListener("change",refreshDepartures);
+
+$("departureLimit").addEventListener("change",refreshDepartures);
+
+$("gpsButton").addEventListener("click",locateMe);
+
+$("feedButton").addEventListener("click",loadVehicleFeed);
+
+/*
+  Ha az oldal fókuszba kerül, csak a kijelzőt frissítjük.
+  NEM töltünk új GTFS ZIP-et.
+*/
+document.addEventListener("visibilitychange",()=>{
+  if(!document.hidden){
+    if(app.selectedStop) refreshDepartures();
+  }
+});
+
+startup();
 </script>
 
 </body>
