@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#062c26">
-<title>🚍 ATTILA KÖZLEKEDÉS V10.1 — UNIFIED STABLE</title>
+<title>🚍 ATTILA KÖZLEKEDÉS V10.1 — UNIFIED STABLE FIX2</title>
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
@@ -89,7 +89,7 @@ summary{cursor:pointer;font-weight:800;color:var(--yellow)}
 <header>
   <div>
     <div class="title">🚍 ATTILA KÖZLEKEDÉS V10.1</div>
-    <div class="subtitle">UNIFIED STABLE • BKK + VOLÁN + MÁV + EGYÉB • GTFS • REALTIME • GPS • TÉRKÉP</div>
+    <div class="subtitle">UNIFIED STABLE FIX2 • BKK + VOLÁN + MÁV + EGYÉB • GTFS • REALTIME • GPS • TÉRKÉP</div>
   </div>
   <div class="clock">
     <div class="time" id="clock">--:--:--</div>
@@ -343,7 +343,7 @@ summary{cursor:pointer;font-weight:800;color:var(--yellow)}
 "use strict";
 
 /* =========================================================
-   ATTILA KÖZLEKEDÉS V10.1 — UNIFIED STABLE
+   ATTILA KÖZLEKEDÉS V10.1 — UNIFIED STABLE FIX2
    - 4 külön GTFS slot
    - IndexedDB
    - iPhone-kímélő GTFS
@@ -713,38 +713,235 @@ const VP_PROTO=`
 syntax = "proto2";
 package transit_realtime;
 message FeedMessage { required FeedHeader header = 1; repeated FeedEntity entity = 2; }
-message FeedHeader { required string gtfs_realtime_version = 1; optional uint64 timestamp = 4; }
-message FeedEntity { required string id = 1; optional bool is_deleted = 2; optional VehiclePosition vehicle = 4; }
+message FeedHeader { required string gtfs_realtime_version = 1; optional uint64 incrementality = 2; optional uint64 timestamp = 4; }
+message FeedEntity { required string id = 1; optional bool is_deleted = 2; optional TripUpdate trip_update = 3; optional VehiclePosition vehicle = 4; optional Alert alert = 5; }
 message VehiclePosition {
  optional TripDescriptor trip = 1;
- optional VehicleDescriptor vehicle = 8;
  optional Position position = 2;
  optional uint32 current_stop_sequence = 3;
- optional string stop_id = 7;
+ optional uint32 current_status = 4;
  optional uint64 timestamp = 5;
- optional string congestion_level = 6;
+ optional uint32 congestion_level = 6;
+ optional string stop_id = 7;
+ optional VehicleDescriptor vehicle = 8;
+ optional uint32 occupancy_status = 9;
+ optional uint32 occupancy_percentage = 10;
 }
 message TripDescriptor {
- optional string trip_id = 1; optional string route_id = 5; optional string direction_id = 6; optional string start_time = 2; optional string start_date = 3;
+ optional string trip_id = 1; optional string start_time = 2; optional string start_date = 3;
+ optional string schedule_relationship = 4; optional string route_id = 5; optional string direction_id = 6;
 }
 message VehicleDescriptor { optional string id = 1; optional string label = 2; optional string license_plate = 3; }
 message Position {
  required float latitude = 1; required float longitude = 2; optional float bearing = 3; optional double odometer = 4; optional float speed = 5;
 }
+message TripUpdate {}
+message Alert {}
 `;
+
+/*
+  BKK GTFS-RT FIX2
+  A dekóder most a teljes protobuf wire-típusokat, köztük az END_GROUP (4) jelölőt is kezeli.
+  Az END_GROUP (wire type 4) korábbi kezelése okozta a 4-es wire type hibát; ezt most szabályosan kezeljük.
+  A tényleges dekódoláshoz itt egy toleráns, wire-type alapú parser is van.
+  Így az új/gyártói extension mezők sem törik el a járműfeedet.
+*/
+function readVarint(u,o){
+  let n=0,shift=0;
+  while(o.i<u.length){
+    const b=u[o.i++];
+    n += (b & 127) * Math.pow(2,shift);
+    if(!(b&128)) return n;
+    shift+=7;
+    if(shift>53) return Number.MAX_SAFE_INTEGER;
+  }
+  throw new Error("Truncated varint at offset "+o.i);
+}
+function readBytes(u,o,len){
+  if(!Number.isFinite(len)||len<0) throw new Error("Invalid length "+len+" at offset "+o.i);
+  const end=o.i+len;
+  if(end>u.length) throw new Error("Truncated length-delimited field at offset "+o.i);
+  const x=u.subarray(o.i,end);o.i=end;return x;
+}
+function readString(u,o,len){return new TextDecoder().decode(readBytes(u,o,len));}
+function readFloat32(u,o){
+  if(o.i+4>u.length) throw new Error("Truncated float32 at offset "+o.i);
+  const v=new DataView(u.buffer,u.byteOffset+o.i,4).getFloat32(0,true);o.i+=4;return v;
+}
+function readFloat64(u,o){
+  if(o.i+8>u.length) throw new Error("Truncated float64 at offset "+o.i);
+  const v=new DataView(u.buffer,u.byteOffset+o.i,8).getFloat64(0,true);o.i+=8;return v;
+}
+/* FIX2: protobuf wire-type 3/4 (groups) are legal protobuf wire values.
+   A wire type 4 is an END_GROUP marker; it must never be treated as a
+   normal field. The previous decoder did exactly that at the failing offset. */
+function skipWire(u,o,wire,depth){
+  depth=depth||0;
+  if(wire===0){readVarint(u,o);return}
+  if(wire===1){
+    o.i+=8;if(o.i>u.length)throw new Error("Truncated fixed64 at offset "+o.i);return
+  }
+  if(wire===2){
+    const n=readVarint(u,o);readBytes(u,o,n);return
+  }
+  if(wire===3){
+    if(depth>32)throw new Error("Protobuf group nesting too deep at offset "+o.i);
+    while(o.i<u.length){
+      const tag=readVarint(u,o),w=tag&7;
+      if(w===4)return;
+      skipWire(u,o,w,depth+1);
+    }
+    throw new Error("Unterminated protobuf group at offset "+o.i);
+  }
+  if(wire===4){
+    /* END_GROUP tag has already been consumed by readVarint(). */
+    return
+  }
+  if(wire===5){
+    o.i+=4;if(o.i>u.length)throw new Error("Truncated fixed32 at offset "+o.i);return
+  }
+  throw new Error("Unsupported protobuf wire type "+wire+" at offset "+(o.i-1));
+}
+function parseTrip(u){
+  const o={i:0},v={};
+  while(o.i<u.length){
+    const tag=readVarint(u,o),f=Math.floor(tag/8),w=tag&7;
+    if(w===4)break;
+    if(w===2){
+      const n=readVarint(u,o),x=readString(u,o,n);
+      if(f===1)v.tripId=x;else if(f===5)v.routeId=x;else if(f===6)v.directionId=x;
+      else if(f===2)v.startTime=x;else if(f===3)v.startDate=x;
+    } else skipWire(u,o,w);
+  }
+  return v;
+}
+function parseVehicleDescriptor(u){
+  const o={i:0},v={};
+  while(o.i<u.length){
+    const tag=readVarint(u,o),f=Math.floor(tag/8),w=tag&7;
+    if(w===4)break;
+    if(w===2){
+      const n=readVarint(u,o),x=readString(u,o,n);
+      if(f===1)v.id=x;else if(f===2)v.label=x;else if(f===3)v.licensePlate=x;
+    } else skipWire(u,o,w);
+  }
+  return v;
+}
+function parsePosition(u){
+  const o={i:0},v={};
+  while(o.i<u.length){
+    const tag=readVarint(u,o),f=Math.floor(tag/8),w=tag&7;
+    if(w===4)break;
+    if(w===5){
+      const x=readFloat32(u,o);
+      if(f===1)v.latitude=x;else if(f===2)v.longitude=x;else if(f===3)v.bearing=x;else if(f===5)v.speed=x;
+    } else if(w===1){
+      const x=readFloat64(u,o);if(f===4)v.odometer=x;
+    } else skipWire(u,o,w);
+  }
+  return v;
+}
+function parseVehiclePosition(u){
+  const o={i:0},v={};
+  while(o.i<u.length){
+    const tag=readVarint(u,o),f=Math.floor(tag/8),w=tag&7;
+    if(w===4)break;
+    if(w===2){
+      const n=readVarint(u,o),x=readBytes(u,o,n);
+      if(f===1)v.trip=parseTrip(x);
+      else if(f===2)v.position=parsePosition(x);
+      else if(f===7)v.stopId=new TextDecoder().decode(x);
+      else if(f===8)v.vehicle=parseVehicleDescriptor(x);
+    } else if(w===0){
+      const x=readVarint(u,o);
+      if(f===3)v.currentStopSequence=x;
+      else if(f===4)v.currentStatus=x;
+      else if(f===5)v.timestamp=x;
+      else if(f===6)v.congestionLevel=x;
+      else if(f===9)v.occupancyStatus=x;
+      else if(f===10)v.occupancyPercentage=x;
+    } else skipWire(u,o,w);
+  }
+  return v;
+}
+function parseFeedHeader(u){
+  const o={i:0},v={};
+  while(o.i<u.length){
+    const tag=readVarint(u,o),f=Math.floor(tag/8),w=tag&7;
+    if(w===4)break;
+    if(w===2){
+      const n=readVarint(u,o),x=readString(u,o,n);
+      if(f===1)v.version=x;else if(f===4)v.feedVersion=x;
+    } else if(w===0){
+      const x=readVarint(u,o);if(f===2)v.incrementality=x;else if(f===3)v.timestamp=x;
+    } else skipWire(u,o,w);
+  }
+  return v;
+}
+function parseFeed(u){
+  const o={i:0},out={header:{},entities:[]};
+  while(o.i<u.length){
+    const tagOffset=o.i;
+    const tag=readVarint(u,o),f=Math.floor(tag/8),w=tag&7;
+    if(w===4)break;
+    if(w===2){
+      const n=readVarint(u,o),x=readBytes(u,o,n);
+      if(f===1)out.header=parseFeedHeader(x);
+      else if(f===2){
+        const eo={i:0},e={};
+        while(eo.i<x.length){
+          const et=readVarint(x,eo),ef=Math.floor(et/8),ew=et&7;
+          if(ew===4)break;
+          if(ew===2){
+            const en=readVarint(x,eo),ex=readBytes(x,eo,en);
+            if(ef===1)e.id=new TextDecoder().decode(ex);
+            else if(ef===4)e.vehicle=parseVehiclePosition(ex);
+          } else if(ew===0){
+            e.isDeleted=!!readVarint(x,eo);
+          } else skipWire(x,eo,ew);
+        }
+        out.entities.push(e);
+      }
+    } else skipWire(u,o,w);
+    if(o.i<=tagOffset)throw new Error("Parser did not advance at offset "+tagOffset);
+  }
+  return out;
+}
 async function fetchBkkVehicles(){
   const key=localStorage.getItem("attila_bkk_key")||$("bkkKey").value.trim();
   if(!key){$("vehicleStatus").textContent="🔴 Nincs BKK API-kulcs.";return}
   try{
     $("vehicleStatus").textContent="⏳ BKK VehiclePositions lekérés...";
-    const r=await fetch(BKK_VP+"?key="+encodeURIComponent(key),{cache:"no-store"});
-    if(!r.ok)throw new Error("HTTP "+r.status);
+    const url=BKK_VP+"?key="+encodeURIComponent(key);
+    const r=await fetch(url,{cache:"no-store",headers:{"Accept":"application/x-protobuf,application/octet-stream"}});
     const buf=await r.arrayBuffer();
-    const root=protobuf.parse(VP_PROTO).root;
-    const FeedMessage=root.lookupType("transit_realtime.FeedMessage");
-    const msg=FeedMessage.decode(new Uint8Array(buf));
+    if(!r.ok){
+      let detail="";try{detail=new TextDecoder().decode(new Uint8Array(buf)).slice(0,180)}catch{}
+      throw new Error("HTTP "+r.status+(detail?" — "+detail.replace(/\\s+/g," "):""));
+    }
+    const bytes=new Uint8Array(buf);
+    if(bytes.length<2)throw new Error("A BKK feed üres vagy túl rövid.");
+    /* HTML/JSON hibaválasz felismerése még a protobuf előtt. */
+    const head=new TextDecoder().decode(bytes.subarray(0,Math.min(120,bytes.length))).trimStart();
+    if(head.startsWith("<")||head.startsWith("{")||head.startsWith("[")){
+      throw new Error("A BKK nem protobuf feedet küldött; valószínű API-kulcs vagy végpont válasz érkezett.");
+    }
+    let parsed;
+    try{
+      parsed=parseFeed(bytes);
+    }catch(rawErr){
+      /* FIX2: protobufjs fallback csak valódi dekódolási hibánál. */
+      try{
+        const root=protobuf.parse(VP_PROTO).root;
+        const FeedMessage=root.lookupType("transit_realtime.FeedMessage");
+        parsed=FeedMessage.decode(bytes);
+        parsed={header:parsed.header,entities:(parsed.entity||[]).map(e=>({id:e.id,vehicle:e.vehicle}))};
+      }catch(protoErr){
+        throw new Error("GTFS-RT dekódolási hiba: "+rawErr.message+" | tartalék protobuf: "+protoErr.message);
+      }
+    }
     VEHICLES.length=0;
-    for(const e of msg.entity||[]){
+    for(const e of parsed.entities||[]){
       const v=e.vehicle;if(!v||!v.position)continue;
       const x={
         provider:"BKK",entityId:e.id||"",vehicleId:v.vehicle?.id||"",label:v.vehicle?.label||"",
@@ -752,13 +949,13 @@ async function fetchBkkVehicles(){
         lat:v.position.latitude,lon:v.position.longitude,bearing:v.position.bearing,
         speed:v.position.speed,stopId:v.stopId||"",timestamp:Number(v.timestamp||0)*1000
       };
-      VEHICLES.push(x);
+      if(Number.isFinite(x.lat)&&Number.isFinite(x.lon))VEHICLES.push(x);
     }
-    renderVehicles(VEHICLES);
+    renderVehicles(VEHICLES);drawVehicleMarkers(VEHICLES);
     $("vehicleStatus").textContent="🟢 BKK realtime: "+VEHICLES.length.toLocaleString("hu-HU")+" jármű • "+new Date().toLocaleTimeString("hu-HU");
-    drawVehicleMarkers(VEHICLES);
   }catch(e){
     console.error(e);$("vehicleStatus").textContent="❌ Realtime hiba: "+e.message;
+    const d=$("diagnostics");if(d)d.textContent+=(d.textContent?"\n":"")+"Realtime: "+e.message;
   }
 }
 function vehicleDistance(v){return userPos?distanceKm(userPos.lat,userPos.lon,v.lat,v.lon):Infinity}
