@@ -1,1 +1,1687 @@
-<!DOCTYPE html> <html lang="hu"> <head> <meta charset="UTF-8"> <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover"> <meta name="theme-color" content="#062c26"> <title> 🚍 ATTILA KÖZLEKEDÉS V10.1 FIX6 </title> <!-- ===================================================== KÜLSŐ MOTOROK FONTOS: JSZIP A SAJÁT JAVASCRIPT ELŐTT TÖLTŐDIK BE ===================================================== --> <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"> </script> <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"> <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"> </script> <style> /* ===================================================== ALAP ===================================================== */ :root{ --green:#062c26; --green2:#0b6657; --green3:#0e806d; --bg:#edf4f2; --card:#ffffff; --text:#17312d; --muted:#60736e; --border:#cad8d4; --red:#b42318; --orange:#9a6200; --blue:#1769aa; } *{ box-sizing:border-box; } html, body{ margin:0; padding:0; min-height:100%; background:var(--bg); color:var(--text); font-family: Arial, Helvetica, sans-serif; } body{ font-size:16px; line-height:1.45; -webkit-font-smoothing:antialiased; } /* ===================================================== FEJLÉC ===================================================== */ header{ position:sticky; top:0; z-index:9999; background: linear-gradient( 135deg, #062c26, #0a493e ); color:white; padding: 12px 14px; box-shadow: 0 2px 10px rgba(0,0,0,.25); } header h1{ margin:0; font-size:20px; line-height:1.25; } header .sub{ margin-top:4px; betűméret:12px; átlátszóság:.85; } /* ============================================================= FŐ ================================================= */ main{ szélesség:100%; max szélesség:1450px; margin:auto; padding:10px; } /* ======================================================== KÁRTYÁK ===================================================== */ .grid{ display:grid; grid-template-columns: repeat( auto-fit, minmax( 300px, 1fr ) ); gap:10px; } .card{ background:var(--card); border-radius:12px; padding:12px; margin-bottom:10px; box-shadow: 0 1px 6px rgba(0,0,0,.12); } .card h2{ margin: 0 0 10px 0; } color:var(--green2); font-size:17px; } /* ========================================================== GOMBOK =================================================== */ button{ border:0; border-radius:8px; padding: 9px 12px; background:var(--green2); color:white; font-size:15px; font-weight:bold; cursor:pointer; } button:hover{ filter:brightness(1.08); } button:active{ transform: translateY(1px); } button.secondary{ background:#e6efec; color:#17453e; } `setting_secondary` } button.danger{ background:#a52d2d; } /* ============================================================= BEVITEL ================================================ */ input, select{ width:100%; border: 1px solid var(--border); border-radius:8px; padding:9px; background:white; color:var(--text); font-size:15px; } input:focus, select:focus{ outline: 2px solid rgba( 11, 102, 87, .20 ); } /* =========================================================== SOR ==================================================== */ .row{ display:flex; flex-wrap:wrap; gap:6px; margin-top:7px; } .row > *{ flex: 1 1 130px; } /* ========================================================== ÁLLAPOTBAN =================================================== */ .status{ margin: 6px 0; padding: 8px 10px; border-radius:8px; background:#edf4f2; font-size:13px; } .ok{ color:#087443; } .warn{ color:var(--orange); } .err{ color:var(--red); } .info{ color:var(--blue); } } } /* ======================================================== STATISZTIKA ==================================================== */ .stats{ display:grid; grid-template-columns: repeat( 4, 1fr ); gap:5px; margin-top:8px; } .stat{ background:#f2f7f5; border-radius:8px; padding:7px; text-align:center; font-size:11px; } .stat b{ display:block; font-size:17px; color:var(--green2); } } /* ======================================================== TÉRKÉP ====================================================== */ #map{ width:100%; height:430px; border-radius:10px; overflow:hidden; background:#dbe8e5; } .leaflet-container{ font-family:Arial,sans-serif; } /* ========================================================== TÁBLÁZAT ==================================================== */ .tableWrap{ width:100%; overflow:auto; } table{ width:100%; border-collapse:collapse; font-size:13px; } th, td{ padding:7px; border-bottom: 1px solid #dce6e3; text-align:left; vertical-align:top; } } th{ background:#eef5f3; } tr.clickable{ cursor:pointer; } tr.clickable:hover{ background:#f0f7f5; } /* ============================================================ JELÖLVÉNY =================================================== */ .badge{ display:inline-block; margin:2px; padding: 3px 7px; border-radius:999px; background:#e4efeb; font-size:11px; } } /* ========================================================= NAPLÓ ==================================================== */ pre{ margin:0; padding:10px; max-height:320px; overflow:auto; white-space:pre-wrap; word-break:break-word; background:#10201d; color:#d9f2eb; border-radius:8px; font-size:12px; } /* ========================================================= LÁBÉL ====================================================== */ footer{ text-align:center; color:var(--muted); font-size:12px; padding:20px; } /* ====================================================== MOBIL ==================================================== */ @media(max-width:650px){ header h1{ font-size:18px; } main{ padding:7px; } .stats{ grid-template-columns: repeat( 2, 1fr ); } #map{ height:350px; } } </style> </head> <body> <!-- ====================================================== FEJLÉC ==================================================== --> <header> <h1> 🚍 KÖZLEKEDÉS ATTILA V10.1 FIXTE6 </h1> <div EGYES="GTÍFS"> • VALÓSIDŐ • GPS • TÉRKÉP </div> </header> <main> <!-- =================================================== FELSŐ MODULOK ============================================ <div class="grid"> <!-- ====================================================== RENDSZERÁLLAPOT ===================================================== --> <szakasz class="card"> <h2> 🩺 Rendszerállapot </h2> <div id="clock" class="status"> 🕒 Indítás... </div> <div id="coreStatus" class="status"> ⚙️ CORE: indítás... </div> <div id="dbStatus" <div id="dbStatus" class="statusv"> id="gpsStatus" class="status"> 📍 GPS:nincs lekérve </div> <div id="zipStatus" class="status"> 📦 JSZip: ellenőrzés... </div> <div id="mapStatus" class="status"> 🗺️ Térkép: ellenőrzés... </div> <div class="row"> <button id="btnLocate"> 📍 Helyzetem </button> <button id="btnClearLog" class="secondary"> 🧹 Napló törlése </button> </div> </section> <!-- ===================================================== GTFS ===================================================== --> <section class="card"> <h2> 📦 GTFS betöltés </h2> <input id="gtfsFiles" type="file" accept=".zip" multiple> <div class="row"> <button id="btnLoadGTFS"> 📦 GTFS ZIP betöltése </button> <button id="btnSavedGTFS" class="secondary"> 💾 Mentett GTFS </button> </div> <div id="gtfsStatus" class="status"> Nincs betöltött GTFS. </div> <div class="stats"> <div class="stat"> <b id="stopCount"> 0 </b> MEGÁLLÓ </div> <div class="stat"> <b id="routeCount"> 0 </b> VISZONYLAT </div> <div class="stat"> <b id="tripCount"> 0 </b> JÁRAT </div> <div class="stat"> <b id="stopTimeCount"> 0 </b> STOP_TIME </div> </div> </section> <!-- ===================================================== MEGÁLLÓKERESŐ ===================================================== --> <section class="card"> <h2> 🔎 Megállókereső </h2> <input id="stopSearch" placeholder="Megálló neve vagy GTFS ID"> <div class="row"> <button id="btnSearchStop"> 🔎 Keresés </button> <button id="btnNearby" class="secondary"> 📍 10 km </button> </div> <div id="stopResults" class="status"> Nincs még keresés. </div> </section> <!-- ===================================================== JÁRMŰ ===================================================== --> <section class="card"> <h2> 🚎 Járműkereső </h2> <input id="vehicleSearch" placeholder="Vonal / rendszám / járműazonosító"> <button id="btnVehicle"> 🚎 Járművek keresése </button> <div id="vehicleResults" class="status"> 🟡 Realtime járműadat: <b>nincs csatlakoztatva</b> </div> </section> </div> <!-- ===================================================== TÉRKÉP ===================================================== --> <section class="card"> <h2> 🗺️ Térkép </h2> <div id="map"></div> <div class="row"> <button id="btnClearMap" class="secondary"> 🧹 Térkép törlése </button> <button id="btnShowStops"> 🚏 Megállók </button> </div> </section> <!-- ===================================================== KIVÁLASZTOTT MEGÁLLÓ ===================================================== --> <section class="card"> <h2> 🚏 Kiválasztott megálló </h2> <div id="selectedStop" class="status"> Nincs kiválasztott megálló. </div> </section> <!-- ===================================================== MENETREND ===================================================== --> <section class="card"> <h2> ⏱️ Indulások / menetrend </h2> <div id="departures" class="status"> Válassz megállót. </div> </section> <!-- ===================================================== DIAGNOSZTIKA ===================================================== --> <section class="card"> <h2> 🧪 Indítási / hiba diagnosztika </h2> <pre id="log"></pre> </section> <footer> 🚍 ATTILA KÖZLEKEDÉS V10.1 FIX6 <br> UNIFIED CORE <br> GTFS • GPS • INDEXEDDB • TÉRKÉP </footer> </main> <script> /* ========================================================= 1. GLOBÁLIS ÁLLAPOT ========================================================= */ const APP_VERSION = "V10.1 FIX6"; const DB_NAME = "AttilaKozlekedes_GTFS_V101_FIX6"; const DB_VERSION = 1; let db = null; let map = null; let gpsMarker = null; let selectedMarker = null; let stopLayer = null; let userPosition = null; const DATA = { stops:[], routes:[], trips:[], stopTimes:[] }; /* ============================================================= 2. DOM SEGÉD ======================================================= */ function $(id){ return document.getElementById(id); } /* =============================================================== 3. NAPLÓ ===================================================== */ function log(message){ const box = $("log"); if(!box){ return; } box.textContent += "[" + new Date() .toLocaleTimeString( "hu-HU" ) + "] " + message + "\n"; box.scrollTop = box.scrollHeight; } function clearLog(){ $("log").textContent = ""; } /* ============================================================= 4. ÓRA ====================================================== */ function updateClock(){ $("clock").textContent = "🕒 " + new Date() .toLocaleString( "hu-HU" ); } setInterval( updateClock, 1000 ); updateClock(); /* ============================================================ 5. HTML ESCAPE ======================================================= */ function esc(érték){ return String( érték ?? "" ) .replace( /[&<>"']/g, function(c){ return { "&":"&", "<":"<", ">":">", '"':""", "'":"'" }[c]; } ); } /* =============================================================== 6. INDEXEDDB ===================================================== */ function initDB(){ return new Promise( function(resolve,reject){ if( !window.indexedDB ){ reject( new Error( "IndexedDB nem támogatott." ) ); return; } const request = indexedDB.open( DB_NAME, DB_VERSION ); request.onupgradeneeded = function(event){ const database = event.target.result; if( !database .objectStoreNames .contains("adatkészletek") ){ database.createObjectStore( "adatkészletek", { keyPath:"id" } ); } }; request.onsuccess = function(event){ db = event.target.result; $("dbStatus").innerHTML = "💾 IndexedDB: " + '<b class="ok">' + "AKTÍV" + "</b>"; log( "IndexedDB AKTÍV." ); resolve(db); }; request.onerror = function(){ $("dbStatus").innerHTML = "💾 IndexedDB: " + '<b class="err">' + "HIBA" + "</b>"; reject( request.error ); }; } ); } /* ================================================================== 7. KÉSZ ADATKÉSZLET =========================================================== */ function saveDataset(dataset){ return new Promise( function(resolve,reject){ if(!db){ reject( new Error( "IndexedDB" nincs megnyitva." ) ); return; } const tx = db.transaction( "adatkészletek", "readwrite" ); tx.objectStore( "adatkészletek" ).put(adatkészlet); tx.oncomplete = function(){ resolve(); }; tx.onerror = function(){ reject( tx.error ); }; } ); } /* ================================================================= 8. ADATKÉSZLET LISTA ============================================================ */ function getDatasets(){ return new Promise( function(resolve,reject){ if(!db){ reject( new Error( "IndexedDB nincs megnyitva." ) ); return; } const request = db .transaction( "adatkészletek" ) .objectStore( "adatkészletek" ) .getAll(); request.onsuccess = function(){ resolve( request.result || [] ); }; request.onerror = function(){ reject( request.error ); }; } ); } /* =================================================================== 9. CSV ELEMZŐ ========================================================== */ function parseCSVLine(line){ const values ​​= []; let value = ""; let quoted = false; for( let i=0; i<line.length; i++ ){ const c = line[i]; if(c === '"'){ if( quoted && line[i+1] === '"' ){ value += '"'; i++; }else{ quoted = !quoted; } } else if( c === "," && !quoted ){ values.push( value ); value = ""; } else{ value += c; } } values.push( value ); return values; } function parseCSV(szöveg){ if(!szöveg){ return []; } text = text.replace( /^\uFEFF/, "" ); const lines = text . }split(/\r?\n/).filter(sor => sor.trim() !== "" ); if(!lines.length){ return []; } const headers = parseCSVLine(sorok[0] ); const result = []; for(let i=1; i<sorok.length; i++ ){ const values ​​= parseCSVLine(sorok[i] ); const row = {}; headers.forEach(function(header,index){ sor[header] = values[index] ?? ""; } ); result.push(sor ); } return eredmény; } /* ============================================================== 10. ZIP FÁJL KERESÉSE ====================================================== */ function findZipFile( zip, fájlnév ){ return ( zip.file( fájlnév ) || zip.file( fájlnév + ".txt" ) ); } /* ======================================================= 11. GTFS ZIP BETÖLTÉS ======================================================== */ async function loadGTFS(){ try{ if( typeof JSZip === "undefined" ){ throw new SZip nem ( el J); } const files = Array.from( $("gtfsFiles").files ); if(!files.length){ alert( "Válassz ki legalább egy GTFS ZIP fájlt." ); visszatérés; } $("gtfsStatus").innerHTML = "⏳ GTFS betöltés folyamatban..."; log( "GTFS betöltés indítása." ); DATA.stops = []; DATA.routes = []; DATA.trips = []; DATA.stopTimes = []; for( const file of files ){ log( "ZIP: " + file.name ); const buffer = await file.arrayBuffer(); const zip = await JSZip.loadAsync( buffer ); async function read( filename ){ const entry = findZipFile( zip, filename ); if(!entry){ return ""; } return await entry.async( "string" ); } const stops = parseCSV( await read( "stops" ) ); const routes = parseCSV( await read( "routes" ) ); const trips = parseCSV(awaitread("trips")); const stopTimes = parseCSV(awaitread("megállási_idők")); DATA.stops.push(...megállók); DATA.routes.push(...útvonalak); DATA.trips.push(...utak); DATA.stopTimes.push(...megállásiIdők); awaitsaveDataset({ id: file.}]név + "_" + file.size + "_" + file.lastModified, név: file.name, betöltötte: Date.now(), stats:{ stops: stops.length, routes: routes.length, trips: trips.length, stopTimes: stopTimes.length } }); log( " stops: " + stops.length ); log( " routes: " + routes.length ); log( " trips: " + trips.length ); log( " stop_times: " + stopTimes.length ); } updateStats(); } } ... $("gtfsStatus").innerHTML = '<b class="ok">' + " GTFS BETÖLTVE" + "</b>" + "<br>" + "Fájlok: " + files.length + "<br>" + "Megállók: " + DATA.stops.length + "<br>.ngrotes " +leszonylat. "<br>" + "Járatok: " + DATA.trips.length; log( "GTFS BETÖLTÉS KÉSZ." ); }catch(error){ $("gtfsStatus").innerHTML = '<b class="err">' + "🔴 GTFS HIBA" + "</b>" + "<br>" + esc( error.message ); log( "GTFS HIBA: " + error.message ); console.error( error ); } } /* ============================================================= 12. STATISZTIKA ===================================================== */ function updateStats(){ $("stopCount").textContent = DATA.stops.length; $("routeCount").textContent = DATA.routes.length; $("tripCount").textContent = DATA.trips.length; $("stopTimeCount").textContent = DATA.stopTimes.length; } /* ======================================================= 13. MEGÁLLÓKERESÉS ======================================================== */ function searchStops(){ const query = $("StopSearch") .value .trim()(.towerCase); if(!query){ $("stopResults").innerHTML = '<span class="warn">' + "Adj meg megállónevet vagy GTFS ID-t." + "</span>"; visszatérés; } const eredmények = DATA.stops .filter( function(stop) { const név = String( stop.stop_név || "" ) .toLowerCase(); const azonosító = String( stop.stop_id || "" ) . }toLowerCase(); return ( name.includes( query ) || id.includes( query ) ); } ) .slice( 0, 100 ); if(!results.length){ $("stopResults").innerHTML = '<span class="warn">' + "Nincs találat." + "</span>"; return; } let html = '<div class="tableWrap">' + "<table>" + "<thead>" + "<tr>" + "<th>Megálló</th>" + "<th>GTFS ID</th>" + "<th>Koordináta</th>" + "</tr>" + "</thead>" + "<tbody>"; eredmények.forMinden egyes( function(stop,index){ html += "<tr " + 'class="clickable" ' + 'data-stop-index="' + index + '">' + "<td>" + esc(stop.stop_name ) + "</td>" + "<td>" + esc(stop.stop_id ) + "</td>" + "<td>" + esc(Number(stop.stop_lat ).toFixed(6) ) + "<br>" + esc(Number(stop.stop_lon ).toFixed(6) ) + "</td>" + "</tr>"; } ); html += "</tbody>" + "</table>" + "</div>"; $("stopResults").innerHTML = html; } Array.from( $("stopResults") .querySelectorAll( "[adat-stop-index]" ) ).forEach( function(row){ row.addEventListener( "kattintás", function(){ const index = Number( row.dataset.stopIndex ); selectStop( results[index] ); } ); } ); log( "Megállókeresés: " + results.length + " találat." ); } /* ======================================================== 14. TÁVOLSÁG ======================================================== */ függvény távolságKm( lat1, lon1, lat2, lon2 ){ const R = 6371; const dLat = ( lat2-lat1 ) * Math.PI / 180; const dLon = ( lon2-lon1 ) * Math.PI / 180; konstans a = Math.sin(dLat/2) ** 2 + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin( dLon/2 ) ** 2; return 2 * R * Math.asin( Math.sqrt(a) ); } /* ========================================================= 15. MEGÁLLÓ KIVÁLASZTÁSA ========================================================= */ function selectStop(stop){ const lat = Number( stop.stop_lat ); const lon = Number( stop.stop_lon ); let distance = "nincs GPS"; if( userPosition && Number.isFinite(lat) && Number.isFinite(lon) ){ distance = distanceKm( userPosition.lat, userPosition.lon, lat, lon ).toFixed(3) + " km"; } $("selectedStop").innerHTML = "<b>" + esc( stop.stop_name ) + "</b>" + "<br>" + "GTFS ID: " + esc( stop.stop_id ) + "<br>" + "Szélesség: " + lat.toFixed(6) + "<br>" + "Hosszúság: " + lon.toFixed(6) + "<br>" + "Tőled légvonalban: " + distance; $("departures").innerHTML = '<span class="info">' + "⏱️ Menetrendmotor: " + "</span>" + " a kiválasztott GTFS megállóhoz előkészítve."; showStopOnMap( stop ); log( "Megálló kiválasztva: " + stop.stop_name + " [" + stop.stop_id + "]" ); } /* ========================================================= 16. 10 KM ========================================================= */ function nearbyStops(){ if(!userPosition){ alert( "Először nyomd meg a 📍 Helyzetem gombot." ); locateMe(); return; } if(!DATA.stops.length){ $("stopResults").innerHTML = '<span class="warn">' + "Nincs betöltött GTFS megállóadat." + "</span>"; return; } const found = []; DATA.stops.forEach( function(stop){ const lat = Number( stop.stop_lat ); const lon = Number( stop.stop_lon ); if( !Number.isFinite(lat) || !Number.isFinite(lon) ){ return; } const distance = distanceKm( userPosition.lat, userPosition.lon, lat, lon ); if( distance <= 10 ){ found.push({ stop: stop, distance: distance }); } } ); found.sort( function(a,b){ return ( a.distance - b.distance ); } ); const list = found.slice( 0, 100 ); if(!list.length){ $("stopResults").innerHTML = '<span class="warn">' + "Nincs megálló 10 km-en belül." + "</span>"; return; } let html = ""; list.forEach( function(item){ html += '<div ' + 'class="status" ' + 'style="cursor:pointer" ' + 'data-near-stop="' + esc( item.stop.stop_id ) + '">' + "<b>" + esc( item.stop.stop_name ) + "</b>" + "<br>" + "📏 " + item.distance.toFixed(3) + " km" + "<br>" + "GTFS ID: " + esc( item.stop.stop_id ) + "</div>"; } ); $("stopResults").innerHTML = html; Array.from( $("stopResults") .querySelectorAll( "[data-near-stop]" ) ).forEach( function(element){ element.addEventListener( "kattintás", function(){ const id = element.dataset .nearStop; const stop = DATA.stops.find( function(s){ return String( s.stop_id ) === id; } ); if(stop){ selectStop( stop ); } } ); } ); log( "10 km-es keresés: " + list.length + " megálló." ); Megjegyzés: A megadott objektumok elérési útja: " + list.length + " megálló." ); Megjegyzés: A megadott objektumok elérési útja: " + list.length + " megálló." ) Megjegyzés: A megadott objektumok elérési útja: " } } /* ======================================================== 17. GPS ========================================================= */ function locateMe(){ if( !navigator.geolocation ){ $("gpsStatus").inner HTML' = "📍 ' + " támogatott" + "</span>"; visszatérés; } $("gpsStatus").innerHTML = "📍 GPS: lekérés folyamatban..."; navigator.geolocation.getCurrentPosition( function(position){ userPosition = { lat: position.coords.latitude, lon: position.coords.longitude, accuracy: position.coords.accuracy }; $("gpsStatus").innerHTML = "📍 GPS: " + '<b class="ok">' + "AKTÍV" + "</b>" + "<br>" + "Lat: " + userPosition.lat .toFixed(8) + "<br>" + "Lon: " + userPosition.lon .toFixed(8) + "<br>" + "Pontosság:±" + Math.round(userPosition.accuracy) + "m"; if(map){ map.setView([userPosition.lat, userPosition.lon], 14); if(gpsMarker){ gpsMarker.setLatLng([userPosition.lat, userPosition.lon]); }else{ gpsMarker = L.marker([userPosition.lat, userPosition.lon]); } } log("GPS AKTÍV: " + userPosition.lat.toFixed(8) + ", " + userPosition.lon.toFixed(8)); }, function(error){ $("gpsStatus").innerHTML = "📍 GPS: " + '<span class="err">') + esc( error.message ) + "</span>"; log( "GPS HIBA: " + error.message ); }, { enableHighAccuracy:true, timeout:15000, maximumAge:10000 } ); } /* =============================================================== 18. TÉRKÉP ======================================================== */ function initMap(){ try{ if( typeof L === "undefined" ){ throw new Error( "A tájékoztató nem érhető el." ); } map = L.map( "térkép", { zoomControl:true } ) .setView( [ 47.4979, 19.0402 ], 11 ); L.tileLayer( "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom:19, forrásmegjelölés: "© OpenStreetMap" } ).addTo( térkép ); stopLayer = L.layerGroup() .addTo( map ); $("mapStatus").innerHTML = "🗺️ Térkép: " + '<b class="ok">' + "AKTÍV" + "</b>"; log( "Leaflet térkép AKTÍV." ); }catch(error){ $("mapStatus").innerHTML = "🗺️ Térkép: " + '<b class="err">' + "HIBA" + "</b>"; log( "Térkép HIBA: " + error.message ); } } /* ======================================================= 19. MEGÁLLÓ TÉRKÉPRE RAKÁSA ======================================================= */ függvény showStopOnMap(stop){ if(!map){ return; } const lat = Szám( stop.stop_lat ); const lon = Szám( stop.stop_lon ); if( !Szám.isFinite(lat) || !Number.isFinite(lon) ){ return; } if(selectedMarker){ map.removeLayer(selectedMarker); } selectedMarker = L.marker([lat, lon]).addTo(map).bindPopup("<b>" + esc(stop.stop_name) + "</b>" + "<br>" + "GTFS ID: " + esc(stop.stop_id)); map.setView([lat, lon], 16); selectedMarker.openPopup(); } /* ============================================================= 20. ÖSSZES MEGÁLLÓ ====================================================== */ function showStopsOnMap(){ if(!map){ return; } stopLayer.clearLayers(); const limit = Math.min( DATA.stops.length, 3000 ); for( let i=0; i<limit; i++ ){ const stop = DATA.stops[i]; const lat = Number( stop.stop_lat ); const lon = Number( stop.stop_lon ); if( !Szám.isVéges(lat) || !Szám.Véges(lon) ){ folytatás; } L.circleMarker( [ lat, lon ], { sugar:4, weight:1, fillOpacity:.65 } ) .bindPopup( "<b>" + esc( stop.stop_name ) + "</b>" + "<br>" + "GTFS ID: " + esc( stop.stop_id ) ( stopLayeradd ) ); } log( "Térképre kirakva: " + limit + " megálló." ); } /* ============================================================= 21. JÁRMŰKERESŐ ===================================================== */ function searchVehicles(){ const query = $("vehicleSearch") .value .trim(); $("vehicleResults").innerHTML = "🚎 Keresés: " + "<b>" + esc(query || "nincs megadva" ) + "</b>" + "<br><br>" + "🟡 Realtime járműadat jelenleg " + "<b>nincs csatlakoztatva</b>." + "<br><br>" + '<span class="badge">' + "BKK GTFS-RT helye" + "</span>" + '<span class="badge">' + "VOLÁN realtime helye" + "</span>" + '<span class="badge">' + "MÁV realtime helye" + "</span>"; log( "Járműkeresés: " + ( query || "üres" ) ); } /* =============================================================== 22.MENTETT GTFS ========================================================== */ async function showSavedGTFS(){ try{ const list = await getDatasets(); if(!list.length){ $("gtfsStatus").innerHTML = '<span class="warn">' + "Nincs mentett GTFS." + "</span>"; return; } $("gtfsStatus").innerHTML = "<b>💾 Mentett GTFS:</b>" + "<br>" + list .map( function(item){ return ( '<span class="badge">' + "📦 " + esc( item.name ) + "</span>" ); } ) .join(""); log( "Mentett GTFS-ek: " + list.length ); }catch(error){ log( "Mentett GTFS hiba: " + error.message ); } } /* ================================================================ 23. TÉRKÉP TÖRLÉS ========================================================= */ function clearMap(){ if(!map){ return; } stopLayer.clearLayers(); if(selectedMarker){ map.removeLayer( selectedMarker ); selectedMarker = null; } if(gpsMarker){ map.removeLayer( gpsMarker ); gpsMarker = null; } map.setView( [ 47.4979, 19.0402 ], 11 ); log( "Térképi rétegek törölve." ); } /* ========================================================= 24. GOMBOK ========================================================= */ function bindButtons(){ $("btnLocate") .addEventListener( "kattintás", helymeghatározás); $("btnClearLog") .addEventListener( "kattintás", clearLog ); $("btnLoadGTFS") .addEventListener( "kattintás", loadGTFS ); $("btnSavedGTFS") .addEventListener( "kattintás", showSavedGTFS ); $("btnSearchStop") .addEventListener( "kattintás", searchStops ); $("btnNearby") .addEventListener( "kattintás", nearbyStops ); $("btnVehicle") .addEventListener( "kattintás", searchVehicles ); $("btnClearMap") .addEventListener( "kattintás", clearMap ); $("btnShowStops") .addEventListener( "kattintás", showStopsOnMap ); $("stopSearch") .addEventListener( "billentyűlenyomás", function(event){ if( event.key === "Enter" ){ searchStops(); } } ); $("vehicleSearch") .addEventListener( "keydown", function(event){ if( event.key === "Enter" ){ searchVehicles(); } } ); } /* ========================================================= 25. MOTOROK ELLENŐRZÉSE ========================================================= */ function checkEngines(){ if( typeof JSZip !== "undefined" ){ $("zipStatus").innerHTML = "📦 JSZip: " + '<b class="ok">' + "AKTÍV" + "</b>"; log( "JSZip motor AKTÍV." ); }else{ $("zipStatus").innerHTML = "📦 JSZip: " + '<b class="err">' + "NEM ELÉRHETŐ" + "</b>"; log( "HIBA: JSZip nem érhető el." ); } if( typeof L !== "undefined" ){ log( "Leaflet motor elérhető." ); }else{ log( "HIBA: Leaflet nem érhető el." ); } } /* ========================================================= 26. INDÍTÁS ========================================================= */ async function startApplication(){ try{ log( "================================" ); log( "ATTILA KÖZLEKEDÉS " + APP_VERSION ); log( "UNIFIED CORE INDÍTÁS." ); $("coreStatus").innerHTML = "⚙️ CORE: " + '<b class="ok">' + "INDUL" + "</b>"; checkEngines(); bindButtons(); initMap(); await initDB(); $("coreStatus").innerHTML = "⚙️ CORE: " + '<b class="ok">' + "AKTÍV" + "</b>"; await showSavedGTFS(); log( "================================" ); log( "🟢 CORE KÉSZ." ); log( "🟢 IndexedDB KÉSZ." ); log( "🟢 GTFS MOTOR KÉSZ." ); log( "🟢 GPS MOTOR KÉSZ." ); log( "🟢 TÉRKÉP MOTOR KÉSZ." ); log( "🟡 REALTIME: következő modul." ); }catch(error){ $("coreStatus").innerHTML = "⚙️ CORE: " + '<b class="err">' + "INDÍTÁSI HIBA" + "</b>"; log( "🔴 INDÍTÁSI HIBA:" ); log( error.message ); console.error( "ATTILA KÖZLEKEDÉS START ERROR", error ); } } /* ========================================================= 27. BIZTOS INDÍTÁS ========================================================= */ if( document.readyState === "loading" ){ document.addEventListener( "DOMContentLoaded", startApplication ); }else{ startApplication(); } </script> </body> </html> ``
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+
+<meta name="viewport"
+      content="width=device-width,
+               initial-scale=1,
+               maximum-scale=1,
+               user-scalable=no">
+
+<meta name="theme-color"
+      content="#062c26">
+
+<title>🚍 ATTILA KÖZLEKEDÉS – VALÓDI DIAGNOSZTIKA V1</title>
+
+<!-- =====================================================
+     LEAFLET
+     ===================================================== -->
+
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  crossorigin=""
+>
+
+<script
+  src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+  crossorigin="">
+</script>
+
+<style>
+
+*{
+  box-sizing:border-box;
+}
+
+html,
+body{
+  margin:0;
+  padding:0;
+  min-height:100%;
+  background:#edf3f1;
+  color:#17312d;
+  font-family:
+    Arial,
+    Helvetica,
+    sans-serif;
+}
+
+body{
+  padding-bottom:30px;
+}
+
+/* =====================================================
+   FEJLÉC
+   ===================================================== */
+
+header{
+  background:#062c26;
+  color:#fff;
+  padding:15px;
+  box-shadow:
+    0 2px 8px rgba(0,0,0,.25);
+}
+
+header h1{
+  margin:0;
+  font-size:20px;
+}
+
+header p{
+  margin:5px 0 0;
+  font-size:12px;
+  opacity:.85;
+}
+
+/* =====================================================
+   TARTALOM
+   ===================================================== */
+
+main{
+  max-width:1100px;
+  margin:auto;
+  padding:10px;
+}
+
+.card{
+  background:#fff;
+  border-radius:12px;
+  padding:13px;
+  margin-bottom:10px;
+  box-shadow:
+    0 1px 6px rgba(0,0,0,.12);
+}
+
+.card h2{
+  margin:0 0 10px;
+  font-size:17px;
+  color:#0b6657;
+}
+
+/* =====================================================
+   ÁLLAPOTOK
+   ===================================================== */
+
+.status{
+  padding:10px;
+  border-radius:8px;
+  background:#f1f5f4;
+  margin:6px 0;
+  font-size:14px;
+}
+
+.green{
+  color:#087443;
+  font-weight:bold;
+}
+
+.red{
+  color:#b42318;
+  font-weight:bold;
+}
+
+.orange{
+  color:#996000;
+  font-weight:bold;
+}
+
+.blue{
+  color:#1769aa;
+  font-weight:bold;
+}
+
+/* =====================================================
+   GOMBOK
+   ===================================================== */
+
+button{
+  border:0;
+  border-radius:8px;
+  padding:11px 14px;
+  margin:3px;
+  background:#0b6657;
+  color:#fff;
+  font-size:15px;
+  font-weight:bold;
+  cursor:pointer;
+}
+
+button:active{
+  transform:translateY(1px);
+}
+
+button.secondary{
+  background:#dce9e5;
+  color:#17453e;
+}
+
+/* =====================================================
+   GPS ADAT
+   ===================================================== */
+
+.gpsData{
+  display:grid;
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(180px,1fr)
+    );
+  gap:7px;
+}
+
+.gpsBox{
+  background:#f0f6f4;
+  border-radius:8px;
+  padding:10px;
+}
+
+.gpsBox small{
+  display:block;
+  color:#60736e;
+  margin-bottom:3px;
+}
+
+.gpsBox strong{
+  font-size:16px;
+}
+
+/* =====================================================
+   TÉRKÉP
+   ===================================================== */
+
+#map{
+  width:100%;
+  height:430px;
+  border-radius:10px;
+  overflow:hidden;
+  background:#d9e5e2;
+}
+
+/* =====================================================
+   NAPLÓ
+   ===================================================== */
+
+#log{
+  background:#101d1a;
+  color:#d7eee7;
+  border-radius:8px;
+  padding:12px;
+  min-height:180px;
+  max-height:400px;
+  overflow:auto;
+  white-space:pre-wrap;
+  word-break:break-word;
+  font-family:
+    Consolas,
+    monospace;
+  font-size:12px;
+}
+
+/* =====================================================
+   BÖNGÉSZŐ INFORMÁCIÓ
+   ===================================================== */
+
+.infoTable{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+}
+
+.infoTable td{
+  padding:6px;
+  border-bottom:
+    1px solid #dce5e2;
+}
+
+.infoTable td:first-child{
+  font-weight:bold;
+  width:40%;
+}
+
+/* =====================================================
+   MOBIL
+   ===================================================== */
+
+@media(max-width:600px){
+
+  header h1{
+    font-size:18px;
+  }
+
+  main{
+    padding:7px;
+  }
+
+  #map{
+    height:360px;
+  }
+
+}
+
+</style>
+</head>
+
+<body>
+
+<header>
+
+  <h1>
+    🚍 ATTILA KÖZLEKEDÉS
+  </h1>
+
+  <p>
+    VALÓDI DIAGNOSZTIKAI VÁLTOZAT V1 •
+    GPS • TÉRKÉP • INDEXEDDB • JAVASCRIPT
+  </p>
+
+</header>
+
+
+<main>
+
+
+<!-- =====================================================
+     1. JAVASCRIPT
+     ===================================================== -->
+
+<section class="card">
+
+  <h2>🧪 1. JavaScript motor</h2>
+
+  <div
+    id="jsStatus"
+    class="status">
+
+    ⏳ JavaScript ellenőrzése...
+
+  </div>
+
+</section>
+
+
+<!-- =====================================================
+     2. BÖNGÉSZŐ
+     ===================================================== -->
+
+<section class="card">
+
+  <h2>🌐 2. Böngésző és futtatási környezet</h2>
+
+  <table class="infoTable">
+
+    <tr>
+      <td>Böngésző</td>
+      <td id="browserInfo">...</td>
+    </tr>
+
+    <tr>
+      <td>Platform</td>
+      <td id="platformInfo">...</td>
+    </tr>
+
+    <tr>
+      <td>Protokoll</td>
+      <td id="protocolInfo">...</td>
+    </tr>
+
+    <tr>
+      <td>HTTPS</td>
+      <td id="httpsInfo">...</td>
+    </tr>
+
+    <tr>
+      <td>Oldal címe</td>
+      <td id="urlInfo">...</td>
+    </tr>
+
+  </table>
+
+</section>
+
+
+<!-- =====================================================
+     3. GPS
+     ===================================================== -->
+
+<section class="card">
+
+  <h2>📍 3. VALÓDI GPS diagnosztika</h2>
+
+  <div
+    id="gpsStatus"
+    class="status">
+
+    ⏳ GPS motor ellenőrzése...
+
+  </div>
+
+  <div class="gpsData">
+
+    <div class="gpsBox">
+
+      <small>Szélesség</small>
+
+      <strong id="latitude">
+        —
+      </strong>
+
+    </div>
+
+    <div class="gpsBox">
+
+      <small>Hosszúság</small>
+
+      <strong id="longitude">
+        —
+      </strong>
+
+    </div>
+
+    <div class="gpsBox">
+
+      <small>Pontosság</small>
+
+      <strong id="accuracy">
+        —
+      </strong>
+
+    </div>
+
+    <div class="gpsBox">
+
+      <small>Magasság</small>
+
+      <strong id="altitude">
+        —
+      </strong>
+
+    </div>
+
+  </div>
+
+  <br>
+
+  <button
+    id="gpsButton">
+
+    📍 VALÓDI HELYZETEM LEKÉRÉSE
+
+  </button>
+
+  <button
+    id="gpsWatchButton"
+    class="secondary">
+
+    📡 FOLYAMATOS GPS
+
+  </button>
+
+  <button
+    id="gpsStopButton"
+    class="secondary">
+
+    ⛔ GPS LEÁLLÍTÁSA
+
+  </button>
+
+</section>
+
+
+<!-- =====================================================
+     4. INDEXEDDB
+     ===================================================== -->
+
+<section class="card">
+
+  <h2>💾 4. IndexedDB diagnosztika</h2>
+
+  <div
+    id="dbStatus"
+    class="status">
+
+    ⏳ IndexedDB ellenőrzése...
+
+  </div>
+
+  <button
+    id="dbTestButton">
+
+    💾 INDEXEDDB TESZT
+
+  </button>
+
+</section>
+
+
+<!-- =====================================================
+     5. TÉRKÉP
+     ===================================================== -->
+
+<section class="card">
+
+  <h2>🗺️ 5. Térképmotor diagnosztika</h2>
+
+  <div
+    id="mapStatus"
+    class="status">
+
+    ⏳ Térkép ellenőrzése...
+
+  </div>
+
+  <div id="map"></div>
+
+  <br>
+
+  <button
+    id="mapGpsButton">
+
+    📍 GPS A TÉRKÉPRE
+
+  </button>
+
+  <button
+    id="mapDefaultButton"
+    class="secondary">
+
+    🗺️ BUDAPEST
+
+  </button>
+
+</section>
+
+
+<!-- =====================================================
+     6. IDŐ
+     ===================================================== -->
+
+<section class="card">
+
+  <h2>🕒 6. Rendszeridő</h2>
+
+  <div
+    id="clock"
+    class="status">
+
+    ...
+
+  </div>
+
+</section>
+
+
+<!-- =====================================================
+     7. TELJES DIAGNOSZTIKAI NAPLÓ
+     ===================================================== -->
+
+<section class="card">
+
+  <h2>📋 7. Diagnosztikai napló</h2>
+
+  <button
+    id="clearLogButton"
+    class="secondary">
+
+    🧹 NAPLÓ TÖRLÉSE
+
+  </button>
+
+  <br><br>
+
+  <pre id="log"></pre>
+
+</section>
+
+
+</main>
+
+
+<script>
+
+/* =========================================================
+   ATTILA KÖZLEKEDÉS
+   VALÓDI DIAGNOSZTIKAI VÁLTOZAT
+   ========================================================= */
+
+
+/* =========================================================
+   GLOBÁLIS VÁLTOZÓK
+   ========================================================= */
+
+let map = null;
+
+let gpsMarker = null;
+
+let accuracyCircle = null;
+
+let watchId = null;
+
+let database = null;
+
+
+/* =========================================================
+   SEGÉDFÜGGVÉNY
+   ========================================================= */
+
+function $(id){
+
+  return document.getElementById(id);
+
+}
+
+
+/* =========================================================
+   NAPLÓ
+   ========================================================= */
+
+function log(text){
+
+  const box = $("log");
+
+  if(!box){
+    return;
+  }
+
+  const time =
+    new Date()
+      .toLocaleTimeString(
+        "hu-HU"
+      );
+
+  box.textContent +=
+    "[" +
+    time +
+    "] " +
+    text +
+    "\n";
+
+  box.scrollTop =
+    box.scrollHeight;
+
+}
+
+
+/* =========================================================
+   1. JAVASCRIPT AZONNALI TESZT
+   ========================================================= */
+
+(function(){
+
+  $("jsStatus").innerHTML =
+    "🟢 JavaScript: " +
+    '<span class="green">AKTÍV</span>';
+
+  log(
+    "🟢 JAVASCRIPT TÉNYLEGESEN ELINDULT."
+  );
+
+})();
+
+
+/* =========================================================
+   2. BÖNGÉSZŐ INFORMÁCIÓ
+   ========================================================= */
+
+function browserDiagnostics(){
+
+  $("browserInfo").textContent =
+    navigator.userAgent;
+
+  $("platformInfo").textContent =
+    navigator.platform || "ismeretlen";
+
+  $("protocolInfo").textContent =
+    location.protocol;
+
+  $("urlInfo").textContent =
+    location.href;
+
+
+  if(
+    location.protocol === "https:"
+  ){
+
+    $("httpsInfo").innerHTML =
+      '<span class="green">🟢 HTTPS</span>';
+
+    log(
+      "🟢 HTTPS környezet."
+    );
+
+  }
+
+  else if(
+    location.protocol === "http:"
+  ){
+
+    $("httpsInfo").innerHTML =
+      '<span class="orange">🟠 HTTP</span>';
+
+    log(
+      "🟠 HTTP környezet."
+    );
+
+  }
+
+  else if(
+    location.protocol === "file:"
+  ){
+
+    $("httpsInfo").innerHTML =
+      '<span class="orange">🟠 FILE://</span>';
+
+    log(
+      "🟠 FILE:// módban fut az oldal."
+    );
+
+    log(
+      "⚠️ GPS esetén a böngésző biztonsági korlátozása jelentkezhet."
+    );
+
+  }
+
+  else{
+
+    $("httpsInfo").textContent =
+      location.protocol;
+
+  }
+
+}
+
+
+/* =========================================================
+   3. GPS MOTOR TESZT
+   ========================================================= */
+
+function checkGPS(){
+
+  if(
+    !("geolocation" in navigator)
+  ){
+
+    $("gpsStatus").innerHTML =
+      "🔴 GPS: " +
+      '<span class="red">NEM TÁMOGATOTT</span>';
+
+    log(
+      "🔴 navigator.geolocation NEM ELÉRHETŐ."
+    );
+
+    return false;
+
+  }
+
+
+  $("gpsStatus").innerHTML =
+    "🟢 GPS motor: " +
+    '<span class="green">ELÉRHETŐ</span>';
+
+  log(
+    "🟢 navigator.geolocation ELÉRHETŐ."
+  );
+
+
+  if(
+    location.protocol === "file:"
+  ){
+
+    log(
+      "⚠️ FILE://: GPS engedélyezése böngészőfüggő."
+    );
+
+  }
+
+
+  return true;
+
+}
+
+
+/* =========================================================
+   4. VALÓDI GPS LEKÉRÉSE
+   ========================================================= */
+
+function getGPS(){
+
+  log(
+    "📍 GPS lekérés indítása..."
+  );
+
+
+  if(
+    !checkGPS()
+  ){
+
+    return;
+
+  }
+
+
+  $("gpsStatus").innerHTML =
+    "🟡 GPS: " +
+    '<span class="orange">HELYMEGHATÁROZÁS FOLYAMATBAN...</span>';
+
+
+  navigator.geolocation.getCurrentPosition(
+
+    function(position){
+
+      handleGPS(
+        position
+      );
+
+    },
+
+    function(error){
+
+      handleGPSError(
+        error
+      );
+
+    },
+
+    {
+
+      enableHighAccuracy:true,
+
+      timeout:20000,
+
+      maximumAge:0
+
+    }
+
+  );
+
+}
+
+
+/* =========================================================
+   5. GPS EREDMÉNY
+   ========================================================= */
+
+function handleGPS(position){
+
+  const coords =
+    position.coords;
+
+
+  const lat =
+    coords.latitude;
+
+  const lon =
+    coords.longitude;
+
+  const accuracy =
+    coords.accuracy;
+
+
+  $("latitude").textContent =
+    lat.toFixed(8);
+
+  $("longitude").textContent =
+    lon.toFixed(8);
+
+  $("accuracy").textContent =
+    Math.round(
+      accuracy
+    ) +
+    " m";
+
+
+  $("altitude").textContent =
+
+    coords.altitude === null
+
+      ? "nincs adat"
+
+      :
+
+    coords.altitude.toFixed(1)
+    + " m";
+
+
+  $("gpsStatus").innerHTML =
+
+    "🟢 GPS: " +
+
+    '<span class="green">AKTÍV</span>' +
+
+    "<br>" +
+
+    "Koordináta: " +
+
+    lat.toFixed(8) +
+
+    ", " +
+
+    lon.toFixed(8);
+
+
+  log(
+    "🟢 VALÓDI GPS POZÍCIÓ ÉRKEZETT."
+  );
+
+
+  log(
+    "Latitude: " +
+    lat.toFixed(8)
+  );
+
+
+  log(
+    "Longitude: " +
+    lon.toFixed(8)
+  );
+
+
+  log(
+    "Pontosság: ±" +
+    Math.round(
+      accuracy
+    ) +
+    " m"
+  );
+
+
+  if(
+    coords.altitude !== null
+  ){
+
+    log(
+      "Magasság: " +
+      coords.altitude.toFixed(1) +
+      " m"
+    );
+
+  }
+
+
+  updateMapGPS(
+    lat,
+    lon,
+    accuracy
+  );
+
+}
+
+
+/* =========================================================
+   6. GPS HIBA
+   ========================================================= */
+
+function handleGPSError(error){
+
+  let message =
+    "ismeretlen GPS hiba";
+
+
+  switch(
+    error.code
+  ){
+
+    case 1:
+
+      message =
+        "HELYHOZZÁFÉRÉS MEGTAGADVA";
+
+      break;
+
+
+    case 2:
+
+      message =
+        "A POZÍCIÓ NEM HATÁROZHATÓ MEG";
+
+      break;
+
+
+    case 3:
+
+      message =
+        "GPS LEKÉRÉS IDŐTÚLLÉPÉS";
+
+      break;
+
+  }
+
+
+  $("gpsStatus").innerHTML =
+
+    "🔴 GPS: " +
+
+    '<span class="red">' +
+
+    message +
+
+    "</span>";
+
+
+  log(
+    "🔴 GPS HIBA: " +
+    message
+  );
+
+
+  log(
+    "Böngésző hibakód: " +
+    error.code
+  );
+
+
+  log(
+    "Böngésző üzenet: " +
+    (
+      error.message ||
+      "nincs"
+    )
+  );
+
+
+  if(
+    error.code === 1
+  ){
+
+    log(
+      "⚠️ A böngésző megtagadta a helyadat-hozzáférést."
+    );
+
+    log(
+      "⚠️ Ellenőrizd a webhely helyadat-engedélyét."
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   7. FOLYAMATOS GPS
+   ========================================================= */
+
+function startGPSWatch(){
+
+  if(
+    !checkGPS()
+  ){
+
+    return;
+
+  }
+
+
+  if(
+    watchId !== null
+  ){
+
+    log(
+      "⚠️ A folyamatos GPS már fut."
+    );
+
+    return;
+
+  }
+
+
+  log(
+    "📡 Folyamatos GPS indítása..."
+  );
+
+
+  $("gpsStatus").innerHTML =
+    "🟡 GPS: " +
+    '<span class="orange">FOLYAMATOS KÖVETÉS...</span>';
+
+
+  watchId =
+    navigator.geolocation.watchPosition(
+
+      function(position){
+
+        handleGPS(
+          position
+        );
+
+      },
+
+      function(error){
+
+        handleGPSError(
+          error
+        );
+
+      },
+
+      {
+
+        enableHighAccuracy:true,
+
+        maximumAge:5000,
+
+        timeout:20000
+
+      }
+
+    );
+
+}
+
+
+/* =========================================================
+   8. GPS LEÁLLÍTÁSA
+   ========================================================= */
+
+function stopGPSWatch(){
+
+  if(
+    watchId === null
+  ){
+
+    log(
+      "ℹ️ Folyamatos GPS nem futott."
+    );
+
+    return;
+
+  }
+
+
+  navigator.geolocation.clearWatch(
+    watchId
+  );
+
+
+  watchId =
+    null;
+
+
+  $("gpsStatus").innerHTML =
+    "🟠 GPS: " +
+    '<span class="orange">KÖVETÉS LEÁLLÍTVA</span>';
+
+
+  log(
+    "⛔ Folyamatos GPS leállítva."
+  );
+
+}
+
+
+/* =========================================================
+   9. INDEXEDDB
+   ========================================================= */
+
+function initIndexedDB(){
+
+  if(
+    !("indexedDB" in window)
+  ){
+
+    $("dbStatus").innerHTML =
+      "🔴 IndexedDB: " +
+      '<span class="red">NEM TÁMOGATOTT</span>';
+
+    log(
+      "🔴 IndexedDB nem támogatott."
+    );
+
+    return;
+
+  }
+
+
+  log(
+    "💾 IndexedDB megnyitása..."
+  );
+
+
+  const request =
+    indexedDB.open(
+      "AttilaKozlekedes_DIAGNOSTIKA",
+      1
+    );
+
+
+  request.onupgradeneeded =
+    function(event){
+
+      const db =
+        event.target.result;
+
+
+      if(
+        !db.objectStoreNames.contains(
+          "test"
+        )
+      ){
+
+        db.createObjectStore(
+          "test",
+          {
+            keyPath:"id"
+          }
+        );
+
+      }
+
+
+      log(
+        "💾 IndexedDB objectStore létrehozva."
+      );
+
+    };
+
+
+  request.onsuccess =
+    function(event){
+
+      database =
+        event.target.result;
+
+
+      $("dbStatus").innerHTML =
+        "🟢 IndexedDB: " +
+        '<span class="green">AKTÍV</span>';
+
+
+      log(
+        "🟢 IndexedDB MEGNYITVA."
+      );
+
+    };
+
+
+  request.onerror =
+    function(){
+
+      $("dbStatus").innerHTML =
+        "🔴 IndexedDB: " +
+        '<span class="red">HIBA</span>';
+
+
+      log(
+        "🔴 IndexedDB megnyitási hiba."
+      );
+
+    };
+
+}
+
+
+/* =========================================================
+   10. INDEXEDDB ÍRÁSI TESZT
+   ========================================================= */
+
+function testIndexedDB(){
+
+  if(!database){
+
+    log(
+      "🔴 IndexedDB teszt: nincs megnyitott adatbázis."
+    );
+
+    $("dbStatus").innerHTML =
+      "🔴 IndexedDB: " +
+      '<span class="red">NINCS KAPCSOLAT</span>';
+
+    return;
+
+  }
+
+
+  try{
+
+    const tx =
+      database.transaction(
+        "test",
+        "readwrite"
+      );
+
+
+    const store =
+      tx.objectStore(
+        "test"
+      );
+
+
+    store.put({
+
+      id:"diagnosztika",
+
+      timestamp:
+        Date.now(),
+
+      text:
+        "ATTILA KÖZLEKEDÉS TESZT"
+
+    });
+
+
+    tx.oncomplete =
+      function(){
+
+        $("dbStatus").innerHTML =
+          "🟢 IndexedDB: " +
+          '<span class="green">ÍRÁS TESZT OK</span>';
+
+
+        log(
+          "🟢 IndexedDB ÍRÁSI TESZT OK."
+        );
+
+      };
+
+
+    tx.onerror =
+      function(){
+
+        log(
+          "🔴 IndexedDB írási hiba."
+        );
+
+      };
+
+  }
+
+  catch(error){
+
+    log(
+      "🔴 IndexedDB teszt hiba: " +
+      error.message
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   11. TÉRKÉP
+   ========================================================= */
+
+function initMap(){
+
+  if(
+    typeof L ===
+    "undefined"
+  ){
+
+    $("mapStatus").innerHTML =
+      "🔴 Térképmotor: " +
+      '<span class="red">LEAFLET NEM TÖLTŐDÖTT BE</span>';
+
+    log(
+      "🔴 Leaflet objektum nem létezik."
+    );
+
+    return;
+
+  }
+
+
+  try{
+
+    map =
+      L.map(
+        "map"
+      );
+
+
+    map.setView(
+      [
+        47.4979,
+        19.0402
+      ],
+      11
+    );
+
+
+    L.tileLayer(
+
+      "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+
+      {
+
+        maxZoom:19,
+
+        attribution:
+          "&copy; OpenStreetMap"
+
+      }
+
+    ).addTo(
+      map
+    );
+
+
+    $("mapStatus").innerHTML =
+      "🟢 Térkép: " +
+      '<span class="green">AKTÍV</span>';
+
+
+    log(
+      "🟢 Leaflet térképmotor AKTÍV."
+    );
+
+
+  }
+
+  catch(error){
+
+    $("mapStatus").innerHTML =
+      "🔴 Térkép: " +
+      '<span class="red">HIBA</span>';
+
+
+    log(
+      "🔴 Térképhiba: " +
+      error.message
+    );
+
+  }
+
+}
+
+
+/* =========================================================
+   12. GPS A TÉRKÉPRE
+   ========================================================= */
+
+function updateMapGPS(
+  lat,
+  lon,
+  accuracy
+){
+
+  if(!map){
+
+    log(
+      "⚠️ GPS megvan, de a térkép nem aktív."
+    );
+
+    return;
+
+  }
+
+
+  if(gpsMarker){
+
+    gpsMarker.setLatLng(
+      [
+        lat,
+        lon
+      ]
+    );
+
+  }
+
+  else{
+
+    gpsMarker =
+      L.marker(
+        [
+          lat,
+          lon
+        ]
+      )
+      .addTo(
+        map
+      )
+      .bindPopup(
+        "📍 VALÓS GPS POZÍCIÓ"
+      );
+
+  }
+
+
+  if(accuracyCircle){
+
+    accuracyCircle.setLatLng(
+      [
+        lat,
+        lon
+      ]
+    );
+
+    accuracyCircle.setRadius(
+      accuracy
+    );
+
+  }
+
+  else{
+
+    accuracyCircle =
+      L.circle(
+        [
+          lat,
+          lon
+        ],
+        {
+
+          radius:
+            accuracy,
+
+          weight:1,
+
+          fillOpacity:.10
+
+        }
+      )
+      .addTo(
+        map
+      );
+
+  }
+
+
+  map.setView(
+    [
+      lat,
+      lon
+    ],
+    15
+  );
+
+
+  gpsMarker.openPopup();
+
+
+  log(
+    "🗺️ GPS pozíció felhelyezve a térképre."
+  );
+
+}
+
+
+/* =========================================================
+   13. ALAPHELYZET BUDAPEST
+   ========================================================= */
+
+function mapDefault(){
+
+  if(!map){
+
+    return;
+
+  }
+
+
+  map.setView(
+    [
+      47.4979,
+      19.0402
+    ],
+    11
+  );
+
+
+  log(
+    "🗺️ Térkép visszaállítva Budapestre."
+  );
+
+}
+
+
+/* =========================================================
+   14. ÓRA
+   ========================================================= */
+
+function updateClock(){
+
+  $("clock").textContent =
+    new Date()
+      .toLocaleString(
+        "hu-HU"
+      );
+
+}
+
+
+setInterval(
+  updateClock,
+  1000
+);
+
+updateClock();
+
+
+/* =========================================================
+   15. GOMBOK
+   ========================================================= */
+
+$("gpsButton")
+  .addEventListener(
+    "click",
+    getGPS
+  );
+
+
+$("gpsWatchButton")
+  .addEventListener(
+    "click",
+    startGPSWatch
+  );
+
+
+$("gpsStopButton")
+  .addEventListener(
+    "click",
+    stopGPSWatch
+  );
+
+
+$("dbTestButton")
+  .addEventListener(
+    "click",
+    testIndexedDB
+  );
+
+
+$("mapGpsButton")
+  .addEventListener(
+    "click",
+    getGPS
+  );
+
+
+$("mapDefaultButton")
+  .addEventListener(
+    "click",
+    mapDefault
+  );
+
+
+$("clearLogButton")
+  .addEventListener(
+    "click",
+    function(){
+
+      $("log").textContent =
+        "";
+
+      log(
+        "Napló törölve."
+      );
+
+    }
+  );
+
+
+/* =========================================================
+   16. INDÍTÁS
+   ========================================================= */
+
+function start(){
+
+  log(
+    "=========================================="
+  );
+
+  log(
+    "🚍 ATTILA KÖZLEKEDÉS DIAGNOSZTIKA V1"
+  );
+
+  log(
+    "Indítás: " +
+    new Date()
+      .toLocaleString(
+        "hu-HU"
+      )
+  );
+
+
+  browserDiagnostics();
+
+
+  checkGPS();
+
+
+  initIndexedDB();
+
+
+  initMap();
+
+
+  log(
+    "=========================================="
+  );
+
+  log(
+    "🟢 DIAGNOSZTIKAI MOTOR ELINDULT."
+  );
+
+  log(
+    "Következő lépés: 📍 VALÓDI HELYZETEM LEKÉRÉSE."
+  );
+
+}
+
+
+/* =========================================================
+   17. INDÍTÁS
+   ========================================================= */
+
+if(
+  document.readyState ===
+  "loading"
+){
+
+  document.addEventListener(
+    "DOMContentLoaded",
+    start
+  );
+
+}
+else{
+
+  start();
+
+}
+
+</script>
+
+</body>
+</html>
