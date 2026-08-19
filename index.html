@@ -1,2 +1,4644 @@
-html <!doctype html> <html lang="hu"> <head> <meta charset="utf-8"> <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"> <meta name="theme-color" content="#171b20"> <title>🚍 ATTILA KÖZLEKEDÉS V10.1 FIX5</title> <!-- ATTILA KÖZLEKEDÉS V10.1 FIX5 1/2 RÉSZ MODULOK: - GTFS MULTI ZIP - IndexedDB - GPS - Leaflet térkép - 5 km-es kör - megállókereső - GTFS indulási motor - Realtime előkészítés - járműmotor alap - 6 kalkulátor - vonali Excel-generátor --> <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script> <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.3/dist/papaparse.min.js"></script> <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css"> <script src="https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js"></script> <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script> <style> :root{ --bg:#101317; --panel:#1b2026; --panel2:#222930; --line:#3d4750; --text:#eeeeee; --muted:#9da7b0; --green:#70ff91; --yellow:#ffd86b; --red:#ff7373; --blue:#6fb8ff; } *{ box-sizing:border-box; } html, body{ margin:0; padding:0; background:var(--bg); color:var(--text); font-family:Arial,Helvetica,sans-serif; } body{ min-height:100vh; } header{ position:sticky; top:0; z-index:2000; background:#171b20; border-bottom:1px solid #46505a; padding:10px 12px; } header h1{ margin:0; font-size:20px; line-height:1.2; } .headerSub{ margin-top:4px; color:var(--muted); font-size:11px; } main{ width:100%; max-width:1550px; margin:auto; padding:8px; } .grid{ display:grid; grid-template-columns: repeat(auto-fit,minmax(300px,1fr)); gap:8px; } .card{ background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px; box-shadow:0 2px 8px #0007; } .wide{ grid-column:1/-1; } .card h2{ margin:0 0 8px; font-size:17px; } .card h3{ margin:6px 0; font-size:14px; } input, select, button, textarea{ width:100%; min-height:36px; margin:3px 0; padding:8px; border-radius:7px; border:1px solid #4b5660; background:#0e1114; color:#fff; font-size:14px; } textarea{ min-height:170px; resize:vertical; font-family:monospace; } button{ background:#29343e; cursor:pointer; font-weight:bold; } button:hover{ background:#374651; } button:active{ transform:translateY(1px); } .row{ display:grid; grid-template-columns:1fr 1fr; gap:6px; } .three{ display:grid; grid-template-columns: repeat(3,1fr); gap:6px; } .status{ background:#0e1114; border:1px solid #303940; border-radius:7px; padding:8px; margin-top:5px; min-height:32px; font-size:12px; white-space:pre-wrap; } .ok{ color:var(--green); } .warn{ color:var(--yellow); } .err{ color:var(--red); } .info{ color:var(--blue); } .small{ font-size:11px; color:var(--muted); } .big{ font-size:22px; font-weight:bold; } .scroll{ max-height:360px; overflow:auto; } #map{ width:100%; height:500px; } border-radius:9px; border:1px solid #46515b; overflow:hidden; } table{ width:100%; border-collapse:collapse; font-size:11px; } th, td{ border:1px solid #414a52; padding:5px; text-align:left; vertical-align:top; } th{ background:#293139; position:sticky; top:0; z-index:2; } .pill{ display:inline-block; padding:4px 8px; margin:2px; border-radius:12px; background:#303b44; font-size:11px; } .result{ background:#151a1e; border:1px solid #343d44; border-radius:7px; margin:4px 0; padding:7px; } .result b{ font-size:14px; } } .metric{ display:grid; grid-template-columns:1fr 1fr; gap:4px; margin-top:5px; } .metric div{ background:#111519; border-radius:6px; padding:5px; } @media(max-width:600px){ .row, .three{ grid-template-columns:1fr; } #map{ height:430px; } header h1{ font-size:17px; } } } } </style> </head> <body> <header> <h1> 🚍 KÖZLEKEDÉS ATTILA V10.1 FIX5 </h1> <div class="headerSub"> BKV/BKK • GTFS MULTI • GPS • INDULÁSOK • JÁRMŰMOTOR • VÁLKALI MOTOR • 5 KP EXCEL </div> </header> <main> <div class="grid"> <!-- ========================================================== --> <!--- < BKK KUL-CS ======================================================= --> <section class="card"> <h2>🔑 BKK REALTIME kerület KULCS</h2> <div class="small"> A kulcs. </div> <input id="bkkApiKey" type="password" autocomplete="off" placeholder="BKK API kulcs"> <div class="row"> <button onclick="saveBkkKey()"> 💾 KULCS MENTÉSE </button> <button onclick="loadBkkKey()"> <button onclick="loadBkkKey()"> <button </ton>TÖL id="bkkKeyStatus" class="status"> Kulcs: nincs betöltve </div> </section> <!-- ============================================================= GT --> <! ======================================================= --> <section class="card"> <h2>📦 GTFS MULTI ZIP BETÖLTŐ</h2> <div class="small egyszerre több GT.</div> <input id="gtfsFiles" type="file" accept=".zip" multiple> <button onclick="loadMultipleGtfs()"> 📥 GTFS ZIP(EK) BETÖLTÉSE </button> <div id="gtfsStatus" class="status"> GTFS: nincs betöltve </div> </section> <!-- ========================================================= --> <!-- GPS --> <!-- ========================================================= --> <section class="card"> <h2>📍 GPS / HELYZET</h2> <button onclick="startGps()"> 📡 GPS INDÍTÁSA </button> <button onclick="refreshGps()"> 🔄 GPS FRISSÍTÉSE </button> <div id="gpsStatus" class="status"> GPS: nincs adat </div> </section> <!-- ========================================================= --> <!-- MEGÁLLÓ KERESŐ --> <!-- ========================================================= --> <section class="card"> <h2>🔎 OKOS MEGÁLLÓKERESŐ</h2> <input id="stopSearch" placeholder="Megállónév / GTFS stop_id / stop_code"> <button onclick="searchStops()"> 🔎 KERESÉS </button> <div id="stopResults" class="scroll"> Nincs keresés. </div> </section> <!-- ========================================================= --> <!-- TÉRKÉP --> <!-- ========================================================= --> <section class="card wide"> <h2> 🗺️ 5 KM-ES TÉRKÉP </h2> <div id="map"> </div> <div class="row"> <button onclick="showStopsWithin5km()"> 📍 MEGÁLLÓK 5 KM-EN BELÜL </button> <button onclick="clearMapObjects()"> 🧹 TÉRKÉP TISZTÍTÁSA </button> </div> <div id="mapStatus" class="status"> Térkép: GPS-re vár. </div> </section> <!-- ========================================================= --> <!-- KIVÁLASZTOTT MEGÁLLÓ --> <!-- ========================================================= --> <section class="card wide"> <h2> 🚏 KIVÁLASZTOTT MEGÁLLÓ </h2> <input id="selectedStop" placeholder="Megállónév vagy GTFS stop_id"> <div class="row"> <button onclick="selectStopByInput()"> 🚏 MEGÁLLÓ BETÖLTÉSE </button> <button onclick="loadDepartures()"> ⏱️ INDULÁSOK </button> </div> <div id="selectedStopStatus" class="status"> Nincs kiválasztott megálló. </div> </section> <!-- ========================================================= --> <!-- INDULÁSOK --> <!-- ========================================================= --> <section class="card wide"> <h2> ⏱️ INDULÁSI IDŐK — GTFS + REALTIME ELŐKÉSZÍTÉS </h2> <div class="small"> A GTFS menetrendi indulások helyben a betöltött GTFS-ből kerülnek kiszámításra. A realtime rész külön motorban fut, hogy egy realtime hiba ne állítsa le a GTFS motort. </div> <div class="row"> <button onclick="loadDepartures()"> 🚍 GTFS INDULÁSOK </button> <button onclick="startRealtimeRefresh()"> 🔴 REALTIME FRISSÍTÉS </button> </div> <button onclick="stopRealtimeRefresh()"> ⏹️ REALTIME LEÁLLÍTÁSA </button> <div id="departureStatus" class="status"> Nincs indulási adat. </div> <div id="departures" class="scroll"> </div> </section> <!-- ========================================================= --> <!-- JÁRMŰMOTOR --> <!-- ========================================================= --> <section class="card wide"> <h2> 🚌 JÁRMŰMOTOR </h2> <div class="small"> Kereshető járat, járműazonosító, rendszám, forgalmi, fordajelzés és járműtípus. Ha a realtime feed nem ad ilyen adatot: „nincs adat” jelenik meg. </div> <div class="three"> <input id="vehicleSearch" placeholder="járat / jármű / rendszám"> <button onclick="renderVehicles()"> 🔄 JÁRMŰLISTA </button> <button onclick="startVehicleRefresh()"> ⏱️ AUTO 15 MP </button> </div> <button onclick="stopVehicleRefresh()"> ⏹️ AUTO LEÁLLÍTÁSA </button> <div id="vehicleStatus" class="status"> Járműmotor: várakozik. </div> <div id="vehicles" class="scroll"> </div> </section> <!-- ========================================================= --> <!-- KALKULÁTOROK --> <!-- ========================================================= --> <section class="card wide"> <h2> 🧮 6 KALKULÁTOR </h2> <div class="grid"> <!-- 1 --> <div class="card"> <h3> 1️⃣ ÁTLAGSEBESSÉG </h3> <input id="calc1Km" type="number" step="any" placeholder="Távolság km"> <input id="calc1Min" type="number" step="any" placeholder="Idő perc"> <button onclick="calculator1()"> SZÁMOL </button> <div id="calc1Result" class="status"> - </div> </div> <!-- 2 --> <div class="card"> <h3> 2️⃣ MENETIDŐ </h3> <input id="calc2Km" type="number" step="any" placeholder="Távolság km"> <input id="calc2Speed" type="number" step="any" placeholder="Sebesség km/h"> <button onclick="calculator2()"> SZÁMOL </button> <div id="calc2Result" class="status"> - </div> </div> <!-- 3 --> <div class="card"> <h3> 3️⃣ MEGTETT TÁV </h3> <input id="calc3Speed" type="number" step="any" placeholder="Sebesség km/h"> <input id="calc3Min" type="number" step="any" placeholder="Idő perc"> <button onclick="calculator3()"> SZÁMOL </button> <div id="calc3Result" class="status"> - </div> </div> <!-- 4 --> <div class="card"> <h3> 4️⃣ KÉSÉS / SIETÉS </h3> <input id="calc4Plan" placeholder="Tervezett HH:MM:SS"> <input id="calc4Real" placeholder="Valós HH:MM:SS"> <button onclick="calculator4()"> SZÁMOL </button> <div id="calc4Result" class="status"> - </div> </div> <!-- 5 --> <div class="card"> <h3> 5️⃣ LÉGVONALBELI TÁVOLSÁG </h3> <input id="calc5A" placeholder="lat1,lon1"> <input id="calc5B" placeholder="lat2,lon2"> <button onclick="calculator5()"> SZÁMOL </button> <div id="calc5Result" class="status"> - </div> </div> <!-- 6 --> <div class="card"> <h3> 6️⃣ MENETIDŐ / KM </h3> <input id="calc6Km" type="number" step="any" placeholder="Összes km"> <input id="calc6Min" type="number" step="any" placeholder="Összes perc"> <button onclick="calculator6()"> SZÁMOL </button> <div id="calc6Result" class="status"> - </div> </div> </div> </section> <!-- ========================================================= --> <!-- VONALI EXCEL --> <!-- ========================================================= --> <section class="card wide"> <h2> 📊 VONALI EXCEL-TÁBLÁZAT GENERÁTOR </h2> <div class="small"> A bemeneti adat lehet például: Megálló ; Irány ; Távolság század-km A motor kiszámítja:• szakasz km • összes km • szakasz menetidő • megállási idő • összes menetidő • vonal • jármű/típus </div> <div class="row"> <input id="excelRoute" placeholder="Vonal / viszonylat pl. 243"> <input id="excelVehicle" placeholder="Jármű / típus"> </div> <div class="row"> <input id="excelSpeed" type="number" step="any" value="30" placeholder="Átlagsebesség km/h"> <input id="excelDwell" type="number" step="any" value="20" placeholder="Megállási idő mp"> </div> <input id="excelInput" type="file" accept=".csv,.xlsx,.xls"> <button onclick="importLineExcel()"> 📥 CSV / XLSX BEOLVASÁSA </button> <textarea id="lineTableInput" placeholder="Megálló;Irány;Távolság század-km Nád utca;1;0 Kaszásdűlő;1;125 Békásmegyer;1;280"></textarea> <div class="three"> <button onclick="calculateLineTable()"> 🔎 ELLENŐRZÉS + SZÁMÍTÁS </button> <button onclick="exportLineXlsx()"> 📊 XLSX EXPORT </button> <button onclick="clearLineTable()"> 🧹 TÖRLÉS </button> </div> <div id="excelStatus" class="status"> Excel-motor: várakozik. </div> <div id="linePreview" class="scroll"> </div> </section> <!-- ========================================================= --> <!-- DIAGNOSZTIKA --> <!-- ========================================================= --> <section class="card wide"> <h2> 🧪 RENDSZERDIAGNOSZTIKA </h2> <button onclick="runDiagnostics()"> 🧪 DIAGNOSZTIKA FUTTATÁSA </button> <div id="diagnostics" class="status"> Nincs futtatva. </div> </section> </div> </main> <script> /* ============================================================ ATTILA KÖZLEKEDÉS — CORE ============================================================ */ const ATTILA = { DB_NAME: "AttilaKozlekedes_GTFS_V101_FIX5", DB_VERSION: 1, db: null, gtfs:{ stops:[], routes:[], trips:[], stop_times:[], calendar:[], calendar_dates:[] }, gps:{ active:false, lat:null, lon:null, accuracy:null }, map:{ instance:null, userMarker:null, radius:null, stopLayer:null, vehicleLayer:null }, selectedStop:null, vehicles:[], realtime:{ timer:null, vehicleTimer:null }, lineRows:[] }; /* ============================================================ RÖVID SEGÉDFÜGGVÉNY ============================================================ */ function $(id){ return document.getElementById(id); } /* ============================================================ HTML ESCAPE ============================================================ */ function escapeHtml(value){ return String(value ?? "") .replaceAll("&","&") .replaceAll("<","<") .replaceAll(">",">") .replaceAll('"',""") .replaceAll("'","'"); } /* ============================================================ BKK KULCS ============================================================ */ function saveBkkKey(){ const key = $("bkkApiKey").value.trim(); localStorage.setItem( "ATTILA_BKK_KEY", key ); $("bkkKeyStatus").innerHTML = key ? '<span class="ok">🔑 Kulcs helyben elmentve.</span>' : '<span class="warn">Nincs megadva kulcs.</span>'; } function loadBkkKey(){ const key = localStorage.getItem( "ATTILA_BKK_KEY" ) || ""; $("bkkApiKey").value = key; $("bkkKeyStatus").innerHTML = key ? '<span class="ok">🔑 Kulcs betöltve a helyi tárból.</span>' : '<span class="warn">Kulcs nincs elmentve.</span>'; } /* ============================================================ INDEXEDDB ============================================================ */ function openDatabase(){ return new Promise( (resolve,reject)=>{ const request = indexedDB.open( ATTILA.DB_NAME, ATTILA.DB_VERSION ); request.onupgradeneeded = event => { const db = event.target.result; if( !db.objectStoreNames .contains("datasets") ){ db.createObjectStore( "datasets", { keyPath:"id" } ); } }; request.onsuccess = event => { ATTILA.db = event.target.result; resolve( ATTILA.db ); }; request.onerror = () => { reject( request.error ); }; } ); } async function saveGtfsDatabase(){ if(!ATTILA.db) return; return new Promise( (resolve,reject)=>{ const tx = ATTILA.db.transaction( "datasets", "readwrite" ); const store = tx.objectStore( "adatkészletek" ); store.put({ id:"main", stops: ATTILA.gtfs.stops, routes: ATTILA.gtfs.routes, trips: ATTILA.gtfs.trips, stop_times: ATTILA.gtfs.stop_times, calendar: ATTILA.gtfs.calendar, calendar_dates: ATTILA.gtfs.calendar_dates }); tx.oncomplete = resolve; tx.onerror = () => reject( tx.error ); } ); } async function loadGtfsDatabase(){ if(!ATTILA.db) return null; return new Promise( (feloldás, elutasítás)=>{ const tx = ATTILA.db.transaction( "adatkészletek", "csak olvasható" ); const request = tx.objectStore( "adatkészletek" ).get("main"); request.onsuccess = () => { resolve( request.result || null ); }; request.onerror = () => elutasítás( request.error ); } ); } /* ================================================================ GTFS CSV ======================================================= */ function parseGtfsCsv(text){ if( typeof Papa === "undefined" ){ throw new Error( "PapaParse nem töltött be." ); } return Papa.parse( text, { header:true, skipEmptyLines:true, dynamicTyping:false } ).data; } /* ========================================================== GTFS ZIP BETÖLTÉS =========================================================== */ aszinkron függvény loadMultipleGtfs(){ const files = Array.from( $("gtfs Files); if(!files.length){ $("gtfsStatus").innerHTML = '<span class="warn">Válassz legalább egy GTFS ZIP fájlt.</span>'; visszatérés; } if( typeof JSZip === "undefined" ){ $("gtfsStatus").innerHTML = '<span class="err">JSZip nem töltött be.</span>'; visszatérés; } ATTILA.gtfs.stops=[]; ATTILA.gtfs.routes=[]; ATTILA.gtfs.trips=[]; ATTILA.gtfs.stop_times=[]; ATTILA.gtfs.calendar=[]; ATTILA.gtfs.calendar_dates=[]; $("gtfsStatus").textContent = "GTFS betöltés indul..."; try{ let sourceIndex = 0; for( const file of files ){ sourceIndex++; $("gtfsStatus").textContent = `GTFS ${sourceIndex}/${files.length}: ${file.name}`; const zip = await JSZip.loadAsync(fájl); const prefix = "SRC" + sourceIndex + "_" + Date.now().toString(36) + "_"; async function readFile(name){ const entry = zip.file(name); if(!entry) return []; const text = await entry.async( "text" ); return parseGtfsCsv( text ); } let stops = await readFile( "stops.txt" ); let routes = await readFile( "routes.txt" ); let trips = await readFile( "trips.txt" ); let stopTimes = await readFile( "stop_times.txt" ); let calendar = await readFile( "calendar.txt" ); let calendarDates = await readFile( "calendar_dates.txt" ); /* * FONTOS: * A több GTFS összeférésnél * a forrásazonosító kerül kerülésre * az ID-k elé. */ megállók = stops.map( sor => { const régiId = sor.megálló_id; return { ...sor, forrás_id: előtag, eredeti_megálló_id: régiId, megálló_id: előtag + régiId }; } ); útvonalak = routes.map( sor => { const régiId = sor.útvonal_id; return { ...sor, forrás_id: előtag, eredeti_útvonal_id: régiId, útvonal_id: előtag + régiId }; } ); trips = trips.map( sor => { const régiÚt = sor.útvonal_id; const régiÚtvonal = sor.útvonal_id; const régiSzolgáltatás = sor.szolgáltatás_id; return { ...sor, forrás_id: előtag, eredeti_útvonal_id: régiÚt, útvonal_id: előtag + régiÚt, útvonal_id: előtag + régiÚt, szolgáltatás_id: előtag + régiSzolgáltatás }; } ); stopTimes = stopTimes.map( sor => { return { ...sor, forrás_id: előtag, út_id: előtag + sor.út_id, stop_id: előtag + sor.stop_id }; } ); naptár = calendar.map( sor => { return { ...sor, forrás_id: előtag, szolgáltatás_id: előtag + sor.szolgáltatás_azonosító }; } ); calendarDates = calendarDates.map( sor => { return { ...sor, forrás_azonosító: előtag, szolgáltatás_azonosító: előtag + sor.szolgáltatás_azonosító }; } ); ATTILA.gtfs.stops.push( ...megállók ); ATTILA.gtfs.routes.push( ...útvonalak ); ATTILA.gtfs.trips.push( ...utak ); ATTILA.gtfs.stop_times.push( ...megállásiIdők ); ATTILA.gtfs.calendar.push( ...naptár ); ATTILA.gtfs.calendar_dates.push( ...naptárDátumok ); } await saveGtfsDatabase(); $("gtfsStatus").innerHTML = '<span class="ok">✅ GTFS BETÖLTÉS KÉSZ</span>\n' + `ZIP-ek: ${files.length}\n` + `Megállók: ${ATTILA.gtfs.stops.length}Útvonalak\n` +:` ${ATTILA.gtfs.routes.length}\n` + `Járatok: ${ATTILA.gtfs.trips.length}\n` + `Stop_times: ${ATTILA.gtfs.stop_times.length}\n` + `Naptár: $ `Naptári dátumok: ${ATTILA.gtfs.calendar_dates.length}`; runDiagnostics(); }catch(error){ console.error( error ); $("gtfsStatus").innerHTML = '<span class="err">❌ GTFS HIBA</span>\n' + escapeHtml(hiba.üzenet); } } /* ============================================================ GPS =========================================================== */ function startGps(){ if( !navigator.geolocation ){ $("gpsStatus") nem támogatja a weblap HTML =r'"> GPS-t.</span>'; visszatérés; } $("gpsStatus").textContent = "GPS: helymeghatározás folyamatában..."; navigator.geolocation.getCurrentPosition( position => { ATTILA.gps.active = true; ATTILA.gps.lat = position.coords.latitude; ATTILA.gps.lon = position.coords.longitude; ATTILA.gps.accuracy = position.coords.accuracy; updateGpsUI(); updateUserMarker(); showStopsWithin5km(); }, error => { ATTILA.gps.active = false; $("gpsStatus").innerHTML = '<span class="err">❌ GPS HIBA</span>\n' + escapeHtml( error.message ); }, { enableHighAccuracy:true, timeout:15000, maximumAge:10000 } ); } function refreshGps(){ startGps(); } function updateGpsUI(){ if( !ATTILA.gps.active ) return; } $("gpsStatus").innerHTML = '<span class="ok">📍 GPS 🟢 AKTÍV</span>\n' + `Szélesség: ${ATTILA.gps.lat.toFixed(8)} Hosszúság: ${ATTILA.gps.lon.toFixed(8)} Pontosság: ±${Math.round(ATTILA.gps.accuracy)} m`; } function updateUserMarker(){ if( !ATTILA.map.instance ) return; if( ATTILA.map.userMarker ){ ATTILA.map.instance .removeLayer( ATTILA.map.userMarker ); } ATTILA.map.userMarker = L.marker( [ ATTILA.gps.lat, ATTILA.gps.lon ] ) .addTo( ATTILA.map.instance ) .bindPopup( "📍 SAJÁT GPS HELYZET" ); if( ATTILA.map.radius ){ ATTILA.map.instance .removeLayer( ATTILA.map.radius ); } ATTILA.map.radius = L.circle([ATTILA.gps.lat, ATTILA.gps.lon], { radius:5000}) .addTo(ATTILA.map.instance); } /* ================================================================= HAVERSINE ============================================================== */ function haversineKm(lat1, lon1, lat2, lon2){ const R = 6371; const rad = Math.PI / 180; const dLat = (lat2-lat1) * rad; const dLon = (lon2-lon1) * rad; const a = Math.sin( dLat/2 ) * Math.sin( dLon/2 ) + Math.cos( lat1*rad ) * Math.cos( lat2*rad ) * Math.sin( dLon/2 ) * Math.sin( dLon/2 ); return 2 * R * Math.asin( Math.sqrt(a) ); } /* =========================================================== TÉRKÉP =========================================================== */ function initMap(){ ATTILA.map.példány = L.map( "térkép" ) 4, 9, 9 .9 . 11); L.tileLayer( "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { attribúció: "© OpenStreetMap közreműködők", maxZoom:19 } ) .addTo( ATTILA.map.instance ); ATTILA.map.stopLayer = L.layerGroup() .addTo( ATTILA.map.instance ); ATTILA.map.vehicleLayer = L.layerGroup() .addTo( ATTILA.map.instance ); } /* ========================================================== 5 km-ES MEGÁLLÓK =========================================================== */ function showStopsWithin5km(){ if( !ATTILA.gps.active ){ $("innerSta ="">span class="nnerSta) Előbb indíts GPS-t.</span>'; visszatérés; } if( !ATTILA.gtfs.stops.length ){ $("mapStatus").innerHTML = '<span class="warn">⚠️ Nincs betöltött GTFS megállóadat.</span>'; visszatérés; } ATTILA.map.stopLayer.clearLayers(); legyen szám = 0; for( const stop of ATTILA.gtfs.stops ){ const lat = Szám( stop.stop_lat ); const lon = Szám( stop.stop_lon ); if( !Number.isFinite(lat) || !Number.isFinite(lon) ) continue; const distance = haversineKm( ATTILA.gps.lat, ATTILA.gps.lon, lat, lon ); if( distance <= 5 ){ count++; const marker = L.circleMarker( [ lat, lon ], { radius:4 } ); marker.bindPopup( `<b>${escapeHtml( stop.stop_name )}</b><br>` + `GTFS ID: ${escapeHtml( stop.stop_id )}<br>` + `Koordináta: ${lat.toFixed(6)}, ${lon.toFixed(6)}<br>` + `Távolság: ${distance.toFixed(3)} km` ); marker.on( "click", () => { ATTILA.selectedStop = stop; $("selectedStop").value = stop.stop_name; $("selectedStopStatus").innerHTML = '<span class="ok">🚏 Megálló kiválasztva</span>\n' + `Név: ${stop.stop_name}\n` + `GTFS ID: ${stop.stop_id}\n` + `Távolság: ${distance.toFixed(3)} km`; } ); marker.addTo( ATTILA.map.stopLayer ); } } $("mapStatus").innerHTML = '<span class="ok">🗺️ 5 KM-ES KÖR AKTÍV</span>\n' + `GPS: ${ATTILA.gps.lat.toFixed(6)}, ${ATTILA.gps.lon.toFixed(6)}\n` + `Megállók 5 km-en belül: ${count}`; } /* ============================================================ TÉRKÉP TISZTÍTÁS ============================================================ */ function clearMapObjects(){ if( ATTILA.map.stopLayer ) ATTILA.map.stopLayer.clearLayers(); if( ATTILA.map.vehicleLayer ) ATTILA.map.vehicleLayer.clearLayers(); $("mapStatus").textContent = "Térképi megálló- és járműréteg törölve."; } /* ============================================================ STOP KERESÉS ============================================================ */ function findStop( query ){ const q = String( query || "" ) .trim() .toLowerCase(); if(!q) return null; let result = ATTILA.gtfs.stops.find( stop => String( stop.stop_id || "" ) .toLowerCase() === q ); if(result) return result; result = ATTILA.gtfs.stops.find( stop => String( stop.stop_code || "" ) .toLowerCase() === q ); if(result) return result; result = ATTILA.gtfs.stops.find( stop => String( stop.stop_name || "" ) .toLowerCase() === q ); if(eredmény) return eredmény; return ATTILA.gtfs.stops.find( stop => String( stop.stop_name || "" ) .toLowerCase() .includes(q) ); } /* ===================================================================== MEGÁLLÓKERESŐ ============================================================== */ function searchStops(){ const q = $("stopSearch") .value .trim() .toLowerCase(); if(!q){ $("stopResults").textContent = "Írja be a megállónevet vagy a GTFS ID-t."; return; } const matches = ATTILA.gtfs.stops .filter( stop => String( stop.stop_name || "" ) .toLowerCase() .includes(q) || String( stop.stop_id || "" ) .toLowerCase() .includes(q) || String( stop.stop_code || "" ) .toLowerCase() .includes(q) ) .slice( 0, 100 ); if(!matches.length){ $("stopResults").innerHTML = '<span class="warn">Nincs találat.</span>'; return; } } $("stopResults").innerHTML = matches .map( stop => { const lat = Number( stop.stop_lat ); const lon = Number( stop.stop_lon ); let distanceText = "nincs GPS"; if( ATTILA.gps.active && Number.isFinite(lat) && Number.isFinite(lon) ){ distanceText = haversineKm( ATTILA.gps.lat, ATTILA.gps.lon, lat, lon ).toFixed(3) + " km"; } return ` <div class="result"> <b> ${escapeHtml( stop.stop_name )} </b> <div class="small"> GTFS ID: ${escapeHtml( stop.stop_id )} <br> Stop kód: ${escapeHtml( stop.stop_code || "nincs adat" )} <br> Koordináta: ${ Szám.Véges(lat) ? lat.toFixed(6) : "nincs adat" }, ${ Number.isFinite(lon) ? lon.toFixed(6) : "nincs adat" } <br> Távolság:${distanceText} </div> <button onclick="chooseStop('${escapeHtml( stop.stop_id )}')"> 🚏 KIVÁLASZTOM </button> </div> `; } ) .join(""); } /* ============================================================ STOP KIVÁLASZTÁS ============================================================ */ function chooseStop( stopId ){ const stop = ATTILA.gtfs.stops.find( s => s.stop_id === stopId ); if(!stop) return; ATTILA.selectedStop = stop; $("selectedStop").value = stop.stop_name; $("selectedStopStatus").innerHTML = '<span class="ok">🚏 MEGÁLLÓ KIVÁLASZTVA</span>\n' + `Megálló: ${stop.stop_name}\n` + `GTFS ID: ${stop.stop_id}\n` + `Stop code: ${stop.stop_code || "nincs adat"}`; const lat = Number( stop.stop_lat ); const lon = Number( stop.stop_lon ); if( Number.isFinite(lat) && Number.isFinite(lon) ){ ATTILA.map.instance.setView( [ lat, lon ], 16 ); } loadDepartures(); } /* ============================================================ KIVÁLASZTOTT STOP INPUT ============================================================ */ function selectStopByInput(){ const stop = findStop( $("selectedStop").value ); if(!stop){ $("selectedStopStatus").innerHTML = '<span class="err">❌ A megálló nem található a betöltött GTFS-ben.</span>'; return; } chooseStop( stop.stop_id ); } /* ============================================================ IDŐ KEZELÉS ============================================================ */ function gtfsTimeToSeconds( value ){ if( !value ) return NaN; const p = String(value) .split(":") .map(Number); if( p.length !== 3 || p.some( x => !Number.isFinite(x) ) ) return NaN; return ( p[0] * 3600 + p[1] * 60 + p[2] ); } /* ============================================================ MAI NAP ============================================================ */ function getTodayName(){ const names = [ "sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday" ]; return names[ new Date() .getDay() ]; } /* ================================================================= GTFS AKTÍV SZOLGÁLTATÁS ========================================================= */ function getActiveServices(){ const today = new Date(); const date = today.getFullYear() + String( today.getMonth()+1 ).padStart(2,"0") + String( today.getDate() ).padStart(2,"0"); const day = getTodayName(); const active = new Set(); for( const row of ATTILA.gtfs.calendar ){ if( date < String( row.start_date || "" ) || date > String( row.end_date || "" ) ) continue; if( String( row[day] ) === "1" ){ active.add( row.service_id ); } } for( const row of ATTILA.gtfs.calendar_dates ){ if( String( row.date ) !== date ) continue; if( String( row.exception_type ) === "1" ){ active.add( row.service_id ); } if( String( row.exception_type ) === "2" ){ active.delete( row.service_id ); } } return active; } /* =============================================================== GTFS INDULÁSOK ======================================================== */ function buildGtfsDepartures( stop ){ const activeServices = getActiveServices(); const tripMap = new Map(); for( const trip of ATTILA.gtfs.trips ){ if( activeServices.size && !activeServices.has( trip.service_id ) ) continue; tripMap.set( trip.trip_id, trip ); } const routeMap = new Map(ATTILA.gtfs.routes.map(route => [route.route_id, route])); const now = new Date(); const currentSeconds = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds(); const result=[]; for( const row of ATTILA.gtfs.stop_times){ if( row.stop_id !== stop.stop_id ) continue; const departureSeconds = gtfsTimeToSeconds( row.departure_time ); if( !Number.isFinite(departureSeconds ) ) continue; /* * A GTFS-ben 24:xx * időpontokat elfogadjuk. */ if( departureSeconds < currentSeconds - 60 ) continue; if( departureSeconds > currentSeconds + 86400 ) continue; const trip = tripMap.get( sor.trip_id ); if(!trip) continue; const route = routeMap.get( trip.route_id ); result.push({ indulás: sor.indulási_idő, érkezés: }row.arrival_time, routeShort: route ?.route_short_name || "nincs adat", routeLong: route ?.route_long_name || "", tripId: trip.trip_id, headsign: trip.trip_headsign || "" }); } result.sort( (a,b) => gtfsTimeToSeconds( a.departure ) - gtfsTimeToSeconds( b.departure ) ); return result.slice( 0, 40 ); } /* ============================================================ INDULÁSOK KIJELZÉSE ============================================================ */ async function loadDepartures(){ let stop = ATTILA.selectedStop; if( !stop ){ stop = findStop( $("selectedStop").value ); } if(!stop){ $("departureStatus").innerHTML = '<span class="err">❌ Nincs kiválasztott megálló.</span>'; $("departures").innerHTML = ""; return; } ATTILA.selectedStop = stop; const departures = buildGtfsDepartures( stop ); $("departureStatus").innerHTML = '<span class="ok">🚍 GTFS INDULÁSI MOTOR OK</span>\n' + `Megálló: ${stop.stop_name}\n` + `GTFS ID: ${stop.stop_id}\n` + `Talált indulások: ${departures.length}`; if(!departures.length){ $("departures").innerHTML = '<div class="warn">Nincs következő GTFS-indulás a kiválasztott megállóban.</div>'; return; } $("departures").innerHTML = departures .map( row => ` <div class="result"> <span class="pill"> 🕒 ${escapeHtml( row.departure )} </span> <span class="pill"> 🚍 <b> ${escapeHtml( row.routeShort )} </b> </span> <span class="pill"> ${escapeHtml( row.headsign || "irány nincs adat" )} </span> <div class="small"> Érkezés: ${escapeHtml( row.arrival || "nincs adat" )} <br> Trip: ${escapeHtml( row.tripId )} </div> </div> ` ) .join(""); } /* ============================================================ REALTIME REFRESH ============================================================ */ function startRealtimeRefresh(){ if( ATTILA.realtime.timer ){ clearInterval( ATTILA.realtime.timer ); } loadDepartures(); ATTILA.realtime.timer = setInterval( () => { loadDepartures(); }, 15000 ); $("departureStatus").innerHTML += '\n<span class="info">🔴 15 mp-es frissítési ciklus aktív.</span>'; } function stopRealtimeRefresh(){ if( ATTILA.realtime.timer ){ clearInterval( ATTILA.realtime.timer ); ATTILA.realtime.timer = null; } $("departureStatus").innerHTML += '\n<span class="warn">⏹️ Realtime frissítés leállítva.</span>'; } /* ============================================================ JÁRMŰ MOTOR ============================================================ */ function renderVehicles(){ const filter = $("vehicleSearch") .value .trim() .toLowerCase(); const list = ATTILA.vehicles .filter( vehicle => { if(!filter) return true; return JSON.stringify( vehicle ) .toLowerCase() .includes( filter ); } ); $("vehicleStatus").innerHTML = '<span class="ok">🚌 JÁRMŰMOTOR</span>\n' + `Betöltött járművek: ${ATTILA.vehicles.length}\n` + `Szűrt találatok: ${list.length}`; if(!list.length){ $("vehicles").innerHTML = '<div class="warn">' + 'Nincs járműadat a jelenlegi adatforrásban.' + '<br><br>' + 'Ha a realtime feed nem szolgáltat járműpozíciót vagy ' + 'járműazonosítót, itt „nincs adat” jelenik meg.' + '</div>'; return; } $("vehicles").innerHTML = list .slice( 0, 200 ) .map( vehicle => ` <div class="result"> <b> 🚍 ${escapeHtml( vehicle.route_short_name || vehicle.route || "nincs adat" )} </b> <div class="metric"> <div> Jármű ID:<br> <b> ${escapeHtml( vehicle.vehicle_id || vehicle.id || "nincs adat" )} </b> </div> <div> Rendszám:<br> <b> ${escapeHtml( vehicle.license_plate || vehicle.plate || "nincs adat" )} </b> </div> <div> Forgalmi:<br> ${escapeHtml( vehicle.forgalmi || "nincs adat" )} </div> <div> Forda:<br> ${escapeHtml( vehicle.forda || "nincs adat" )} </div> <div> Típus:<br> ${escapeHtml( vehicle.vehicle_type || "nincs adat" )} </div> <div> Késés:<br> ${escapeHtml( vehicle.delay ?? "nincs adat" )} </div> </div> </div> ` ) .join(""); } /* ============================================================ JÁRMŰ AUTO ============================================================ */ function startVehicleRefresh(){ stopVehicleRefresh(); renderVehicles(); ATTILA.realtime.vehicleTimer = setInterval( () => { renderVehicles(); }, 15000 ); } function stopVehicleRefresh(){ if( ATTILA.realtime.vehicleTimer ){ clearInterval( ATTILA.realtime.vehicleTimer ); ATTILA.realtime.vehicleTimer = null; } } /* ============================================================ KALKULÁTOR SEGÉD ============================================================ */ function numberValue( id ){ return Number( $(id).value ); } /* ============================================================ KALKULÁTOR 1 ============================================================ */ function calculator1(){ const km = numberValue( "calc1Km" ); const min = numberValue( "calc1Min" ); if( !Number.isFinite(km) || !Number.isFinite(min) || min <= 0 ){ $("calc1Result").innerHTML = '<span class="err">Hibás adat.</span>'; return; } const speed = km / (min/60); $("calc1Result").innerHTML = '<span class="ok">' + speed.toFixed(2) + ' km/h' + '</span>'; } /* ================================================================== SZÁMÍTÓGÉP 2 ======================================================== */ function calculator2(){ const km = numberValue( "calc2Km" ); const speed = numberValue( "calc2Speed" ); if( !Number.isFinite(km) || !Number.isFinite(sebesség) || sebesség <= 0 ){ $("calc2Result").innerHTML = '<span class="err">Hibás adat.</span>'; return; } const perc = km / sebesség * 60; $("calc2Result").innerHTML = '<span class="ok">' + perc.toFixed(2) + ' perc</span>'; } /* ================================================================= SZÁMÍTÓGÉP 3 ====================================================== */ function calculator3(){ const speed = numberValue( "calc3Speed" ); const minutes = numberValue( "calc3Min" ); if( !Number.isFinite(speed) || !Number.isFinite(minutes) || speed < 0 || minutes < 0 ){ $("calc3Result").innerHTML = '<span class="err">Hibás adat.</span>'; return; } const km = speed * minutes / 60; $("calc3Result").innerHTML = '<span class="ok">' + km.toFixed(3) + ' km</span>'; } /* ================================================================== SZÁMÍTÁS 4 — KÉSÉS / SIETÉS ============================================================== */ function timeToSeconds( value ){ const p = String( value || "" ) .trim() .split(":") .map(Number); ha ( p.length !== 3 || p.valami ( x => !Number.isFinite(x) ) ) return NaN; return ( p[0]*3600 + p[1]*60 + p[2] ); } function formatDelay( másodperc ){ const sign = másodperc < 0 ? "-" : "+"; const absolute = Math.abs( Math.round( másodperc ) ); const perc = Math.floor( absolute/60 ); const sec = absolute % 60; return ( sign + String( perc ) .padStart( 2, "0" ) + ":" + String( sec ) .padStart( 2, "0" ) ); } function calculator4(){ const planned = timeToSeconds( $("calc4Plan").value ); const real = timeToSeconds( $("calc4Real").value ); if( !Szám.Véges(tervezett) || !Szám.Véges(valós) ){ $("calc4Result").innerHTML = '<span class="err">HH:MM:SS formátum szükséges.</span>'; visszatérés; } const késleltetés = valós - tervezett; hadd címke; if( késleltetés > 0 ){ label = "🔵 KÉSÉS"; }else if( késleltetés < 0 ){ label = "🔴 SIETÉS"; }else{ label = "🟢 PONTOS"; } $("calc4Result").innerHTML = `<b>${label}</b><br>` + `Eltérés: ${formatDelay( delay )}`; } /* =============================================================== SZÁMOLÓ 5 — LÉGVONAL ======================================================= */ function calculator5(){ const a = $("calc5A") .value .split(",") .map(Number); const b = $("calc5B") .value .split(",") .map(Number); if( a.length !== 2 || b.length !== 2 || a.valamilyen( x => !Number.isFinite(x) ) || b.valamilyen( x => !Number.isFinite(x) ) ){ $("calc5Result").innerHTML = '<span class="err">Többszörös: 47.4979,19.0402</span>'; return; } const km = haversineKm( a[0], a[1], b[0], b[1] ); $("calc5Result").innerHTML = '<span class="ok">' + km.toFixed(3) + ' km</span>'; } /* ================================================================= SZÁMÍTÓGÉP 6 ===================================================== */ function calculator6(){ const km = numberValue( "calc6Km" ); const minutes = numberValue( "calc6Min" ); if( !Number.isFinite(km) || !Number.isFinite(minutes) || km <= 0 || minutes < 0 ){ $("calc6Result").innerHTML = '<span class="err">Hibás adat.</span>'; return; } állandó sebesség = km / (perc/60); const minPerKm = perc / km; $("calc6Result").innerHTML = '<span class="ok">' + `Átlag: ${speed.toFixed(2)} km/h` + '<br>' + `Idő: ${minPerKm.toFixed(2)} perc/km` + '</span>'; } /* =========================================================== EXCEL IMPORT ========================================================== */ aszinkron függvény importLineExcel(){ const file = $("excelInput") .files[0]; if(!file){ $("excelStatus").innerHTML = '<span class="warn">Válassz CSV vagy XLSX fájlt.</span>'; visszatérés; } try{ const buffer = várja file.arrayBuffer(); const workbook = XLSX.read(puffer, { type:"array" } ); const sheet = workbook .Sheets[workbook.sheets ...SheetNames[0] ]; const rows = XLSX.utils.sheet_to_json( sheet, { header:1, defval:"" } ); $("lineTableInput").value = rows .map( row => row.join(";") ) .join("\n"); $("excelStatus").innerHTML = '<span class="ok">' + `📥 Beolvasás: ${rows.length} sor` + '</span>'; calculateLineTable(); }catch(error){ $("excelStatus").innerHTML = '<span class="err">❌ Excel beolvasási hiba:</span>\n' + escapeHtml( error.message ); } } /* ============================================================ VONALI TÁBLA PARSER =================================================================================================================================== */ függvény számítLineTable(){ const raw = $("lineTableInput") .value .trim(); if(!raw){ $("excelStatus").innerHTML = '<span class="warn">Nincs vonali adat.</span>'; visszatérés; } const rows = raw .split(/\r?\n/) .map( line => line.split( /[;\t]/ ) ); if( !rows.length ) return; let start = 0; const headerText = String( rows[0][0] || "" ) .toLowerCase(); if( headerText.includes( "megáll" ) || headerText.includes( "megáll" ) ){ start = 1; } const speed = Math.max( 1, Number( $("excelSpeed").value ) || 30 ); const dwell = Math.max( 0, Number( $("excelDwell").value ) || 0 ); const route = $("excelRoute") .value .trim(); const vehicle = $("excelVehicle") .value .trim(); const result=[]; legyen kumulatívKm = 0; legyen kumulatívpercek = 0; for( legyen i=kezdet; i<sorok.hossza; i++ ){ const sor = sorok[i]; const stopName = String( row[0] || "" ) .trim(); if(!stopName) folytatódik; const irány = String( sor[1] || "" ) .trim(); const százKm = Szám( String( row[2] || "" ) .replace( ",", "." ) ); if( !Szám.Véges( százKm ) ) folytatódik; const szakaszKm = százKm / 100; /* * Az első megálló * általában 0 km-ről indul. */ const ténylegesSzakaszKm = eredmény.hossz === 0 ? 0 :sectionKm; cumulativeKm += actualSectionKm; const driveMinutes = actualSectionKm / speed * 60; const dwellMinutes = result.length === 0 ? 0 : dwell / 60; cumulativeMinutes += driveMinutes + dwellMinutes; result.push({ "Vonal": route, "Irány": direction, "Megálló": stopName, "Távolság század-km": hundredKm, "Szakasz km": actualSectionKm, "Összes km": cumulativeKm, "Szakasz menetidő perc": driveMinutes, "Megállási idő mp": result.length === 0 ? 0 : dwell, "Összes idő perc": cumulativeMinutes, "Jármű/típus": vehicle }); } ATTILA.lineRows = result; if( !result.length ){ $("excelStatus").innerHTML = '<span class="err">Nem találtam értelmezhető sort.</span>'; $("linePreview").innerHTML = ""; return; } $("excelStatus").innerHTML = '<span class="ok">' + '📊 VONALI TÁBLA KÉSZ' + '</span>\n' + `Megállók: ${result.length}\n` + `Végső távolság: ${cumulativeKm.toFixed(3)} km\n` + `Becsült menetidő: ${cumulativeMinutes.toFixed(2)} perc`; renderLinePreview(); } /* ============================================================ VONALI ELŐNÉZET ============================================================ */ function renderLinePreview(){ const rows = ATTILA.lineRows; if( !rows || !rows.length ){ $("linePreview").innerHTML = ""; return; } const columns = Object.keys( rows[0] ); $("linePreview").innerHTML = '<table>' + '<thead>' + '<tr>' + columns .map( column => `<th>${escapeHtml( column )}</th>` ) .join("") + '</tr>' + '</thead>' + '<tbody>' + rows .slice( 0, 200 ) .map( row => '<tr>' + columns .map( column => { const value = row[ column ]; let output = value; if( typeof value === "number" ){ output = value.toFixed( 4 ); } return ( '<td>' + escapeHtml( output ) + '</td>' ); } ) .join("") + '</tr>' ) .join("") + '</tbody>' + '</table>'; } /* ============================================================ XLSX EXPORT ============================================================ */ function exportLineXlsx(){ if( !ATTILA.lineRows || !ATTILA.lineRows.length ){ calculateLineTable(); } if( !ATTILA.lineRows || !ATTILA.lineRows.length ){ $("excelStatus").innerHTML = '<span class="err">Nincs exportálható adat.</span>'; return; } const worksheet = XLSX.utils.json_to_sheet( ATTILA.lineRows ); const workbook = XLSX.utils.book_new(); XLSX.utils.book_append_sheet( workbook, worksheet, "Vonali adatok" ); let route = $("excelRoute") .value .trim(); if(!route) route = "VONALI_ADATOK"; route = route.replace( /[^a-z0-9_-]/gi, "_" ); XLSX.writeFile( workbook, `ATTILA_VONALI_${route}.xlsx` ); $("excelStatus").innerHTML += '\n<span class="ok">' + '📊 XLSX fájl elkészült.' + '</span>'; } /* ============================================================ VONALI TÁBLA TÖRLÉSE ============================================================ */ function clearLineTable(){ $("lineTableInput") .value = ""; $("linePreview") .innerHTML = ""; $("excelStatus") .textContent = "Excel-motor: várakozik."; ATTILA.lineRows=[]; } /* ============================================================ DIAGNOSZTIKA ============================================================ */ function runDiagnostics(){ const gtfs = ATTILA.gtfs; $("diagnostics").textContent = "🚍 ATTILA KÖZLEKEDÉS DIAGNOSZTIKA\n\n" + "HTML motor: OK\n" + "Leaflet: " + ( ATTILA.map.instance ? "OK" : "HIBA" ) + "\n" + "JSZip: " + ( typeof JSZip !== "undefined" ? "OK" : "HIBA" ) + "\n" + "PapaParse: " + ( typeof Papa !== "undefined" ? "OK" : "HIBA" ) + "\n" + "XLSX: " + ( typeof XLSX !== "undefined" ? "OK" : "HIBA" ) + "\n\n" + "GTFS megállók: " + gtfs.stops.length + "\n" + "GTFS útvonalak: " + gtfs.routes.length + "\n" + "GTFS járatok: " + gtfs.trips.length + "\n" + "GTFS stop_times: " + gtfs.stop_times.length + "\n\n" + "GPS: " + ( ATTILA.gps.active ? "AKTÍV" : "nincs" ) + "\n" + "BKK kulcs: " + ( localStorage.getItem( "ATTILA_BKK_KEY" ) ? "helyben tárolva" : "nincs" ); } /* ============================================================ INDÍTÁS ============================================================ */ async function initializeAttila(){ try{ await openDatabase(); const saved = await loadGtfsDatabase(); if(saved){ ATTILA.gtfs.stops = saved.stops || []; ATTILA.gtfs.routes = saved.routes || []; ATTILA.gtfs.trips = saved.trips || []; ATTILA.gtfs.stop_times = saved.stop_times || []; ATTILA.gtfs.calendar = saved.calendar || []; ATTILA.gtfs.calendar_dates = saved.calendar_dates || []; $("gtfsStatus").innerHTML = '<span class="ok">💾 GTFS HELYI TÁRBÓL BETÖLTVE</span>\n' + `Megállók: ${ATTILA.gtfs.stops.length}\n` + `Útvonalak: ${ATTILA.gtfs.routes.length}\n` + `Járatok: ${ATTILA.gtfs.trips.length}\n` + `Stop_times: ${ATTILA.gtfs.stop_times.length}`; } }catch(error){ console.warn( "IndexedDB:", error ); } loadBkkKey(); initMap(); runDiagnostics(); } initializeAttila(); </script> ``` **Ez az 1/2 rész vége.** A **2/2 közvetlenül folytatandó rész** les"nincs" ); } /* ============================================================ INDÍTÁS ============================================================ */ async function initializeAttila(){ try{ await openDatabase(); const saved = await loadGtfsDatabase(); if(saved){ ATTILA.gtfs.stops = saved.stops || []; ATTILA.gtfs.routes = saved.routes || []; ATTILA.gtfs.trips = saved.trips || []; ATTILA.gtfs.stop_times = saved.stop_times || []; ATTILA.gtfs.calendar = saved.calendar || []; ATTILA.gtfs.calendar_dates = saved.calendar_dates || []; $("gtfsStatus").innerHTML = '<span class="ok">💾 GTFS HELYI TÁRBÓL BETÖLTVE</span>\n' + `Megállók: ${ATTILA.gtfs.stops.length}\n` + `Útvonalak: ${ATTILA.gtfs.routes.length}\n` + `Járatok: ${ATTILA.gtfs.trips.length}\n` + `Stop_times: ${ATTILA.gtfs.stop_times.length}`; } }catch(error){ console.warn( "IndexedDB:", error ); } loadBkkKey(); initMap(); runDiagnostics(); } initializeAttila(); </script> ``` **Ez az 1/2 rész vége.** A **2/2 közvetlenül folytatandó rész** les"nincs" ); } /* ============================================================ INDÍTÁS ============================================================ */ async function initializeAttila(){ try{ await openDatabase(); const saved = await loadGtfsDatabase(); if(saved){ ATTILA.gtfs.stops = saved.stops || []; ATTILA.gtfs.routes = saved.routes || []; ATTILA.gtfs.trips = saved.trips || []; ATTILA.gtfs.stop_times = saved.stop_times || []; ATTILA.gtfs.calendar = saved.calendar || []; ATTILA.gtfs.calendar_dates = saved.calendar_dates || []; $("gtfsStatus").innerHTML = '<span class="ok">💾 GTFS HELYI TÁRBÓL BETÖLTVE</span>\n' + `Megállók: ${ATTILA.gtfs.stops.length}\n` + `Útvonalak: ${ATTILA.gtfs.routes.length}\n` + `Járatok: ${ATTILA.gtfs.trips.length}\n` + `Stop_times: ${ATTILA.gtfs.stop_times.length}`; } }catch(error){ console.warn( "IndexedDB:", error ); } loadBkkKey(); initMap(); runDiagnostics(); } initializeAttila(); </script> ```
-      ============================================================ ATTILA KÖZLEKEDÉS V10.1 FIX5 2/2 RÉSZ ------------------------------------------------------------ KIEGÉSZÍTŐ MOTOROK: - GTFS indexelés - gyors megállókeresés - 28 órás GTFS időkezelés - járat/vonal összekapcsolás - 5 km-es járműtérkép - realtime JSON/GTFS-RT előkészítés - késés / sietés számítás - járműadat normalizálás - vonali Excel automatikus számítás - diagnosztika - memória-kímélő feldolgozás ============================================================ */ /* ============================================================ 1. GTFS GYORS INDEXEK ============================================================ */ ATTILA.indexes = { stopById: new Map(), stopByName: new Map(), routeById: new Map(), tripById: new Map(), stopTimesByStop: new Map(), stopTimesByTrip: new Map() }; /* ============================================================ INDEX ÉPÍTÉS ============================================================ */ function rebuildGtfsIndexes(){ const idx = ATTILA.indexes; idx.stopById.clear(); idx.stopByName.clear(); idx.routeById.clear(); idx.tripById.clear(); idx.stopTimesByStop.clear(); idx.stopTimesByTrip.clear(); /* ----------------------------- MEGÁLLÓK ----------------------------- */ for( const stop of ATTILA.gtfs.stops ){ idx.stopById.set( String(stop.stop_id), stop ); const name = String( stop.stop_name || "" ) .trim() .toLowerCase(); if( !idx.stopByName.has(name) ){ idx.stopByName.set( name, [] ); } idx.stopByName .get(name) .push(stop); } /* ----------------------------- VONALAK ----------------------------- */ for( const route of ATTILA.gtfs.routes ){ idx.routeById.set( String(route.route_id), route ); } /* ----------------------------- JÁRATOK ----------------------------- */ for( const trip of ATTILA.gtfs.trips ){ idx.tripById.set( String(trip.trip_id), trip ); } /* ----------------------------- STOP TIMES ----------------------------- */ for( const row of ATTILA.gtfs.stop_times ){ const stopId = String( row.stop_id || "" ); const tripId = String( row.trip_id || "" ); if( !idx.stopTimesByStop .has(stopId) ){ idx.stopTimesByStop.set( stopId, [] ); } idx.stopTimesByStop .get(stopId) .push(row); if( !idx.stopTimesByTrip .has(tripId) ){ idx.stopTimesByTrip.set( tripId, [] ); } idx.stopTimesByTrip .get(tripId) .push(row); } /* * A nagy tömbök rendezése csak * szükség esetén történik. */ for( const rows of idx.stopTimesByStop.values() ){ rows.sort( (a,b) => gtfsTimeToSeconds( a.departure_time ) - gtfsTimeToSeconds( b.departure_time ) ); } $("diagnostics").innerHTML += "\n\n" + "⚡ GTFS INDEX:\n" + "Megálló ID index: " + idx.stopById.size + "\n" + "Megállónév index: " + idx.stopByName.size + "\n" + "Vonal index: " + idx.routeById.size + "\n" + "Járat index: " + idx.tripById.size + "\n" + "Stop-time stop index: " + idx.stopTimesByStop.size; } /* ============================================================ 2. JAVÍTOTT GTFS IDŐ ------------------------------------------------------------ FONTOS: A GTFS megengedi például: 24:15:00 25:30:00 26:05:00 Ezek NEM hibás időpontok. ============================================================ */ function normalizeGtfsTime( value ){ const sec = gtfsTimeToSeconds( value ); if( !Number.isFinite(sec) ){ return { seconds:NaN, display:"nincs adat" }; } let day = Math.floor( sec / 86400 ); let remain = sec % 86400; const hour = Math.floor( remain / 3600 ); remain %= 3600; const minute = Math.floor( remain / 60 ); const second = remain % 60; return { seconds:sec, day:day, display: String( day * 24 + hour ).padStart( 2, "0" ) + ":" + String( minute ).padStart( 2, "0" ) + ":" + String( second ).padStart( 2, "0" ) }; } /* ============================================================ 3. KÖVETKEZŐ INDULÁS — GYORS INDEXBŐL ============================================================ */ function getFastDepartures( stopId, limit = 30 ){ const rows = ATTILA.indexes .stopTimesByStop .get( String(stopId) ) || []; if( !rows.length ) return []; const now = new Date(); const current = now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds(); const trips = ATTILA.indexes .tripById; const routes = ATTILA.indexes .routeById; const output=[]; for( const row of rows ){ const sec = gtfsTimeToSeconds( row.departure_time ); if( !Szám.Véges(sec) ) folytatódik; /* * Normál napi idő. * * Ha a járat 24:00 után van, * azt is megőrizzük. */ if( sec < current ) folytatódik; const trip = trips.get( String( row.trip_id ) ); if(!trip) tovább; const route = routes.get( String( trip.route_id ) ); output.push({ time: normalizeGtfsTime( row.departure_time ).display, seconds: sec, route: route ?.route_short_name || "nincs adat", routeLong: route ?.route_long_name || "nincs adat", headsign: trip.trip_headsign || "nincs adat", tripId: trip.trip_id, stopSequence: row.stop_sequence || "", pickup: row.pickup_type || "", dropoff: row.drop_off_type || "" }); if( output.length >= limit ) break; } return output; } /* =========================================================== 4. 28 INDULÁSI ÓRÁS PANEL ========================================================== */ függvény render28ÓraIndulás(){ const stop = ATTILA.selectedStop; if(!stop){ $("departures").innerHTML = '<div class="warn">' + 'Nincs kiválasztott megálló.' + '</div>'; visszatérés; } const rows = getFastDepartures( stop.stop_id, 40 ); if( !rows.length ){ $("departures").innerHTML = '<div class="warn">' + 'Nincs további indulás.' + '</div>'; return; } $("departures").innerHTML = rows.map( (row,index) => { return ` <div class="result"> <span class="pill"> ${index+1}. </span> <span class="pill"> 🕒 <b> ${escapeHtml( row.time )} </b> </span> <span class="pill"> 🚍 <b> ${escapeHtml( row.route )} </b> </span> <span class="pill"> ${escapeHtml( row.headsign )} </span> <div class="small"> Vonal: ${escapeHtml( row.routeLong )} <br> Trip: ${escapeHtml( row.tripId )} <br> Stop sequence: ${escapeHtml( row.stopSequence )} </div> </div> `; } ) .join(""); } /* ============================================================ 5. A RÉGI INDULÁSI MOTOR FELÜLÍRÁSA ============================================================ */ const oldLoadDepartures = loadDepartures; loadDepartures = async function(){ let stop = ATTILA.selectedStop; if(!stop){ stop = findStop( $("selectedStop").value ); } if(!stop){ $("departureStatus").innerHTML = '<span class="err">' + '❌ Nincs kiválasztott megálló.' + '</span>'; $("departures").innerHTML = ""; return; } ATTILA.selectedStop = stop; /* * Először indexből. * Ez lényegesen gyorsabb nagy * GTFS állomány esetén. */ if( ATTILA.indexes .stopTimesByStop .size ){ render28HourDepartures(); const count = ( ATTILA.indexes .stopTimesByStop .get( String( stop.stop_id ) ) || [] ).length; $("departureStatus").innerHTML = '<span class="ok">' + '🚍 GTFS INDULÁSI MOTOR OK' + '</span>\n' + `Megálló: ${escapeHtml( stop.stop_name )}\n` + `GTFS ID: ${escapeHtml( stop.stop_id )}\n` + `Megálló stop_times: ${count}`; return; } /* * Ha nincs index, * a korábbi motor használata. */ await oldLoadDepartures(); }; /* ============================================================ 6. JÁRMŰ ADAT NORMALIZÁLÓ ============================================================ */ function normalizeVehicle( raw ){ if(!raw) return null; const position = raw.position || raw.vehicle_position || raw; const lat = Number( position.latitude ?? position.lat ?? raw.latitude ?? raw.lat ); const lon = Number( position.longitude ?? position.lon ?? raw.longitude ?? raw.lon ); const vehicle = raw.vehicle || raw; const trip = raw.trip || raw; const route = raw.route || raw; const delay = Number( raw.delay ?? raw.timestamp_delay ?? raw.departure_delay ?? position.delay ); return { vehicle_id: vehicle.id ?? vehicle.vehicle_id ?? raw.vehicle_id ?? raw.id ?? "nincs adat", license_plate: vehicle.license_plate ?? vehicle.plate ?? raw.license_plate ?? raw.plate ?? "nincs adat", forgalmi: raw.forgalmi ?? vehicle.forgalmi ?? "nincs adat", forda: raw.forda ?? vehicle.forda ?? "nincs adat", vehicle_type: vehicle.vehicle_type ?? vehicle.type ?? raw.vehicle_type ?? "nincs adat", route_short_name: route.route_short_name ?? raw.route_short_name ?? raw.route ?? "nincs adat", route_id: trip.route_id ?? raw.route_id ?? "nincs adat", trip_id: trip.trip_id ?? raw.trip_id ?? "nincs adat", headsign: trip.trip_headsign ?? raw.headsign ?? "nincs adat", lat: Number.isFinite(lat) ? lat : null, lon: Number.isFinite(lon) ? lon : null, delay: Number.isFinite(delay) ? delay : null, timestamp: raw.timestamp ?? null }; } /* ============================================================ 7. JÁRMŰ BETÖLTÉS KÜLSŐ JSONBÓL ------------------------------------------------------------ Ezt a funkciót a tényleges realtime feedhez lehet kötni. ============================================================ */ async function importVehicleJsonFile(){ const input = $("vehicleJsonFile"); if( !input || !input.files.length ){ alert( "Nincs kiválasztott JSON fájl." ); return; } try{ const text = await input.files[0] .text(); const data = JSON.parse( text ); let source = Array.isArray(data) ? data : ( data.vehicles || data.entity || data.data || [] ); ATTILA.vehicles = source .map( normalizeVehicle ) .filter(Boolean); renderVehicles(); }catch(error){ $("vehicleStatus").innerHTML = '<span class="err">' + '❌ Jármű JSON hiba: ' + escapeHtml( error.message ) + '</span>'; } } /* ============================================================ 8. 5 KM-ES JÁRMŰTÉRKÉP ============================================================ */ function showVehiclesWithin5km(){ if( !ATTILA.map.instance ) return; if( !ATTILA.gps.active ){ $("vehicleStatus").innerHTML = '<span class="warn">' + 'GPS szükséges az 5 km-es járműkereséshez.' + '</span>'; return; } ATTILA.map.vehicleLayer .clearLayers(); let count = 0; for( const vehicle of ATTILA.vehicles ){ if( !Number.isFinite( vehicle.lat ) || !Number.isFinite( vehicle.lon ) ) continue; const distance = haversineKm( ATTILA.gps.lat, ATTILA.gps.lon, vehicle.lat, vehicle.lon ); if( distance > 5 ) continue; count++; const marker = L.circleMarker( [ vehicle.lat, vehicle.lon ], { radius:7 } ); marker.bindPopup( `<b>🚌 JÁRMŰ</b><br>` + `Jármű ID: ${escapeHtml( vehicle.vehicle_id )}<br>` + `Rendszám: ${escapeHtml( vehicle.license_plate )}<br>` + `Vonal: ${escapeHtml( vehicle.route_short_name )}<br>` + `Forgalmi: ${escapeHtml( vehicle.forgalmi )}<br>` + `Forda: ${escapeHtml( vehicle.forda )}<br>` + `Típus: ${escapeHtml( vehicle.vehicle_type )}<br>` + `Késés: ${ vehicle.delay === null ? "nincs adat" : vehicle.delay + " mp" }<br>` + `Távolság: ${distance.toFixed(3)} km` ); marker.addTo( ATTILA.map.vehicleLayer ); } $("mapStatus").innerHTML += `\n🚌 5 km-en belüli járművek: ${count}`; } /* ============================================================ 9. KÉSÉS SZÍNLOGIKA ============================================================ */ function delayState( seconds ){ if( !Number.isFinite( Number(seconds) ) ){ return { text:"NINCS ADAT", className:"warn" }; } const value = Number(seconds); if( value < -30 ){ return { text:"SIETÉS", className:"err" }; } if( value > 30 ){ return { text:"KÉSÉS", className:"info" }; } return { text:"PONTOS", className:"ok" }; } /* ============================================================ 10. REALTIME JSON NORMALIZÁLÁS ============================================================ */ function processRealtimeJson( data ){ if(!data) return; let list=[]; if( Array.isArray(data) ){ list = data; }else if( Array.isArray( data.vehicles ) ){ list = data.vehicles; }else if( Array.isArray( data.entity ) ){ list = data.entity; }else if( Array.isArray( data.data ) ){ list = data.data; } const normalized = list .map( normalizeVehicle ) .filter(Boolean); if( normalized.length ){ ATTILA.vehicles = normalized; renderVehicles(); showVehiclesWithin5km(); }else{ $("vehicleStatus").innerHTML = '<span class="warn">' + 'Realtime válasz érkezett, ' + 'de nem tartalmazott értelmezhető járműadatot.' + '</span>'; } } /* ============================================================ 11. REALTIME URL TESZT ============================================================ */ async function testRealtimeUrl(){ const input = $("realtimeUrl"); if(!input){ alert( "Realtime URL mező még nincs meg." ); return; } const url = input.value.trim(); if(!url){ alert( "Adj meg realtime URL-t." ); return; } $("vehicleStatus").textContent = "Realtime kapcsolat tesztelése..."; try{ const response = await fetch( url, { cache:"no-store" } ); if( !response.ok ){ throw new Error( `HTTP ${response.status}` ); } const contentType = response.headers .get( "content-type" ) || ""; if( contentType .includes( "json" ) ){ const data = await response.json(); processRealtimeJson( data ); }else{ /* * Ha protobuf érkezik, * a tényleges GTFS-RT parser * külön kapcsolható. */ const buffer = await response.arrayBuffer(); $("vehicleStatus").innerHTML = '<span class="ok">' + 'Realtime kapcsolat OK.' + '</span>\n' + `Kapott adat: ${buffer.byteLength} byte\n` + 'A válasz nem JSON, ezért ' + 'GTFS-RT protobuf parser szükséges.'; } }catch(error){ $("vehicleStatus").innerHTML = '<span class="err">' + '❌ REALTIME HIBA: ' + escapeHtml( error.message ) + '</span>\n\n' + 'Ez NEM állítja le a GTFS motort.'; } } /* ============================================================ 12. JÁRMŰ TÉRKÉP GOMB AUTOMATIKUSAN ============================================================ */ function createVehicleControls(){ const card = $("vehicles") ?.parentElement; if(!card) return; if( $("vehicleMapButton") ) return; const button = document.createElement( "button" ); button.id = "vehicleMapButton"; button.textContent = "🚌 JÁRMŰVEK 5 KM-EN BELÜL"; button.onclick = showVehiclesWithin5km; const status = $("vehicleStatus"); status.before( button ); } /* ==================================================================== 13. VALÓS IDEJŰ URL FELÜLET =========================================================== */ function createRealtimePanel(){ const card = $("vehicleStatus") ?.closest( ".card" ); if(!card) return; if( $("realtimeUrl") ) return; const title = document.createElement( "h3" ); title.textContent = "🔴 VALÓS IDEJŰ FORRÁS TESZT"; const input = document.createElement( "input" ); input.id = "realtimeUrl"; input.placeholder = "GTFS-RT / JSON valós idejű URL"; const button = document.createElement( "button" ); button.textContent = "🌐 VALÓS IDEJŰ URL TESZT"; button.onclick = testRealtimeUrl; const file = document.createElement( "input" ); file.type = "file"; file.accept = ".json,.txt"; file.id = "vehicleJsonFile"; const importButton = document.createElement( "button" ); importButton.textContent = "📥 JÁRMŰ JSON IMPORT"; importButton.onclick = importVehicleJsonFile; card.appendChild( title ); card.appendChild( input ); card.appendChild( button ); card.appendChild( file ); card.appendChild( importButton ); } /* ================================================================= 14. EXCEL SZÁZAD-KM SEGÉD ========================================================== */ function hundredKmToKm( value ){ const n = Number( String(value) .replace( ",", "." ) ); if( !Number.isFinite(n) ) return NaN; return n / 100; } /* ========================================================== 15. EXCEL AUTOMATIKUS SZAKASZ TÁV ------------------------------------------------------------ Ha a bemeneti adatok kumulatív század-km értékek: 0 125 280 410 távolság.0 távolság0. ============================================================ */ function convertCumulativeHundredKm( sorok ){ let előző = null; return sorok.map( sor => { const cumulative = Number( sor.távolságSzázKm ); let szakasz = 0; if( Szám.isFinite( cumulative ) ){ if( előző !== null ){ szakasz = cumulative - előző; } előző = cumulative; } return { ...sor, szakaszSzázKm: szakasz, szakaszKm: szakasz / 100, cumulativeKm: Number.isFinite( cumulative ) ? cumulative / 100 : null }; } ); } /* ============================================================ 16. VONALI MENETIDŐ KALKULÁCIÓ ============================================================ */ function calculateTravelMinutes( km, speed ){ const distance = Number(km); const average = Number(speed); if( !Number.isFinite( distance ) || !Number.isFinite( average ) || average <= 0 ){ return NaN; } return ( distance / average ) * 60; } /* ============================================================ 17. VONALI EXCEL 5 HIÁNYZÓ ADAT ------------------------------------------------------------ Az Excelből származó adatokhoz: 1. szakasz km 2. összes km 3. menetidő 4. megállási idő 5. összes idő automatikusan. ============================================================ */ function calculateFiveLineValues( previousKm, currentKm, speed, dwellSeconds ){ const sectionKm = Math.max( 0, currentKm - previousKm ); const driveMinutes = calculateTravelMinutes( sectionKm, speed ); const dwellMinutes = Number( dwellSeconds ) / 60; return { sectionKm: sectionKm, cumulativeKm: currentKm, driveMinutes: Number.isFinite( driveMinutes ) ? driveMinutes : 0, dwellMinutes: Number.isFinite( dwellMinutes ) ? dwellMinutes : 0, totalMinutes: ( Number.isFinite( driveMinutes ) ? driveMinutes : 0 ) + ( Number.isFinite( dwellMinutes ) ? dwellMinutes : 0 ) }; } /* ============================================================ 18. MEGÁLLÓ ADAT KIJELZŐ ============================================================ */ function showSelectedStopDetails(){ const stop = ATTILA.selectedStop; if(!stop) return; const lat = Number( stop.stop_lat ); const lon = Number( stop.stop_lon ); let distance = null; if( ATTILA.gps.active && Number.isFinite(lat) && Number.isFinite(lon) ){ distance = haversineKm( ATTILA.gps.lat, ATTILA.gps.lon, lat, lon ); } $("selectedStopStatus").innerHTML = '<span class="ok">🚏 MEGÁLLÓ ADATOK</span>\n' + `Név: ${escapeHtml( stop.stop_name )}\n` + `GTFS stop_id: ${escapeHtml( stop.stop_id )}\n` + `stop_code: ${escapeHtml( stop.stop_code || "nincs adat" )}\n` + `Latitude: ${ Number.isFinite(lat) ? lat.toFixed(6) :"nincs adat" }\n` + `Longitude: ${ Number.isFinite(lon) ? lon.toFixed(6) : "nincs adat" }\n` + `Távolság: ${ distance === null ? "nincs GPS" : distance.toFixed(3) + " km" }`; } /* ============================================================ 19. STOP KIVÁLASZTÁS JAVÍTÁSA ============================================================ */ const oldChooseStop = chooseStop; chooseStop = function( stopId ){ oldChooseStop( stopId ); showSelectedStopDetails(); }; /* ============================================================ 20. GPS FRISSÍTÉS UTÁN STOP TÁVOLSÁG ============================================================ */ const oldUpdateGpsUI = updateGpsUI; updateGpsUI = function(){ oldUpdateGpsUI(); if( ATTILA.selectedStop ){ showSelectedStopDetails(); } }; /* ============================================================ 21. MEMÓRIA-KÍMÉLŐ GTFS TÖMB ELLENŐRZÉS ============================================================ */ function memoryFriendlyStatus(){ const total = ATTILA.gtfs.stops.length + ATTILA.gtfs.routes.length + ATTILA.gtfs.trips.length + ATTILA.gtfs.stop_times.length; let mode = "NORMAL"; if( total > 3000000 ){ mode = "MEMÓRIA-KÍMÉLŐ"; } if( total > 6000000 ){ mode = "ERŐSEN MEMÓRIA-KÍMÉLŐ"; } return { records: total, mode: mode }; } /* ============================================================ 22. NAGY GTFS FIGYELMEZTETÉS ============================================================ */ function checkGtfsMemory(){ const info = memoryFriendlyStatus(); if( info.records > 3000000 ){ $("gtfsStatus").innerHTML += '\n\n<span class="warn">' + '⚠️ Nagy GTFS állomány érzékelve.' + '\n' + 'Memória-kímélő feldolgozás javasolt.' + '</span>'; } } /* ============================================================ 23. DIAGNOSZTIKA KIBŐVÍTÉS ============================================================ */ const oldDiagnostics = runDiagnostics; runDiagnostics = function(){ oldDiagnostics(); setTimeout( () => { if( typeof rebuildGtfsIndexes === "function" ){ rebuildGtfsIndexes(); } checkGtfsMemory(); createVehicleControls(); createRealtimePanel(); }, 100 ); }; /* ============================================================ 24.GTFS BETÖLTÉS UTÁNI INDEX =============================================================== */ const oldLoadMultipleGtfs = loadMultipleGtfs; loadMultipleGtfs = async function(){ await oldLoadMultipleGtfs(); if( ATTILA.gtfs.stops.length || ATTILA.gtfs.stop_times.length ){ rebuildGtfsIndexes(); checkGtfsMemory(); } }; /* =============================================================== 25. INDEXEK BETÖLTÉSE INDEXEDDB-BŐL ============================================================ */ async function rebuildAfterDatabaseLoad(){ if( ATTILA.gtfs.stops.length || ATTILA.gtfs.stop_times.length ){ rebuildGtfsIndexes(); showSelectedStopDetails(); } } /* =============================================================== 26. AUTOMATIKUS GPS-ES ORA ========================================================= */ ATTILA.gpsWatchId = null; function startGpsWatch(){ if( !navigator.geolocation ) return; if( ATTILA.gpsWatchId !== null ){ navigator.geolocation .clearWatch( ATTILA.gpsWatchId ); } ATTILA.gpsWatchId = navigator.geolocation.watchPosition( position => { ATTILA.gps.active = true; ATTILA.gps.lat = position.coords.latitude; ATTILA.gps.lon = position.coords.longitude; ATTILA.gps.accuracy = position.coords.accuracy; updateGpsUI(); updateUserMarker(); }, error => { console.warn( "GPS óra:", error ); }, { enableHighAccuracy:true, maximumAge:5000, timeout:15000 } ); Megjegyzés: Ez a kódrészlet valószínűleg egy grafikus karaktereket ábrázol, és a benne szereplő elemek (pl. fájlnevek, elérhetetlen karakterek) valószínűleg egy külső könyvtárból származnak. } /* ================================================================ 27. AUTOMATIKUS KERESÉS BEVITELI ========================================================= */ $("stopSearch") ?.addEventListener( "keydown", event => { if( event.key === "Enter" ){ searchStops(); } } ); $("selectedStop") ?.addEventListener( "keydown", event => { if( event.key === "Enter" ){ selectStopByInput(); } } ); $("vehicleSearch") ?.addEventListener( "keydown", event => { if( event.key === "Enter" ){ renderVehicles(); } } ); /* =========================================================== 28. GPS INDÍTÁS AUTOMATIKUSAN ------------------------------------------------------------ Nem azonnal a GPS-t: a felhasználó gombbal indítja. ============================================================= */ /* =========================================================== 29.MAPA ÚJRAIGAZÍTÁS ============================================================ */ function centerMapOnGps(){ if( !ATTILA.gps.active || !ATTILA.map.instance ) return; ATTILA.map.instance.setView( [ ATTILA.gps.lat, ATTILA.gps.lon ], 14 ); } /* ============================================================ 30. KÖZELI MEGÁLLÓK — 1 KM ============================================================ */ function getNearestStops( radiusKm=1, limit=20 ){ if( !ATTILA.gps.active ) return []; const result=[]; for( const stop of ATTILA.gtfs.stops ){ const lat = Number( stop.stop_lat ); const lon = Number( stop.stop_lon ); if( !Number.isFinite(lat) || !Number.isFinite(lon) ) continue; const distance = haversineKm( ATTILA.gps.lat, ATTILA.gps.lon, lat, lon ); if( distance <= radiusKm ){ result.push({ stop: stop, distance: distance }); } } result.sort( (a,b) => a.distance - b.distance ); return result.slice( 0, limit ); } /* ============================================================ 31. KÖVETKEZŐ KÖZELI MEGÁLLÓK ============================================================ */ function showNearestStops(){ const stops = getNearestStops( 1, 20 ); if(!stops.length){ $("stopResults").innerHTML = '<span class="warn">' + 'Nincs 1 km-en belüli megálló.' + '</span>'; return; } $("stopResults").innerHTML = stops .map( item => ` <div class="result"> <b> ${escapeHtml( item.stop.stop_name )} </b> <div class="small"> ${item.distance.toFixed(3)} km <br> GTFS: ${escapeHtml( item.stop.stop_id )} </div> <button onclick="chooseStop('${escapeHtml( item.stop.stop_id )}')"> 🚏 KIVÁLASZTOM </button> </div> ` ) .join(""); } /* ============================================================ 32. KÖZELI MEGÁLLÓ GOMB ============================================================ */ function createNearestStopButton(){ const target = $("stopResults"); if(!target) return; if( $("nearestStopButton") ) return; const button = document.createElement( "button" ); button.id = "nearestStopButton"; button.textContent = "📍 1 KM-EN BELÜLI MEGÁLLÓK"; button.onclick = showNearestStops; target.before( button ); } /* ============================================================ 33. EXCEL 5 ADATOK ELLENŐRZÉSE ============================================================ */ function validateLineRows(){ const rows = ATTILA.lineRows; if( !rows.length ) return false; const required = [ "Megálló", "Szakasz km", "Összes km", "Szakasz menetidő perc", "Megállási idő mp", "Összes idő perc" ]; return required.every( key => Object.prototype .hasOwnProperty.call( rows[0], key ) ); } /* ============================================================ 34. EXCEL VÉGELLENŐRZÉS ============================================================ */ function validateExcelOutput(){ if( !validateLineRows() ){ $("excelStatus").innerHTML = '<span class="err">' + '❌ A vonali táblában hiányzik valamelyik számított mező.' + '</span>'; return false; } $("excelStatus").innerHTML += '\n<span class="ok">' + '✅ Az 5 számított adat rendelkezésre áll.' + '</span>'; return true; } /* ============================================================ 35. EXPORT JAVÍTÁS ============================================================ */ const oldExportLineXlsx = exportLineXlsx; exportLineXlsx = function(){ if( !ATTILA.lineRows.length ){ calculateLineTable(); } if( !validateExcelOutput() ) return; oldExportLineXlsx(); }; /* ============================================================ 36. RENDSZER INDÍTÁSA ============================================================ */ setTimeout( () => { createNearestStopButton(); createVehicleControls(); createRealtimePanel(); rebuildAfterDatabaseLoad(); }, 500 ); /* ============================================================ 37. GPS WATCH GOMB ============================================================ */ function enableContinuousGps(){ startGpsWatch(); $("gpsStatus").innerHTML += '\n<span class="ok">' + '📡 Folyamatos GPS figyelés aktív.' + '</span>'; } /* ============================================================ 38. ÖSSZES KÖZELI OBJEKTUM ============================================================ */ function refreshNearbyObjects(){ if( !ATTILA.gps.active ){ $("mapStatus").innerHTML = '<span class="warn">' + 'GPS szükséges.' + '</span>'; return; } showStopsWithin5km(); showVehiclesWithin5km(); } /* ============================================================ 39. 5 KM-ES KÖR FRISSÍTÉS ============================================================ */ setInterval( () => { if( ATTILA.gps.active ){ updateUserMarker(); } }, 10000 ); /* ============================================================ 40. UTOLSÓ RENDSZERÁLLAPOT ============================================================ */ window.ATTILA = ATTILA; /* ============================================================ KÉSZ ============================================================ */ console.log( "🚍 ATTILA KÖZLEKEDÉS V10.1 FIX5 — 2/2 BETÖLTVE" ); console.log( "GTFS:", ATTILA.gtfs ); console.log( "GPS:", ATTILA.gps ); console.log( "Járműmotor:", ATTILA.vehicles ); </script> ``` ### ✅ Így áll össze A ké
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover">
+
+<title>🚍 KÖZLEKEDÉS ATTILA V10.1 FIX5</title>
+
+<!-- ============================================================
+     KÜLSŐ KÖNYVTÁRAK
+============================================================ -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.3/papaparse.min.js"></script>
+
+<link rel="stylesheet"
+      href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+<style>
+:root{
+  --bg:#10151c;
+  --card:#18212b;
+  --card2:#202c38;
+  --text:#f3f6f8;
+  --muted:#aeb9c4;
+  --accent:#42a5f5;
+  --green:#42d392;
+  --yellow:#ffd54f;
+  --red:#ff5252;
+  --purple:#b388ff;
+  --border:#334454;
+}
+
+*{
+  box-sizing:border-box;
+}
+
+html,
+body{
+  margin:0;
+  padding:0;
+  background:var(--bg);
+  color:var(--text);
+  font-family:Arial,Helvetica,sans-serif;
+}
+
+body{
+  min-height:100vh;
+}
+
+header{
+  padding:14px;
+  background:#0b1015;
+  border-bottom:1px solid var(--border);
+  position:sticky;
+  top:0;
+  z-index:1000;
+}
+
+h1{
+  margin:0;
+  font-size:20px;
+}
+
+h2{
+  margin:0 0 10px 0;
+  font-size:17px;
+}
+
+h3{
+  margin:12px 0 8px 0;
+  font-size:15px;
+}
+
+.subtitle{
+  margin-top:5px;
+  color:var(--muted);
+  font-size:12px;
+}
+
+main{
+  max-width:1500px;
+  margin:auto;
+  padding:10px;
+}
+
+.card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:12px;
+  padding:12px;
+  margin-bottom:10px;
+  box-shadow:0 3px 12px rgba(0,0,0,.2);
+}
+
+.row{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  align-items:center;
+}
+
+.col{
+  flex:1 1 220px;
+  min-width:0;
+}
+
+label{
+  display:block;
+  margin-bottom:4px;
+  color:var(--muted);
+  font-size:12px;
+}
+
+input,
+select,
+textarea,
+button{
+  font:inherit;
+}
+
+input,
+select,
+textarea{
+  width:100%;
+  background:#0d1319;
+  color:var(--text);
+  border:1px solid #40515f;
+  border-radius:8px;
+  padding:9px;
+  outline:none;
+}
+
+input:focus,
+select:focus,
+textarea:focus{
+  border-color:var(--accent);
+}
+
+button{
+  border:1px solid #466176;
+  background:#243442;
+  color:white;
+  border-radius:8px;
+  padding:9px 12px;
+  cursor:pointer;
+  margin:3px 2px;
+}
+
+button:hover{
+  background:#304858;
+}
+
+button.primary{
+  background:#1565c0;
+}
+
+button.green{
+  background:#176d4b;
+}
+
+button.red{
+  background:#7b2222;
+}
+
+button.yellow{
+  background:#765e00;
+}
+
+.status{
+  white-space:pre-wrap;
+  background:#0b1116;
+  border:1px solid #2f3e49;
+  border-radius:8px;
+  padding:9px;
+  margin-top:8px;
+  color:#dce6ed;
+  font-size:13px;
+  line-height:1.45;
+  min-height:35px;
+}
+
+.small{
+  font-size:12px;
+  color:var(--muted);
+}
+
+.ok{
+  color:var(--green);
+}
+
+.warn{
+  color:var(--yellow);
+}
+
+.err{
+  color:var(--red);
+}
+
+.info{
+  color:#64b5f6;
+}
+
+.departure{
+  display:grid;
+  grid-template-columns:50px 90px 90px 1fr;
+  gap:8px;
+  align-items:center;
+  padding:8px;
+  margin:4px 0;
+  background:var(--card2);
+  border-radius:8px;
+  border-left:4px solid var(--accent);
+}
+
+.departure-time{
+  font-weight:bold;
+  color:var(--yellow);
+}
+
+.departure-route{
+  font-weight:bold;
+  color:#64b5f6;
+}
+
+.vehicle{
+  background:var(--card2);
+  border:1px solid var(--border);
+  border-radius:9px;
+  padding:9px;
+  margin:5px 0;
+}
+
+.vehicle-title{
+  font-weight:bold;
+  margin-bottom:4px;
+}
+
+.calc{
+  background:#111920;
+  border:1px solid var(--border);
+  border-radius:9px;
+  padding:10px;
+  margin:6px 0;
+}
+
+.calc-title{
+  font-weight:bold;
+  margin-bottom:8px;
+}
+
+.result{
+  margin-top:7px;
+  padding:7px;
+  background:#0a1015;
+  border-radius:6px;
+  min-height:32px;
+  color:var(--green);
+  font-weight:bold;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:8px;
+  font-size:12px;
+}
+
+th,
+td{
+  border:1px solid #354754;
+  padding:6px;
+  text-align:left;
+}
+
+th{
+  background:#263642;
+}
+
+td{
+  background:#111920;
+}
+
+#map{
+  width:100%;
+  height:500px;
+  border-radius:10px;
+  overflow:hidden;
+  background:#222;
+}
+
+#excelPreview{
+  overflow:auto;
+  max-height:500px;
+}
+
+.progress{
+  height:10px;
+  background:#0b1116;
+  border-radius:10px;
+  overflow:hidden;
+  margin-top:8px;
+}
+
+.progressBar{
+  height:100%;
+  width:0%;
+  background:var(--accent);
+  transition:width .15s;
+}
+
+.stop-result{
+  background:#202c38;
+  border:1px solid #334454;
+  border-radius:8px;
+  padding:8px;
+  margin:5px 0;
+}
+
+.stop-result strong{
+  color:#fff;
+}
+
+@media(max-width:700px){
+  h1{
+    font-size:17px;
+  }
+
+  #map{
+    height:420px;
+  }
+
+  .departure{
+    grid-template-columns:35px 75px 65px 1fr;
+    font-size:12px;
+  }
+
+  button{
+    width:auto;
+  }
+}
+</style>
+</head>
+
+<body>
+
+<header>
+  <h1>🚍 KÖZLEKEDÉS ATTILA V10.1 FIX5</h1>
+  <div class="subtitle">
+    BKV/BKK • GTFS MULTI • GPS • INDULÁSOK • JÁRMŰMOTOR •
+    VALÓS IDEJŰ ADAT • 5 KM TÉRKÉP • 6 KALKULÁTOR • EXCEL
+  </div>
+</header>
+
+<main>
+
+<!-- ============================================================
+     BKK KULCS
+============================================================ -->
+
+<section class="card">
+
+<h2>🔑 BKK REALTIME KULCS</h2>
+
+<div class="row">
+
+  <div class="col">
+    <label for="bkkKey">
+      BKK REALTIME API kulcs
+    </label>
+
+    <input
+      id="bkkKey"
+      type="password"
+      autocomplete="off"
+      placeholder="A BKK kulcs helye">
+  </div>
+
+  <div>
+    <button
+      class="primary"
+      id="saveBkkKey">
+      💾 KULCS MENTÉSE
+    </button>
+  </div>
+
+</div>
+
+<div id="bkkKeyStatus" class="status">
+🔑 Kulcs: nincs betöltve
+</div>
+
+</section>
+
+
+<!-- ============================================================
+     GTFS MULTI
+============================================================ -->
+
+<section class="card">
+
+<h2>📦 GTFS MULTI ZIP BETÖLTŐ</h2>
+
+<div class="small">
+BKK / VOLÁN / MÁV / egyéb GTFS ZIP állományok.
+A nagy állományokat memória-kímélő feldolgozással kezeljük.
+</div>
+
+<div class="row">
+
+  <div class="col">
+
+    <label for="gtfsFiles">
+      GTFS ZIP(EK) BETÖLTÉSE
+    </label>
+
+    <input
+      id="gtfsFiles"
+      type="file"
+      accept=".zip"
+      multiple>
+
+  </div>
+
+  <div>
+    <button
+      id="loadGtfsButton"
+      class="primary">
+      📥 GTFS BETÖLTÉSE
+    </button>
+  </div>
+
+</div>
+
+<div class="progress">
+  <div
+    id="gtfsProgressBar"
+    class="progressBar">
+  </div>
+</div>
+
+<div id="gtfsStatus" class="status">
+📦 GTFS: nincs betöltve
+</div>
+
+</section>
+
+
+<!-- ============================================================
+     GPS
+============================================================ -->
+
+<section class="card">
+
+<h2>📍 GPS / HELYZET</h2>
+
+<div class="row">
+
+  <button
+    id="startGpsButton"
+    class="green">
+    📡 GPS INDÍTÁSA
+  </button>
+
+  <button
+    id="refreshGpsButton">
+    🔄 GPS FRISSÍTÉSE
+  </button>
+
+  <button
+    id="centerGpsButton">
+    🎯 TÉRKÉP GPS-RE
+  </button>
+
+</div>
+
+<div id="gpsStatus" class="status">
+📍 GPS: nincs adat
+</div>
+
+</section>
+
+
+<!-- ============================================================
+     MEGÁLLÓKERESŐ
+============================================================ -->
+
+<section class="card">
+
+<h2>🔎 OKOS MEGÁLLÓKERESŐ</h2>
+
+<div class="row">
+
+  <div class="col">
+
+    <label for="stopSearch">
+      Megállónév / GTFS stop_id
+    </label>
+
+    <input
+      id="stopSearch"
+      type="text"
+      value="Nád"
+      placeholder="Pl. Nád utca vagy GTFS ID">
+
+  </div>
+
+  <div>
+    <button
+      id="searchStopButton"
+      class="primary">
+      🔎 KERESÉS
+    </button>
+  </div>
+
+  <div>
+    <button
+      id="nearestStopButton">
+      📍 1 KM-EN BELÜLI MEGÁLLÓK
+    </button>
+  </div>
+
+</div>
+
+<div id="stopResults" class="status">
+Nincs keresés.
+</div>
+
+</section>
+
+
+<!-- ============================================================
+     KIVÁLASZTOTT MEGÁLLÓ
+============================================================ -->
+
+<section class="card">
+
+<h2>🚏 KIVÁLASZTOTT MEGÁLLÓ</h2>
+
+<div class="row">
+
+  <div class="col">
+
+    <label for="selectedStop">
+      Megállónév vagy GTFS stop_id
+    </label>
+
+    <input
+      id="selectedStop"
+      type="text"
+      placeholder="Megállónév vagy GTFS stop_id">
+
+  </div>
+
+  <div>
+    <button
+      id="loadSelectedStopButton"
+      class="primary">
+      🚏 MEGÁLLÓ BETÖLTÉSE
+    </button>
+  </div>
+
+</div>
+
+<div
+  id="selectedStopStatus"
+  class="status">
+Nincs kiválasztott megálló.
+</div>
+
+</section>
+
+
+<!-- ============================================================
+     5 KM-ES TÉRKÉP
+============================================================ -->
+
+<section class="card">
+
+<h2>🗺️ 5 KM-ES TÉRKÉP</h2>
+
+<div class="row">
+
+  <button
+    id="showStops5kmButton">
+    📍 MEGÁLLÓK 5 KM-EN BELÜL
+  </button>
+
+  <button
+    id="showVehicles5kmButton">
+    🚌 JÁRMŰVEK 5 KM-EN BELÜL
+  </button>
+
+  <button
+    id="clearMapButton">
+    🧹 TÉRKÉP TISZTÍTÁSA
+  </button>
+
+</div>
+
+<div id="map"></div>
+
+<div
+  id="mapStatus"
+  class="status">
+🗺️ Térkép: GPS-re vár.
+</div>
+
+</section>
+
+
+<!-- ============================================================
+     INDULÁSOK
+============================================================ -->
+
+<section class="card">
+
+<h2>⏱️ INDULÁSOK</h2>
+
+<div class="small">
+A GTFS menetrendi indulások a betöltött GTFS-ből
+kerülnek kiszámításra. A 24:00 utáni GTFS-idők
+is megmaradnak.
+</div>
+
+<div class="row">
+
+  <button
+    id="loadDeparturesButton"
+    class="primary">
+    🚍 GTFS INDULÁSOK
+  </button>
+
+  <button
+    id="realtimeRefreshButton"
+    class="red">
+    🔴 REALTIME FRISSÍTÉS
+  </button>
+
+  <button
+    id="realtimeStopButton">
+    ⏹️ REALTIME LEÁLLÍTÁSA
+  </button>
+
+</div>
+
+<div
+  id="departureStatus"
+  class="status">
+Nincs indulási adat.
+</div>
+
+<div id="departures"></div>
+
+</section>
+
+
+<!-- ============================================================
+     JÁRMŰMOTOR
+============================================================ -->
+
+<section class="card">
+
+<h2>🚌 JÁRMŰMOTOR</h2>
+
+<div class="small">
+Kereshető járat, járműazonosító, rendszám,
+forgalmi, fordajelzés és járműtípus.
+Ha a realtime feed nem ad ilyen adatot:
+<strong>„nincs adat”</strong>.
+</div>
+
+<div class="row">
+
+  <div class="col">
+
+    <label for="vehicleSearch">
+      járat / jármű / rendszám / forgalmi
+    </label>
+
+    <input
+      id="vehicleSearch"
+      type="text"
+      placeholder="Pl. 243 / rendszám / jármű ID">
+
+  </div>
+
+  <div>
+    <button
+      id="refreshVehiclesButton">
+      🔄 JÁRMŰLISTA
+    </button>
+  </div>
+
+  <div>
+    <button
+      id="vehicleAutoButton">
+      ⏱️ AUTO 15 MP
+    </button>
+  </div>
+
+  <div>
+    <button
+      id="vehicleAutoStopButton">
+      ⏹️ AUTO LEÁLLÍTÁSA
+    </button>
+  </div>
+
+</div>
+
+<div id="vehicleStatus" class="status">
+🚌 Járműmotor: várakozik.
+</div>
+
+<div id="vehicles"></div>
+
+</section>
+
+
+<!-- ============================================================
+     REALTIME FORRÁS
+============================================================ -->
+
+<section class="card">
+
+<h2>🔴 VALÓS IDEJŰ ADATFORRÁS</h2>
+
+<div class="small">
+A realtime motor külön fut a GTFS motortól.
+Ha a realtime kapcsolat hibás, a helyi GTFS tovább működik.
+</div>
+
+<div class="row">
+
+  <div class="col">
+
+    <label for="realtimeUrl">
+      GTFS-RT / JSON URL
+    </label>
+
+    <input
+      id="realtimeUrl"
+      type="url"
+      placeholder="https://...">
+
+  </div>
+
+  <div>
+    <button
+      id="testRealtimeButton">
+      🌐 URL TESZT
+    </button>
+  </div>
+
+</div>
+
+<div class="row">
+
+  <div class="col">
+
+    <label for="vehicleJsonFile">
+      Jármű JSON tesztfájl
+    </label>
+
+    <input
+      id="vehicleJsonFile"
+      type="file"
+      accept=".json,.txt">
+
+  </div>
+
+  <div>
+    <button
+      id="importVehicleJsonButton">
+      📥 JÁRMŰ JSON IMPORT
+    </button>
+  </div>
+
+</div>
+
+</section>
+
+
+<!-- ============================================================
+     6 KALKULÁTOR
+============================================================ -->
+
+<section class="card">
+
+<h2>🧮 6 KALKULÁTOR</h2>
+
+
+<!-- 1 -->
+
+<div class="calc">
+
+<div class="calc-title">
+1️⃣ ÁTLAGSEBESSÉG
+</div>
+
+<div class="row">
+
+<div class="col">
+<label for="calc1Distance">
+Távolság km
+</label>
+
+<input
+id="calc1Distance"
+type="number"
+step="any"
+placeholder="km">
+</div>
+
+<div class="col">
+<label for="calc1Time">
+Idő perc
+</label>
+
+<input
+id="calc1Time"
+type="number"
+step="any"
+placeholder="perc">
+</div>
+
+<div>
+<button id="calc1Button">
+SZÁMOL
+</button>
+</div>
+
+</div>
+
+<div
+id="calc1Result"
+class="result">
+-
+</div>
+
+</div>
+
+
+<!-- 2 -->
+
+<div class="calc">
+
+<div class="calc-title">
+2️⃣ MENETIDŐ
+</div>
+
+<div class="row">
+
+<div class="col">
+<label for="calc2Distance">
+Távolság km
+</label>
+
+<input
+id="calc2Distance"
+type="number"
+step="any"
+placeholder="km">
+</div>
+
+<div class="col">
+<label for="calc2Speed">
+Sebesség km/h
+</label>
+
+<input
+id="calc2Speed"
+type="number"
+step="any"
+placeholder="km/h">
+</div>
+
+<div>
+<button id="calc2Button">
+SZÁMOL
+</button>
+</div>
+
+</div>
+
+<div
+id="calc2Result"
+class="result">
+-
+</div>
+
+</div>
+
+
+<!-- 3 -->
+
+<div class="calc">
+
+<div class="calc-title">
+3️⃣ MEGTETT TÁV
+</div>
+
+<div class="row">
+
+<div class="col">
+<label for="calc3Speed">
+Sebesség km/h
+</label>
+
+<input
+id="calc3Speed"
+type="number"
+step="any"
+placeholder="km/h">
+</div>
+
+<div class="col">
+<label for="calc3Time">
+Idő perc
+</label>
+
+<input
+id="calc3Time"
+type="number"
+step="any"
+placeholder="perc">
+</div>
+
+<div>
+<button id="calc3Button">
+SZÁMOL
+</button>
+</div>
+
+</div>
+
+<div
+id="calc3Result"
+class="result">
+-
+</div>
+
+</div>
+
+
+<!-- 4 -->
+
+<div class="calc">
+
+<div class="calc-title">
+4️⃣ KÉSÉS / SIETÉS
+</div>
+
+<div class="row">
+
+<div class="col">
+<label for="calc4Scheduled">
+Tervezett idő / érték
+</label>
+
+<input
+id="calc4Scheduled"
+type="number"
+step="any"
+value="42">
+</div>
+
+<div class="col">
+<label for="calc4Actual">
+Valós idő / érték
+</label>
+
+<input
+id="calc4Actual"
+type="number"
+step="any"
+value="45">
+</div>
+
+<div>
+<button id="calc4Button">
+SZÁMOL
+</button>
+</div>
+
+</div>
+
+<div
+id="calc4Result"
+class="result">
+-
+</div>
+
+</div>
+
+
+<!-- 5 -->
+
+<div class="calc">
+
+<div class="calc-title">
+5️⃣ LÉGVONALBELI TÁVOLSÁG
+</div>
+
+<div class="row">
+
+<div class="col">
+<label for="calc5Point1">
+lat1,lon1
+</label>
+
+<input
+id="calc5Point1"
+type="text"
+placeholder="47.000000,19.000000">
+</div>
+
+<div class="col">
+<label for="calc5Point2">
+lat2,lon2
+</label>
+
+<input
+id="calc5Point2"
+type="text"
+placeholder="47.100000,19.100000">
+</div>
+
+<div>
+<button id="calc5Button">
+SZÁMOL
+</button>
+</div>
+
+</div>
+
+<div
+id="calc5Result"
+class="result">
+-
+</div>
+
+</div>
+
+
+<!-- 6 -->
+
+<div class="calc">
+
+<div class="calc-title">
+6️⃣ MENETIDŐ / KM
+</div>
+
+<div class="row">
+
+<div class="col">
+<label for="calc6Distance">
+Távolság km
+</label>
+
+<input
+id="calc6Distance"
+type="number"
+step="any"
+value="44">
+</div>
+
+<div class="col">
+<label for="calc6Speed">
+Sebesség km/h
+</label>
+
+<input
+id="calc6Speed"
+type="number"
+step="any"
+value="12">
+</div>
+
+<div>
+<button id="calc6Button">
+SZÁMOL
+</button>
+</div>
+
+</div>
+
+<div
+id="calc6Result"
+class="result">
+-
+</div>
+
+</div>
+
+</section>
+
+
+<!-- ============================================================
+     VONALI EXCEL
+============================================================ -->
+
+<section class="card">
+
+<h2>📊 VONALI EXCEL-TÁBLÁZAT GENERÁTOR</h2>
+
+<div class="small">
+A bemeneti adat lehet például:
+<strong>Megálló ; Irány ; Távolság század-km</strong>.
+A motor automatikusan kiszámítja:
+<strong>szakasz km • összes km • szakasz menetidő •
+megállási idő • összes menetidő</strong>.
+</div>
+
+<div class="row">
+
+<div class="col">
+<label for="lineName">
+Vonal / viszonylat
+</label>
+
+<input
+id="lineName"
+type="text"
+value="243"
+placeholder="pl. 243">
+</div>
+
+<div class="col">
+<label for="lineVehicle">
+Jármű / típus
+</label>
+
+<input
+id="lineVehicle"
+type="text"
+value="30"
+placeholder="pl. Credobus">
+</div>
+
+<div class="col">
+<label for="lineSpeed">
+Átlagsebesség km/h
+</label>
+
+<input
+id="lineSpeed"
+type="number"
+step="any"
+value="30">
+</div>
+
+<div class="col">
+<label for="defaultDwell">
+Alap megállási idő mp
+</label>
+
+<input
+id="defaultDwell"
+type="number"
+step="1"
+value="20">
+</div>
+
+</div>
+
+
+<div class="row">
+
+<div class="col">
+
+<label for="lineFile">
+CSV / XLSX bemenet
+</label>
+
+<input
+id="lineFile"
+type="file"
+accept=".csv,.txt,.xlsx">
+
+</div>
+
+<div>
+<button
+id="readLineFileButton"
+class="primary">
+📥 CSV / XLSX BEOLVASÁSA
+</button>
+</div>
+
+</div>
+
+
+<label for="lineInput">
+Közvetlen bemeneti adatok
+</label>
+
+<textarea
+id="lineInput"
+rows="7"
+placeholder="Megálló;Irány;Távolság század-km">Megálló;Irány;Távolság század-km
+Nád utca;1;0
+Kaszásdűlő;1;125
+Békásmegyer;1;280</textarea>
+
+
+<div class="row">
+
+<button
+id="calculateLineButton"
+class="primary">
+🔎 ELLENŐRZÉS + SZÁMÍTÁS
+</button>
+
+<button
+id="exportLineButton"
+class="green">
+📊 XLSX EXPORT
+</button>
+
+<button
+id="clearLineButton">
+🧹 TÖRLÉS
+</button>
+
+</div>
+
+<div
+id="excelStatus"
+class="status">
+Excel-motor: várakozik.
+</div>
+
+<div id="excelPreview"></div>
+
+</section>
+
+
+<!-- ============================================================
+     DIAGNOSZTIKA
+============================================================ -->
+
+<section class="card">
+
+<h2>🧪 RENDSZERDIAGNOSZTIKA</h2>
+
+<button
+id="diagnosticButton"
+class="primary">
+🧪 DIAGNOSZTIKA FUTTATÁSA
+</button>
+
+<div
+id="diagnostics"
+class="status">
+Nincs futtatva.
+</div>
+
+</section>
+
+
+</main>
+
+
+<!-- ============================================================
+     JAVASCRIPT — 1/2
+============================================================ -->
+
+<script>
+
+/* ============================================================
+   ATTILA KÖZLEKEDÉS V10.1 FIX5
+   KÖZÖS ADATSZERKEZET
+============================================================ */
+
+"use strict";
+
+
+/* ============================================================
+   SEGÉDFÜGGVÉNY
+============================================================ */
+
+function $(id){
+  return document.getElementById(id);
+}
+
+
+/* ============================================================
+   HTML BIZTONSÁG
+============================================================ */
+
+function escapeHtml(value){
+
+  return String(value ?? "")
+    .replace(/&/g,"&amp;")
+    .replace(/</g,"&lt;")
+    .replace(/>/g,"&gt;")
+    .replace(/"/g,"&quot;")
+    .replace(/'/g,"&#039;");
+
+}
+
+
+/* ============================================================
+   FŐ ADATTÁR
+============================================================ */
+
+const ATTILA = {
+
+  version:"V10.1 FIX5",
+
+  gtfs:{
+    stops:[],
+    routes:[],
+    trips:[],
+    stop_times:[],
+    calendar:[],
+    calendar_dates:[],
+    agency:[],
+    shapes:[]
+  },
+
+  indexes:{
+    stopById:new Map(),
+    stopByName:new Map(),
+    routeById:new Map(),
+    tripById:new Map(),
+    stopTimesByStop:new Map(),
+    stopTimesByTrip:new Map()
+  },
+
+  gps:{
+    active:false,
+    lat:null,
+    lon:null,
+    accuracy:null
+  },
+
+  map:{
+    instance:null,
+    userMarker:null,
+    stopLayer:null,
+    vehicleLayer:null,
+    radiusLayer:null
+  },
+
+  selectedStop:null,
+
+  vehicles:[],
+
+  lineRows:[],
+
+  realtimeTimer:null,
+
+  vehicleTimer:null,
+
+  db:null
+
+};
+
+
+/* ============================================================
+   INDEXEDDB
+============================================================ */
+
+const DB_NAME =
+  "AttilaKozlekedes_GTFS_V101_FIX5";
+
+const DB_VERSION = 1;
+
+
+async function openDatabase(){
+
+  return new Promise((resolve,reject)=>{
+
+    const request =
+      indexedDB.open(DB_NAME,DB_VERSION);
+
+    request.onupgradeneeded = event => {
+
+      const db = event.target.result;
+
+      if(!db.objectStoreNames.contains("gtfs")){
+
+        db.createObjectStore("gtfs",{
+          keyPath:"id"
+        });
+
+      }
+
+    };
+
+    request.onsuccess = event => {
+
+      ATTILA.db = event.target.result;
+
+      resolve(ATTILA.db);
+
+    };
+
+    request.onerror = () => {
+
+      reject(request.error);
+
+    };
+
+  });
+
+}
+
+
+/* ============================================================
+   GTFS HELYI MENTÉS
+============================================================ */
+
+async function saveGtfsDatabase(){
+
+  if(!ATTILA.db){
+    await openDatabase();
+  }
+
+  return new Promise((resolve,reject)=>{
+
+    const transaction =
+      ATTILA.db.transaction(
+        "gtfs",
+        "readwrite"
+      );
+
+    const store =
+      transaction.objectStore("gtfs");
+
+    store.put({
+
+      id:"main",
+
+      stops:ATTILA.gtfs.stops,
+
+      routes:ATTILA.gtfs.routes,
+
+      trips:ATTILA.gtfs.trips,
+
+      stop_times:ATTILA.gtfs.stop_times,
+
+      calendar:ATTILA.gtfs.calendar,
+
+      calendar_dates:ATTILA.gtfs.calendar_dates,
+
+      agency:ATTILA.gtfs.agency
+
+    });
+
+    transaction.oncomplete = () => resolve();
+
+    transaction.onerror = () =>
+      reject(transaction.error);
+
+  });
+
+}
+
+
+/* ============================================================
+   GTFS HELYI BETÖLTÉS
+============================================================ */
+
+async function loadGtfsDatabase(){
+
+  if(!ATTILA.db){
+    await openDatabase();
+  }
+
+  return new Promise((resolve,reject)=>{
+
+    const transaction =
+      ATTILA.db.transaction(
+        "gtfs",
+        "readonly"
+      );
+
+    const store =
+      transaction.objectStore("gtfs");
+
+    const request =
+      store.get("main");
+
+    request.onsuccess = () => {
+
+      resolve(request.result || null);
+
+    };
+
+    request.onerror = () => {
+
+      reject(request.error);
+
+    };
+
+  });
+
+}
+
+
+/* ============================================================
+   GTFS IDŐ → MÁSODPERC
+   24:00:00 FELETT IS ÉRVÉNYES
+============================================================ */
+
+function gtfsTimeToSeconds(value){
+
+  if(value === undefined ||
+     value === null){
+
+    return NaN;
+
+  }
+
+  const text =
+    String(value).trim();
+
+  const parts =
+    text.split(":");
+
+  if(parts.length < 2){
+    return NaN;
+  }
+
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  const s =
+    parts.length > 2
+      ? Number(parts[2])
+      : 0;
+
+  if(
+    !Number.isFinite(h) ||
+    !Number.isFinite(m) ||
+    !Number.isFinite(s)
+  ){
+    return NaN;
+  }
+
+  return h*3600 + m*60 + s;
+
+}
+
+
+/* ============================================================
+   GTFS IDŐ FORMÁZÁSA
+============================================================ */
+
+function normalizeGtfsTime(value){
+
+  const seconds =
+    gtfsTimeToSeconds(value);
+
+  if(!Number.isFinite(seconds)){
+
+    return {
+      seconds:NaN,
+      display:"nincs adat"
+    };
+
+  }
+
+  const day =
+    Math.floor(seconds / 86400);
+
+  const remain =
+    seconds % 86400;
+
+  const hour =
+    Math.floor(remain / 3600);
+
+  const minute =
+    Math.floor(
+      (remain % 3600) / 60
+    );
+
+  const second =
+    Math.floor(remain % 60);
+
+  return {
+
+    seconds,
+
+    day,
+
+    display:
+      String(
+        day*24 + hour
+      ).padStart(2,"0")
+      + ":"
+      + String(minute).padStart(2,"0")
+      + ":"
+      + String(second).padStart(2,"0")
+
+  };
+
+}
+
+
+/* ============================================================
+   CSV PARSER
+============================================================ */
+
+function parseCSV(text){
+
+  if(typeof Papa !== "undefined"){
+
+    const result =
+      Papa.parse(text,{
+        header:true,
+        skipEmptyLines:true
+      });
+
+    return result.data || [];
+
+  }
+
+  const lines =
+    text
+      .split(/\r?\n/)
+      .filter(Boolean);
+
+  if(!lines.length){
+    return [];
+  }
+
+  const headers =
+    lines[0]
+      .split(",")
+      .map(x=>x.trim());
+
+  return lines.slice(1).map(line=>{
+
+    const values =
+      line.split(",");
+
+    const row={};
+
+    headers.forEach(
+      (header,index)=>{
+        row[header] =
+          values[index] ?? "";
+      }
+    );
+
+    return row;
+
+  });
+
+}
+
+
+/* ============================================================
+   ZIP → GTFS CSV
+============================================================ */
+
+async function readGtfsZip(file){
+
+  if(typeof JSZip === "undefined"){
+
+    throw new Error(
+      "JSZip könyvtár nem töltődött be."
+    );
+
+  }
+
+  const zip =
+    await JSZip.loadAsync(file);
+
+  const result={};
+
+  const wanted=[
+    "stops.txt",
+    "routes.txt",
+    "trips.txt",
+    "stop_times.txt",
+    "calendar.txt",
+    "calendar_dates.txt",
+    "agency.txt"
+  ];
+
+  for(const name of wanted){
+
+    const entry =
+      Object.keys(zip.files)
+        .find(path =>
+          path.toLowerCase().endsWith(name)
+        );
+
+    if(!entry){
+      continue;
+    }
+
+    const text =
+      await zip.files[entry]
+        .async("text");
+
+    result[
+      name.replace(".txt","")
+    ] = parseCSV(text);
+
+  }
+
+  return result;
+
+}
+
+
+/* ============================================================
+   GTFS TÖMBÖK EGYESÍTÉSE
+============================================================ */
+
+function mergeGtfsData(data){
+
+  const keys=[
+    "stops",
+    "routes",
+    "trips",
+    "stop_times",
+    "calendar",
+    "calendar_dates",
+    "agency"
+  ];
+
+  for(const key of keys){
+
+    if(
+      Array.isArray(data[key])
+    ){
+
+      ATTILA.gtfs[key]
+        .push(...data[key]);
+
+    }
+
+  }
+
+}
+
+
+/* ============================================================
+   GTFS DUPLIKÁCIÓ SZŰRÉS
+============================================================ */
+
+function deduplicateArray(
+  array,
+  keyName
+){
+
+  const map =
+    new Map();
+
+  for(const row of array){
+
+    const key =
+      String(
+        row[keyName] ?? ""
+      );
+
+    if(!map.has(key)){
+
+      map.set(key,row);
+
+    }
+
+  }
+
+  return [...map.values()];
+
+}
+
+
+/* ============================================================
+   GTFS DUPLIKÁCIÓK
+============================================================ */
+
+function deduplicateGtfs(){
+
+  ATTILA.gtfs.stops =
+    deduplicateArray(
+      ATTILA.gtfs.stops,
+      "stop_id"
+    );
+
+  ATTILA.gtfs.routes =
+    deduplicateArray(
+      ATTILA.gtfs.routes,
+      "route_id"
+    );
+
+  ATTILA.gtfs.trips =
+    deduplicateArray(
+      ATTILA.gtfs.trips,
+      "trip_id"
+    );
+
+  /*
+   * stop_times esetén nem csak trip_id
+   * lehet kulcs.
+   */
+
+  const stopTimeMap =
+    new Map();
+
+  for(const row of
+      ATTILA.gtfs.stop_times){
+
+    const key =
+      String(row.trip_id ?? "")
+      + "|"
+      + String(row.stop_sequence ?? "");
+
+    if(!stopTimeMap.has(key)){
+
+      stopTimeMap.set(key,row);
+
+    }
+
+  }
+
+  ATTILA.gtfs.stop_times =
+    [...stopTimeMap.values()];
+
+}
+
+
+/* ============================================================
+   GTFS INDEXEK FELÉPÍTÉSE
+============================================================ */
+
+function rebuildGtfsIndexes(){
+
+  const idx =
+    ATTILA.indexes;
+
+  idx.stopById.clear();
+  idx.stopByName.clear();
+  idx.routeById.clear();
+  idx.tripById.clear();
+  idx.stopTimesByStop.clear();
+  idx.stopTimesByTrip.clear();
+
+
+  /* MEGÁLLÓK */
+
+  for(
+    const stop of ATTILA.gtfs.stops
+  ){
+
+    const id =
+      String(stop.stop_id ?? "");
+
+    idx.stopById.set(
+      id,
+      stop
+    );
+
+    const name =
+      String(
+        stop.stop_name ?? ""
+      )
+      .trim()
+      .toLowerCase();
+
+    if(!idx.stopByName.has(name)){
+
+      idx.stopByName.set(
+        name,
+        []
+      );
+
+    }
+
+    idx.stopByName
+      .get(name)
+      .push(stop);
+
+  }
+
+
+  /* VONALAK */
+
+  for(
+    const route of ATTILA.gtfs.routes
+  ){
+
+    idx.routeById.set(
+      String(route.route_id ?? ""),
+      route
+    );
+
+  }
+
+
+  /* JÁRATOK */
+
+  for(
+    const trip of ATTILA.gtfs.trips
+  ){
+
+    idx.tripById.set(
+      String(trip.trip_id ?? ""),
+      trip
+    );
+
+  }
+
+
+  /* STOP TIMES */
+
+  for(
+    const row of ATTILA.gtfs.stop_times
+  ){
+
+    const stopId =
+      String(row.stop_id ?? "");
+
+    const tripId =
+      String(row.trip_id ?? "");
+
+
+    if(!idx.stopTimesByStop.has(stopId)){
+
+      idx.stopTimesByStop.set(
+        stopId,
+        []
+      );
+
+    }
+
+    idx.stopTimesByStop
+      .get(stopId)
+      .push(row);
+
+
+    if(!idx.stopTimesByTrip.has(tripId)){
+
+      idx.stopTimesByTrip.set(
+        tripId,
+        []
+      );
+
+    }
+
+    idx.stopTimesByTrip
+      .get(tripId)
+      .push(row);
+
+  }
+
+
+  /* MEGÁLLÓ INDULÁSOK RENDEZÉSE */
+
+  for(
+    const rows
+    of idx.stopTimesByStop.values()
+  ){
+
+    rows.sort(
+      (a,b)=>
+        gtfsTimeToSeconds(
+          a.departure_time
+        )
+        -
+        gtfsTimeToSeconds(
+          b.departure_time
+        )
+    );
+
+  }
+
+
+  $("diagnostics").textContent =
+    "⚡ GTFS INDEX FELÉPÍTVE\n"
+    + "Megálló ID index: "
+    + idx.stopById.size
+    + "\nMegállónév index: "
+    + idx.stopByName.size
+    + "\nVonal index: "
+    + idx.routeById.size
+    + "\nJárat index: "
+    + idx.tripById.size
+    + "\nStop-time index: "
+    + idx.stopTimesByStop.size;
+
+}
+
+
+/* ============================================================
+   GTFS MEMÓRIA ÁLLAPOT
+============================================================ */
+
+function memoryFriendlyStatus(){
+
+  const total =
+    ATTILA.gtfs.stops.length
+    + ATTILA.gtfs.routes.length
+    + ATTILA.gtfs.trips.length
+    + ATTILA.gtfs.stop_times.length;
+
+  let mode="NORMAL";
+
+  if(total > 3000000){
+
+    mode="MEMÓRIA-KÍMÉLŐ";
+
+  }
+
+  if(total > 6000000){
+
+    mode="ERŐSEN MEMÓRIA-KÍMÉLŐ";
+
+  }
+
+  return {
+    records:total,
+    mode
+  };
+
+}
+
+
+/* ============================================================
+   GTFS BETÖLTŐ
+============================================================ */
+
+async function loadMultipleGtfs(){
+
+  const input =
+    $("gtfsFiles");
+
+  if(
+    !input ||
+    !input.files.length
+  ){
+
+    $("gtfsStatus").textContent =
+      "❌ Nincs kiválasztott GTFS ZIP.";
+
+    return;
+
+  }
+
+
+  const files =
+    [...input.files];
+
+
+  /* ÚJ BETÖLTÉS */
+
+  ATTILA.gtfs.stops=[];
+  ATTILA.gtfs.routes=[];
+  ATTILA.gtfs.trips=[];
+  ATTILA.gtfs.stop_times=[];
+  ATTILA.gtfs.calendar=[];
+  ATTILA.gtfs.calendar_dates=[];
+  ATTILA.gtfs.agency=[];
+
+
+  const bar =
+    $("gtfsProgressBar");
+
+  try{
+
+    for(
+      let i=0;
+      i<files.length;
+      i++
+    ){
+
+      const file =
+        files[i];
+
+      $("gtfsStatus").textContent =
+        "📦 GTFS feldolgozás: "
+        + file.name
+        + "\n"
+        + (i+1)
+        + " / "
+        + files.length;
+
+      const data =
+        await readGtfsZip(file);
+
+      mergeGtfsData(data);
+
+      if(bar){
+
+        bar.style.width =
+          (
+            ((i+1)/files.length)
+            *100
+          ).toFixed(0)
+          + "%";
+
+      }
+
+      /*
+       * A böngésző kapjon levegőt
+       * nagy GTFS esetén.
+       */
+
+      await new Promise(
+        resolve =>
+          setTimeout(resolve,0)
+      );
+
+    }
+
+
+    deduplicateGtfs();
+
+    rebuildGtfsIndexes();
+
+    await saveGtfsDatabase();
+
+
+    const memory =
+      memoryFriendlyStatus();
+
+
+    $("gtfsStatus").textContent =
+      "✅ GTFS BETÖLTVE\n"
+      + "Megállók: "
+      + ATTILA.gtfs.stops.length
+      + "\nÚtvonalak: "
+      + ATTILA.gtfs.routes.length
+      + "\nJáratok: "
+      + ATTILA.gtfs.trips.length
+      + "\nStop_times: "
+      + ATTILA.gtfs.stop_times.length
+      + "\n\n"
+      + "Memória mód: "
+      + memory.mode
+      + "\nÖsszes rekord: "
+      + memory.records;
+
+
+    updateMapStops();
+
+  }catch(error){
+
+    console.error(error);
+
+    $("gtfsStatus").textContent =
+      "❌ GTFS HIBA:\n"
+      + error.message;
+
+  }
+
+}
+
+
+/* ============================================================
+   MEGÁLLÓ KERESÉS
+============================================================ */
+
+function searchStops(){
+
+  const input =
+    $("stopSearch");
+
+  const query =
+    String(
+      input?.value ?? ""
+    )
+    .trim()
+    .toLowerCase();
+
+  if(!query){
+
+    $("stopResults").textContent =
+      "Írj be megállónevet vagy GTFS stop_id értéket.";
+
+    return;
+
+  }
+
+
+  const results=[];
+
+
+  /* ID ALAPÚ TALÁLAT */
+
+  const exact =
+    ATTILA.indexes.stopById
+      .get(query);
+
+  if(exact){
+
+    results.push(exact);
+
+  }
+
+
+  /* NÉV ALAPÚ */
+
+  if(results.length < 20){
+
+    for(
+      const stop
+      of ATTILA.gtfs.stops
+    ){
+
+      const name =
+        String(
+          stop.stop_name ?? ""
+        ).toLowerCase();
+
+      const id =
+        String(
+          stop.stop_id ?? ""
+        ).toLowerCase();
+
+      if(
+        name.includes(query)
+        ||
+        id.includes(query)
+      ){
+
+        if(
+          !results.includes(stop)
+        ){
+
+          results.push(stop);
+
+        }
+
+      }
+
+      if(results.length >= 20){
+        break;
+      }
+
+    }
+
+  }
+
+
+  if(!results.length){
+
+    $("stopResults").textContent =
+      "❌ Nincs találat.";
+
+    return;
+
+  }
+
+
+  $("stopResults").innerHTML =
+    results
+      .map(stop=>{
+
+        const lat =
+          Number(stop.stop_lat);
+
+        const lon =
+          Number(stop.stop_lon);
+
+        return `
+          <div class="stop-result">
+
+            <strong>
+              🚏 ${escapeHtml(
+                stop.stop_name
+              )}
+            </strong>
+
+            <br>
+
+            GTFS:
+            ${escapeHtml(
+              stop.stop_id
+            )}
+
+            <br>
+
+            Koordináta:
+            ${
+              Number.isFinite(lat)
+              ? lat.toFixed(6)
+              : "nincs adat"
+            },
+            ${
+              Number.isFinite(lon)
+              ? lon.toFixed(6)
+              : "nincs adat"
+            }
+
+            <br>
+
+            <button
+              onclick="chooseStop('${String(
+                stop.stop_id
+              ).replace(/'/g,"\\'")}')">
+              🚏 KIVÁLASZTOM
+            </button>
+
+          </div>
+        `;
+
+      })
+      .join("");
+
+}
+
+
+/* ============================================================
+   MEGÁLLÓ KIVÁLASZTÁSA
+============================================================ */
+
+function chooseStop(stopId){
+
+  const stop =
+    ATTILA.indexes.stopById
+      .get(String(stopId));
+
+  if(!stop){
+
+    $("selectedStopStatus").textContent =
+      "❌ A megálló nem található.";
+
+    return;
+
+  }
+
+  ATTILA.selectedStop =
+    stop;
+
+  $("selectedStop").value =
+    stop.stop_name;
+
+  showSelectedStopDetails();
+
+  loadDepartures();
+
+  if(
+    ATTILA.map.instance
+  ){
+
+    const lat =
+      Number(stop.stop_lat);
+
+    const lon =
+      Number(stop.stop_lon);
+
+    if(
+      Number.isFinite(lat)
+      &&
+      Number.isFinite(lon)
+    ){
+
+      ATTILA.map.instance
+        .setView(
+          [lat,lon],
+          16
+        );
+
+    }
+
+  }
+
+}
+
+
+/* ============================================================
+   INPUT ALAPÚ MEGÁLLÓ
+============================================================ */
+
+function selectStopByInput(){
+
+  const value =
+    String(
+      $("selectedStop")?.value ?? ""
+    )
+    .trim()
+    .toLowerCase();
+
+  if(!value){
+
+    return;
+
+  }
+
+
+  const byId =
+    ATTILA.indexes.stopById
+      .get(value);
+
+  if(byId){
+
+    chooseStop(
+      byId.stop_id
+    );
+
+    return;
+
+  }
+
+
+  for(
+    const stop
+    of ATTILA.gtfs.stops
+  ){
+
+    if(
+      String(
+        stop.stop_name ?? ""
+      )
+      .toLowerCase()
+      .includes(value)
+    ){
+
+      chooseStop(
+        stop.stop_id
+      );
+
+      return;
+
+    }
+
+  }
+
+
+  $("selectedStopStatus").textContent =
+    "❌ Megálló nem található.";
+
+}
+
+
+/* ============================================================
+   MEGÁLLÓ ADATOK
+============================================================ */
+
+function showSelectedStopDetails(){
+
+  const stop =
+    ATTILA.selectedStop;
+
+  if(!stop){
+
+    return;
+
+  }
+
+  const lat =
+    Number(stop.stop_lat);
+
+  const lon =
+    Number(stop.stop_lon);
+
+  let distance=null;
+
+  if(
+    ATTILA.gps.active
+    &&
+    Number.isFinite(lat)
+    &&
+    Number.isFinite(lon)
+  ){
+
+    distance =
+      haversineKm(
+        ATTILA.gps.lat,
+        ATTILA.gps.lon,
+        lat,
+        lon
+      );
+
+  }
+
+
+  $("selectedStopStatus").textContent =
+    "🚏 MEGÁLLÓ ADATOK\n"
+    + "Név: "
+    + String(stop.stop_name ?? "nincs adat")
+    + "\nGTFS stop_id: "
+    + String(stop.stop_id ?? "nincs adat")
+    + "\nstop_code: "
+    + String(stop.stop_code ?? "nincs adat")
+    + "\nLatitude: "
+    + (
+      Number.isFinite(lat)
+      ? lat.toFixed(6)
+      : "nincs adat"
+    )
+    + "\nLongitude: "
+    + (
+      Number.isFinite(lon)
+      ? lon.toFixed(6)
+      : "nincs adat"
+    )
+    + "\nTávolság GPS-től: "
+    + (
+      distance === null
+      ? "nincs GPS"
+      : distance.toFixed(3)
+        + " km"
+    );
+
+}
+
+
+/* ============================================================
+   HAVERSINE
+============================================================ */
+
+function haversineKm(
+  lat1,
+  lon1,
+  lat2,
+  lon2
+){
+
+  const R=6371;
+
+  const p1 =
+    Number(lat1)
+    * Math.PI / 180;
+
+  const p2 =
+    Number(lat2)
+    * Math.PI / 180;
+
+  const dp =
+    (
+      Number(lat2)
+      -
+      Number(lat1)
+    )
+    * Math.PI / 180;
+
+  const dl =
+    (
+      Number(lon2)
+      -
+      Number(lon1)
+    )
+    * Math.PI / 180;
+
+  const a =
+    Math.sin(dp/2)
+    *
+    Math.sin(dp/2)
+    +
+    Math.cos(p1)
+    *
+    Math.cos(p2)
+    *
+    Math.sin(dl/2)
+    *
+    Math.sin(dl/2);
+
+  const c =
+    2 *
+    Math.atan2(
+      Math.sqrt(a),
+      Math.sqrt(1-a)
+    );
+
+  return R*c;
+
+}
+
+
+/* ============================================================
+   GPS UI
+============================================================ */
+
+function updateGpsUI(){
+
+  if(!ATTILA.gps.active){
+
+    $("gpsStatus").textContent =
+      "📍 GPS: nincs adat";
+
+    return;
+
+  }
+
+  $("gpsStatus").textContent =
+    "📡 GPS AKTÍV\n"
+    + "Latitude: "
+    + ATTILA.gps.lat.toFixed(6)
+    + "\nLongitude: "
+    + ATTILA.gps.lon.toFixed(6)
+    + "\nPontosság: ±"
+    + (
+      Number(
+        ATTILA.gps.accuracy
+      ) || 0
+    ).toFixed(0)
+    + " m";
+
+}
+
+
+/* ============================================================
+   GPS EGYSZERI FRISSÍTÉS
+============================================================ */
+
+function refreshGps(){
+
+  if(!navigator.geolocation){
+
+    $("gpsStatus").textContent =
+      "❌ A böngésző nem támogatja a GPS-t.";
+
+    return;
+
+  }
+
+
+  navigator.geolocation.getCurrentPosition(
+
+    position=>{
+
+      ATTILA.gps.active=true;
+
+      ATTILA.gps.lat =
+        position.coords.latitude;
+
+      ATTILA.gps.lon =
+        position.coords.longitude;
+
+      ATTILA.gps.accuracy =
+        position.coords.accuracy;
+
+      updateGpsUI();
+
+      updateUserMarker();
+
+      updateMapStops();
+
+      if(
+        ATTILA.selectedStop
+      ){
+
+        showSelectedStopDetails();
+
+      }
+
+    },
+
+    error=>{
+
+      $("gpsStatus").textContent =
+        "❌ GPS HIBA: "
+        + error.message;
+
+    },
+
+    {
+      enableHighAccuracy:true,
+      maximumAge:5000,
+      timeout:15000
+    }
+
+  );
+
+}
+
+
+/* ============================================================
+   FOLYAMATOS GPS
+============================================================ */
+
+let gpsWatchId=null;
+
+
+function startGpsWatch(){
+
+  if(!navigator.geolocation){
+
+    $("gpsStatus").textContent =
+      "❌ Nincs geolocation támogatás.";
+
+    return;
+
+  }
+
+
+  if(gpsWatchId !== null){
+
+    navigator.geolocation
+      .clearWatch(gpsWatchId);
+
+  }
+
+
+  gpsWatchId =
+    navigator.geolocation.watchPosition(
+
+      position=>{
+
+        ATTILA.gps.active=true;
+
+        ATTILA.gps.lat =
+          position.coords.latitude;
+
+        ATTILA.gps.lon =
+          position.coords.longitude;
+
+        ATTILA.gps.accuracy =
+          position.coords.accuracy;
+
+        updateGpsUI();
+
+        updateUserMarker();
+
+        updateMapStops();
+
+        if(
+          ATTILA.selectedStop
+        ){
+
+          showSelectedStopDetails();
+
+        }
+
+      },
+
+      error=>{
+
+        $("gpsStatus").textContent =
+          "❌ GPS HIBA: "
+          + error.message;
+
+      },
+
+      {
+        enableHighAccuracy:true,
+        maximumAge:5000,
+        timeout:15000
+      }
+
+    );
+
+}
+
+
+/* ============================================================
+   MAPA INDÍTÁS
+============================================================ */
+
+function initMap(){
+
+  if(
+    ATTILA.map.instance
+  ){
+
+    return;
+
+  }
+
+
+  ATTILA.map.instance =
+    L.map("map")
+      .setView(
+        [47.4979,19.0402],
+        11
+      );
+
+
+  L.tileLayer(
+    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    {
+      maxZoom:19,
+      attribution:
+        "&copy; OpenStreetMap"
+    }
+  ).addTo(
+    ATTILA.map.instance
+  );
+
+
+  ATTILA.map.stopLayer =
+    L.layerGroup()
+      .addTo(
+        ATTILA.map.instance
+      );
+
+
+  ATTILA.map.vehicleLayer =
+    L.layerGroup()
+      .addTo(
+        ATTILA.map.instance
+      );
+
+
+  ATTILA.map.radiusLayer =
+    L.layerGroup()
+      .addTo(
+        ATTILA.map.instance
+      );
+
+}
+
+
+/* ============================================================
+   FELHASZNÁLÓ GPS MARKER
+============================================================ */
+
+function updateUserMarker(){
+
+  if(
+    !ATTILA.map.instance
+    ||
+    !ATTILA.gps.active
+  ){
+
+    return;
+
+  }
+
+
+  const position=[
+    ATTILA.gps.lat,
+    ATTILA.gps.lon
+  ];
+
+
+  if(
+    !ATTILA.map.userMarker
+  ){
+
+    ATTILA.map.userMarker =
+      L.marker(position)
+        .addTo(
+          ATTILA.map.instance
+        )
+        .bindPopup(
+          "📍 Én vagyok itt"
+        );
+
+  }else{
+
+    ATTILA.map.userMarker
+      .setLatLng(position);
+
+  }
+
+
+  if(
+    !ATTILA.map.radiusLayer
+  ){
+
+    return;
+
+  }
+
+
+  ATTILA.map.radiusLayer
+    .clearLayers();
+
+
+  L.circle(
+    position,
+    {
+      radius:5000
+    }
+  )
+  .addTo(
+    ATTILA.map.radiusLayer
+  );
+
+}
+
+
+/* ============================================================
+   5 KM-ES MEGÁLLÓK
+============================================================ */
+
+function showStopsWithin5km(){
+
+  if(
+    !ATTILA.gps.active
+  ){
+
+    $("mapStatus").textContent =
+      "📍 GPS szükséges.";
+
+    return;
+
+  }
+
+
+  ATTILA.map.stopLayer
+    .clearLayers();
+
+
+  let count=0;
+
+
+  for(
+    const stop
+    of ATTILA.gtfs.stops
+  ){
+
+    const lat =
+      Number(stop.stop_lat);
+
+    const lon =
+      Number(stop.stop_lon);
+
+    if(
+      !Number.isFinite(lat)
+      ||
+      !Number.isFinite(lon)
+    ){
+
+      continue;
+
+    }
+
+
+    const distance =
+      haversineKm(
+        ATTILA.gps.lat,
+        ATTILA.gps.lon,
+        lat,
+        lon
+      );
+
+
+    if(distance > 5){
+
+      continue;
+
+    }
+
+
+    count++;
+
+
+    const marker =
+      L.circleMarker(
+        [lat,lon],
+        {
+          radius:5
+        }
+      );
+
+
+    marker.bindPopup(
+      "<strong>🚏 "
+      + escapeHtml(
+          stop.stop_name
+        )
+      + "</strong><br>"
+      + "GTFS: "
+      + escapeHtml(
+          stop.stop_id
+        )
+      + "<br>"
+      + "Távolság: "
+      + distance.toFixed(3)
+      + " km"
+    );
+
+
+    marker.addTo(
+      ATTILA.map.stopLayer
+    );
+
+  }
+
+
+  $("mapStatus").textContent =
+    "📍 5 km-en belüli megállók: "
+    + count;
+
+}
+
+
+/* ============================================================
+   TÉRKÉP MEGÁLLÓ FRISSÍTÉS
+============================================================ */
+
+function updateMapStops(){
+
+  if(
+    !ATTILA.gps.active
+  ){
+
+    return;
+
+  }
+
+  showStopsWithin5km();
+
+}
+
+
+/* ============================================================
+   TÉRKÉP TISZTÍTÁS
+============================================================ */
+
+function clearMap(){
+
+  if(
+    ATTILA.map.stopLayer
+  ){
+
+    ATTILA.map.stopLayer
+      .clearLayers();
+
+  }
+
+  if(
+    ATTILA.map.vehicleLayer
+  ){
+
+    ATTILA.map.vehicleLayer
+      .clearLayers();
+
+  }
+
+  if(
+    ATTILA.map.radiusLayer
+  ){
+
+    ATTILA.map.radiusLayer
+      .clearLayers();
+
+  }
+
+  $("mapStatus").textContent =
+    "🧹 Térkép megtisztítva.";
+
+}
+
+
+/* ============================================================
+   GYORS GTFS INDULÁSOK
+============================================================ */
+
+function getFastDepartures(
+  stopId,
+  limit=40
+){
+
+  const rows =
+    ATTILA.indexes
+      .stopTimesByStop
+      .get(String(stopId))
+      || [];
+
+
+  if(!rows.length){
+
+    return [];
+
+  }
+
+
+  const now =
+    new Date();
+
+
+  const current =
+    now.getHours()*3600
+    +
+    now.getMinutes()*60
+    +
+    now.getSeconds();
+
+
+  const output=[];
+
+
+  for(
+    const row
+    of rows
+  ){
+
+    const seconds =
+      gtfsTimeToSeconds(
+        row.departure_time
+      );
+
+
+    if(
+      !Number.isFinite(seconds)
+    ){
+
+      continue;
+
+    }
+
+
+    /*
+     * 24:00 feletti GTFS-idők
+     * nem hibásak.
+     *
+     * A következő indulásnál
+     * a normál mai időt használjuk.
+     */
+
+    if(
+      seconds < current
+      &&
+      seconds < 86400
+    ){
+
+      continue;
+
+    }
+
+
+    const trip =
+      ATTILA.indexes.tripById
+        .get(
+          String(
+            row.trip_id
+          )
+        );
+
+
+    if(!trip){
+
+      continue;
+
+    }
+
+
+    const route =
+      ATTILA.indexes.routeById
+        .get(
+          String(
+            trip.route_id
+          )
+        );
+
+
+    output.push({
+
+      time:
+        normalizeGtfsTime(
+          row.departure_time
+        ).display,
+
+      seconds,
+
+      route:
+        route?.route_short_name
+        || "nincs adat",
+
+      routeLong:
+        route?.route_long_name
+        || "nincs adat",
+
+      headsign:
+        trip.trip_headsign
+        || "nincs adat",
+
+      tripId:
+        trip.trip_id
+        || "nincs adat",
+
+      stopSequence:
+        row.stop_sequence
+        || "",
+
+      pickup:
+        row.pickup_type
+        || "",
+
+      dropoff:
+        row.drop_off_type
+        || ""
+
+    });
+
+
+    if(
+      output.length >= limit
+    ){
+
+      break;
+
+    }
+
+  }
+
+
+  return output;
+
+}
+
+
+/* ============================================================
+   28 ÓRÁS INDULÁSI PANEL
+============================================================ */
+
+function render28HourDepartures(){
+
+  const stop =
+    ATTILA.selectedStop;
+
+
+  if(!stop){
+
+    $("departures").innerHTML =
+      "<div class='status'>"
+      + "Nincs kiválasztott megálló."
+      + "</div>";
+
+    return;
+
+  }
+
+
+  const rows =
+    getFastDepartures(
+      stop.stop_id,
+      40
+    );
+
+
+  if(!rows.length){
+
+    $("departures").innerHTML =
+      "<div class='status'>"
+      + "Nincs további GTFS indulás."
+      + "</div>";
+
+    return;
+
+  }
+
+
+  $("departures").innerHTML =
+    rows.map(
+      (row,index)=>{
+
+        return `
+          <div class="departure">
+
+            <div>
+              ${index+1}.
+            </div>
+
+            <div class="departure-time">
+              🕒 ${escapeHtml(
+                row.time
+              )}
+            </div>
+
+            <div class="departure-route">
+              🚍 ${escapeHtml(
+                row.route
+              )}
+            </div>
+
+            <div>
+              ${escapeHtml(
+                row.headsign
+              )}
+              <br>
+              <span class="small">
+                Vonal:
+                ${escapeHtml(
+                  row.routeLong
+                )}
+                |
+                Trip:
+                ${escapeHtml(
+                  row.tripId
+                )}
+              </span>
+            </div>
+
+          </div>
+        `;
+
+      }
+    ).join("");
+
+}
+
+
+/* ============================================================
+   INDULÁSOK BETÖLTÉSE
+============================================================ */
+
+async function loadDepartures(){
+
+  let stop =
+    ATTILA.selectedStop;
+
+
+  if(!stop){
+
+    selectStopByInput();
+
+    stop =
+      ATTILA.selectedStop;
+
+  }
+
+
+  if(!stop){
+
+    $("departureStatus").textContent =
+      "❌ Nincs kiválasztott megálló.";
+
+    $("departures").innerHTML="";
+
+    return;
+
+  }
+
+
+  const count =
+    (
+      ATTILA.indexes
+        .stopTimesByStop
+        .get(
+          String(
+            stop.stop_id
+          )
+        )
+      || []
+    ).length;
+
+
+  render28HourDepartures();
+
+
+  $("departureStatus").textContent =
+    "🚍 GTFS INDULÁSI MOTOR OK\n"
+    + "Megálló: "
+    + String(
+        stop.stop_name
+      )
+    + "\nGTFS ID: "
+    + String(
+        stop.stop_id
+      )
+    + "\nMegálló stop_times: "
+    + count;
+
+}
+
+
+/* ============================================================
+   KALKULÁTOR 1
+   ÁTLAGSEBESSÉG
+============================================================ */
+
+function calcAverageSpeed(){
+
+  const distance =
+    Number(
+      $("calc1Distance").value
+    );
+
+  const minutes =
+    Number(
+      $("calc1Time").value
+    );
+
+
+  if(
+    !Number.isFinite(distance)
+    ||
+    !Number.isFinite(minutes)
+    ||
+    minutes <= 0
+  ){
+
+    $("calc1Result").textContent =
+      "❌ Hibás adat";
+
+    return;
+
+  }
+
+
+  const speed =
+    distance
+    /
+    (minutes/60);
+
+
+  $("calc1Result").textContent =
+    speed.toFixed(2)
+    + " km/h";
+
+}
+
+
+/* ============================================================
+   KALKULÁTOR 2
+   MENETIDŐ
+============================================================ */
+
+function calcTravelTime(){
+
+  const distance =
+    Number(
+      $("calc2Distance").value
+    );
+
+  const speed =
+    Number(
+      $("calc2Speed").value
+    );
+
+
+  if(
+    !Number.isFinite(distance)
+    ||
+    !Number.isFinite(speed)
+    ||
+    speed <= 0
+  ){
+
+    $("calc2Result").textContent =
+      "❌ Hibás adat";
+
+    return;
+
+  }
+
+
+  const minutes =
+    distance/speed*60;
+
+
+  $("calc2Result").textContent =
+    minutes.toFixed(2)
+    + " perc";
+
+}
+
+
+/* ============================================================
+   KALKULÁTOR 3
+   MEGTETT TÁV
+============================================================ */
+
+function calcDistance(){
+
+  const speed =
+    Number(
+      $("calc3Speed").value
+    );
+
+  const minutes =
+    Number(
+      $("calc3Time").value
+    );
+
+
+  if(
+    !Number.isFinite(speed)
+    ||
+    !Number.isFinite(minutes)
+  ){
+
+    $("calc3Result").textContent =
+      "❌ Hibás adat";
+
+    return;
+
+  }
+
+
+  const km =
+    speed
+    *
+    minutes
+    /
+    60;
+
+
+  $("calc3Result").textContent =
+    km.toFixed(3)
+    + " km";
+
+}
+
+
+/* ============================================================
+   KALKULÁTOR 4
+   KÉSÉS / SIETÉS
+============================================================ */
+
+function calcDelay(){
+
+  const scheduled =
+    Number(
+      $("calc4Scheduled").value
+    );
+
+  const actual =
+    Number(
+      $("calc4Actual").value
+    );
+
+
+  if(
+    !Number.isFinite(scheduled)
+    ||
+    !Number.isFinite(actual)
+  ){
+
+    $("calc4Result").textContent =
+      "❌ Hibás adat";
+
+    return;
+
+  }
+
+
+  const difference =
+    actual-scheduled;
+
+
+  if(difference > 0){
+
+    $("calc4Result").textContent =
+      "🔵 KÉSÉS: +"
+      + difference
+      + " egység";
+
+  }else if(difference < 0){
+
+    $("calc4Result").textContent =
+      "🔴 SIETÉS: "
+      + difference
+      + " egység";
+
+  }else{
+
+    $("calc4Result").textContent =
+      "🟢 PONTOS";
+
+  }
+
+}
+
+
+/* ============================================================
+   KALKULÁTOR 5
+   LÉGVONALBELI TÁV
+============================================================ */
+
+function parseLatLon(value){
+
+  const parts =
+    String(value)
+      .split(",")
+      .map(
+        x=>Number(
+          x.trim()
+        )
+      );
+
+
+  if(
+    parts.length !== 2
+    ||
+    !Number.isFinite(parts[0])
+    ||
+    !Number.isFinite(parts[1])
+  ){
+
+    return null;
+
+  }
+
+
+  return {
+    lat:parts[0],
+    lon:parts[1]
+  };
+
+}
+
+
+function calcAirDistance(){
+
+  const p1 =
+    parseLatLon(
+      $("calc5Point1").value
+    );
+
+  const p2 =
+    parseLatLon(
+      $("calc5Point2").value
+    );
+
+
+  if(!p1 || !p2){
+
+    $("calc5Result").textContent =
+      "❌ Formátum: lat,lon";
+
+    return;
+
+  }
+
+
+  const distance =
+    haversineKm(
+      p1.lat,
+      p1.lon,
+      p2.lat,
+      p2.lon
+    );
+
+
+  $("calc5Result").textContent =
+    distance.toFixed(3)
+    + " km";
+
+}
+
+
+/* ============================================================
+   KALKULÁTOR 6
+   MENETIDŐ
+============================================================ */
+
+function calcKmTime(){
+
+  const distance =
+    Number(
+      $("calc6Distance").value
+    );
+
+  const speed =
+    Number(
+      $("calc6Speed").value
+    );
+
+
+  if(
+    !Number.isFinite(distance)
+    ||
+    !Number.isFinite(speed)
+    ||
+    speed <= 0
+  ){
+
+    $("calc6Result").textContent =
+      "❌ Hibás adat";
+
+    return;
+
+  }
+
+
+  const minutes =
+    distance/speed*60;
+
+
+  const whole =
+    Math.floor(minutes);
+
+  const seconds =
+    Math.round(
+      (minutes-whole)*60
+    );
+
+
+  $("calc6Result").textContent =
+    minutes.toFixed(2)
+    + " perc"
+    + " | "
+    + whole
+    + " perc "
+    + seconds
+    + " mp";
+
+}
+
+
+/* ============================================================
+   SZÁZAD-KM → KM
+============================================================ */
+
+function hundredKmToKm(value){
+
+  const n =
+    Number(
+      String(value)
+        .replace(",",".")
+    );
+
+  if(
+    !Number.isFinite(n)
+  ){
+
+    return NaN;
+
+  }
+
+  return n/100;
+
+}
+
+
+/* ============================================================
+   VONALI EXCEL SOROK
+============================================================ */
+
+function parseLineInput(){
+
+  const text =
+    $("lineInput").value.trim();
+
+
+  if(!text){
+
+    return [];
+
+  }
+
+
+  /*
+   * ; az elsődleges elválasztó.
+   */
+
+  const lines =
+    text
+      .split(/\r?\n/)
+      .map(
+        line=>line.trim()
+      )
+      .filter(Boolean);
+
+
+  if(!lines.length){
+
+    return [];
+
+  }
+
+
+  const header =
+    lines[0]
+      .split(";")
+      .map(
+        x=>x.trim()
+      );
+
+
+  const result=[];
+
+
+  for(
+    let i=1;
+    i<lines.length;
+    i++
+  ){
+
+    const parts =
+      lines[i]
+        .split(";")
+        .map(
+          x=>x.trim()
+        );
+
+
+    if(!parts.length){
+      continue;
+    }
+
+
+    const row={};
+
+
+    header.forEach(
+      (key,index)=>{
+        row[key] =
+          parts[index] ?? "";
+      }
+    );
+
+
+    result.push(row);
+
+  }
+
+
+  return result;
+
+}
+
+
+/* ============================================================
+   EXCEL VONALI 5 HIÁNYZÓ ADAT
+============================================================ */
+
+function calculateFiveLineValues(
+  previousKm,
+  currentKm,
+  speed,
+  dwellSeconds
+){
+
+  const sectionKm =
+    Math.max(
+      0,
+      currentKm-previousKm
+    );
+
+
+  const driveMinutes =
+    Number.isFinite(
+      Number(speed)
+    )
+    &&
+    Number(speed)>0
+      ? sectionKm
+        /
+        Number(speed)
+        *60
+      : 0;
+
+
+  const dwellMinutes =
+    Number.isFinite(
+      Number(dwellSeconds)
+    )
+      ? Number(dwellSeconds)/60
+      : 0;
+
+
+  return {
+
+    sectionKm,
+
+    cumulativeKm:
+      currentKm,
+
+    driveMinutes,
+
+    dwellMinutes,
+
+    totalMinutes:
+      driveMinutes
+      +
+      dwellMinutes
+
+  };
+
+}
+
+
+/* ============================================================
+   VONALI TÁBLÁZAT SZÁMÍTÁSA
+============================================================ */
+
+function calculateLineTable(){
+
+  const source =
+    parseLineInput();
+
+
+  if(!source.length){
+
+    $("excelStatus").textContent =
+      "❌ Nincs vonali bemeneti adat.";
+
+    return;
+
+  }
+
+
+  const speed =
+    Number(
+      $("lineSpeed").value
+    );
+
+
+  const defaultDwell =
+    Number(
+      $("defaultDwell").value
+    );
+
+
+  let previousKm=0;
+
+  let totalTime=0;
+
+
+  ATTILA.lineRows=[];
+
+
+  for(
+    let i=0;
+    i<source.length;
+    i++
+  ){
+
+    const row =
+      source[i];
+
+
+    const stopName =
+      row["Megálló"]
+      ||
+      row["Megállóhely"]
+      ||
+      row["stop_name"]
+      ||
+      "";
+
+
+    const direction =
+      row["Irány"]
+      ||
+      row["Irányjelzés"]
+      ||
+      "";
+
+
+    const rawDistance =
+      row["Távolság század-km"]
+      ||
+      row["Távolság"]
+      ||
+      row["distance"]
+      ||
+      "";
+
+
+    const cumulativeKm =
+      hundredKmToKm(
+        rawDistance
+      );
+
+
+    if(
+      !Number.isFinite(
+        cumulativeKm
+      )
+    ){
+
+      continue;
+
+    }
+
+
+    /*
+     * Az első megállónál
+     * nincs előző szakasz.
+     */
+
+    const calculated =
+      calculateFiveLineValues(
+        previousKm,
+        cumulativeKm,
+        speed,
+        i===0
+          ? 0
+          : defaultDwell
+      );
+
+
+    totalTime +=
+      calculated.driveMinutes
+      +
+      calculated.dwellMinutes;
+
+
+    ATTILA.lineRows.push({
+
+      "Vonal":
+        $("lineName").value.trim(),
+
+      "Jármű/típus":
+        $("lineVehicle").value.trim(),
+
+      "Megálló":
+        stopName,
+
+      "Irány":
+        direction,
+
+      "Távolság század-km":
+        rawDistance,
+
+      "Szakasz km":
+        calculated.sectionKm
+          .toFixed(3),
+
+      "Összes km":
+        calculated.cumulativeKm
+          .toFixed(3),
+
+      "Szakasz menetidő perc":
+        calculated.driveMinutes
+          .toFixed(2),
+
+      "Megállási idő mp":
+        i===0
+          ? 0
+          : defaultDwell,
+
+      "Összes idő perc":
+        totalTime
+          .toFixed(2)
+
+    });
+
+
+    previousKm =
+      cumulativeKm;
+
+  }
+
+
+  renderLineTable();
+
+
+  $("excelStatus").textContent =
+    "✅ VONALI MOTOR KÉSZ\n"
+    + "Számított sorok: "
+    + ATTILA.lineRows.length
+    + "\n"
+    + "5 automatikusan számított adat: OK";
+
+}
+
+
+/* ============================================================
+   VONALI TÁBLÁZAT MEGJELENÍTÉSE
+============================================================ */
+
+function renderLineTable(){
+
+  const rows =
+    ATTILA.lineRows;
+
+
+  if(!rows.length){
+
+    $("excelPreview").innerHTML =
+      "";
+
+    return;
+
+  }
+
+
+  const columns =
+    Object.keys(rows[0]);
+
+
+  let html =
+    "<table><thead><tr>";
+
+
+  for(
+    const column
+    of columns
+  ){
+
+    html +=
+      "<th>"
+      + escapeHtml(column)
+      + "</th>";
+
+  }
+
+
+  html +=
+    "</tr></thead><tbody>";
+
+
+  for(
+    const row
+    of rows
+  ){
+
+    html +=
+      "<tr>";
+
+
+    for(
+      const column
+      of columns
+    ){
+
+      html +=
+        "<td>"
+        + escapeHtml(
+            row[column]
+          )
+        + "</td>";
+
+    }
+
+
+    html +=
+      "</tr>";
+
+  }
+
+
+  html +=
+    "</tbody></table>";
+
+
+  $("excelPreview").innerHTML =
+    html;
+
+}
+
+
+/* ============================================================
+   DIAGNOSZTIKA
+============================================================ */
+
+function runDiagnostics(){
+
+  const lines=[];
+
+
+  lines.push(
+    "🚍 ATTILA KÖZLEKEDÉS V10.1 FIX5"
+  );
+
+
+  lines.push(
+    "JavaScript: OK"
+  );
+
+
+  lines.push(
+    "Leaflet: "
+    +
+    (
+      typeof L !== "undefined"
+      ? "OK"
+      : "HIBA"
+    )
+  );
+
+
+  lines.push(
+    "JSZip: "
+    +
+    (
+      typeof JSZip !== "undefined"
+      ? "OK"
+      : "HIBA"
+    )
+  );
+
+
+  lines.push(
+    "PapaParse: "
+    +
+    (
+      typeof Papa !== "undefined"
+      ? "OK"
+      : "HIBA"
+    )
+  );
+
+
+  lines.push(
+    "IndexedDB: "
+    +
+    (
+      "indexedDB" in window
+      ? "OK"
+      : "HIBA"
+    )
+  );
+
+
+  lines.push(
+    "Geolocation: "
+    +
+    (
+      "geolocation"
+      in navigator
+      ? "OK"
+      : "HIBA"
+    )
+  );
+
+
+  lines.push(
+    ""
+  );
+
+
+  lines.push(
+    "GTFS megállók: "
+    +
+    ATTILA.gtfs.stops.length
+  );
+
+
+  lines.push(
+    "GTFS útvonalak: "
+    +
+    ATTILA.gtfs.routes.length
+  );
+
+
+  lines.push(
+    "GTFS járatok: "
+    +
+    ATTILA.gtfs.trips.length
+  );
+
+
+  lines.push(
+    "GTFS stop_times: "
+    +
+    ATTILA.gtfs.stop_times.length
+  );
+
+
+  lines.push(
+    ""
+  );
+
+
+  const memory =
+    memoryFriendlyStatus();
+
+
+  lines.push(
+    "Memória mód: "
+    + memory.mode
+  );
+
+
+  lines.push(
+    "Összes GTFS rekord: "
+    + memory.records
+  );
+
+
+  $("diagnostics").textContent =
+    lines.join("\n");
+
+}
+
+
+/* ============================================================
+   BKK KULCS MENTÉS
+============================================================ */
+
+function saveBkkKey(){
+
+  const value =
+    $("bkkKey").value.trim();
+
+
+  if(!value){
+
+    $("bkkKeyStatus").textContent =
+      "❌ Nincs megadva kulcs.";
+
+    return;
+
+  }
+
+
+  try{
+
+    localStorage.setItem(
+      "ATTILA_BKK_REALTIME_KEY",
+      value
+    );
+
+
+    $("bkkKeyStatus").textContent =
+      "🔑 Kulcs: helyben elmentve ezen az eszközön.";
+
+  }catch(error){
+
+    $("bkkKeyStatus").textContent =
+      "❌ Kulcsmentési hiba: "
+      + error.message;
+
+  }
+
+}
+
+
+/* ============================================================
+   BKK KULCS BETÖLTÉS
+============================================================ */
+
+function loadBkkKey(){
+
+  try{
+
+    const value =
+      localStorage.getItem(
+        "ATTILA_BKK_REALTIME_KEY"
+      );
+
+
+    if(value){
+
+      $("bkkKey").value =
+        value;
+
+      $("bkkKeyStatus").textContent =
+        "🔑 Kulcs: helyi tárból betöltve.";
+
+    }else{
+
+      $("bkkKeyStatus").textContent =
+        "🔑 Kulcs: nincs betöltve.";
+
+    }
+
+  }catch(error){
+
+    console.warn(
+      "BKK kulcs:",
+      error
+    );
+
+  }
+
+}
+
+
+/* ============================================================
+   ESEMÉNYKEZELŐK
+============================================================ */
+
+$("saveBkkKey")
+  .addEventListener(
+    "click",
+    saveBkkKey
+  );
+
+
+$("loadGtfsButton")
+  .addEventListener(
+    "click",
+    loadMultipleGtfs
+  );
+
+
+$("startGpsButton")
+  .addEventListener(
+    "click",
+    startGpsWatch
+  );
+
+
+$("refreshGpsButton")
+  .addEventListener(
+    "click",
+    refreshGps
+  );
+
+
+$("centerGpsButton")
+  .addEventListener(
+    "click",
+    ()=>{
+      if(
+        ATTILA.gps.active
+        &&
+        ATTILA.map.instance
+      ){
+
+        ATTILA.map.instance
+          .setView(
+            [
+              ATTILA.gps.lat,
+              ATTILA.gps.lon
+            ],
+            14
+          );
+
+      }
+    }
+  );
+
+
+$("searchStopButton")
+  .addEventListener(
+    "click",
+    searchStops
+  );
+
+
+$("loadSelectedStopButton")
+  .addEventListener(
+    "click",
+    selectStopByInput
+  );
+
+
+$("showStops5kmButton")
+  .addEventListener(
+    "click",
+    showStopsWithin5km
+  );
+
+
+$("showVehicles5kmButton")
+  .addEventListener(
+    "click",
+    showVehiclesWithin5km
+  );
+
+
+$("clearMapButton")
+  .addEventListener(
+    "click",
+    clearMap
+  );
+
+
+$("loadDeparturesButton")
+  .addEventListener(
+    "click",
+    loadDepartures
+  );
+
+
+$("calc1Button")
+  .addEventListener(
+    "click",
+    calcAverageSpeed
+  );
+
+
+$("calc2Button")
+  .addEventListener(
+    "click",
+    calcTravelTime
+  );
+
+
+$("calc3Button")
+  .addEventListener(
+    "click",
+    calcDistance
+  );
+
+
+$("calc4Button")
+  .addEventListener(
+    "click",
+    calcDelay
+  );
+
+
+$("calc5Button")
+  .addEventListener(
+    "click",
+    calcAirDistance
+  );
+
+
+$("calc6Button")
+  .addEventListener(
+    "click",
+    calcKmTime
+  );
+
+
+$("calculateLineButton")
+  .addEventListener(
+    "click",
+    calculateLineTable
+  );
+
+
+$("clearLineButton")
+  .addEventListener(
+    "click",
+    ()=>{
+
+      ATTILA.lineRows=[];
+
+      $("lineInput").value="";
+
+      $("excelPreview").innerHTML="";
+
+      $("excelStatus").textContent =
+        "🧹 Excel-motor törölve.";
+
+    }
+  );
+
+
+$("diagnosticButton")
+  .addEventListener(
+    "click",
+    runDiagnostics
+  );
+
+
+$("stopSearch")
+  .addEventListener(
+    "keydown",
+    event=>{
+
+      if(
+        event.key==="Enter"
+      ){
+
+        searchStops();
+
+      }
+
+    }
+  );
+
+
+$("selectedStop")
+  .addEventListener(
+    "keydown",
+    event=>{
+
+      if(
+        event.key==="Enter"
+      ){
+
+        selectStopByInput();
+
+      }
+
+    }
+  );
+
+
+$("vehicleSearch")
+  .addEventListener(
+    "keydown",
+    event=>{
+
+      if(
+        event.key==="Enter"
+      ){
+
+        renderVehicles();
+
+      }
+
+    }
+  );
+
+
+/* ============================================================
+   INDÍTÁS
+============================================================ */
+
+async function initializeAttila(){
+
+  try{
+
+    await openDatabase();
+
+
+    const saved =
+      await loadGtfsDatabase();
+
+
+    if(saved){
+
+      ATTILA.gtfs.stops =
+        saved.stops || [];
+
+      ATTILA.gtfs.routes =
+        saved.routes || [];
+
+      ATTILA.gtfs.trips =
+        saved.trips || [];
+
+      ATTILA.gtfs.stop_times =
+        saved.stop_times || [];
+
+      ATTILA.gtfs.calendar =
+        saved.calendar || [];
+
+      ATTILA.gtfs.calendar_dates =
+        saved.calendar_dates || [];
+
+      ATTILA.gtfs.agency =
+        saved.agency || [];
+
+
+      rebuildGtfsIndexes();
+
+
+      $("gtfsStatus").textContent =
+        "💾 GTFS HELYI TÁRBÓL BETÖLTVE\n"
+        + "Megállók: "
+        + ATTILA.gtfs.stops.length
+        + "\nÚtvonalak: "
+        + ATTILA.gtfs.routes.length
+        + "\nJáratok: "
+        + ATTILA.gtfs.trips.length
+        + "\nStop_times: "
+        + ATTILA.gtfs.stop_times.length;
+
+    }
+
+  }catch(error){
+
+    console.warn(
+      "IndexedDB:",
+      error
+    );
+
+  }
+
+
+  loadBkkKey();
+
+  initMap();
+
+  runDiagnostics();
+
+}
+
+
+initializeAttila();
+
+
+/* ============================================================
+   1/2 VÉGE
+   A 2/2 RÉSZ KÖZVETLENÜL IDE JÖN
+============================================================ */
+<script> /* ============================================================ 1. GTFS INDEXEK ============================================================ */ ATTILA.indexes = { stopById: new Map(), stopByName: new Map(), routeById: new Map(), tripById: new Map(), stopTimesByStop: new Map(), stopTimesByTrip: new Map() }; function rebuildGtfsIndexes() { const idx = ATTILA.indexes; idx.stopById.clear(); idx.stopByName.clear(); idx.routeById.clear(); idx.tripById.clear(); idx.stopTimesByStop.clear(); idx.stopTimesByTrip.clear(); /* MEGÁLLÓK */ for (const stop of ATTILA.gtfs.stops || []) { const id = String(stop.stop_id || ""); if (!id) continue; idx.stopById.set(id, stop); const name = String(stop.stop_name || "") .trim() .toLowerCase(); if (!idx.stopByName.has(name)) { idx.stopByName.set(name, []); } idx.stopByName.get(name).push(stop); } /* VONALAK */ for (const route of ATTILA.gtfs.routes || []) { const id = String(route.route_id || ""); if (id) { idx.routeById.set(id, route); } } /* JÁRATOK */ for (const trip of ATTILA.gtfs.trips || []) { const id = String(trip.trip_id || ""); if (id) { idx.tripById.set(id, trip); } } /* STOP TIMES */ for (const row of ATTILA.gtfs.stop_times || []) { const stopId = String(row.stop_id || ""); const tripId = String(row.trip_id || ""); if (stopId) { if (!idx.stopTimesByStop.has(stopId)) { idx.stopTimesByStop.set(stopId, []); } idx.stopTimesByStop.get(stopId).push(row); } if (tripId) { if (!idx.stopTimesByTrip.has(tripId)) { idx.stopTimesByTrip.set(tripId, []); } idx.stopTimesByTrip.get(tripId).push(row); } } /* IDŐRENDEZÉS */ for (const rows of idx.stopTimesByStop.values()) { rows.sort((a, b) => gtfsTimeToSeconds(a.departure_time) - gtfsTimeToSeconds(b.departure_time) ); } if ($("diagnostics")) { $("diagnostics").innerHTML += "\n\n⚡ GTFS INDEX ELKÉSZÜLT\n" + "Megálló ID:" + idx.stopById.size + "\n" + "Megállónév: " + idx.stopByName.size + "\n" + "Vonal: " + idx.routeById.size + "\n" + "Járat: " + idx.tripById.size + "\n" + "Stop-time megálló index: " + idx.stopTimesByStop.size; } } /* ============================================================ 2. GTFS IDŐ KEZELÉS ============================================================ */ function normalizeGtfsTime(value) { const sec = gtfsTimeToSeconds(value); if (!Number.isFinite(sec)) { return { seconds: NaN, display: "nincs adat" }; } const day = Math.floor(sec / 86400); let remain = sec % 86400; const hour = Math.floor(remain / 3600); remain %= 3600; const minute = Math.floor(remain / 60); const second = remain % 60; return { seconds: sec, day: day, display: String(day * 24 + hour).padStart(2, "0") + ":" + String(minute).padStart(2, "0") + ":" + String(second).padStart(2, "0") }; } /* ============================================================ 3. KÖVETKEZŐ INDULÁSOK ============================================================ */ function getFastDepartures(stopId, limit = 30) { const rows = ATTILA.indexes.stopTimesByStop.get( String(stopId) ) || []; if (!rows.length) { return []; } const now = new Date(); const current = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds(); const output = []; for (const row of rows) { const sec = gtfsTimeToSeconds(row.departure_time); if (!Number.isFinite(sec)) { continue; } /* * A 24:00 utáni GTFS időket megtartjuk. */ if (sec < current) { continue; } const trip = ATTILA.indexes.tripById.get( String(row.trip_id) ); if (!trip) { continue; } const route = ATTILA.indexes.routeById.get( String(trip.route_id) ); output.push({ time: normalizeGtfsTime( row.departure_time ).display, seconds: sec, route: route?.route_short_name || "nincs adat", routeLong: route?.route_long_name || "nincs adat", headsign: trip.trip_headsign || "nincs adat", tripId: trip.trip_id || "nincs adat", stopSequence:row.stop_sequence || "", pickup: row.pickup_type || "", dropoff: row.drop_off_type || "" }); if (output.length >= limit) { break; } } return output; } /* ================================================================== 4. INDULÁSOK KIJELZÉSE =============================================================== */ function render28HourDepartures() { const stop = ATTILA.selectedStop; if (!stop) { $("departures").innerHTML = '<div class="warn">Nincs kiválasztott megálló.</div>'; visszatérés; } const rows = getFastDepartures( stop.stop_id, 40 ); if (!rows.length) { $("departures").innerHTML = '<div class="warn">Nincs további indulás.</div>'; visszatérés; } $("indulások").innerHTML = rows.map((row, index) => { return ` <div class="indulás-row"> <b>${index + 1}. 🕒 ${escapeHtml(row.time)</b> <span> 🚍 ${escapeHtml(row.route)} </span> <span> ${escapeHtml(row.headsign)} </span> <small> Vonal: ${escapeHtml(row.routeLong)} <br> Utazás: ${escapeHtml(row.tripId)} <br> Megállási sorrend: ${escapeHtml(row.stopSequence)} </small> </div> `; }).join(""); } /* =========================================================== 5. INDULÁSI GOMB ========================================================== */ function loadFastDepartures() { const stop = ATTILA.selectedStop; if (!stop) { $("departureStatus").innerHTML = "❌ Nincs kiválasztott megálló."; visszatérés; } render28HourDepartures(); const count = ( ATTILA.indexes.stopTimesByStop.get( String(stop.stop_id) ) || [] ).length; $("departureStatus").innerHTML = "🚍 GTFS INDULÁSI MOTOR OK<br>" + "Megálló: " + escapeHtml(stop.stop_name) + "<br>" + "GTFS ID: " + escapeHtml(stop.stop_id) + "<br>" + "Stop_times:" + count; } /* =================================================================== 6. JÁRMŰ NORMALIZÁLÓ ========================================================= */ function normalizeVehicle(raw) { if (!raw) { return null; } const position = raw.position || raw.vehicle_position || raw; const vehicle = raw.vehicle || raw; const trip = raw.trip || raw; const route = raw.route || raw; const lat = Number( position.latitude ?? position.lat ?? raw.latitude ?? raw.latitude ?? raw.lat ); const lon = Number( position.longitude ?? position.lon ?? raw.longitude ?? raw.lon ); const delay = Number( raw.delay ?? raw.departure_delay ?? position.delay ); return { vehicle_id: vehicle.id ?? vehicle.vehicle_id ?? raw.vehicle_id ?? raw.id ?? "nincs adat", license_plate: vehicle.license_plate ?? vehicle.plate ?? raw.license_plate ?? raw.plate ?? "nincs adat", forgalom: raw.forgalom ?? vehicle.forgalom ?? "nincs adat", forda: raw.forda ?? vehicle.forda ?? "nincs adat", vehicle_type: vehicle.vehicle_type ?? vehicle.type ?? raw.vehicle_type ?? "nincs adat", route_short_name: route.route_short_name ?? raw.route_short_name ?? raw.route ?? "nincs adat", route_id: trip.route_id ?? raw.route_id ?? "nincs adat", trip_id: trip.trip_id ?? raw.trip_id ?? "nincs adat", headsign: trip.trip_headsign ?? nyers.fejjel ?? "nincs adat", lat: Number.isFinite(lat) ? lat : null, lon: Number.isFinite(lon) ? lon : null, delay: Number.isFinite(delay) ? késleltetés : null, időbélyeg: raw.timestamp ?? null }; } /* =========================================================== 7. JÁRMŰ KERESÉS =============================================================== */ function renderVehicles() { const target = $("járművek"); if (!target) { return; } const search = String( $("járműKeresés")?.value || "" ) .trim() .toLowerCase(); const list = (ATTILA.járművek || []) .filter(jármű => { if (! )search) { return true; } const text = [ vehicle.vehicle_id, vehicle.license_plate, vehicle.forgalom, vehicle.forda, vehicle.vehicle_type, vehicle.route_short_name, vehicle.trip_id ] .join(" ") .toLowerCase(); return text.includes(search); }); if (!list.length) { target.innerHTML = '<div class="warn">Nincs járműadat.</div>'; $("vehicleStatus").textContent = "Járműmotor: nincs megjeleníthető adat."; return; } target.innerHTML = list.map((vehicle, index) => { const state = delayState(vehicle.delay); return ` <div class="vehicle-row"> <b> ${index + 1}. 🚌 ${escapeHtml( vehicle.route_short_name )} </b> <div> Jármű azonosító: ${escapeHtml( vehicle.vehicle_id )} </div> <div> Rendszám: ${escapeHtml( vehicle.license_plate )} </div> <div> Forgalma: ${escapeHtml( vehicle.forgalmi )} </div> <div> Fordítás: ${escapeHtml( vehicle.forda )} </div> <div> Típus: ${escapeHtml( vehicle.vehicle_type )} </div> <div> Állapot: <b class="${state.className}"> ${state.text} </b> </div> <div> Késés: ${ vehicle.delay === null ? "nincs adat" : vehicle.delay + " mp" } </div> </div> `; }).csatlakozik(""); $("vehicleStatus").textContent = "🚌 Járművek: " + lista.length; } /* ================================================================== 8. KÉSÉS / SIETÉS ========================================================== */ function delayState(seconds) { const value = Number(seconds); if (!Number.isFinite(value)) { return { text: "NINCS ADAT", className: "warn" }; } if (value < -30) { return { text: "SIETÉS", className: "err" }; } if (érték > 30) { return { text: "KÉSÉS", className: "info" }; } return { text: "PONTOS", className: "ok" }; } /* =========================================================== 9. JÁRMŰ JSON IMPORT =========================================================== */ aszinkron függvény importVehicleJsonFile() { const input = $("vehicleJsonFile"); if (!input || !input.files.length) { alert( "Nincs kiválasztott JSON fájl." ); return; } try { const text = await input.files[0].text(); const data = JSON.parse(text); let source = []; if (Array.isArray(data)) { source = data; } else if (Array.isArray(data.vehicles)) { source = data.vehicles; } else if (Array.isArray(data.vehicles)) { source = data.vehicles; } else if (Array.isArray(data.entity)) { source = data.entity; } else if (Array.isArray(data.data)) { source = data.data; } ATTILA.vehicles = source .map(normalizeVehicle) .filter(Boolean); renderVehicles(); showVehiclesWithin5km(); } } catch (error) { $("vehicleStatus").innerHTML = "❌ Jármű JSON hiba: " + escapeHtml(error.message); } } /* =========================================================== 10. 5 km-ES JÁRMŰTÉRKÉP ========================================================== */ function showVehiclesBithin5km() { if (!ATTILA.térkép.példány) { return; } if (!ATTILA.gps.active) { $("vehicleStatus").textContent = "📍 GPS szükséges az 5 km-es járműtérképhez."; return; } if (!ATTILA.map.vehicleLayer) { ATTILA.map.vehicleLayer = L.layerGroup().addTo( ATTILA.map.instance ); } ATTILA.map.vehicleLayer.clearLayers(); let count = 0; for (const vehicle of ATTILA.vehicles || []) { if ( !Number.isFinite(vehicle.lat) || !Number.isFinite(vehicle.lon) ) { continue; } const distance = haversineKm( ATTILA.gps.lat, ATTILA.gps.lon, vehicle.lat, vehicle.lon ); if (distance > 5) { continue; } count++; const marker = L.circleMarker( [vehicle.lat, vehicle.lon], { radius: 7, weight: 2 } ); marker.bindPopup(` <b>🚌 JÁRMŰ</b><br> Jármű ID: ${escapeHtml(vehicle.vehicle_id)}<br> Rendszám: ${escapeHtml(vehicle.license_plate)}<br> Vonal: ${escapeHtml(vehicle.route_short_name)}<br> Forgalmi: ${escapeHtml(vehicle.forgalmi)}<br> Forda: ${escapeHtml(vehicle.forda)}<br> Típus: ${escapeHtml(vehicle.vehicle_type)}<br> Késés: ${ vehicle.delay === null ? "nincs adat" : vehicle.delay + " mp" }<br> Távolság: ${distance.toFixed(3)} km `); marker.addTo( ATTILA.map.vehicleLayer ); } $("vehicleStatus").textContent = "🚌 5 km-en belüli járművek: " + count; } /* ============================================================ 11. KÖZELI MEGÁLLÓK ============================================================ */ function getNearestStops( radiusKm = 1, limit = 20 ) { if (!ATTILA.gps.active) { return []; } const result = []; for (const stop of ATTILA.gtfs.stops || []) { const lat = Number(stop.stop_lat); const lon = Number(stop.stop_lon); if ( !Number.isFinite(lat) || !Number.isFinite(lon) ) { continue; } const distance = haversineKm( ATTILA.gps.lat, ATTILA.gps.lon, lat, lon ); if (distance <= radiusKm) { result.push({ stop, distance }); } } result.sort( (a, b) => a.distance - b.distance ); return result.slice( 0, limit ); } function showNearestStops() { const stops = getNearestStops(1, 20); if (!stops.length) { $("stopResults").innerHTML = '<div class="warn">' + 'Nincs 1 km-en belüli megálló.' + '</div>'; return; } $("stopResults").innerHTML = stops.map(item => { return ` <div class="stop-result"> <b> ${escapeHtml( item.stop.stop_name )} </b> <br> 📏 ${item.distance.toFixed(3)} km <br> GTFS: ${escapeHtml( item.stop.stop_id )} <br> <button onclick="chooseStop('${escapeHtml( item.stop.stop_id )}')" > 🚏 KIVÁLASZTOM </button> </div> `; }).join(""); } /* ================================================================== 12. MEGÁLLÓ ADATOK ========================================================= */ function showSelectedStopDetails() { const stop = ATTILA.selectedStop; if (!stop) { return; } const lat = Number(stop.stop_lat); const lon = Number(stop.stop_lon); let distance = null; if ( ATTILA.gps.active && Number.isFinite(lat) && Number.isFinite(lon) ) { distance = haversineKm( ATTILA.gps.lat, ATTILA.gps.lon, lat, lon ); } const target = $("kiválasztottLeállításÁllapot"); if (!target) { return; } ... } target.innerHTML = "🚏 MEGÁLLÓ ADATOK<br>" + "Név: " + escapeHtml(stop.stop_name) + "<br>" + "GTFS stop_id: " + escapeHtml(stop.stop_id) + "<br>" + "stop_code: " + escapeHtml() | "Latitude: " + ( Number.isFinite(lat) ? lat.toFixed(6) : "nincs adat" ) + "<br>" + "Hosszúság: " + ( Number.isFinite(lon) ? lon.toFixed(6) : "nincs adat" ) + "<br>" + "Nincs adat" ) + "<br>" + "Távolság: = nc" + "Távol ság:= nc" + távolság.Fix(3) + " km" ); } /* ================================================================== 13. 6 SZÁMÍTÓ ======================================================== */ function calculateAverageSpeed() { const km = Number($("calcDistance")?.value); const minutes = Number($("calcTime")?.value); if ( !Number.isFinite(km) || !Number.isFinite(perc) || ​​perc <= 0 ) { $("calcResult1").textContent = "Hibás adat."; return; } const speed = km / (perc / 60); $("calcResult1").textContent = speed.toFixed(2) + " km/h"; } function calculateTravelTime() { const km = Number($("calcDistance2")?.value); const speed = Number($("calcSpeed2")?.value); if ( !Number.isFinite(km) || !Number.isFinite(speed) || speed <= 0 ) { $("calcResult2").textContent = "Hibás adat."; return; } const perc = (km / speed) * 60; $("calcResult2").textContent = minutes.toFixed(2) + " perc"; } function calculateDistanceTravelled() { const speed = Number($("calcSpeed3")?.value); const minutes = Number($("calcTime3")?.value); if ( !Number.isFinite(speed) || !Number.isFinite(minutes) ) { $("calcResult3").textContent = "Hibás adat."; return; } const km = speed * (minutes / 60); $("calcResult3").textContent = km.toFixed(3) + " km"; } function calculateDelay() { const planned = Number($("calcPlanned")?.value); const actual = Number($("calcActual")?.value); if ( !Number.isFinite(planned) || !Number.isFinite(actual) ) { $("calcResult4").textContent = "Hibás adat."; return; } const difference = actual - planned; } if (különbség > 30) { $("calcResult4").textContent = "MEGADÁS: " + különbség + " mp"; } else if (különbség < -30) { $("calcResult4").textContent = "EREDMÉNY: " + Math.abs(különbség) + " mp"; } else { $("calcResult4").textContent = "PONTOK: " + különbség + " mp"; } } function calculateAirDistance() { const a = String( $("calcGps1")?.value || "" ) .split(","); const b = String( $("calcGps2")?.value || "" ) .split(","); if ( a.length !== 2 || b.length !== 2 ) { $("calcResult5").textContent = "A megadott formátum a következő. }"; return; } const lat1 = Number(a[0]); const lon1 = Number(a[1]); const lat2 = Number(b[0]); const lon2 = Number(b[1]); const distance = haversineKm( lat1, lon1, lat2, lon2 ); $("calcResult5").textContent = Number.isFinite(distance) ? distance.toFixed(3) + " km" : "Hibás koordináta."; } function calculateMinutesPerKm() { const distance = Number($("calcDistance6")?.value); const minutes = Number($("calcTime6")?.value); if ( !Number.isFinite(distance) || !Number.isFinite(minutes) || distance <= 0 ) { $("calcResult6").textContent = "Hibás adat."; return; } $("calcResult6").textContent = ( perc / távolság ).toFixed(3) + " perc/km"; } /* =========================================================== 14. VONALI TÁBLÁZAT =========================================================== */ ATTILA.lineRows = ATTILA.lineRows || []; function parseLineInput(text) { const lines = String(text || "") .split(/\r?\n/) .map(line => line.trim()) .filter(Boolean); if (!lines.length) { return []; } const result = []; for (const line of lines) { const parts = line.split(";"); if (parts.length < 3) { continue; } result.push({ "Megálló": parts[0].trim(), "Irány": parts[1].trim(), "Távolság század-km": Number( String(parts[2]) .replace(",", ".") ) }); } return result; } function calculateLineTable() { const input = $("lineInput"); if (!input) { return; } const baseRows = parseLineInput( input.value ); if (!baseRows.length) { $("excelStatus").textContent = "❌ Nincs feldolgozó sor."; return; } const speed = Number( $("lineSpeed")?.érték || 30 ); const dwell = Number( $("lineDwell")?.érték || 20 ); let previousHundred = 0; let totalTime = 0; ATTILA.lineRows = baseRows.map( (row, index) => { const cumulativeHundred = Number( row["Távolság század-km"] ); const sectionHundred = index === 0 ? cumulativeHundred : }cumulativeHundred - previousHundred; const sectionKm = sectionHundred / 100; const cumulativeKm = cumulativeHundred / 100; const driveMinutes = speed > 0 ? ( sectionKm / speed ) * 60 : 0; const dwellMinutes = index === 0 ? 0 : dwell / 60; const totalSectionTime = driveMinutes + dwellMinutes; totalTime += totalSectionTime; previousHundred = cumulativeHundred; return { "Vonal": $("lineNumber")?.value || "nincs adat", "Jármű / típus": $("lineVehicle")?.value || "nincs adat", "Megálló": row["Megálló"], "Irány": row["Irány"], "Távolság század-km": cumulativeHundred, "Szakasz km": sectionKm, "Összes km": cumulativeKm, "Szakasz menetidő perc": driveMinutes, "Megállási idő mp": index === 0 ? 0 : dwell, "Összes idő perc": totalTime }; } ); renderLineTable(); $("excelStatus").innerHTML = "✅ Vonali táblázat elkészült.<br>" + "Sorok: " + ATTILA.lineRows.length + "<br>" + "Összes km: " + Number( ATTILA.lineRows[ ATTILA.lineRows.length - 1 ]["Összes km"] ).toFixed(2); } /* ============================================================ 15. VONALI TÁBLÁZAT KIJELZÉS ============================================================ */ function renderLineTable() { const target = $("lineTable"); if (!target) { return; } if (!ATTILA.lineRows.length) { target.innerHTML = "<div>Nincs számított adat.</div>"; return; } const headers = Object.keys( ATTILA.lineRows[0] ); let html = "<table>" + "<thead><tr>"; for (const header of headers) { html += "<th>" + escapeHtml(header) + "</th>"; } html += "</tr></thead><tbody>"; for (const row of ATTILA.lineRows) { html += "<tr>"; for (const header of headers) { let value = row[header]; if ( typeof value === "number" ) { value = value.toFixed(3); } html += "<td>" + escapeHtml( String(value) ) + "</td>"; } html += "</tr>"; } html += "</tbody></table>"; target.innerHTML = html; } /* ================================================================== 16. CSV EXPORT ======================================================== */ function exportLineCsv() { if (!ATTILA.lineRows.length) { calculateLineTable(); } if (!ATTILA.lineRows.length) { return; } const headers = Object.keys( ATTILA.lineRows[0] ); const lines = []; lines.push( headers.join(";") ); for (const row of ATTILA.lineRows) { lines.push( headers .map(header => { let value = row[header]; if ( typeof value === "number" ) { value = value.toFixed(3) .replace(".", ","); } return String(value) .replace(/;/g, ","); }) .join(";") ); } const blob = new Blob([ "\uFEFF" + lines.join("\r\n") ], { type: "text/csv;charset=utf-8" } ); const url = URL.createObjectURL(blob); const link = document.createElement("a"); link.href = url; link.download = "ATTILA_VONALI_TABLA.csv"; document.body.appendChild(link); link.click(); link.remove(); } URL.revokeObjectURL(url); } /* ==================================================================== 17. CSV / XLSX FÁJL BEOLVASÁS ============================================================ */ async function importLineFile() { const input = $("lineFile"); if (!input || !input.files.length) { $("excelStatus").textContent = "❌ Nincs kiválasztott fájl."; return; } const file = input.files[0]; try { const name = file.name.toLowerCase(); if (name.endsWith(".csv")) { const text = await file.text(); $("lineInput").value = text; calculateLineTable(); return; } if ( name.endsWith(".xlsx") || name.endsWith(".xls") ) { if ( typeof XLSX === "undefined" ) { $("excelStatus").textContent = "❌ Az XLSX könyvtár nincs betöltve."; return; } const buffer = await file.arrayBuffer(); const workbook = XLSX.read( buffer, { type: "array" } ); const firstSheet = workbook.Sheets[ workbook.SheetNames[0] ]; const csv = XLSX.utils.sheet_to_csv( firstSheet, { FS: ";" } ); $("lineInput").value = csv; calculateLineTable(); return; } $("excelStatus").textContent = "❌ CSV vagy XLSX fájl szükséges."; } catch (error) { $("excelStatus").textContent = "❌ Fájlolvasási hiba: " + error.message; } } /* ============================================================ 18. GPS FOLYAMATOS FIGYELÉS ============================================================ */ ATTILA.gpsWatchId = null; function startGpsWatch() { if ( !navigator.geolocation ) { $("gpsStatus").textContent = "❌ A böngésző nem támogatja a GPS-t."; return; } if ( ATTILA.gpsWatchId !== null ) { navigator.geolocation.clearWatch( ATTILA.gpsWatchId ); } ATTILA.gpsWatchId = navigator.geolocation.watchPosition( position => { ATTILA.gps.active = true; ATTILA.gps.lat = position.coords.latitude; ATTILA.gps.lon = position.coords.longitude; ATTILA.gps.accuracy = position.coords.pontosság; if ( updateGpsUI típusa === "függvény" ) { updateGpsUI(); } if ( updateUserMarker típusa === "függvény" ) { updateUserMarker(); } if ( ATTILA.selectedStop ) { showSelectedStopDetails(); } }, error => { $("gpsStatus").textContent = "❌ GPS hiba: " + error.message; }, { enableHighAccuracy: true, maximumAge: 5000, timeout: 15000 } ); } /* ================================================================= 19. 5 KM-ES TÉRKÉP FRISSÍTÉS ========================================================= */ function refresh5KmMap() { if ( !ATTILA.gps.active ) { $("mapStatus").textContent = "📍 GPS-re vár."; return; } if ( typeof showStopsWithin5km === "function" ) { showStopsWithin5km(); } if ( typeof showVehiclesWithin5km === "function" ) { showVehiclesWithin5km(); } } /* ==================================================================== 20. GPS KÖZÉPRE ============================================================== */ function centerMapOnGps() { if ( !ATTILA.gps.active || !ATTILA.map.instance ) { return; } ATTILA.map.instance.setView([ATTILA.gps.lat, ATTILA.gps.lon], 14); } /* ========================================================== 21. MEMÓRIAKÍMÉLŐ ÁLLAPOT =========================================================== */ function memoryFriendlyStatus() { const total = (ATTILA.gtfs.stops || + (]).TLAuth.f. []).length + (ATTILA.gtfs.trips || []).length + (ATTILA.gtfs.stop_times || []).hosszúság; let mode = "NORMÁL"; if (összesen > 3000000) { mode = "MEMÓRIA-KÍMÉLŐ"; } if (összesen > 6000000) { mode = "ERŐSEN MEMÓRIA-KÍMÉLŐ"; } return { rekordok: összesen, mód }; } /* =========================================================== 22. DIAGNOSZTIKA ========================================================== */ function runFix5Diagnostics() { const lines = []; lines.push( "🚍 ATTILA KÖZLEKEDÉS V10.1 FIX5" ); lines.push( "GTFS megállók: " + (ATTILA.gtfs.stops || []).length ); vonalak.push( "GTFS útvonalak: " + (ATTILA.gtfs.routes || []).length ); lines.push( "GTFS utak: " + (ATTILA.gtfs.trips || []).length ); lines.push( "GTFS megállási_idők: " + (ATTILA.gtfs.stop_times || []).length ); lines.push( "Járművek: " + (ATTILA.vehicles || []).length ); lines.push( "GPS: " + (ATTILA.gps.active ? "AKTÍV" : "NINCS" ) ); const memory = memoryFriendlyStatus(); lines.push( "Memória mód: " + memory.mode ); lines.push( "Összes rekord: " + memory.records ); if ($("diagnosztika")) { $("diagnosztika").textContent = lines.join("\n"); } } /* ===================================================================== 23. BILLENTYŰZET ========================================================== */ $("stopSearch")?.addEventListener( "keydown", event => { if ( event.key === "Enter" ) { if ( typeof searchStops === "function" ) { searchStops(); } } } ); $("selectedStop")?.addEventListener( "billentyűlenyomás", event => { if ( event.key === "Enter" ) { if ( typeof selectStopByInput === "függvény" ) { selectStopByInput(); } } } ); $("vehicleSearch")?.addEventListener( "billentyűlenyomás", event => { if ( event.key === "Enter" ) { renderVehicles(); } } ); /* ================================================================ 24. GOMBOK BEKÖTÉSE ========================================================= */ $("calcBtn1")?.addEventListener( "kattintás", átlagosSpeed ​​számítása ); $("calcBtn2")?.addEventListener( "kattintás", utazásiIdő számítása ); $("calcBtn3")?.addEventListener( "kattintás", megtettTávolság számítása ); $("calcBtn4")?.addEventListener( "kattintás", késleltetés számítása ); $("calcBtn5")?.addEventListener( "kattintás", calculateAirDistance ); $("calcBtn6")?.addEventListener( "kattintás", calculateMinutesPerKm ); $("lineCalculate")?.addEventListener( "kattintás", calculateLineTable ); $("lineExport")?.addEventListener( "kattintás", exportLineCsv ); $("lineFile")?.addEventListener( "változás",importLineFile ); /* ================================================================= 25. JÁRMŰ JSON FELÜLET ========================================================== */ function createVehicleControls() { const status = $("vehicleStatus"); if (!status) { return; } if ( $("vehicleJsonFile") ) { return; } const file = document.createElement("input"); file.type = "file"; file.accept = ".json,.txt"; file.id = "vehicleJsonFile"; const gomb = document.createElement("button"); button.textContent = "📥 JÁRMŰ JSON IMPORTÁLÁS"; button.onclick = importVehicleJsonFile; status.parentElement ?.appendChild(file); status.parentElement ?.appendChild(button); } /* =========================================================== 26. 5 km JÁRMŰ GOMB ========================================================== */ function createVehicleMapButton() { if ( $("vehicleMapButton") ) { return; } const status = $("járműÁllapot"); if (!status) { return; } const button = document.createElement("button"); button.id = "járműTérképGomb"; button.textContent = "🚌 JÁRMŰVEK 5 KM-EN BELÜL"; button.onclick = showVehiclesWithin5km; status.parentElement ?.appendChild(button); } /* ================================================================ 27. FOLYAMATOS GPS + TÉRKÉP ======================================================== */ setInterval( () => { if ( ATTILA.gps.active ) { if ( typeof updateUserMarker === "function" ) { updateUserMarker(); } refresh5KmMap(); } }, 10000 ); /* ================================================================ 28. INDEXEDDB UTÁNI INDEXELÉS =========================================================== */ async function rebuildAfterDatabaseLoad() { if ( (ATTILA.gtfs.stops || []).length || (ATTILA.gtfs.stop_times || []).length ) { rebuildGtfsIndexes(); checkGtfsMemorySafe(); } } function checkGtfsMemorySafe() { const info = memoryFriendlyStatus(); if ( info.records > 3000000 ) { if ($("gtfsStatus")) { $("gtfsStatus").innerHTML += "<br><br>" + "⚠️ Nagy GTFS állomány.<br>" + "Memória mód: " + info.mode; } } } /* =========================================================== 29.INDÍTÁS UTÁNI MOTOR ============================================================= */ setTimeout( async () => { try { if ( typeof rebuildGtfsIndexes === "function" ) { rebuildGtfsIndexes(); } createVehicleControls(); createVehicleMapButton(); await rebuildAfterDatabaseLoad(); runFix5Diagnostics(); } catch (error) { console.error( "FIX5 indítási hiba:", error ); if ($("diagnostics")) { $("diagnostics").textContent += "\n❌ FIX5: " + error.message; } } }, 800 ); /* ================================================================= 30. BIZTONSÁGOS SZÖKÉS ===================================================== */ if ( typeof escapeHtml !== "function" ) { window.escapeHtml = function(value) { return String( value ?? "" ) .replace( /&/g, "&" ) .replace( /</g, "<" ) .replace( />/g, ">" ) .replace( /"/g, """ ) ) .replace( /'/g, "'" ); }; } /* ===================================================================== 31. GLOBÁLIS ELÉRÉS =========================================================== */ window.ATTILA = ATTILA; window.rebuildGtfsIndexes = rebuildGtfsIndexes; window.loadFastDepartures = loadFastDepartures; window.renderVehicles = renderVehicles; window.showVehiclesWithin5km = showVehiclesWithin5km; window.calculateLineTable =calculateLineTable; window.exportLineCsv = exportLineCsv; window.startGpsWatch = startGpsWatch; window.centerMapOnGps = centerMapOnGps; window.runFix5Diagnostics = runFix5Diagnostics; /* ============================================================ 32. KÉSZ =========================================================== */ console.log( "🚍 ATTILA KÖZLEKEDÉS V10.1 FIX5 — 2/"2/"); console.log( "GTFS index:", ATTILA.indexes ); console.log( "GPS:", ATTILA.gps ); console.log( "Járműmotor:", ATTILA.vehicles ); </script> <!--
