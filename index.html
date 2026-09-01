@@ -1,1 +1,251 @@
-jkiu
+<!DOCTYPE html>
+<html lang="hu">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>🚍 ATTILA KÖZLEKEDÉS – MULTI GTFS MAX</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;padding:0;background:#101418;color:#f2f4f7;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Arial,sans-serif}
+body{padding-bottom:40px} button,input,select{font:inherit} button{cursor:pointer}
+.header{position:sticky;top:0;z-index:1000;background:#151a20;border-bottom:1px solid #303740;padding:calc(8px + env(safe-area-inset-top)) 10px 10px}
+.title{font-size:20px;font-weight:900}.subtitle{font-size:11px;color:#9ca7b3;margin-top:2px}
+.clockbox{margin-top:8px;display:flex;gap:8px;flex-wrap:wrap}.clock,.info{background:#080b0e;border:1px solid #303740;border-radius:10px;padding:6px 10px;font-weight:800}.info{background:#161c22;font-size:12px}
+.container{max-width:1500px;margin:auto;padding:10px}.section{margin-top:12px}.section h2{font-size:16px;margin:0 0 8px}
+.card{background:#171d23;border:1px solid #303740;border-radius:12px;padding:10px;margin:8px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px}
+input,select{width:100%;background:#0c1014;color:#fff;border:1px solid #3a434d;border-radius:8px;padding:9px;outline:none;margin:3px 0}
+input:focus,select:focus{border-color:#4ca3ff}button{border:0;border-radius:8px;padding:9px 12px;background:#267dcc;color:#fff;font-weight:800;margin:2px}
+button.green{background:#238b49}button.red{background:#a83232}button.gray{background:#414a54}button.orange{background:#a86b14}
+.muted{color:#9da7b2}.status{margin-top:7px;font-size:12px;line-height:1.45}.progress{height:6px;background:#252c33;border-radius:5px;overflow:hidden;margin-top:6px}.progress>div{height:100%;width:0;background:#37a4ff;transition:.2s}
+.statgrid{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:6px}.stat{background:#0d1217;border:1px solid #303740;border-radius:10px;padding:8px;text-align:center}.stat b{font-size:18px}
+.provider{display:inline-block;padding:3px 6px;border-radius:6px;font-size:10px;font-weight:900;margin-right:5px}.bkk{background:#1686d9}.volan{background:#258d45}.mav{background:#8b3db3}.other{background:#9b7a00}
+.departureWrap{width:100%;overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid #303740;border-radius:10px}
+.departures{width:100%;border-collapse:collapse;min-width:760px}.departures th{background:#090d11;color:#9faab5;font-size:11px;text-align:left;padding:8px 6px;position:sticky;top:0;z-index:2}
+.departures td{border-top:1px solid #272e36;padding:7px 6px;font-size:12px;white-space:nowrap}.departures tr:hover{background:#1d252d}
+.timeHour,.timeMinute{font-size:18px;font-weight:900;text-align:center;width:45px}.lineBox{display:inline-block;min-width:42px;text-align:center;border-radius:6px;padding:4px 5px;background:#27313a;font-weight:900}.tripBox{font-weight:800}
+.red{color:#ff5252}.blue{color:#4ca3ff}.green{color:#42d77d}.yellow{color:#ffd34d}
+#map{height:520px;border-radius:12px;border:1px solid #303740;overflow:hidden}.vehicleMarker{background:transparent;border:0}
+.badge{display:inline-block;padding:3px 6px;border-radius:6px;background:#27313a;font-size:11px;font-weight:800;margin:2px}
+.toolbar{display:flex;gap:4px;flex-wrap:wrap}.small{font-size:11px}.mono{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}
+@media(max-width:700px){.container{padding:6px}.title{font-size:17px}.subtitle{font-size:10px}.statgrid{grid-template-columns:repeat(2,1fr)}.card{padding:8px}#map{height:430px}button{padding:8px 9px;font-size:12px}.departures{min-width:760px}}
+</style>
+</head>
+<body>
+<header class="header">
+  <div class="title">🚍 ATTILA KÖZLEKEDÉS <span class="muted">MULTI GTFS MAX</span></div>
+  <div class="subtitle">BKK • VOLÁN • MÁV • OTHER | GTFS • REALTIME • GPS • TÉRKÉP • INDEXEDDB</div>
+  <div class="clockbox">
+    <div class="clock" id="clock">--:--:--</div>
+    <div class="info"><span id="date">----</span> • <span id="dow">----</span></div>
+    <div class="info">ISO <span id="week">--. hét</span></div>
+    <div class="info">Év napja <span id="yd">--</span> / <span id="ydleft">--</span></div>
+    <div class="info">Év <span id="yp">--</span></div>
+  </div>
+</header>
+
+<main class="container">
+
+<section class="section"><h2>📦 MULTI-GTFS BETÖLTÉS</h2>
+<div class="card">
+  <div class="grid">
+    <div><b>GTFS ZIP 1</b><select id="provider_0"><option>BKK</option><option>VOLAN</option><option>MAV</option><option>OTHER</option></select></div>
+    <div><b>GTFS ZIP 2</b><select id="provider_1"><option>VOLAN</option><option>BKK</option><option>MAV</option><option>OTHER</option></select></div>
+    <div><b>GTFS ZIP 3</b><select id="provider_2"><option>MAV</option><option>BKK</option><option>VOLAN</option><option>OTHER</option></select></div>
+    <div><b>GTFS ZIP 4</b><select id="provider_3"><option>OTHER</option><option>BKK</option><option>VOLAN</option><option>MAV</option></select></div>
+  </div>
+  <input id="files" type="file" accept=".zip,application/zip" multiple>
+  <div class="toolbar">
+    <button onclick="loadFiles()">📥 GTFS BETÖLTÉS</button>
+    <button class="gray" onclick="restoreDB()">♻️ INDEXEDDB VISSZATÖLTÉS</button>
+    <button class="red" onclick="clearProviderData()">🗑️ ADATOK TÖRLÉSE</button>
+  </div>
+  <div class="progress"><div id="prog"></div></div>
+  <div id="gtfsStatus" class="status">🟡 GTFS várakozik.</div>
+</div></section>
+
+<section class="section"><h2>📊 GTFS STATISZTIKA</h2><div id="stats"></div></section>
+
+<section class="section"><h2>🌐 GTFS URL</h2>
+<div class="grid">
+  <div class="card"><b>BKK</b><input id="urlBKK" value="https://bkk.hu/gtfs/budapest_gtfs.zip"><button onclick="remote('BKK')">BKK LETÖLTÉS</button></div>
+  <div class="card"><b>VOLÁN</b><input id="urlVOLAN" placeholder="GTFS ZIP URL"><button onclick="remote('VOLAN')">VOLÁN LETÖLTÉS</button></div>
+  <div class="card"><b>MÁV</b><input id="urlMAV" placeholder="GTFS ZIP URL"><button onclick="remote('MAV')">MÁV LETÖLTÉS</button></div>
+  <div class="card"><b>OTHER</b><input id="urlOTHER" placeholder="GTFS ZIP URL"><button onclick="remote('OTHER')">OTHER LETÖLTÉS</button></div>
+</div></section>
+
+<section class="section"><h2>🚏 MEGÁLLÓKERESŐ</h2>
+<div class="card">
+  <input id="sq" placeholder="Megállónév / GTFS ID / Stop code">
+  <div class="toolbar"><button onclick="findStop()">🔎 KERESÉS</button><button class="gray" onclick="$('sq').value='';$('sres').innerHTML=''">TÖRLÉS</button></div>
+  <div id="sres"></div>
+</div></section>
+
+<section class="section"><h2>🚉 INDULÁSI TÁBLA</h2>
+<div class="card">
+  <div class="grid">
+    <div><b>Megálló</b><input id="depStop" placeholder="Megállónév vagy GTFS ID"></div>
+    <div><b>Szolgáltató</b><select id="depProvider"><option>ALL</option><option>BKK</option><option>VOLAN</option><option>MAV</option><option>OTHER</option></select></div>
+    <div><b>Darabszám</b><select id="depLimit"><option>15</option><option>30</option><option>50</option><option>100</option></select></div>
+  </div>
+  <div class="toolbar"><button onclick="departureSearch()">🚉 INDULÁSOK KERESÉSE</button><button class="green" onclick="departureNow()">🕐 MOST</button></div>
+  <div id="depInfo" class="status"></div>
+</div>
+<div class="departureWrap"><table class="departures"><thead><tr><th>ÓRA</th><th>PERC</th><th>VONAL</th><th>JÁRAT</th><th>CÉLÁLLOMÁS</th><th>SZOLG.</th><th>REALTIME</th></tr></thead><tbody id="departureBody"><tr><td colspan="7">Keress megállót.</td></tr></tbody></table></div>
+</section>
+
+<section class="section"><h2>🚍 JÁRMŰKERESŐ</h2>
+<div class="card"><div class="grid">
+  <div><input id="jq" placeholder="Jármű / rendszám / forgalmi"></div>
+  <div><select id="jp"><option>ALL</option><option>BKK</option><option>VOLAN</option><option>MAV</option><option>OTHER</option></select></div>
+  <div><input id="jl" placeholder="Vonal"></div>
+  <div><select id="jt"><option>ALL</option><option>BUS</option><option>TRAM</option><option>TROLLEY</option><option>METRO</option><option>TRAIN</option><option>HEV</option></select></div>
+</div>
+<div class="toolbar"><button onclick="vehicleSearch()">🔎 JÁRMŰ KERESÉS</button></div><div id="vresult"></div></div>
+<div class="departureWrap"><table class="departures"><thead><tr><th>SZOLG.</th><th>VONAL</th><th>JÁRMŰ</th><th>RENDSZÁM</th><th>FORGALMI</th><th>TÍPUS</th><th>ELTÉRÉS</th><th>GPS / MEGÁLLÓ</th></tr></thead><tbody id="vtable"><tr><td colspan="8">Nincs járműadat.</td></tr></tbody></table></div>
+</section>
+
+<section class="section"><h2>🔎 UNIVERZÁLIS KERESŐ</h2>
+<div class="card"><div class="grid">
+  <div><input id="uq" placeholder="Megálló / vonal / jármű / rendszám / forgalmi / GTFS ID"></div>
+  <div><select id="ut"><option>ALL</option><option>STOP</option><option>LINE</option><option>VEHICLE</option><option>PLATE</option><option>TYPE</option></select></div>
+</div><button onclick="universal()">🔎 KERESÉS</button><div id="ures"></div></div>
+</section>
+
+<section class="section"><h2>📡 REALTIME</h2>
+<div class="card">
+  <div class="grid">
+    <div><b>BKK API kulcs</b><input id="key" type="password" placeholder="BKK API kulcs"><button onclick="saveKey()">🔑 KULCS MENTÉSE</button><button class="red" onclick="delKey()">🗑️ KULCS TÖRLÉSE</button></div>
+    <div><b>Opcionális GTFS-RT VehiclePositions URL</b><input id="genericVehicleURL" placeholder="VOLÁN/MÁV/OTHER GTFS-RT URL"></div>
+    <div><b>Opcionális GTFS-RT TripUpdates URL</b><input id="genericTripURL" placeholder="VOLÁN/MÁV/OTHER GTFS-RT URL"></div>
+  </div>
+  <div class="toolbar"><button class="green" onclick="bkkRT()">▶ BKK REALTIME</button><button class="orange" onclick="genericRT()">▶ GTFS-RT URL</button><button class="gray" onclick="stopRT()">⏹ LEÁLLÍTÁS</button></div>
+  <div id="keyStatus" class="status"></div><div id="rt" class="status">Realtime várakozik.</div>
+</div></section>
+
+<section class="section"><h2>📍 GPS</h2>
+<div class="card"><div class="grid">
+  <div>LAT: <b id="lat">—</b></div><div>LON: <b id="lon">—</b></div><div>Pontosság: <b id="acc">—</b></div>
+</div>
+<div class="toolbar"><button class="green" onclick="gpsStart()">📍 GPS INDÍTÁS</button><button onclick="reverse()">🏠 CÍM LEKÉRÉSE</button></div>
+<div id="gps" class="status">GPS várakozik.</div></div></section>
+
+<section class="section"><h2>🗺️ TÉRKÉP</h2><div id="map"></div><div id="ms" class="status"></div></section>
+
+<section class="section"><h2>🧮 GYORS SZÁMÍTÁS</h2>
+<div class="grid">
+<div class="card"><b>Százalék</b><input id="pa" type="number" placeholder="Alap"><input id="pp" type="number" placeholder="%"><button onclick="pct()">SZÁMOL</button><div id="pe"></div></div>
+<div class="card"><b>Menetidő</b><input id="km" type="number" step="0.01" placeholder="km"><input id="kh" type="number" step="0.1" placeholder="km/h"><button onclick="timecalc()">SZÁMOL</button><div id="ke"></div></div>
+</div></section>
+
+</main>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<script>
+const PROVIDERS=['BKK','VOLAN','MAV','OTHER'];
+const DB_NAME='AttilaKozlekedes_MULTI_GTFS_MAX';
+const DB_VERSION=4;
+let db=null,map=null,stopLayer=null,vehicleLayer=null,gpsMarker=null,timer=null;
+let radiusCircles=[],vehicles=[],gps={lat:null,lon:null},updates=new Map();
+const D={}; resetMemory();
+
+function $(id){return document.getElementById(id)}
+function esc(v){return String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;')}
+function norm(v){return String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()}
+function PN(p){return {BKK:'BKK',VOLAN:'VOLÁN',MAV:'MÁV',OTHER:'OTHER'}[p]||p}
+function setStatus(id,t){if($(id))$(id).innerHTML=t}
+function resetMemory(){for(const p of PROVIDERS)D[p]={stops:[],routes:[],trips:[],deps:new Map(),routeMap:new Map(),tripMap:new Map(),calendar:[],calendarDates:[]}}
+function gtfsTimeToSeconds(t){if(!t)return null;const a=String(t).trim().split(':');if(a.length!==3)return null;const h=+a[0],m=+a[1],s=+a[2];return [h,m,s].every(Number.isFinite)?h*3600+m*60+s:null}
+function formatTime(sec){if(!Number.isFinite(sec))return'--:--';const h=Math.floor(sec/3600),m=Math.floor((sec%3600)/60);return String(h%24).padStart(2,'0')+':'+String(m).padStart(2,'0')}
+function hourOf(sec){return Number.isFinite(sec)?String(Math.floor(sec/3600)%24).padStart(2,'0'):'--'}
+function minuteOf(sec){return Number.isFinite(sec)?String(Math.floor((sec%3600)/60)).padStart(2,'0'):'--'}
+function distanceKm(a,b,c,d){const R=6371,p1=a*Math.PI/180,p2=c*Math.PI/180,dp=(c-a)*Math.PI/180,dl=(d-b)*Math.PI/180,x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x))}
+function nearestStop(lat,lon){if(!Number.isFinite(lat)||!Number.isFinite(lon))return null;let best=null,min=Infinity;for(const p of PROVIDERS)for(const s of D[p].stops){const d=distanceKm(lat,lon,s.lat,s.lon);if(d<min){min=d;best={stop:s,distance:d}}}return best}
+function delayHTML(d){if(d==null||!Number.isFinite(+d))return'<span class="muted">NINCS ADAT</span>';d=+d;const a=Math.abs(d),t=`${Math.floor(a/60)}:${String(a%60).padStart(2,'0')}`;return d<0?`<span class="red">🔴 SIETÉS −${t}</span>`:d>0?`<span class="blue">🔵 KÉSÉS +${t}</span>`:'<span class="green">🟢 0:00</span>'}
+function parseCSV(text){const rows=[];let row=[],field='',q=false;for(let i=0;i<text.length;i++){const c=text[i];if(c==='"'){if(q&&text[i+1]==='"'){field+='"';i++}else q=!q;continue}if(c===','&&!q){row.push(field);field='';continue}if((c==='\n'||c==='\r')&&!q){if(c==='\r'&&text[i+1]==='\n')i++;row.push(field);if(row.some(x=>x!==''))rows.push(row);row=[];field='';continue}field+=c}if(field.length||row.length){row.push(field);rows.push(row)}if(!rows.length)return[];const h=rows[0].map(x=>String(x).replace(/^\uFEFF/,'').trim());return rows.slice(1).map(r=>{const o={};h.forEach((k,i)=>o[k]=r[i]??'');return o})}
+function openDB(){return new Promise((resolve,reject)=>{const r=indexedDB.open(DB_NAME,DB_VERSION);r.onupgradeneeded=e=>{const x=e.target.result;for(const n of ['meta','stops','routes','trips','deps'])if(!x.objectStoreNames.contains(n))x.createObjectStore(n,{keyPath:'key'})};r.onsuccess=e=>{db=e.target.result;resolve(db)};r.onerror=e=>reject(e.target.error)})}
+function txPutMany(store,arr){return new Promise((resolve,reject)=>{if(!arr.length)return resolve();const tx=db.transaction(store,'readwrite'),os=tx.objectStore(store);for(const x of arr)os.put(x);tx.oncomplete=resolve;tx.onerror=()=>reject(tx.error)})}
+function getAll(store){return new Promise((resolve,reject)=>{const tx=db.transaction(store,'readonly'),r=tx.objectStore(store).getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error)})}
+async function importGTFS(file,provider){
+  const zip=await JSZip.loadAsync(file),wanted=['stops.txt','routes.txt','trips.txt','stop_times.txt','calendar.txt','calendar_dates.txt'],files={};
+  for(const n of Object.keys(zip.files)){const b=n.split('/').pop().toLowerCase();if(wanted.includes(b))files[b]=zip.files[n]}
+  for(const n of ['stops.txt','routes.txt','trips.txt','stop_times.txt'])if(!files[n])throw new Error(n+' hiányzik.');
+  const r={stops:[],routes:[],trips:[],deps:new Map(),routeMap:new Map(),tripMap:new Map(),calendar:[],calendarDates:[]};
+  setStatus('gtfsStatus',`⏳ ${PN(provider)} – stops.txt...`);
+  for(const s of parseCSV(await files['stops.txt'].async('string'))){const lat=+s.stop_lat,lon=+s.stop_lon;if(Number.isFinite(lat)&&Number.isFinite(lon))r.stops.push({id:String(s.stop_id||''),name:String(s.stop_name||''),code:String(s.stop_code||''),lat,lon,provider})}
+  setStatus('gtfsStatus',`⏳ ${PN(provider)} – routes.txt...`);
+  for(const x of parseCSV(await files['routes.txt'].async('string')))r.routes.push({id:String(x.route_id||''),name:String(x.route_short_name||x.route_id||''),long:String(x.route_long_name||''),type:String(x.route_type||''),provider})
+  setStatus('gtfsStatus',`⏳ ${PN(provider)} – trips.txt...`);
+  for(const x of parseCSV(await files['trips.txt'].async('string')))r.trips.push({id:String(x.trip_id||''),route_id:String(x.route_id||''),service_id:String(x.service_id||''),headsign:String(x.trip_headsign||''),direction:String(x.direction_id||''),provider})
+  if(files['calendar.txt'])r.calendar=parseCSV(await files['calendar.txt'].async('string'));
+  if(files['calendar_dates.txt'])r.calendarDates=parseCSV(await files['calendar_dates.txt'].async('string'));
+  r.routeMap=new Map(r.routes.map(x=>[x.id,x]));r.tripMap=new Map(r.trips.map(x=>[x.id,x]));
+  setStatus('gtfsStatus',`⏳ ${PN(provider)} – stop_times.txt indexelés...`);
+  const st=await files['stop_times.txt'].async('string');
+  for(const x of parseCSV(st)){const stop=String(x.stop_id||''),trip=String(x.trip_id||''),time=gtfsTimeToSeconds(x.departure_time||x.arrival_time);if(!stop||!trip||time==null)continue;const t=r.tripMap.get(trip);if(!r.deps.has(stop))r.deps.set(stop,[]);r.deps.get(stop).push({trip_id:trip,route_id:t?.route_id||'',service_id:t?.service_id||'',headsign:t?.headsign||'',time})}
+  for(const a of r.deps.values())a.sort((x,y)=>x.time-y.time);
+  return r
+}
+async function saveProvider(p){const d=D[p];const prefix=p+'|';const meta=[{key:p,provider:p,stops:d.stops.length,routes:d.routes.length,trips:d.trips.length,deps:d.deps.size,saved:new Date().toISOString()}];const stops=d.stops.map(x=>({key:prefix+x.id,...x})),routes=d.routes.map(x=>({key:prefix+x.id,...x})),trips=d.trips.map(x=>({key:prefix+x.id,...x})),deps=[...d.deps].map(([stop,items])=>({key:prefix+stop,provider:p,stop,items}));await txPutMany('meta',meta);await txPutMany('stops',stops);await txPutMany('routes',routes);await txPutMany('trips',trips);await txPutMany('deps',deps)}
+async function restoreDB(){try{resetMemory();const [stops,routes,trips,deps]=await Promise.all(['stops','routes','trips','deps'].map(getAll));for(const x of stops)if(D[x.provider])D[x.provider].stops.push(x);for(const x of routes)if(D[x.provider])D[x.provider].routes.push(x);for(const x of trips){const p=x.provider||String(x.key||'').split('|')[0];if(D[p])D[p].trips.push(x)}for(const x of deps)if(D[x.provider])D[x.provider].deps.set(x.stop,x.items||[]);for(const p of PROVIDERS){D[p].routeMap=new Map(D[p].routes.map(x=>[x.id,x]));D[p].tripMap=new Map(D[p].trips.map(x=>[x.id,x]))}stats();drawStops();setStatus('gtfsStatus','🟢 IndexedDB GTFS adatok visszatöltve.')}catch(e){setStatus('gtfsStatus','🔴 IndexedDB: '+esc(e.message))}}
+async function loadFiles(){const fs=[...$('files').files];if(!fs.length)return alert('Válassz GTFS ZIP-et.');if(fs.length>4)return alert('Maximum 4 ZIP tölthető be.');try{for(let i=0;i<fs.length;i++){const p=$('provider_'+i).value;setStatus('gtfsStatus',`⏳ ${PN(p)} import: ${esc(fs[i].name)}`);D[p]=await importGTFS(fs[i],p);$('prog').style.width=((i+1)/fs.length*100)+'%';await saveProvider(p)}stats();drawStops();setStatus('gtfsStatus','🟢 VALÓDI MULTI-GTFS BETÖLTÉS KÉSZ.')}catch(e){console.error(e);setStatus('gtfsStatus','🔴 GTFS HIBA: '+esc(e.message))}}
+async function remote(p){const url=$('url'+p).value.trim();if(!url)return alert('Nincs GTFS URL.');try{setStatus('gtfsStatus',`⏳ ${PN(p)} letöltése...`);const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw Error('HTTP '+r.status);const f=new File([await r.blob()],p+'.zip',{type:'application/zip'});D[p]=await importGTFS(f,p);await saveProvider(p);stats();drawStops();setStatus('gtfsStatus',`🟢 ${PN(p)} GTFS kész.`)}catch(e){setStatus('gtfsStatus',`🔴 ${PN(p)} hiba: ${esc(e.message)}<br><span class="muted">CORS esetén használd a ZIP fájlos betöltést.</span>`)}}
+async function clearProviderData(){if(!confirm('A teljes MULTI-GTFS adatbázist töröljem?'))return;indexedDB.deleteDatabase(DB_NAME);resetMemory();stats();if(stopLayer)stopLayer.clearLayers();setStatus('gtfsStatus','🗑️ GTFS adatok törölve. Frissítsd az oldalt.')}
+
+function stats(){let s=0,r=0,t=0,d=0;for(const p of PROVIDERS){s+=D[p].stops.length;r+=D[p].routes.length;t+=D[p].trips.length;d+=D[p].deps.size}$('stats').innerHTML=`<div class="statgrid">${[['Megállók',s],['Vonalak',r],['Járatok',t],['Indexelt megállók',d]].map(x=>`<div class="stat"><span class="muted">${x[0]}</span><br><b>${x[1].toLocaleString('hu-HU')}</b></div>`).join('')}</div>`}
+function findStopRecords(q,p='ALL'){q=norm(q);const a=[];for(const x of PROVIDERS){if(p!=='ALL'&&p!==x)continue;for(const s of D[x].stops)if(norm(`${s.name} ${s.id} ${s.code}`).includes(q))a.push({provider:x,stop:s})}return a}
+function findStop(){const q=norm($('sq').value);if(!q)return $('sres').textContent='Írj be megállónevet vagy GTFS ID-t.';const m=findStopRecords(q);$('sres').innerHTML=m.slice(0,100).map(x=>`<div class="card"><span class="provider ${x.provider.toLowerCase()}">${PN(x.provider)}</span><b>🚏 ${esc(x.stop.name)}</b><br>GTFS ID: <span class="mono">${esc(x.stop.id)}</span> • Stop code: ${esc(x.stop.code||'—')}<br>📍 ${x.stop.lat.toFixed(6)}, ${x.stop.lon.toFixed(6)} • <button onclick="focusStop(${x.stop.lat},${x.stop.lon})">TÉRKÉP</button></div>`).join('')||'❌ Nincs találat.'}
+function serviceActive(p,serviceId,date){const d=D[p],ymd=date.toISOString().slice(0,10).replaceAll('-','');let base=null;const c=d.calendar.find(x=>String(x.service_id)===String(serviceId));if(c){const day=['sunday','monday','tuesday','wednesday','thursday','friday','saturday'][date.getDay()];base=ymd>=c.start_date&&ymd<=c.end_date&&c[day]==='1'}const cd=d.calendarDates.filter(x=>String(x.service_id)===String(serviceId)&&String(x.date)===ymd);for(const x of cd){if(String(x.exception_type)==='1')base=true;if(String(x.exception_type)==='2')base=false}return base===null?true:base}
+function departureSearch(){const q=$('depStop').value.trim(),p=$('depProvider').value,limit=+$('depLimit').value||15;if(!q)return $('depInfo').textContent='❌ Adj meg egy megállót.';const m=findStopRecords(q,p),rows=[];for(const x of m)for(const a of D[x.provider].deps.get(x.stop.id)||[])if(serviceActive(x.provider,a.service_id,new Date()))rows.push({provider:x.provider,stop:x.stop,dep:a});const now=new Date(),ns=now.getHours()*3600+now.getMinutes()*60+now.getSeconds();rows.sort((a,b)=>a.dep.time-b.dep.time);const out=rows.filter(x=>x.dep.time>=ns-120).slice(0,limit);$('depInfo').innerHTML=`🟢 ${m.length} megálló • ${out.length} indulás • Most: <b>${formatTime(ns)}</b>`;$('departureBody').innerHTML=out.map(departureRow).join('')||'<tr><td colspan="7">Nincs további aktív indulás.</td></tr>'}
+function departureNow(){departureSearch()}
+function departureRow(x){const route=D[x.provider].routeMap.get(x.dep.route_id),u=updates.get(x.dep.trip_id),delay=u?.delay??null;return`<tr><td class="timeHour">${hourOf(x.dep.time)}</td><td class="timeMinute">${minuteOf(x.dep.time)}</td><td><span class="lineBox">${esc(route?.name||x.dep.route_id||'NINCS ADAT')}</span></td><td class="tripBox">${esc(x.dep.trip_id)}</td><td>${esc(x.dep.headsign||'NINCS ADAT')}</td><td><span class="provider ${x.provider.toLowerCase()}">${PN(x.provider)}</span></td><td>${delayHTML(delay)}</td></tr>`}
+function vehicleTypeMatch(v,t){if(t==='ALL')return true;const x=norm((v.type||'')+' '+(v.route_type||''));return t==='BUS'?/bus|autobus/.test(x):t==='TRAM'?/tram|villamos/.test(x):t==='TROLLEY'?/trol/.test(x):t==='METRO'?/metro|metró/.test(x):t==='TRAIN'?/train|vonat/.test(x):t==='HEV'?/hev|hév/.test(x):true}
+function vehicleCard(v){const n=nearestStop(v.lat,v.lon);return`<div class="card"><span class="provider ${String(v.provider).toLowerCase()}">${PN(v.provider)}</span> <b>🚍 ${esc(v.label||v.id||'NINCS ADAT')}</b><br>Vonal: <b>${esc(v.route||'NINCS ADAT')}</b> • Rendszám: ${esc(v.plate||'NINCS ADAT')} • Forgalmi: ${esc(v.forgalmi||'NINCS ADAT')} • Típus: ${esc(v.type||'NINCS ADAT')}<br>📍 ${Number.isFinite(v.lat)?v.lat.toFixed(6)+', '+v.lon.toFixed(6):'NINCS GPS'} • ${delayHTML(v.delay)}${n?`<br>🚏 Legközelebbi: <b>${esc(n.stop.name)}</b> • ${n.distance.toFixed(3)} km • GTFS ID: ${esc(n.stop.id)}`:''}</div>`}
+function vehicleSearch(){const q=norm($('jq').value),p=$('jp').value,l=norm($('jl').value),t=$('jt').value;const r=vehicles.filter(v=>{if(p!=='ALL'&&v.provider!==p)return false;if(!vehicleTypeMatch(v,t))return false;if(l&&!norm(`${v.route} ${v.route_id}`).includes(l))return false;if(q&&!norm([v.id,v.label,v.plate,v.forgalmi,v.type,v.route,v.route_id].join(' ')).includes(q))return false;return true});$('vresult').innerHTML=`<b>REALTIME találat: ${r.length}</b><br><br>${r.slice(0,100).map(vehicleCard).join('')||'<span class="muted">Nincs valódi realtime találat.</span>'}`;$('vtable').innerHTML=r.slice(0,500).map(v=>{const n=nearestStop(v.lat,v.lon);return`<tr><td>${PN(v.provider)}</td><td>${esc(v.route||'NINCS ADAT')}</td><td>${esc(v.label||v.id||'NINCS ADAT')}</td><td>${esc(v.plate||'NINCS ADAT')}</td><td>${esc(v.forgalmi||'NINCS ADAT')}</td><td>${esc(v.type||'NINCS ADAT')}</td><td>${delayHTML(v.delay)}</td><td>${Number.isFinite(v.lat)?v.lat.toFixed(6)+', '+v.lon.toFixed(6):'NINCS GPS'}${n?`<br>🚏 ${esc(n.stop.name)} • ${n.distance.toFixed(3)} km`:''}</td></tr>`}).join('')||'<tr><td colspan="8">Nincs adat.</td></tr>';drawVehicles()}
+function universal(){const q=norm($('uq').value),type=$('ut').value;if(!q)return $('ures').textContent='Írj be keresési kifejezést.';const out=[];if(type==='ALL'||type==='STOP')for(const p of PROVIDERS)for(const s of D[p].stops)if(norm(`${s.name} ${s.id} ${s.code}`).includes(q))out.push(`<div class="card"><span class="provider ${p.toLowerCase()}">${PN(p)}</span> 🚏 <b>${esc(s.name)}</b><br>GTFS ID: ${esc(s.id)} • Stop code: ${esc(s.code||'—')}</div>`);if(type==='ALL'||type==='LINE')for(const p of PROVIDERS)for(const r of D[p].routes)if(norm(`${r.name} ${r.id} ${r.long}`).includes(q))out.push(`<div class="card"><span class="provider ${p.toLowerCase()}">${PN(p)}</span> 🛣️ <b>${esc(r.name)}</b><br>Route ID: ${esc(r.id)}<br>${esc(r.long)}</div>`);if(type==='ALL'||type==='VEHICLE'||type==='PLATE'||type==='TYPE')for(const v of vehicles)if(norm([v.id,v.label,v.plate,v.forgalmi,v.type,v.route,v.route_id].join(' ')).includes(q))out.push(vehicleCard(v));$('ures').innerHTML=out.slice(0,500).join('')||'❌ Nincs valódi találat.'}
+
+const BKK_VEHICLE_URL='https://go.bkk.hu/api/query/v1/ws/gtfs-rt/full/VehiclePositions.pb';
+const BKK_TRIP_URL='https://go.bkk.hu/api/query/v1/ws/gtfs-rt/full/TripUpdates.pb';
+let protobufLoaded=null;
+const PROTO_SCHEMA=`syntax = "proto2";
+package transit_realtime;
+message FeedMessage { required FeedHeader header = 1; repeated FeedEntity entity = 2; }
+message FeedHeader { required string gtfs_realtime_version = 1; optional uint64 timestamp = 3; }
+message FeedEntity { required string id = 1; optional bool is_deleted = 2; optional TripUpdate trip_update = 3; optional VehiclePosition vehicle = 4; }
+message TripDescriptor { optional string trip_id = 1; optional string route_id = 5; }
+message VehicleDescriptor { optional string id = 1; optional string label = 2; optional string license_plate = 3; }
+message Position { required float latitude = 1; required float longitude = 2; optional float bearing = 3; optional float speed = 5; }
+message VehiclePosition { optional TripDescriptor trip = 1; required Position position = 2; optional VehicleDescriptor vehicle = 8; }
+message TripUpdate { required TripDescriptor trip = 1; repeated StopTimeUpdate stop_time_update = 2; optional VehicleDescriptor vehicle = 3; }
+message StopTimeEvent { optional int32 delay = 1; }
+message StopTimeUpdate { optional StopTimeEvent arrival = 2; optional StopTimeEvent departure = 3; optional string stop_id = 4; }`;
+async function getProtobuf(){if(window.protobuf)return window.protobuf;if(protobufLoaded)return protobufLoaded;protobufLoaded=new Promise(async(resolve,reject)=>{for(const u of ['https://cdn.jsdelivr.net/npm/protobufjs@7.4.0/dist/protobuf.min.js','https://unpkg.com/protobufjs@7.4.0/dist/protobuf.min.js'])try{await new Promise((a,b)=>{const s=document.createElement('script');s.src=u;s.onload=a;s.onerror=b;document.head.appendChild(s)});if(window.protobuf)return resolve(window.protobuf)}catch(e){}reject(Error('protobufjs nem tölthető be'))});return protobufLoaded}
+async function decodeGTFSRT(vurl,turl,provider='OTHER',key=''){const p=await getProtobuf(),root=p.parse(PROTO_SCHEMA).root,F=root.lookupType('transit_realtime.FeedMessage');const opts=key?'?key='+encodeURIComponent(key):'';const [vr,tr]=await Promise.all([fetch(vurl+opts,{cache:'no-store'}),fetch(turl+opts,{cache:'no-store'})]);if(!vr.ok||!tr.ok)throw Error(`HTTP ${vr.status}/${tr.status}`);const [vb,tb]=await Promise.all([vr.arrayBuffer(),tr.arrayBuffer()]);const vf=F.decode(new Uint8Array(vb)),tf=F.decode(new Uint8Array(tb));const arr=[];for(const e of vf.entity){const v=e.vehicle;if(!v?.position)continue;const rid=v.trip?.routeId||'';const rt=provider==='BKK'?(D.BKK.routeMap.get(rid)?.name||rid):rid;arr.push({provider,id:v.vehicle?.id||'',label:v.vehicle?.label||'',plate:v.vehicle?.licensePlate||'',forgalmi:'',type:'NINCS ADAT',route:rt,route_id:rid,trip_id:v.trip?.tripId||'',lat:+v.position.latitude,lon:+v.position.longitude,bearing:v.position.bearing==null?null:+v.position.bearing,speed:v.position.speed==null?null:+v.position.speed,delay:null})}for(const e of tf.entity){const t=e.tripUpdate;if(!t?.trip?.tripId)continue;let delay=null;for(const su of t.stopTimeUpdate||[]){const ev=su.departure||su.arrival;if(ev?.delay!=null){delay=+ev.delay;if(su.stopId)updates.set(t.trip.tripId,{delay,stop_id:su.stopId});else updates.set(t.trip.tripId,{delay});break}}}for(const v of arr)v.delay=updates.get(v.trip_id)?.delay??null;if(provider==='BKK')vehicles=arr;else vehicles=vehicles.filter(x=>x.provider!==provider).concat(arr);vehicleSearch();drawVehicles();return arr}
+async function bkkRT(){const key=localStorage.getItem('ATTILA_BKK_KEY')||$('key').value.trim();if(!key)return setStatus('rt','🔴 Nincs BKK API kulcs.');try{setStatus('rt','⏳ BKK realtime lekérdezés...');await decodeGTFSRT(BKK_VEHICLE_URL,BKK_TRIP_URL,'BKK',key);setStatus('rt',`🟢 BKK realtime OK • ${vehicles.filter(v=>v.provider==='BKK').length} jármű • ${updates.size} TripUpdate`);scheduleRT()}catch(e){setStatus('rt','🔴 BKK realtime hiba: '+esc(e.message))}}
+async function genericRT(){const v=$('genericVehicleURL').value.trim(),t=$('genericTripURL').value.trim();if(!v||!t)return setStatus('rt','🔴 Add meg a VehiclePositions és TripUpdates GTFS-RT URL-t.');try{setStatus('rt','⏳ GTFS-RT lekérdezés...');await decodeGTFSRT(v,t,'OTHER','');setStatus('rt','🟢 GTFS-RT betöltve.')}catch(e){setStatus('rt','🔴 GTFS-RT hiba: '+esc(e.message))}}
+function scheduleRT(){if(timer)clearTimeout(timer);timer=setTimeout(()=>{timer=null;if(localStorage.getItem('ATTILA_BKK_KEY'))bkkRT()},15000)}
+function stopRT(){if(timer)clearTimeout(timer);timer=null;setStatus('rt','⏹️ Realtime leállítva.')}
+function saveKey(){const k=$('key').value.trim();if(!k)return $('keyStatus').textContent='Nincs mentendő kulcs.';localStorage.setItem('ATTILA_BKK_KEY',k);$('keyStatus').textContent='🔑 BKK kulcs mentve.'}
+function delKey(){localStorage.removeItem('ATTILA_BKK_KEY');$('key').value='';$('keyStatus').textContent='🗑️ BKK kulcs törölve.'}
+
+function gpsStart(){if(!navigator.geolocation)return $('gps').textContent='🔴 A böngésző nem támogatja a GPS-t.';$('gps').textContent='⏳ GPS lekérdezés...';navigator.geolocation.watchPosition(pos=>{gps={lat:pos.coords.latitude,lon:pos.coords.longitude};$('lat').textContent=gps.lat.toFixed(8);$('lon').textContent=gps.lon.toFixed(8);$('acc').textContent=Number(pos.coords.accuracy).toFixed(1)+' m';$('gps').textContent='🟢 GPS aktív';if(gpsMarker)gpsMarker.setLatLng([gps.lat,gps.lon]);else gpsMarker=L.marker([gps.lat,gps.lon]).bindPopup('📍 Saját GPS pozíció').addTo(map);for(const c of radiusCircles)c.setLatLng([gps.lat,gps.lon]);map.setView([gps.lat,gps.lon],14);drawGPSInfo()},e=>{const m=String(e?.message||e);if(/permissions policy|disabled in this document|permission denied/i.test(m)){$('gps').innerHTML='🔴 GPS: '+esc(m)+'<br><span class="muted">A böngésző/előnézeti környezet letiltotta a helyadatot. Nyisd meg a HTML-t közvetlenül Chrome-ban/Edge-ben, vagy futtasd localhostról (pl. VS Code Live Server), majd engedélyezd a Helyadatokat.</span>'}else $('gps').textContent='🔴 GPS: '+esc(m)},{enableHighAccuracy:true,timeout:20000,maximumAge:5000})}
+function drawGPSInfo(){if(gps.lat==null)return;const n=nearestStop(gps.lat,gps.lon);$('ms').innerHTML=`📍 GPS: ${gps.lat.toFixed(6)}, ${gps.lon.toFixed(6)}${n?`<br>🚏 Legközelebbi megálló: <b>${esc(n.stop.name)}</b> • ${n.distance.toFixed(3)} km • GTFS ID: ${esc(n.stop.id)}`:''}`}
+async function reverse(){if(gps.lat==null)return $('gps').textContent='Előbb indítsd el a GPS-t.';try{$('gps').textContent='🏠 Cím lekérése...';const r=await fetch(`https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${gps.lat}&lon=${gps.lon}&zoom=18&addressdetails=1`,{headers:{Accept:'application/json'}});if(!r.ok)throw Error('HTTP '+r.status);const d=await r.json();$('gps').innerHTML='🟢 '+esc(d.display_name||'NINCS ADAT')}catch(e){$('gps').textContent='🔴 '+esc(e.message)}}
+
+function pct(){const a=+$('pa').value,p=+$('pp').value;$('pe').innerHTML=Number.isFinite(a)&&Number.isFinite(p)?`<b>${(a*p/100).toFixed(2)}</b>`:'Hibás adat.'}
+function timecalc(){const km=+$('km').value,s=+$('kh').value;if(!Number.isFinite(km)||!Number.isFinite(s)||km<0||s<=0)return $('ke').textContent='Hibás adat.';const m=km/s*60,h=Math.floor(m/60),mm=m%60;$('ke').textContent=h?`${h} óra ${mm.toFixed(1)} perc`:`${mm.toFixed(1)} perc`}
+function updateClock(){const d=new Date();$('clock').textContent=d.toLocaleTimeString('hu-HU');$('date').textContent=d.toLocaleDateString('hu-HU');$('dow').textContent=d.toLocaleDateString('hu-HU',{weekday:'long'});const iso=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const day=iso.getUTCDay()||7;iso.setUTCDate(iso.getUTCDate()+4-day);const ys=new Date(Date.UTC(iso.getUTCFullYear(),0,1));$('week').textContent=Math.ceil((((iso-ys)/86400000)+1)/7)+'. hét';const start=new Date(d.getFullYear(),0,1),next=new Date(d.getFullYear()+1,0,1),dayNo=Math.floor((d-start)/86400000)+1,total=(next-start)/86400000;$('yd').textContent=dayNo;$('ydleft').textContent=total-dayNo;$('yp').textContent=(dayNo/total*100).toFixed(2)+' %'}
+function vehicleIcon(v){const c={BKK:'#1686d9',VOLAN:'#258d45',MAV:'#8b3db3'}[v.provider]||'#42a5ff';return L.divIcon({className:'vehicleMarker',html:`<div style="background:${c};color:#fff;border:2px solid #fff;border-radius:50%;width:28px;height:28px;line-height:24px;text-align:center;box-shadow:0 2px 6px #000">🚍</div>`,iconSize:[28,28],iconAnchor:[14,14]})}
+function drawVehicles(){if(!vehicleLayer)return;vehicleLayer.clearLayers();for(const v of vehicles)if(Number.isFinite(v.lat)&&Number.isFinite(v.lon))L.marker([v.lat,v.lon],{icon:vehicleIcon(v)}).bindPopup(vehicleCard(v)).addTo(vehicleLayer);setStatus('ms',`🚍 Térképen: <b>${vehicles.filter(v=>Number.isFinite(v.lat)&&Number.isFinite(v.lon)).length}</b> realtime jármű • megállók: <b>${PROVIDERS.reduce((n,p)=>n+D[p].stops.length,0).toLocaleString('hu-HU')}</b>`+(gps.lat!=null?`<br>📍 Saját GPS: ${gps.lat.toFixed(6)}, ${gps.lon.toFixed(6)}`:''))}
+function drawStops(){if(!stopLayer)return;stopLayer.clearLayers();const all=PROVIDERS.flatMap(p=>D[p].stops).slice(0,5000);for(const s of all){const c={BKK:'#1686d9',VOLAN:'#258d45',MAV:'#8b3db3'}[s.provider]||'#9b7a00';L.circleMarker([s.lat,s.lon],{radius:3,weight:1,color:c}).bindPopup(`<b>🚏 ${esc(s.name)}</b><br>GTFS ID: ${esc(s.id)}<br>Stop code: ${esc(s.code||'—')}<br>${PN(s.provider)}<br>📍 ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}`).addTo(stopLayer)}}
+function focusStop(lat,lon){map.setView([lat,lon],16)}
+function initMap(){map=L.map('map').setView([47.4979,19.0402],10);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);vehicleLayer=L.layerGroup().addTo(map);stopLayer=L.layerGroup().addTo(map);[5000,10000,15000].forEach((r,i)=>radiusCircles.push(L.circle([47.4979,19.0402],{radius:r,color:['#42a5ff','#55c76a','#ffd34d'][i],fill:false,weight:1,opacity:.6}).addTo(map)))}
+(async function init(){try{await openDB();const k=localStorage.getItem('ATTILA_BKK_KEY');if(k)$('keyStatus').textContent='🔑 Mentett BKK kulcs található.';await restoreDB()}catch(e){setStatus('gtfsStatus','🔴 IndexedDB hiba: '+esc(e.message))}initMap();updateClock();setInterval(updateClock,1000);setTimeout(()=>map.invalidateSize(),500)})();
+</script>
+</body>
+</html>
+
