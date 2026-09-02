@@ -3,50 +3,108 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>MÁV TESZT – EMMA REALTIME</title>
+<title>MÁV EMMA – 7-es Gyermekvasút TESZT</title>
+
 <style>
-body{font-family:Arial;background:#111;color:#eee;margin:0;padding:20px}
-h1{font-size:24px}
-button{padding:12px 18px;margin:5px;background:#1976d2;color:white;border:0;border-radius:8px;cursor:pointer}
-button:hover{background:#2196f3}
-#status{margin:15px 0;padding:12px;background:#222;border-radius:8px}
-pre{white-space:pre-wrap;word-break:break-word;background:#050505;padding:15px;border-radius:8px;max-height:70vh;overflow:auto}
-.ok{color:#66ff66}.err{color:#ff6666}.wait{color:#ffd54f}
+body{
+  margin:0;
+  padding:20px;
+  font-family:Arial,sans-serif;
+  background:#111;
+  color:#eee;
+}
+h1{
+  font-size:24px;
+  margin-top:0;
+}
+button{
+  padding:12px 16px;
+  margin:5px 3px;
+  border:0;
+  border-radius:8px;
+  cursor:pointer;
+  font-weight:bold;
+}
+#status{
+  margin:15px 0;
+  padding:14px;
+  border-radius:8px;
+  background:#222;
+}
+pre{
+  background:#050505;
+  padding:15px;
+  border-radius:8px;
+  white-space:pre-wrap;
+  word-break:break-word;
+  max-height:65vh;
+  overflow:auto;
+}
+.ok{color:#66ff66}
+.err{color:#ff6666}
+.wait{color:#ffd54f}
+.info{color:#66ccff}
 </style>
 </head>
 
 <body>
 
-<h1>🚆 MÁV TESZT – EMMA REALTIME</h1>
+<h1>🚂 MÁV EMMA – 7-es Gyermekvasút TESZT</h1>
 
-<button onclick="teszt()">▶ MÁV REALTIME LEKÉRÉS</button>
-<button onclick="teszt70()">🚆 70-ES VONAL TESZT</button>
-<button onclick="teszt2()">🚆 2-ES VONAL TESZT</button>
+<p>
+<strong>Vizsgált terület:</strong><br>
+Széchenyi-hegy – János-hegy – Hűvösvölgy
+</p>
 
-<div id="status" class="wait">Indításra kész...</div>
+<button onclick="tesztRail()">
+🚆 RAIL TESZT
+</button>
 
-<pre id="eredmeny">Nincs még lekérdezés.</pre>
+<button onclick="tesztMindenMod()">
+🔎 ÖSSZES VASÚTI MÓD TESZT
+</button>
+
+<div id="status" class="wait">
+Indításra kész...
+</div>
+
+<pre id="eredmeny">
+Nincs még lekérdezés.
+</pre>
 
 <script>
 
 const EMMA =
 "https://emma.mav.hu/otp2-backend/otp/routers/default/index/graphql";
 
+
 /* =========================================================
-   ALAP LEKÉRDEZÉS
-   Budapest + Pest + környéke
+   GYERMEKVASÚT KÖRNYEZET
    ========================================================= */
 
-async function emmaQuery(swLat,swLon,neLat,neLon){
+const SW_LAT = 47.45;
+const SW_LON = 18.90;
+
+const NE_LAT = 47.56;
+const NE_LON = 19.05;
+
+
+/* =========================================================
+   EMMA GRAPHQL
+   ========================================================= */
+
+async function lekerez(modes){
+
+const modeText=modes.join(",");
 
 const query=`
 {
   vehiclePositions(
-    swLat:${swLat}
-    swLon:${swLon}
-    neLat:${neLat}
-    neLon:${neLon}
-    modes:[RAIL]
+    swLat:${SW_LAT}
+    swLon:${SW_LON}
+    neLat:${NE_LAT}
+    neLon:${NE_LON}
+    modes:[${modeText}]
   ){
     vehicleId
     label
@@ -63,64 +121,204 @@ const query=`
   }
 }`;
 
+
 status.className="wait";
-status.textContent="⏳ EMMA lekérés folyamatban...";
-eredmeny.textContent="Kapcsolódás:\n"+EMMA+"\n\nLekérdezés:\n"+query;
+
+status.textContent=
+"⏳ EMMA lekérés folyamatban...\n"+
+"Terület: Széchenyi-hegy – Hűvösvölgy\n"+
+"Mód: "+modeText;
+
+
+eredmeny.textContent=
+"EMMA VÉGPONT:\n"+
+EMMA+
+"\n\n"+
+"LEKÉRDEZÉS:\n"+
+query+
+"\n\nVálaszra várunk...";
+
 
 try{
 
-const response=await fetch(EMMA,{
-method:"POST",
-headers:{
-"Content-Type":"application/json"
-},
-body:JSON.stringify({
-query:query,
-variables:{}
-})
-});
+const response=await fetch(
+  EMMA,
+  {
+    method:"POST",
+    headers:{
+      "Content-Type":"application/json"
+    },
+    body:JSON.stringify({
+      query:query,
+      variables:{}
+    })
+  }
+);
+
 
 const text=await response.text();
+
+
+eredmeny.textContent=
+"HTTP státusz: "+
+response.status+
+" "+
+response.statusText+
+"\n\n"+
+"NYERS VÁLASZ:\n"+
+text;
+
 
 let data;
 
 try{
+
 data=JSON.parse(text);
+
 }catch(e){
+
 status.className="err";
-status.textContent="❌ A szerver nem JSON választ adott.";
-eredmeny.textContent=text;
+
+status.textContent=
+"❌ A szerver választ adott, de nem JSON formátumban.";
+
 return;
+
 }
+
 
 if(data.errors){
 
 status.className="err";
-status.textContent="❌ EMMA GRAPHQL HIBA";
+
+status.textContent=
+"❌ GRAPHQL HIBA";
 
 eredmeny.textContent=
 JSON.stringify(data,null,2);
 
 return;
+
 }
 
-status.className="ok";
-status.textContent="✅ EMMA VÁLASZ MEGÉRKEZETT";
+
+/* =========================================================
+   JÁRMŰVEK
+   ========================================================= */
+
+const vehicles =
+data &&
+data.data &&
+data.data.vehiclePositions
+?
+data.data.vehiclePositions
+:
+[];
+
+
+if(vehicles.length===0){
+
+status.className="info";
+
+status.textContent=
+"ℹ️ 0 jármű érkezett vissza az EMMA-tól.";
 
 eredmeny.textContent=
+"🚂 GYERMEKVASÚT TESZT\n\n"+
+"Talált járművek: 0\n\n"+
+"Ez NEM bizonyítja azt, hogy nincs Gyermekvasút realtime adat.\n"+
+"Csak azt jelenti, hogy ezen az EMMA lekérdezésen nem kaptunk járművet.\n\n"+
+"NYERS VÁLASZ:\n"+
 JSON.stringify(data,null,2);
+
+return;
+
+}
+
+
+/* =========================================================
+   TALÁLAT
+   ========================================================= */
+
+status.className="ok";
+
+status.textContent=
+"✅ EMMA VÁLASZ MEGÉRKEZETT!\n"+
+"Talált járművek: "+
+vehicles.length;
+
+
+let out=
+"🚂 MÁV EMMA – GYERMEKVASÚT TESZT\n"+
+"====================================\n\n"+
+"Talált járművek: "+
+vehicles.length+
+"\n\n";
+
+
+vehicles.forEach((v,i)=>{
+
+out+=
+"JÁRMŰ #"+(i+1)+"\n"+
+"------------------------------------\n"+
+"vehicleId: "+
+(v.vehicleId ?? "NINCS ADAT")+
+"\n"+
+"label: "+
+(v.label ?? "NINCS ADAT")+
+"\n"+
+"lat: "+
+(v.lat ?? "NINCS ADAT")+
+"\n"+
+"lon: "+
+(v.lon ?? "NINCS ADAT")+
+"\n"+
+"heading: "+
+(v.heading ?? "NINCS ADAT")+
+"\n"+
+"speed: "+
+(v.speed ?? "NINCS ADAT")+
+"\n"+
+"lastUpdated: "+
+(v.lastUpdated ?? "NINCS ADAT")+
+"\n"+
+"trip.gtfsId: "+
+(v.trip?.gtfsId ?? "NINCS ADAT")+
+"\n"+
+"trainNumber: "+
+(v.trip?.domesticResTrainNumber ?? "NINCS ADAT")+
+"\n\n";
+
+});
+
+
+out+=
+"====================================\n"+
+"NYERS GRAPHQL VÁLASZ\n"+
+"====================================\n\n"+
+JSON.stringify(data,null,2);
+
+
+eredmeny.textContent=out;
+
 
 }catch(error){
 
 status.className="err";
 
 status.textContent=
-"❌ HIBA – valószínűleg CORS / hálózati tiltás";
+"❌ FETCH HIBA";
 
 eredmeny.textContent=
-error+"\n\n"+
-"Ha itt CORS hiba jelenik meg, az fontos eredmény:\n"+
-"az EMMA végpont létezik, de a böngészőből közvetlenül nem engedi a lekérést.";
+"TypeError / hálózati hiba:\n\n"+
+error+
+"\n\n"+
+"Ez lehet például:\n"+
+"- CORS tiltás\n"+
+"- böngésző tiltás\n"+
+"- hálózati tiltás\n"+
+"- EMMA ideiglenes korlátozás\n"+
+"- Opera Mini köztes proxy korlátozása";
 
 }
 
@@ -128,51 +326,32 @@ error+"\n\n"+
 
 
 /* =========================================================
-   ÁLTALÁNOS TESZT
+   1. TESZT
+   CSAK RAIL
    ========================================================= */
 
-function teszt(){
+function tesztRail(){
 
-emmaQuery(
-47.20,
-18.80,
-48.30,
-19.20
-);
+lekerez([
+  "RAIL"
+]);
 
 }
 
 
 /* =========================================================
-   70-ES VONAL KÖRZETE
-   Budapest – Vác – Szob
+   2. TESZT
+   MINDEN EDDIG ISMERT VASÚTI MÓD
    ========================================================= */
 
-function teszt70(){
+function tesztMindenMod(){
 
-emmaQuery(
-47.30,
-18.80,
-48.20,
-19.20
-);
-
-}
-
-
-/* =========================================================
-   2-ES VONAL KÖRZETE
-   Budapest – Pilis – Esztergom
-   ========================================================= */
-
-function teszt2(){
-
-emmaQuery(
-47.45,
-18.70,
-48.00,
-19.10
-);
+lekerez([
+  "RAIL",
+  "RAIL_REPLACEMENT_BUS",
+  "SUBURBAN_RAILWAY",
+  "TRAMTRAIN"
+]);
 
 }
 
