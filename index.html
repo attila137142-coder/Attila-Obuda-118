@@ -2638,31 +2638,38 @@ if(
 !Number.isFinite(lat) ||
 !Number.isFinite(lon)
 ){
-
 return null;
-
 }
 
 let best=null;
 let min=Infinity;
 
-const wanted = provider ? String(provider).toUpperCase() : null;
-const providerList = wanted && Object.prototype.hasOwnProperty.call(D,wanted)
-? [wanted]
-: PROVIDERS;
+const rawWanted=provider
+?String(provider).toUpperCase()
+:null;
+
+/* GYV realtime a MÁVPlusz vasúti feedből érkezik,
+   ezért a hozzá tartozó GTFS megállók a MÁV halmazból jönnek. */
+const wanted=rawWanted==='GYV'
+?'MAV'
+:rawWanted;
+
+const providerList=
+ wanted && Object.prototype.hasOwnProperty.call(D,wanted)
+ ? [wanted]
+ : PROVIDERS;
 
 for(const p of providerList){
-
 for(const s of D[p].stops){
 
-/* A jármű szolgáltatóján kívüli megálló semmiképpen
-   ne kerülhessen be a legközelebbi megálló találatba. */
-if(wanted && String(s.provider || p).toUpperCase() !== wanted){
+if(
+wanted &&
+String(s.provider || p).toUpperCase()!==wanted
+){
 continue;
 }
 
-const d =
-distanceKm(
+const d=distanceKm(
 lat,
 lon,
 s.lat,
@@ -2670,22 +2677,17 @@ s.lon
 );
 
 if(d<min){
-
 min=d;
-
 best={
 stop:s,
-distance:d,
-provider:p
+distance:d,provider:p
 };
-
 }
 
 }
 }
 
 return best;
-
 }
 
 
@@ -4345,7 +4347,7 @@ v.vehicle?.licensePlate || '',
 
 forgalmi:'',
 
-type:'NINCS ADAT',
+type:null,
 
 route:
 v.trip?.routeId || '',
@@ -4388,6 +4390,11 @@ stop_id:v.stopId || '',
 delay:null
 
 });
+
+const lastBKK=vehiclesBKK[vehiclesBKK.length-1];
+if(lastBKK){
+lastBKK.type=bkkVehicleType(lastBKK)||null;
+}
 
 }
 
@@ -4447,24 +4454,12 @@ for(const st of candidates){
   }
 }
 
-/* A jármű pillanatnyi megállója elsőbbséget kap. */
-const currentSeq=
-  v?.currentStopSequence!=null
-  ? Number(v.currentStopSequence)
-  : null;
+/* A TripUpdate feldolgozásakor nincs kéznél a hozzá tartozó
+   konkrét VehiclePosition, ezért itt nem használunk v változót.
+   A current_stop_sequence / stop_id egyezést a VehiclePosition
+   feldolgozásakor alkalmazzuk. */
 
-const currentStopId=
-  v?.stopId
-  ? String(v.stopId)
-  : null;
-
-if(currentSeq!=null && bySequence.has(currentSeq)){
-  delay=bySequence.get(currentSeq);
-}else if(currentStopId && byStop.has(currentStopId)){
-  delay=byStop.get(currentStopId);
-}
-
-/* Ha nincs stop-egyezés, a legközelebbi időbélyeges eseményt használjuk. */
+/* Ha nincs konkrét stop-egyezés, időbélyeges eseményből becsülünk. */
 if(delay==null && timed.length){
   const now=Date.now()/1000;
   timed.sort(
@@ -4620,7 +4615,7 @@ return null;
 function mapMV(v,kind){const r=v.trip?.route||{};const text=[r.agency?.name,r.shortName,v.trip?.routeShortName,v.label,v.vehicleModel,v.trip?.tripHeadsign].filter(Boolean).join(' ').toLowerCase();const gyv=/gyermekvasut|gyermekvasút|gyv|hűvösvölgy|hüvösvölgy|széchenyihegy/.test(text);const provider=gyv?'GYV':kind;return{provider,id:v.vehicleId||'',label:v.label||v.vehicleId||'',plate:v.licensePlate||'',forgalmi:v.uicCode||v.label||v.vehicleId||'',type:v.vehicleModel||(provider==='VOLAN'?'BUSZ':'VONAT'),route:v.trip?.routeShortName||r.shortName||'',route_id:v.trip?.gtfsId||'',trip_id:v.trip?.gtfsId||v.trip?.id||'',lat:Number(v.lat),lon:Number(v.lon),bearing:Number.isFinite(Number(v.heading))?Number(v.heading):null,speed:Number.isFinite(Number(v.speed))?Number(v.speed):null,lastUpdated:v.lastUpdated||null,delay:mvDelay(v),nextStop:v.nextStop?.stop?.name||v.stopRelationship?.stop?.name||'',nextStopId:v.stopRelationship?.stop?.gtfsId||'',estimated:!!v.isEstimated,uicCode:v.uicCode||''};}
 function liveStatus(){setStatus('mavStatus',`🟢 MÁV ${vehiclesMAV.length} • 🚂 GYV ${vehiclesGYV.length} • 🚌 VOLÁN ${vehiclesVOLAN.length} • 🚍 BKK ${vehiclesBKK.length}`);}
 async function mavRT(){try{setStatus('mavStatus','⏳ MÁVPlusz élő jármű lekérdezés...');const data=await gqlVehicles(MAV_QUERY);vehiclesMAV=[];vehiclesGYV=[];for(const v of data){const x=mapMV(v,'MAV');(x.provider==='GYV'?vehiclesGYV:vehiclesMAV).push(x);}rebuildVehicles();vehicleSearch();if(($('depStop')?.value || '').trim()){try{departureSearch();}catch(e){console.warn('departure refresh',e);}}drawVehicles();liveStatus();if(!mavTimer)mavTimer=setTimeout(()=>{mavTimer=null;mavRT();},30000);}catch(e){setStatus('mavStatus','🔴 MÁV: '+esc(e.message)+'<br><span class="muted">Közvetlen böngészős kérésnél CORS miatt saját proxy kellhet.</span>');}}
-async function volanRT(){try{setStatus('mavStatus','⏳ VOLÁN élő busz lekérdezés...');const data=await gqlVehicles(VOLAN_QUERY);vehiclesVOLAN=data.map(v=>mapMV(v,'VOLAN')).filter(v=>v.provider==='VOLAN');rebuildVehicles();vehicleSearch();if(($('depStop')?.value || '').trim()){try{departureSearch();}catch(e){console.warn('departure refresh',e);}}drawVehicles();liveStatus();if(!volanTimer)volanTimer=setTimeout(()=>{volanTimer=null;volanRT();},30000);}catch(e){setStatus('mavStatus','🔴 VOLÁN: '+esc(e.message)+'<br><span class="muted">A BUS módot a jelenlegi GraphQL sémának támogatnia kell; hiba esetén nincs kitalált járműadat.</span>');}}
+async function volanRT(){try{setStatus('mavStatus','⏳ VOLÁN élő busz lekérdezés...');const data=await gqlVehicles(VOLAN_QUERY);vehiclesVOLAN=data.map(v=>mapMV(v,'VOLAN')).filter(v=>v.provider==='VOLAN');rebuildVehicles();vehicleSearch();if(($('depStop')?.value || '').trim()){try{departureSearch();}catch(e){console.warn('departure refresh',e);}}drawVehicles();liveStatus();if(!volanTimer)volanTimer=setTimeout(()=>{volanTimer=null;volanRT();},30000);}catch(e){setStatus('mavStatus','🔴 VOLÁN: '+esc(e.message)+'<br><span class="muted">A BUS mód csak akkor használható, ha a jelenlegi GraphQL séma támogatja; hiba esetén nincs kitalált járműadat.</span>');}}
 function mavVolanStop(){if(mavTimer){clearTimeout(mavTimer);mavTimer=null;}if(volanTimer){clearTimeout(volanTimer);volanTimer=null;}setStatus('mavStatus','⏹ MÁV/VOLÁN/Gyermekvasút frissítés leállítva.');}
 
 
