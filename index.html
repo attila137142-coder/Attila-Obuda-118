@@ -1,6 +1,3 @@
-5188   soros HTLM: 5188   soros HTLM_BKV_Buszfed_Jármuhelyzetek_Megállo távolságok_Jármüsebességek
-
-
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -392,6 +389,19 @@ min-width:700px;
 .livePanel{background:#101820;border:1px solid #36404a;border-radius:10px;padding:9px;margin-top:8px}
 .livePanel input{margin-top:5px}
 .liveStatus{font-weight:700;margin-top:8px}
+
+/* LEAFLET POPUP – VILÁGOS, OLVASHATÓ */
+.leaflet-popup.attilaPopup .leaflet-popup-content-wrapper,
+.leaflet-popup.attilaPopup .leaflet-popup-tip{background:#fff !important;color:#111 !important;}
+.leaflet-popup.attilaPopup .leaflet-popup-content,
+.leaflet-popup.attilaPopup .leaflet-popup-content *{color:#111 !important;}
+.leaflet-popup.attilaPopup .muted{color:#555 !important;}
+.leaflet-popup.attilaPopup .red{color:#d00000 !important;}
+.leaflet-popup.attilaPopup .blue{color:#0066cc !important;}
+.leaflet-popup.attilaPopup .green{color:#008800 !important;}
+.leaflet-popup.attilaPopup .leaflet-popup-close-button{color:#111 !important;}
+.att-popup-card{background:#fff !important;color:#111 !important;}
+.att-popup-card b{color:#111 !important;}
 </style>
 </head>
 
@@ -1123,6 +1133,7 @@ let stopLayer = null;
 let vehicleLayer = null;
 
 let gpsMarker = null;
+let gpsWatchId = null;
 
 let radiusCircles = [];
 
@@ -2558,6 +2569,8 @@ color
 )
 .bindPopup(`
 
+<div class="att-popup-card">
+
 <b>🚏
 ${esc(s.name)}
 </b>
@@ -2583,7 +2596,10 @@ ${esc(PN(s.provider))}
 ${s.lat.toFixed(6)},
 ${s.lon.toFixed(6)}
 
-`)
+</div>
+
+`,
+{className:'attilaPopup'})
 .addTo(stopLayer);
 
 }
@@ -3149,6 +3165,29 @@ return Math.max(0,mps*3.6);
 }
 
 
+function vehicleTypeLabel(v){
+
+if(v?.type && v.type!=='NINCS ADAT') return v.type;
+
+if(v?.provider==='BKK'){
+const r=D.BKK?.routeMap?.get(v.route_id||v.route);
+const rt=Number(r?.type);
+return ({
+0:'VILLAMOS',
+1:'METRÓ',
+2:'HÉV/VASÚT',
+3:'BUSZ',
+4:'HAJÓ',
+5:'KÖTÉLPÁLYA',
+6:'GONDOLA',
+7:'FUNICULAR',
+11:'TROLIBUSZ'
+})[rt] || 'NINCS ADAT';
+}
+
+return v?.provider==='VOLAN'?'BUSZ':v?.provider==='GYV'?'GYERMEKVASÚT':v?.provider==='MAV'?'VONAT':'NINCS ADAT';
+}
+
 function vehicleCard(v){
 
 const near =
@@ -3161,7 +3200,7 @@ v.provider
 
 return `
 
-<div class="card">
+<div class="card att-popup-card">
 
 <span class="provider
 ${String(v.provider)
@@ -3565,7 +3604,8 @@ vehicleIcon(v)
 }
 )
 .bindPopup(
-vehicleCard(v)
+vehicleCard(v),
+{className:'attilaPopup'}
 )
 .addTo(
 vehicleLayer
@@ -4351,11 +4391,11 @@ const e=s.departure || s.arrival;
 const d=Number(e.delay);
 if(!Number.isFinite(d)) continue;
 if(s.stopSequence!=null) bySequence.set(Number(s.stopSequence),d);
-if(delay==null || d!==0) delay=d;
+if(delay==null || (delay===0 && d!==0)) delay=d;
 }
 
 updates.set(
-t.trip.tripId,
+String(t.trip.tripId),
 {
 
 delay,
@@ -4375,7 +4415,7 @@ t.vehicle?.label ||
 rebuildVehicles();
 
 for(const v of vehiclesBKK){
-const u=updates.get(v.trip_id);
+const u=updates.get(String(v.trip_id));
 if(u){
 if(v.current_stop_sequence!=null && u.bySequence && u.bySequence.has(v.current_stop_sequence)){
 v.delay=u.bySequence.get(v.current_stop_sequence);
@@ -4531,10 +4571,17 @@ return;
 
 
 $('gps').textContent =
-'⏳GPS lekérdezés...';
+'⏳GPS indítása / helyzet keresése...';
 
 
-navigator.geolocation.getCurrentPosition(
+if(gpsWatchId!==null){
+navigator.geolocation.clearWatch(gpsWatchId);
+gpsWatchId=null;
+}
+
+
+gpsWatchId =
+navigator.geolocation.watchPosition(
 
 position=>{
 
@@ -4565,7 +4612,7 @@ position.coords.accuracy
 
 
 $('gps').textContent =
-'🟢GPS aktív';
+'🟢GPS aktív • folyamatos helyzetfrissítés';
 
 
 if(gpsMarker){
@@ -4583,7 +4630,8 @@ gps.lat,
 gps.lon
 ])
 .bindPopup(
-'📍Saját GPS pozíció'
+'📍Saját GPS pozíció',
+{className:'attilaPopup'}
 )
 .addTo(map);
 
