@@ -1027,6 +1027,68 @@ function sameId(a,b){
 
 
 /* ============================================================
+   FORGALMI SZÁM
+   ------------------------------------------------------------
+   A BKK GTFS-RT vehicle.id gyakran ilyen formájú:
+
+       BKK_1234
+
+   A 1234 rész a valós BKK vehicle-id.
+   Ezt az alkalmazásban FORGALMI mezőként jelenítjük meg.
+
+   NINCS KITALÁLT ÉRTÉK:
+   csak akkor adunk vissza számot, ha a BKK vehicle.id
+   vagy egy kizárólag 3–4 számjegyből álló label ezt
+   egyértelműen tartalmazza.
+   ============================================================ */
+
+function deriveBkkForgalmi(
+  vehicleId,
+  label
+){
+
+  const id =
+    String(
+      vehicleId ?? ""
+    ).trim();
+
+
+  const idMatch =
+    id.match(
+      /^BKK_(\d{3,4})$/i
+    );
+
+
+  if(idMatch){
+
+    return idMatch[1];
+
+  }
+
+
+  const cleanLabel =
+    String(
+      label ?? ""
+    ).trim();
+
+
+  if(
+    /^\d{3,4}$/.test(
+      cleanLabel
+    )
+  ){
+
+    return cleanLabel;
+
+  }
+
+
+  return null;
+
+}
+
+
+/* ============================================================
    TÉRKÉP
    ============================================================ */
 
@@ -2374,20 +2436,27 @@ function parseVehicleFeed(buffer){
       );
 
 
+    const vehicleId =
+      String(
+        vehicle?.id || ""
+      );
+
+
+    const vehicleLabel =
+      String(
+        vehicle?.label || ""
+      );
+
+
     const item = {
 
       source:
         "BKK GTFS-RT",
 
-      vehicleId:
-        String(
-          vehicle?.id || ""
-        ),
+      vehicleId,
 
       label:
-        String(
-          vehicle?.label || ""
-        ),
+        vehicleLabel,
 
       licensePlate:
         String(
@@ -2446,8 +2515,16 @@ function parseVehicleFeed(buffer){
       delaySeconds:
         null,
 
+      /*
+        JAVÍTVA:
+        A BKK valódi vehicle.id értékéből
+        vezetjük le a 3–4 jegyű FORGALMI-t.
+      */
       forgalmi:
-        null,
+        deriveBkkForgalmi(
+          vehicleId,
+          vehicleLabel
+        ),
 
       forda:
         null,
@@ -3212,7 +3289,7 @@ function normalizeFutarVehicle(obj){
     nevezzük át automatikusan FORGALMI-ra.
   */
 
-  const forgalmi =
+  let forgalmi =
     explicitField(
       obj,
       [
@@ -3221,10 +3298,31 @@ function normalizeFutarVehicle(obj){
         "fleetNo",
         "fleet_number",
         "vehicleNumber",
-        "vehicle_number",
-        "vehicleLabel"
+        "vehicle_number"
       ]
     );
+
+
+  /*
+    Ha a FUTÁR saját válasza nem tartalmaz
+    külön forgalmi mezőt, akkor a valódi
+    BKK vehicle.id alapján próbáljuk meg
+    levezetni.
+  */
+
+  if(
+    forgalmi === null ||
+    forgalmi === undefined ||
+    String(forgalmi).trim() === ""
+  ){
+
+    forgalmi =
+      deriveBkkForgalmi(
+        vehicleId,
+        label
+      );
+
+  }
 
 
   const forda =
@@ -3662,8 +3760,26 @@ async function loadFutarVehicles(
           fv.forgalmi
         ){
 
+          /*
+            Valódi FUTÁR forgalmi adat
+            elsőbbséget kap.
+          */
           target.forgalmi =
             fv.forgalmi;
+
+        }else if(
+          !target.forgalmi
+        ){
+
+          /*
+            Ha FUTÁR-ban nincs külön mező,
+            a BKK vehicle.id-ből vezetjük le.
+          */
+          target.forgalmi =
+            deriveBkkForgalmi(
+              target.vehicleId,
+              target.label
+            );
 
         }
 
@@ -3913,8 +4029,17 @@ async function loadFutarVehicles(
           delaySeconds:
             null,
 
+          /*
+            FUTÁR saját forgalmi adata,
+            vagy a valódi BKK vehicle.id
+            alapján levezetett 3–4 jegyű szám.
+          */
           forgalmi:
-            fv.forgalmi,
+            fv.forgalmi ||
+            deriveBkkForgalmi(
+              fv.vehicleId,
+              fv.label
+            ),
 
           forda:
             fv.forda,
