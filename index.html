@@ -771,7 +771,7 @@ const PROTO_URL =
 
 
 const GTFS_URL =
-"https://bkk.hu/gtfs/budapest_gtfs.zip";
+"https://go.bkk.hu/api/static/v1/public-gtfs/budapest_gtfs.zip";
 
 
 const FUTAR_URL =
@@ -808,6 +808,7 @@ let gtfsLoaded = false;
 let futarVehicleCache = new Map();
 
 let tripDelayMap = new Map();
+let tripDelaySeqMap = new Map();
 
 
 let radiusMode = Infinity;
@@ -1542,7 +1543,7 @@ async function loadBkkGtfs(){
 
 
     logLine(
-      "BKK static GTFS ZIP betöltése..."
+      "BKK static GTFS ZIP betöltése (GO)..."
     );
 
 
@@ -2028,6 +2029,9 @@ async function fetchTripUpdates(){
       const mapDelay =
         new Map();
 
+      const seqDelay =
+        new Map();
+
 
       for(
         const entity of
@@ -2132,6 +2136,15 @@ async function fetchTripUpdates(){
               delay
             );
 
+            if(!seqDelay.has(tripId)){
+              seqDelay.set(tripId, []);
+            }
+
+            seqDelay.get(tripId).push({
+              seq:Number(seq),
+              delay
+            });
+
           }
 
 
@@ -2151,8 +2164,16 @@ async function fetchTripUpdates(){
       }
 
 
+      for(const arr of seqDelay.values()){
+        arr.sort((a,b)=>a.seq-b.seq);
+      }
+
+
       tripDelayMap =
         mapDelay;
+
+      tripDelaySeqMap =
+        seqDelay;
 
 
       lastTripFetchOK = true;
@@ -2175,6 +2196,10 @@ async function fetchTripUpdates(){
         mapDelay.size
           .toLocaleString("hu-HU") +
         " stop-idő eltérés."
+      );
+
+      logLine(
+        "KÉSÉS/SIETÉS: járműszintű hozzárendelés frissítve."
       );
 
 
@@ -2220,6 +2245,9 @@ function resolveVehicleDelay(item){
   }
 
 
+  /*
+    1) Pontos stop-sequence egyezés.
+  */
   if(
     Number.isFinite(
       item.stopSequence
@@ -2245,15 +2273,16 @@ function resolveVehicleDelay(item){
   }
 
 
+  /*
+    2) Pontos stop_id egyezés.
+  */
   if(item.stopId){
 
     const exact =
       tripDelayMap.get(
         tripId +
         "|stop|" +
-        String(
-          item.stopId
-        )
+        String(item.stopId)
       );
 
 
@@ -2266,10 +2295,61 @@ function resolveVehicleDelay(item){
   }
 
 
+  /*
+    3) Ha a VehiclePosition és a TripUpdate nem ugyanazon
+       a pillanatban ugyanazt a stop_sequence-t adja, a
+       legközelebbi TripUpdate stop eltérést használjuk.
+       Csak kis eltérésnél engedjük, hogy ne keverjünk
+       össze távoli megállókat.
+  */
+  if(
+    Number.isFinite(item.stopSequence)
+  ){
+
+    const arr =
+      tripDelaySeqMap.get(tripId);
+
+
+    if(
+      Array.isArray(arr) &&
+      arr.length
+    ){
+
+      let best = null;
+      let bestDiff = Infinity;
+
+      for(const x of arr){
+
+        const diff =
+          Math.abs(
+            x.seq -
+            Number(item.stopSequence)
+          );
+
+        if(diff < bestDiff){
+          bestDiff = diff;
+          best = x;
+        }
+
+      }
+
+
+      if(
+        best &&
+        bestDiff <= 3 &&
+        Number.isFinite(best.delay)
+      ){
+        return best.delay;
+      }
+
+    }
+
+  }
+
+
   return null;
 
 }
-
 
 /* ============================================================
    VEHICLEPOSITIONS
@@ -2705,6 +2785,17 @@ async function testFeed(){
     */
 
     await loadFutarVehicles();
+
+
+    /*
+      A FUTÁR-összefésülés után is újraszámoljuk a
+      késést/sietést, mert közben új járművek kerülhetnek
+      a vehicleData tömbbe.
+    */
+    for(const item of vehicleData){
+      item.delaySeconds =
+        resolveVehicleDelay(item);
+    }
 
 
     /*
@@ -5578,5 +5669,3 @@ document.addEventListener(
 
 </body>
 </html>
-
-
