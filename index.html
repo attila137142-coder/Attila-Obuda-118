@@ -800,6 +800,7 @@ let gtfsRoutes = new Map();
 let gtfsLoaded = false;
 
 let futarVehicleCache = new Map();
+let futarReferenceIndex = { byVehicleId:new Map(), byTripId:new Map(), byId:new Map() };
 
 let tripDelayMap = new Map();
 let tripDelaySeqMap = new Map();
@@ -2364,155 +2365,92 @@ async function fetchTripUpdates(){
 
 function resolveVehicleDelay(item){
 
-  const tripId =
-    String(
-      item.tripId || ""
-    );
+  const tripId = String(item.tripId || "").trim();
+  if(!tripId) return null;
 
+  const tripKeys = [tripId];
+  const stripped = tripId.replace(/^BKK_/i,"");
+  if(stripped && stripped !== tripId) tripKeys.push(stripped);
 
-  if(!tripId){
+  const getMapValue = (map,key)=>{
+    if(map.has(key)) return map.get(key);
+    for(const k of map.keys()){
+      if(sameId(k,key)) return map.get(k);
+    }
     return null;
-  }
+  };
 
+  /* FIX 2 – pontos aktuális stop_sequence. */
+  if(Number.isFinite(item.stopSequence)){
+    const seq = String(Number(item.stopSequence));
 
-  /*
-    1. Pontos stop_sequence
-  */
-
-  if(
-    Number.isFinite(
-      item.stopSequence
-    )
-  ){
-
-    const exact =
-      tripDelayMap.get(
-        tripId +
-        "|seq|" +
-        String(
-          item.stopSequence
-        )
-      );
-
-
-    if(
-      Number.isFinite(exact)
-    ){
-
-      return exact;
-
+    for(const tk of tripKeys){
+      const exact = getMapValue(tripDelayMap,tk + "|seq|" + seq);
+      if(Number.isFinite(exact)) return exact;
     }
-
   }
 
-
-  /*
-    2. Pontos stop_id
-  */
-
+  /* FIX 2 – pontos aktuális stop_id. */
   if(item.stopId){
-
-    const exact =
-      tripDelayMap.get(
-        tripId +
-        "|stop|" +
-        String(
-          item.stopId
-        )
+    for(const tk of tripKeys){
+      const exact = getMapValue(
+        tripDelayMap,
+        tk + "|stop|" + String(item.stopId)
       );
+      if(Number.isFinite(exact)) return exact;
 
-
-    if(
-      Number.isFinite(exact)
-    ){
-
-      return exact;
-
-    }
-
-  }
-
-
-  /*
-    3. Legközelebbi stop_sequence.
-       Maximum 3 megálló eltérés.
-  */
-
-  if(
-    Number.isFinite(
-      item.stopSequence
-    )
-  ){
-
-    const arr =
-      tripDelaySeqMap.get(
-        tripId
-      );
-
-
-    if(
-      Array.isArray(arr) &&
-      arr.length
-    ){
-
-      let best = null;
-
-      let bestDiff =
-        Infinity;
-
-
-      for(
-        const x of arr
-      ){
-
-        const diff =
-          Math.abs(
-            x.seq -
-            Number(
-              item.stopSequence
-            )
-          );
-
-
-        if(
-          diff <
-          bestDiff
-        ){
-
-          bestDiff =
-            diff;
-
-          best =
-            x;
-
+      /* BKK_ prefix eltérés esetén a stop ID-t is összevetjük. */
+      for(const key of tripDelayMap.keys()){
+        if(!key.startsWith(tk + "|stop|")) continue;
+        const stopKey = key.slice((tk + "|stop|").length);
+        if(sameId(stopKey,String(item.stopId))){
+          const v = tripDelayMap.get(key);
+          if(Number.isFinite(v)) return v;
         }
-
       }
-
-
-      if(
-        best &&
-        bestDiff <= 3 &&
-        Number.isFinite(
-          best.delay
-        )
-      ){
-
-        return best.delay;
-
-      }
-
     }
-
   }
 
-
   /*
-    NINCS MEGBÍZHATÓ TRIPUPDATE.
+    Ha az aktuális stophoz nincs külön érték, a következő néhány
+    stopTimeUpdate közül választunk. Ez továbbra is ugyanahhoz a
+    valós triphez tartozó valódi TripUpdate; nem gyártunk 0-t.
   */
+  if(Number.isFinite(item.stopSequence)){
+
+    let bestFuture = null;
+    let bestFutureDiff = Infinity;
+    let bestPast = null;
+    let bestPastDiff = Infinity;
+
+    for(const [key,value] of tripDelayMap.entries()){
+
+      if(!Number.isFinite(value)) continue;
+      const sep = key.indexOf("|seq|");
+      if(sep < 0) continue;
+
+      const keyTrip = key.slice(0,sep);
+      if(!sameId(keyTrip,tripId)) continue;
+
+      const seq = Number(key.slice(sep+5));
+      if(!Number.isFinite(seq)) continue;
+
+      const diff = seq - Number(item.stopSequence);
+
+      if(diff >= 0 && diff <= 3 && diff < bestFutureDiff){
+        bestFutureDiff = diff;
+        bestFuture = value;
+      }else if(diff < 0 && Math.abs(diff) <= 1 && Math.abs(diff) < bestPastDiff){
+        bestPastDiff = Math.abs(diff);
+        bestPast = value;
+      }
+    }
+
+    if(Number.isFinite(bestFuture)) return bestFuture;
+    if(Number.isFinite(bestPast)) return bestPast;
+  }
 
   return null;
-
 }
 
 
@@ -2978,22 +2916,10 @@ async function testFeed(){
 
 
     /*
-      FUTÁR illesztés után újra
-      kiszámítjuk a TripUpdate kapcsolatot.
-    */
-
-    for(
-      const item of vehicleData
-    ){
-
-      item.delaySeconds =
-        null;
-
-    }
-
-
-    /*
-      VALÓDI KÉSÉS / SIETÉS.
+      FIX 2 – VALÓDI KÉSÉS / SIETÉS.
+      A VehiclePositions új rekordjai eleve null-ról indulnak;
+      TripUpdates siker esetén csak a valóban visszakapott értéket
+      írjuk rájuk.
     */
 
     await fetchTripUpdates();
@@ -3160,215 +3086,93 @@ function findCandidateVehicleArrays(json){
 function extractFutarVehicles(json){
 
   const out = [];
+  const seen = new Set();
 
-  const seen =
-    new Set();
+  const pushIfVehicle = obj=>{
 
+    if(!obj || typeof obj !== "object") return;
 
-  const pushIfVehicle =
-    obj=>{
+    const id =
+      obj.vehicleId ??
+      obj.vehicle?.id ??
+      obj.id ??
+      null;
 
-      if(
-        !obj ||
-        typeof obj !==
-        "object"
-      ){
-        return;
-      }
+    const loc =
+      obj.location ??
+      obj.position ??
+      obj.vehicle?.location ??
+      obj.vehicle?.position ??
+      null;
 
+    const lat = num(loc?.lat ?? loc?.latitude);
+    const lon = num(loc?.lon ?? loc?.longitude);
 
-      const id =
-        obj.vehicleId ??
-        obj.vehicle?.id ??
-        obj.id ??
-        null;
+    const routeId =
+      obj.routeId ??
+      obj.trip?.routeId ??
+      obj.vehicle?.routeId ??
+      "";
 
+    const tripId =
+      obj.tripId ??
+      obj.trip?.tripId ??
+      obj.vehicle?.tripId ??
+      "";
 
-      const loc =
-        obj.location ??
-        obj.position ??
-        obj.vehicle?.location ??
-        obj.vehicle?.position ??
-        null;
+    if(
+      !id &&
+      !(Number.isFinite(lat) && Number.isFinite(lon) && (routeId || tripId))
+    ) return;
 
+    const key =
+      String(id || "") + "|" +
+      String(tripId || "") + "|" +
+      String(routeId || "") + "|" +
+      String(lat) + "|" +
+      String(lon);
 
-      const lat =
-        num(
-          loc?.lat ??
-          loc?.latitude
-        );
+    if(seen.has(key)) return;
+    seen.add(key);
+    out.push(obj);
+  };
 
-
-      const lon =
-        num(
-          loc?.lon ??
-          loc?.longitude
-        );
-
-
-      const routeId =
-        obj.routeId ??
-        obj.trip?.routeId ??
-        obj.vehicle?.routeId ??
-        "";
-
-
-      const tripId =
-        obj.tripId ??
-        obj.trip?.tripId ??
-        obj.vehicle?.tripId ??
-        "";
-
-
-      if(
-        !id &&
-        !(
-          Number.isFinite(lat) &&
-          Number.isFinite(lon) &&
-          (
-            routeId ||
-            tripId
-          )
-        )
-      ){
-        return;
-      }
-
-
-      const key =
-        String(id || "") +
-        "|" +
-        String(tripId || "") +
-        "|" +
-        String(routeId || "") +
-        "|" +
-        String(lat) +
-        "|" +
-        String(lon);
-
-
-      if(
-        seen.has(key)
-      ){
-        return;
-      }
-
-
-      seen.add(key);
-
-      out.push(obj);
-
-    };
-
-
-  for(
-    const arr of
-    findCandidateVehicleArrays(
-      json
-    )
-  ){
-
-    for(
-      const x of arr
-    ){
-
-      pushIfVehicle(x);
-
-    }
-
+  for(const arr of findCandidateVehicleArrays(json)){
+    for(const x of arr) pushIfVehicle(x);
   }
 
-
   /*
-    Mélyebb keresés.
+    A FUTÁR válaszban a jármű és a hozzá tartozó részletes
+    referencia-adat külön is érkezhet. Ezért a references ágat
+    nem szabad kihagyni. A referenciaszótár feldolgozása külön
+    történik a buildFutarReferenceIndex() függvényben.
   */
 
   if(!out.length){
 
-    const walk =
-      (x,depth=0)=>{
+    const walk = (x,depth=0)=>{
 
-        if(
-          depth > 7 ||
-          x == null
-        ){
-          return;
-        }
+      if(depth > 7 || x == null) return;
 
+      if(Array.isArray(x)){
+        for(const y of x) walk(y,depth+1);
+        return;
+      }
 
-        if(
-          Array.isArray(x)
-        ){
+      if(typeof x !== "object") return;
 
-          for(
-            const y of x
-          ){
+      pushIfVehicle(x);
 
-            walk(
-              y,
-              depth+1
-            );
-
-          }
-
-          return;
-
-        }
-
-
-        if(
-          typeof x !==
-          "object"
-        ){
-          return;
-        }
-
-
-        pushIfVehicle(x);
-
-
-        for(
-          const key of
-          Object.keys(x)
-        ){
-
-          if(
-            key ===
-            "references"
-          ){
-            continue;
-          }
-
-
-          const child =
-            x[key];
-
-
-          if(
-            child &&
-            typeof child ===
-            "object"
-          ){
-
-            walk(
-              child,
-              depth+1
-            );
-
-          }
-
-        }
-
-      };
-
+      for(const key of Object.keys(x)){
+        const child = x[key];
+        if(child && typeof child === "object") walk(child,depth+1);
+      }
+    };
 
     walk(json);
-
   }
 
-
   return out;
-
 }
 
 
@@ -3441,81 +3245,136 @@ function explicitField(
   mezőből készül.
 */
 
-function explicitDeepField(
-  obj,
-  names,
-  depth=0
-){
+function explicitDeepField(obj,names,depth=0){
 
-  if(
-    !obj ||
-    typeof obj !==
-    "object" ||
-    depth > 5
-  ){
-    return null;
-  }
+  if(!obj || typeof obj !== "object" || depth > 6) return null;
 
+  const direct = explicitField(obj,names);
+  if(direct !== null) return direct;
 
-  const direct =
-    explicitField(
-      obj,
-      names
-    );
-
-
-  if(
-    direct !== null
-  ){
-    return direct;
-  }
-
-
-  for(
-    const key of
-    Object.keys(obj)
-  ){
-
-    if(
-      key === "references"
-    ){
-      continue;
+  for(const key of Object.keys(obj)){
+    const child = obj[key];
+    if(child && typeof child === "object"){
+      const found = explicitDeepField(child,names,depth+1);
+      if(found !== null) return found;
     }
-
-
-    const child =
-      obj[key];
-
-
-    if(
-      child &&
-      typeof child ===
-      "object"
-    ){
-
-      const found =
-        explicitDeepField(
-          child,
-          names,
-          depth+1
-        );
-
-
-      if(
-        found !== null
-      ){
-
-        return found;
-
-      }
-
-    }
-
   }
-
 
   return null;
+}
 
+
+/* ============================================================
+   FUTÁR REFERENCIA-INDEX
+   ============================================================ */
+
+function buildFutarReferenceIndex(json){
+
+  const index = {
+    byVehicleId:new Map(),
+    byTripId:new Map(),
+    byId:new Map()
+  };
+
+  const add = (map,key,obj)=>{
+    if(!key || !obj || typeof obj !== "object") return;
+    const k = normalizeId(key);
+    if(!k || map.has(k)) return;
+    map.set(k,obj);
+  };
+
+  const visit = (x,depth=0,hintId="")=>{
+
+    if(x == null || depth > 9) return;
+
+    if(Array.isArray(x)){
+      for(const y of x) visit(y,depth+1,"");
+      return;
+    }
+
+    if(typeof x !== "object") return;
+
+    const vehicleId =
+      x.vehicleId ??
+      x.vehicle?.id ??
+      x.vehicle?.vehicleId ??
+      null;
+
+    const tripId =
+      x.tripId ??
+      x.trip?.tripId ??
+      null;
+
+    const id = x.id ?? null;
+
+    if(vehicleId) add(index.byVehicleId,vehicleId,x);
+    if(tripId) add(index.byTripId,tripId,x);
+    if(id) add(index.byId,id,x);
+    if(hintId && !vehicleId && !tripId && !id){
+      /*
+        Map-szerű references esetén maga a kulcs lehet az azonosító.
+        Csak később használjuk, ha a jármű- vagy trip-ID-vel egyezik.
+      */
+      add(index.byId,hintId,x);
+    }
+
+    for(const key of Object.keys(x)){
+      const child = x[key];
+      if(!child || typeof child !== "object") continue;
+      visit(child,depth+1,typeof key === "string" ? key : "");
+    }
+  };
+
+  const roots = [
+    json?.references,
+    json?.data?.references
+  ];
+
+  for(const root of roots){
+    if(root && typeof root === "object") visit(root,0,"");
+  }
+
+  return index;
+}
+
+function findFutarReference(obj,index){
+
+  if(!index) return null;
+
+  const vehicleId =
+    obj?.vehicleId ??
+    obj?.vehicle?.id ??
+    null;
+
+  const tripId =
+    obj?.tripId ??
+    obj?.trip?.tripId ??
+    null;
+
+  if(vehicleId){
+    const hit =
+      index.byVehicleId.get(normalizeId(vehicleId)) ||
+      index.byId.get(normalizeId(vehicleId));
+    if(hit) return hit;
+  }
+
+  if(tripId){
+    const hit = index.byTripId.get(normalizeId(tripId));
+    if(hit) return hit;
+  }
+
+  return null;
+}
+
+function firstExplicitField(obj,names,ref=null){
+
+  const own = explicitDeepField(obj,names);
+  if(own !== null) return own;
+
+  const fromRef = explicitDeepField(ref,names);
+  if(fromRef !== null) return fromRef;
+
+  return null;
 }
 
 
@@ -3523,7 +3382,9 @@ function explicitDeepField(
    FUTÁR NORMALIZÁLÁS
    ============================================================ */
 
-function normalizeFutarVehicle(obj){
+function normalizeFutarVehicle(obj,referenceIndex=null){
+
+  const ref = findFutarReference(obj,referenceIndex);
 
   const loc =
     obj.location ??
@@ -3532,290 +3393,145 @@ function normalizeFutarVehicle(obj){
     obj.vehicle?.position ??
     {};
 
+  const lat = num(loc.lat ?? loc.latitude);
+  const lon = num(loc.lon ?? loc.longitude);
 
-  const lat =
-    num(
-      loc.lat ??
-      loc.latitude
-    );
+  const routeId = String(
+    explicitDeepField(obj,["routeId"]) ??
+    obj.trip?.routeId ??
+    explicitDeepField(ref,["routeId"]) ??
+    ref?.trip?.routeId ??
+    ""
+  );
 
+  const tripId = String(
+    explicitDeepField(obj,["tripId"]) ??
+    obj.trip?.tripId ??
+    explicitDeepField(ref,["tripId"]) ??
+    ref?.trip?.tripId ??
+    ""
+  );
 
-  const lon =
-    num(
-      loc.lon ??
-      loc.longitude
-    );
+  const vehicleId = String(
+    explicitDeepField(obj,["vehicleId"]) ??
+    obj.id ??
+    explicitDeepField(ref,["vehicleId"]) ??
+    ref?.id ??
+    ""
+  );
 
+  const licensePlate = firstExplicitField(
+    obj,
+    ["licensePlate","licencePlate","plate"],
+    ref
+  );
 
-  const routeId =
-    String(
-      explicitDeepField(
-        obj,
-        [
-          "routeId"
-        ]
-      ) ??
-      obj.trip?.routeId ??
-      ""
-    );
-
-
-  const tripId =
-    String(
-      explicitDeepField(
-        obj,
-        [
-          "tripId"
-        ]
-      ) ??
-      obj.trip?.tripId ??
-      ""
-    );
-
-
-  const vehicleId =
-    String(
-      explicitDeepField(
-        obj,
-        [
-          "vehicleId"
-        ]
-      ) ??
-      obj.id ??
-      ""
-    );
-
-
-  const licensePlate =
-    explicitDeepField(
-      obj,
-      [
-        "licensePlate",
-        "licencePlate",
-        "plate"
-      ]
-    );
-
-
-  const label =
-    explicitDeepField(
-      obj,
-      [
-        "label"
-      ]
-    );
-
+  const label = firstExplicitField(
+    obj,
+    ["label"],
+    ref
+  );
 
   /*
-    FORGALMI:
+    =========================
+    FIX 1 – FORGALMI SZÁM
+    =========================
 
-    Csak ténylegesen ilyen nevű
-    explicit mezőt fogadunk el.
-
-    A LABEL NEM FORGALMI.
-    A vehicleId NEM FORGALMI.
-    A rendszám NEM FORGALMI.
+    Csak explicit, járműhöz köthető mezőből.
+    Nincs LABEL/ID/rendszám-alapú kitalálás.
   */
+  const forgalmi = firstExplicitField(
+    obj,
+    [
+      "forgalmi",
+      "forgalmiNumber",
+      "forgalmi_number",
+      "fleetNumber",
+      "fleetNo",
+      "fleet_number",
+      "vehicleNumber",
+      "vehicle_number"
+    ],
+    ref
+  );
 
-  const forgalmi =
-    explicitDeepField(
-      obj,
-      [
-        "forgalmi",
-        "fleetNumber",
-        "fleetNo",
-        "fleet_number",
-        "vehicleNumber",
-        "vehicle_number"
-      ]
-    );
-
+  /* BKK-nál továbbra sincs FORDA. */
+  const forda = null;
 
   /*
-    FORDA:
+    =========================
+    FIX 3 – JÁRMŰTÍPUS
+    =========================
 
-    BKK FUTÁR esetén nincs adat.
+    Csak explicit járműtípus/model mezőből.
+    Általános "type" mezőt NEM használunk.
   */
+  const vehicleType = firstExplicitField(
+    obj,
+    [
+      "vehicleType",
+      "vehicle_type",
+      "model"
+    ],
+    ref
+  );
 
-  const forda =
-    null;
+  let speedKmh = null;
 
-
-  /*
-    JÁRMŰTÍPUS:
-
-    Csak explicit vehicleType /
-    vehicle_type / model mező.
-
-    Az általános "type" mezőt
-    szándékosan nem használjuk,
-    mert az API más objektumának
-    típusa is lehet.
-  */
-
-  const vehicleType =
-    explicitDeepField(
-      obj,
-      [
-        "vehicleType",
-        "vehicle_type",
-        "model"
-      ]
-    );
-
-
-  let speedKmh =
-    null;
-
-
-  const rawSpeed =
-    explicitDeepField(
-      obj,
-      [
-        "speed"
-      ]
-    );
-
-
-  if(
-    rawSpeed !==
-    null
-  ){
-
-    const n =
-      Number(
-        rawSpeed
-      );
-
-
-    if(
-      Number.isFinite(n)
-    ){
-
-      speedKmh =
-        n;
-
-    }
-
+  const rawSpeed = explicitDeepField(obj,["speed"]);
+  if(rawSpeed !== null){
+    const n = Number(rawSpeed);
+    if(Number.isFinite(n)) speedKmh = n;
   }
 
+  const nestedSpeed = num(
+    obj.position?.speed ??
+    obj.vehicle?.position?.speed
+  );
 
-  /*
-    Ha position.speed,
-    akkor GTFS-RT szerint m/s.
-  */
-
-  const nestedSpeed =
-    num(
-      obj.position?.speed ??
-      obj.vehicle?.position?.speed
-    );
-
-
-  if(
-    Number.isFinite(
-      nestedSpeed
-    )
-  ){
-
-    speedKmh =
-      nestedSpeed * 3.6;
-
+  if(Number.isFinite(nestedSpeed)){
+    speedKmh = nestedSpeed * 3.6;
   }
 
+  const bearing = num(
+    obj.bearing ??
+    obj.position?.bearing ??
+    obj.vehicle?.bearing
+  );
 
-  const bearing =
-    num(
-      obj.bearing ??
-      obj.position?.bearing ??
-      obj.vehicle?.bearing
-    );
-
-
-  const stopId =
-    String(
-      obj.stopId ??
-      obj.vehicle?.stopId ??
-      ""
-    );
-
+  const stopId = String(
+    obj.stopId ??
+    obj.vehicle?.stopId ??
+    ""
+  );
 
   const rawSequence =
     obj.stopSequence ??
     obj.vehicle?.stopSequence ??
     null;
 
-
   const stopSequence =
     rawSequence !== null
-      ?
-      Number(
-        rawSequence
-      )
-      :
-      null;
-
+      ? Number(rawSequence)
+      : null;
 
   return {
-
     vehicleId,
-
-    label:
-      label === null
-        ?
-        ""
-        :
-        String(
-          label
-        ),
-
-    licensePlate:
-      licensePlate === null
-        ?
-        ""
-        :
-        String(
-          licensePlate
-        ),
-
-    forgalmi:
-      forgalmi === null
-        ?
-        null
-        :
-        String(
-          forgalmi
-        ),
-
+    label:label === null ? "" : String(label),
+    licensePlate:licensePlate === null ? "" : String(licensePlate),
+    forgalmi:forgalmi === null ? null : String(forgalmi),
     forda,
-
-    vehicleType:
-      vehicleType === null
-        ?
-        null
-        :
-        String(
-          vehicleType
-        ),
-
+    vehicleType:vehicleType === null ? null : String(vehicleType),
     routeId,
-
     tripId,
-
     lat,
-
     lon,
-
     speedKmh,
-
     bearing,
-
     stopId,
-
-    stopSequence
-
+    stopSequence,
+    _referenceMatched:!!ref
   };
-
 }
 
 
@@ -3874,606 +3590,246 @@ function matchFutarToVehicle(
    FUTÁR LEKÉRÉS
    ============================================================ */
 
-async function loadFutarVehicles(
-  fallbackMode=false
-){
+async function loadFutarVehicles(fallbackMode=false){
 
   if(!getKey()){
-
-    $("futarHttp").textContent =
-      "API-KULCS KELL";
-
-
+    $("futarHttp").textContent = "API-KULCS KELL";
     return false;
-
   }
-
 
   try{
 
-    const center =
-      getGpsQueryCenter();
-
+    const center = getGpsQueryCenter();
 
     const url =
       FUTAR_URL +
-      "?key=" +
-      encodeURIComponent(
-        getKey()
-      ) +
+      "?key=" + encodeURIComponent(getKey()) +
       "&version=3" +
-      "&appVersion=" +
-      encodeURIComponent(
-        "AttilaKozlekedes-Vadasz"
-      ) +
-      "&lat=" +
-      encodeURIComponent(
-        center.lat
-      ) +
-      "&lon=" +
-      encodeURIComponent(
-        center.lon
-      ) +
-      "&latSpan=" +
-      encodeURIComponent(
-        center.latSpan
-      ) +
-      "&lonSpan=" +
-      encodeURIComponent(
-        center.lonSpan
-      ) +
+      "&appVersion=" + encodeURIComponent("AttilaKozlekedes-Vadasz") +
+      "&lat=" + encodeURIComponent(center.lat) +
+      "&lon=" + encodeURIComponent(center.lon) +
+      "&latSpan=" + encodeURIComponent(center.latSpan) +
+      "&lonSpan=" + encodeURIComponent(center.lonSpan) +
       "&includeReferences=true";
 
+    setBadge("futarBadge","FUTÁR: LEKÉRÉS...","warn");
 
-    setBadge(
-      "futarBadge",
-      "FUTÁR: LEKÉRÉS...",
-      "warn"
-    );
+    const res = await fetch(url,{cache:"no-store"});
+    const text = await res.text();
 
-
-    const res =
-      await fetch(
-        url,
-        {
-          cache:"no-store"
-        }
-      );
-
-
-    const text =
-      await res.text();
-
-
-    $("futarHttp").textContent =
-      res.status;
-
-
-    $("futarTime").textContent =
-      nowText();
-
+    $("futarHttp").textContent = res.status;
+    $("futarTime").textContent = nowText();
 
     if(!res.ok){
-
-      throw new Error(
-        "HTTP " +
-        res.status +
-        " " +
-        text.slice(
-          0,
-          180
-        )
-      );
-
+      throw new Error("HTTP " + res.status + " " + text.slice(0,180));
     }
-
 
     let json;
-
-
     try{
-
-      json =
-        JSON.parse(text);
-
+      json = JSON.parse(text);
     }catch(e){
-
-      throw new Error(
-        "nem JSON válasz"
-      );
-
+      throw new Error("nem JSON válasz");
     }
 
+    /*
+      FIX 1 + FIX 3 kulcsa:
+      a járműlista mellett külön felépítjük a references indexet is.
+      Így a FORGALMI és a JÁRMŰTÍPUS akkor is elérhető lehet,
+      ha a fő vehicle rekordban nincs benne, csak a referenciaágban.
+    */
+    futarReferenceIndex = buildFutarReferenceIndex(json);
 
-    const rawVehicles =
-      extractFutarVehicles(
-        json
+    const rawVehicles = extractFutarVehicles(json);
+
+    const normalized = rawVehicles
+      .map(v => normalizeFutarVehicle(v,futarReferenceIndex))
+      .filter(v =>
+        v.vehicleId ||
+        (Number.isFinite(v.lat) && Number.isFinite(v.lon))
       );
 
+    futarVehicleCache = new Map();
 
-    const normalized =
-      rawVehicles
-        .map(
-          normalizeFutarVehicle
-        )
-        .filter(
-          v =>
-          v.vehicleId ||
-          (
-            Number.isFinite(
-              v.lat
-            ) &&
-            Number.isFinite(
-              v.lon
-            )
-          )
-        );
-
-
-    futarVehicleCache =
-      new Map();
-
-
-    for(
-      const fv of normalized
-    ){
-
-      const key =
-        fv.vehicleId ||
-        (
-          fv.tripId +
-          "|" +
-          fv.routeId
-        );
-
-
-      if(key){
-
-        futarVehicleCache.set(
-          key,
-          fv
-        );
-
-      }
-
+    for(const fv of normalized){
+      const key = fv.vehicleId || (fv.tripId + "|" + fv.routeId);
+      if(key) futarVehicleCache.set(key,fv);
     }
 
+    let matched = 0;
+    let forgalmiCount = 0;
+    let vehicleTypeCount = 0;
+    let referenceMatchedCount = 0;
 
-    let matched =
-      0;
+    for(const fv of normalized){
 
+      if(fv._referenceMatched) referenceMatchedCount++;
 
-    for(
-      const fv of normalized
-    ){
+      const target = matchFutarToVehicle(fv);
+      if(!target) continue;
 
-      const target =
-        matchFutarToVehicle(
-          fv
-        );
+      target.futarMatched = true;
+      target.futarLabel = fv.label || null;
 
+      if(fv.licensePlate) target.licensePlate = fv.licensePlate;
 
-      if(!target){
-        continue;
+      /* FIX 1 – csak valódi explicit FORGALMI. */
+      if(fv.forgalmi){
+        target.forgalmi = fv.forgalmi;
+        forgalmiCount++;
       }
 
+      /* BKK FORDA = NINCS ADAT. */
+      target.forda = null;
 
-      target.futarMatched =
-        true;
-
-
-      target.futarLabel =
-        fv.label ||
-        null;
-
-
-      if(
-        fv.licensePlate
-      ){
-
-        target.licensePlate =
-          fv.licensePlate;
-
+      /* FIX 3 – csak valódi explicit JÁRMŰTÍPUS. */
+      if(fv.vehicleType){
+        target.vehicleType = fv.vehicleType;
+        vehicleTypeCount++;
       }
 
-
-      /*
-        FORGALMI csak explicit
-        valódi mezőből.
-      */
-
-      if(
-        fv.forgalmi
-      ){
-
-        target.forgalmi =
-          fv.forgalmi;
-
+      if(!Number.isFinite(target.lat) && Number.isFinite(fv.lat) && Number.isFinite(fv.lon)){
+        target.lat = fv.lat;
+        target.lon = fv.lon;
       }
 
-
-      /*
-        BKK FORDA = NINCS ADAT.
-      */
-
-      target.forda =
-        null;
-
-
-      if(
-        fv.vehicleType
-      ){
-
-        target.vehicleType =
-          fv.vehicleType;
-
+      if(!Number.isFinite(target.speedKmh) && Number.isFinite(fv.speedKmh)){
+        target.speedKmh = fv.speedKmh;
       }
 
-
-      if(
-        !Number.isFinite(
-          target.lat
-        ) &&
-        Number.isFinite(
-          fv.lat
-        ) &&
-        Number.isFinite(
-          fv.lon
-        )
-      ){
-
-        target.lat =
-          fv.lat;
-
-        target.lon =
-          fv.lon;
-
+      if(!Number.isFinite(target.bearing) && Number.isFinite(fv.bearing)){
+        target.bearing = fv.bearing;
       }
 
+      if(!target.stopId && fv.stopId) target.stopId = fv.stopId;
 
-      if(
-        !Number.isFinite(
-          target.speedKmh
-        ) &&
-        Number.isFinite(
-          fv.speedKmh
-        )
-      ){
-
-        target.speedKmh =
-          fv.speedKmh;
-
+      if(!Number.isFinite(target.stopSequence) && Number.isFinite(fv.stopSequence)){
+        target.stopSequence = fv.stopSequence;
       }
-
-
-      if(
-        !Number.isFinite(
-          target.bearing
-        ) &&
-        Number.isFinite(
-          fv.bearing
-        )
-      ){
-
-        target.bearing =
-          fv.bearing;
-
-      }
-
-
-      if(
-        !target.stopId &&
-        fv.stopId
-      ){
-
-        target.stopId =
-          fv.stopId;
-
-      }
-
-
-      if(
-        !Number.isFinite(
-          target.stopSequence
-        ) &&
-        Number.isFinite(
-          fv.stopSequence
-        )
-      ){
-
-        target.stopSequence =
-          fv.stopSequence;
-
-      }
-
 
       if(target.routeId){
-
         target.routeShortName =
-          gtfsRoutes.get(
-            String(
-              target.routeId
-            )
-          ) ||
-          target.routeShortName ||
-          "";
-
+          gtfsRoutes.get(String(target.routeId)) ||
+          target.routeShortName || "";
       }
 
-
       matched++;
-
     }
 
-
-    $("futarCount").textContent =
-      normalized.length
-        .toLocaleString(
-          "hu-HU"
-        );
-
-
-    $("futarMatched").textContent =
-      matched
-        .toLocaleString(
-          "hu-HU"
-        );
-
+    $("futarCount").textContent = normalized.length.toLocaleString("hu-HU");
+    $("futarMatched").textContent = matched.toLocaleString("hu-HU");
 
     setBadge(
       "futarBadge",
-      "FUTÁR: OK (" +
-      normalized.length +
-      ")",
+      "FUTÁR: OK (" + normalized.length + ")",
       "ok"
     );
 
-
-    lastFutarFetchOK =
-      true;
-
+    lastFutarFetchOK = true;
 
     /*
-      FUTÁR fallback csak akkor
-      hoz létre új rekordot,
-      ha a GTFS-RT nem működik.
-
-      Ezek is valódi FUTÁR rekordok.
+      Fallback: csak valódi FUTÁR rekordot adunk hozzá,
+      és csak akkor, ha a GTFS-RT feed nem működött.
     */
+    if(fallbackMode && !lastVehicleFetchOK){
 
-    if(
-      fallbackMode &&
-      !lastVehicleFetchOK
-    ){
+      const known = new Set(
+        vehicleData.map(v => normalizeId(v.vehicleId))
+      );
 
-      const known =
-        new Set(
-          vehicleData.map(
-            v =>
-            normalizeId(
-              v.vehicleId
-            )
-          )
-        );
+      for(const fv of normalized){
 
+        if(!Number.isFinite(fv.lat) || !Number.isFinite(fv.lon)) continue;
 
-      for(
-        const fv of normalized
-      ){
-
-        if(
-          !Number.isFinite(
-            fv.lat
-          ) ||
-          !Number.isFinite(
-            fv.lon
-          )
-        ){
-          continue;
-        }
-
-
-        if(
-          fv.vehicleId &&
-          known.has(
-            normalizeId(
-              fv.vehicleId
-            )
-          )
-        ){
-          continue;
-        }
-
+        if(fv.vehicleId && known.has(normalizeId(fv.vehicleId))) continue;
 
         const item = {
-
-          source:
-            "BKK FUTÁR",
-
-          provider:
-            "BKK",
-
-          vehicleId:
-            fv.vehicleId,
-
-          label:
-            fv.label,
-
-          licensePlate:
-            fv.licensePlate,
-
-          routeId:
-            fv.routeId,
-
-          routeShortName:
-            gtfsRoutes.get(
-              String(
-                fv.routeId
-              )
-            ) || "",
-
-          tripId:
-            fv.tripId,
-
-          directionId:
-            "",
-
-          stopId:
-            fv.stopId,
-
-          stopSequence:
-            fv.stopSequence,
-
-          lat:
-            fv.lat,
-
-          lon:
-            fv.lon,
-
-          speedKmh:
-            fv.speedKmh,
-
-          bearing:
-            fv.bearing,
-
-          delaySeconds:
-            null,
-
-          forgalmi:
-            fv.forgalmi,
-
-          forda:
-            null,
-
-          vehicleType:
-            fv.vehicleType,
-
-          futarMatched:
-            true,
-
-          futarLabel:
-            fv.label ||
-            null,
-
-          nearestStop:
-            null,
-
-          gpsDistanceKm:
-            null,
-
-          marker:
-            null
-
+          source:"BKK FUTÁR",
+          provider:"BKK",
+          vehicleId:fv.vehicleId,
+          label:fv.label,
+          licensePlate:fv.licensePlate,
+          routeId:fv.routeId,
+          routeShortName:gtfsRoutes.get(String(fv.routeId)) || "",
+          tripId:fv.tripId,
+          directionId:"",
+          stopId:fv.stopId,
+          stopSequence:fv.stopSequence,
+          lat:fv.lat,
+          lon:fv.lon,
+          speedKmh:fv.speedKmh,
+          bearing:fv.bearing,
+          delaySeconds:null,
+          forgalmi:fv.forgalmi,
+          forda:null,
+          vehicleType:fv.vehicleType,
+          futarMatched:true,
+          futarLabel:fv.label || null,
+          nearestStop:null,
+          gpsDistanceKm:null,
+          marker:null
         };
 
-
         item.nearestStop =
-          findStopById(
-            item.stopId
-          ) ||
-          findNearestStop(
-            item.lat,
-            item.lon
-          );
+          findStopById(item.stopId) ||
+          findNearestStop(item.lat,item.lon);
 
+        item.gpsDistanceKm = myPos ? distanceKm(myPos,item) : null;
 
-        item.gpsDistanceKm =
-          myPos
-            ?
-            distanceKm(
-              myPos,
-              item
-            )
-            :
-            null;
+        vehicleData.push(item);
 
-
-        vehicleData.push(
-          item
-        );
-
-
-        if(
-          item.vehicleId
-        ){
-
-          known.add(
-            normalizeId(
-              item.vehicleId
-            )
-          );
-
-        }
-
+        if(item.vehicleId) known.add(normalizeId(item.vehicleId));
       }
 
-
-      $("vehicleCount").textContent =
-        vehicleData.length
-          .toLocaleString(
-            "hu-HU"
-          );
-
+      $("vehicleCount").textContent = vehicleData.length.toLocaleString("hu-HU");
     }
-
 
     logLine(
       "FUTÁR jármű API OK: " +
-      normalized.length
-        .toLocaleString(
-          "hu-HU"
-        ) +
+      normalized.length.toLocaleString("hu-HU") +
       " rekord, " +
-      matched
-        .toLocaleString(
-          "hu-HU"
-        ) +
+      matched.toLocaleString("hu-HU") +
       " illesztés."
     );
 
+    logLine(
+      "FUTÁR referencia-illesztés: " +
+      referenceMatchedCount.toLocaleString("hu-HU") +
+      " rekord."
+    );
+
+    logLine(
+      "FORGALMI explicit forrásból: " +
+      forgalmiCount.toLocaleString("hu-HU") +
+      " illesztett jármű."
+    );
+
+    logLine(
+      "JÁRMŰTÍPUS explicit forrásból: " +
+      vehicleTypeCount.toLocaleString("hu-HU") +
+      " illesztett jármű."
+    );
 
     refreshStaticVehicleFields();
-
     updateVehicleDistances();
-
     renderVehicles();
-
     refreshMarkers();
-
 
     return true;
 
-
   }catch(err){
 
-    lastFutarFetchOK =
-      false;
+    lastFutarFetchOK = false;
 
-
-    setBadge(
-      "futarBadge",
-      "FUTÁR: HIBA",
-      "err"
-    );
-
-
-    $("futarHttp").textContent =
-      "HIBA";
-
+    setBadge("futarBadge","FUTÁR: HIBA","err");
+    $("futarHttp").textContent = "HIBA";
 
     logLine(
       "FUTÁR API HIBA: " +
-      (
-        err?.message ||
-        err
-      )
+      (err?.message || err)
     );
 
-
     return false;
-
   }
-
 }
 
 
@@ -6061,7 +5417,7 @@ document.addEventListener(
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ REAL DATA FIX indul."
+      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ REAL DATA FIX – FORGALMI + SIETÉS/KÉSÉS + JÁRMŰTÍPUS indul."
     );
 
 
