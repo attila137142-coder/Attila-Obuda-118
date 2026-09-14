@@ -1,15 +1,24 @@
-5580  soros HTLM:
 <!DOCTYPE html>
 <html lang="hu">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover">
-<meta name="theme-color" content="#071018">
-<title>ATTILA KÖZLEKEDÉS – BKK VADÁSZ</title>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes, viewport-fit=cover"
+>
+
+<meta name="theme-color" content="#071018">
+
+<title>ATTILA KÖZLEKEDÉS – BKK VADÁSZ REAL DATA FIX</title>
+
+<link
+  rel="stylesheet"
+  href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+>
 
 <style>
+
 :root{
   --bg:#071018;
   --panel:#0d1720;
@@ -23,9 +32,13 @@
   --yellow:#ffd166;
   --cyan:#5ee7ff;
 }
-*{box-sizing:border-box}
 
-html,body{
+*{
+  box-sizing:border-box;
+}
+
+html,
+body{
   width:100%;
   height:100%;
   margin:0;
@@ -35,7 +48,9 @@ html,body{
   overflow:hidden;
 }
 
-button,input,select{
+button,
+input,
+select{
   font:inherit;
 }
 
@@ -56,7 +71,8 @@ button:active{
   transform:translateY(1px);
 }
 
-input,select{
+input,
+select{
   background:#09141c;
   color:#eef7fb;
   border:1px solid #35505f;
@@ -341,7 +357,8 @@ select:focus{
 
 @media(max-width:900px){
 
-  html,body{
+  html,
+  body{
     overflow:auto;
   }
 
@@ -358,8 +375,8 @@ select:focus{
     right:auto;
     bottom:auto;
     width:100%;
-    height:52vh;
-    min-height:340px;
+    height:58vh;
+    min-height:360px;
   }
 
   #side{
@@ -379,7 +396,9 @@ select:focus{
   .title{
     font-size:16px;
   }
+
 }
+
 </style>
 </head>
 
@@ -500,7 +519,6 @@ select:focus{
 
   </section>
 
-
   <section class="panel">
 
     <h3>
@@ -556,7 +574,6 @@ select:focus{
 
   </section>
 
-
   <section class="panel">
 
     <h3>
@@ -596,7 +613,6 @@ select:focus{
     </div>
 
   </section>
-
 
   <section class="panel">
 
@@ -675,7 +691,6 @@ select:focus{
 
   </section>
 
-
   <section class="panel">
 
     <h3>
@@ -705,7 +720,6 @@ select:focus{
 
   </section>
 
-
   <section class="panel">
 
     <h3>
@@ -725,7 +739,6 @@ select:focus{
 
 </aside>
 
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/protobufjs/dist/protobuf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -737,19 +750,15 @@ select:focus{
 
 /* ============================================================
    ATTILA KÖZLEKEDÉS – BKK VADÁSZ
-   REAL DATA BUILD
+   REAL DATA FIX
 
-   BKK GTFS-RT
-   BKK GTFS
-   BKK TripUpdates
-   BKK FUTÁR
-   GPS
-   LEAFLET
-   KERESÉS
-   SUGÁR
-   AUTO
-
-   NINCS KITALÁLT JÁRMŰADAT
+   FONTOS:
+   - nincs demo / mock jármű
+   - nincs kitalált forgalmi
+   - nincs kitalált forda
+   - nincs kitalált járműtípus
+   - hiányzó adat = NINCS ADAT
+   - késés csak valódi TripUpdate alapján
    ============================================================ */
 
 
@@ -757,13 +766,8 @@ const VEHICLE_URL =
 "https://go.bkk.hu/api/query/v1/ws/gtfs-rt/full/VehiclePositions.pb";
 
 
-const TRIP_UPDATES_URLS = [
-
-  "https://go.bkk.hu/api/query/v1/ws/gtfs-rt/full/TripUpdates.pb",
-
-  "https://go.bkk.hu/api/query/v1/ws/gtfs-rt/full/TripUpdates.txt"
-
-];
+const TRIP_UPDATES_URL =
+"https://go.bkk.hu/api/query/v1/ws/gtfs-rt/full/TripUpdates.pb";
 
 
 const PROTO_URL =
@@ -779,44 +783,32 @@ const FUTAR_URL =
 
 
 let map = null;
-
 let vehicleLayer = null;
-
 let myMarker = null;
-
 let myPos = null;
-
 let gpsWatchId = null;
-
 let autoTimer = null;
-
 let autoRunning = false;
-
 let protoRoot = null;
 
 
 let vehicleData = [];
 
 let gtfsStops = [];
-
 let gtfsStopsById = new Map();
-
 let gtfsRoutes = new Map();
-
 let gtfsLoaded = false;
 
 let futarVehicleCache = new Map();
 
 let tripDelayMap = new Map();
 let tripDelaySeqMap = new Map();
-
+let tripDelayTripMap = new Map();
 
 let radiusMode = Infinity;
 
 let lastVehicleFetchOK = false;
-
 let lastFutarFetchOK = false;
-
 let lastTripFetchOK = false;
 
 
@@ -857,15 +849,10 @@ function logLine(msg){
 function escapeHtml(value){
 
   return String(value ?? "")
-
     .replaceAll("&","&amp;")
-
     .replaceAll("<","&lt;")
-
     .replaceAll(">","&gt;")
-
     .replaceAll('"',"&quot;")
-
     .replaceAll("'","&#039;");
 
 }
@@ -888,13 +875,22 @@ function val(value){
 
 function num(value){
 
-  return Number.isFinite(
-    Number(value)
-  )
-  ?
-  Number(value)
-  :
-  null;
+  if(
+    value === null ||
+    value === undefined ||
+    value === ""
+  ){
+    return null;
+  }
+
+  const n =
+    Number(value);
+
+  return Number.isFinite(n)
+    ?
+    n
+    :
+    null;
 
 }
 
@@ -942,34 +938,51 @@ function speedText(kmh){
 
 
 /* ============================================================
-   KÉSÉS
+   KÉSÉS / SIETÉS
+
+   FONTOS:
+   null / undefined = NINCS ADAT
+   0 = valódi TripUpdate 0
    ============================================================ */
 
 function delayHTML(delay){
 
-  if(!Number.isFinite(delay)){
+  if(
+    delay === null ||
+    delay === undefined ||
+    !Number.isFinite(
+      Number(delay)
+    )
+  ){
+
     return "NINCS ADAT";
-  }
-
-  if(delay === 0){
-
-    return `
-      <span class="delay-green">
-        🟢 0:00
-      </span>
-    `;
 
   }
+
+
+  delay =
+    Number(delay);
+
 
   const sec =
-    Math.abs(Math.round(delay));
+    Math.abs(
+      Math.round(delay)
+    );
+
 
   const min =
-    Math.floor(sec / 60);
+    Math.floor(
+      sec / 60
+    );
+
 
   const s =
-    String(sec % 60)
-      .padStart(2,"0");
+    String(
+      sec % 60
+    ).padStart(
+      2,
+      "0"
+    );
 
 
   if(delay < 0){
@@ -983,9 +996,20 @@ function delayHTML(delay){
   }
 
 
+  if(delay > 0){
+
+    return `
+      <span class="delay-blue">
+        🔵 KÉSÉS +${min}:${s}
+      </span>
+    `;
+
+  }
+
+
   return `
-    <span class="delay-blue">
-      🔵 KÉSÉS +${min}:${s}
+    <span class="delay-green">
+      🟢 0:00
     </span>
   `;
 
@@ -1008,22 +1032,32 @@ function sameId(a,b){
   const bb =
     normalizeId(b);
 
+
   if(!aa || !bb){
     return false;
   }
+
 
   if(aa === bb){
     return true;
   }
 
-  if(
-    aa.replace(/^BKK_/i,"") ===
-    bb.replace(/^BKK_/i,"")
-  ){
-    return true;
-  }
 
-  return false;
+  const aaa =
+    aa.replace(
+      /^BKK_/i,
+      ""
+    );
+
+
+  const bbb =
+    bb.replace(
+      /^BKK_/i,
+      ""
+    );
+
+
+  return aaa === bbb;
 
 }
 
@@ -1035,15 +1069,18 @@ function sameId(a,b){
 function initMap(){
 
   map =
-    L.map("map",{
-
-      zoomControl:true,
-
-      preferCanvas:true
-
-    })
+    L.map(
+      "map",
+      {
+        zoomControl:true,
+        preferCanvas:true
+      }
+    )
     .setView(
-      [47.4979,19.0402],
+      [
+        47.4979,
+        19.0402
+      ],
       11
     );
 
@@ -1051,12 +1088,8 @@ function initMap(){
   L.tileLayer(
     "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
     {
-
       maxZoom:19,
-
-      attribution:
-      "© OpenStreetMap"
-
+      attribution:"© OpenStreetMap"
     }
   ).addTo(map);
 
@@ -1075,7 +1108,10 @@ function initMap(){
 
 function setMapVehicle(item){
 
-  if(!map || !vehicleLayer){
+  if(
+    !map ||
+    !vehicleLayer
+  ){
     return;
   }
 
@@ -1085,7 +1121,9 @@ function setMapVehicle(item){
     try{
 
       vehicleLayer
-        .removeLayer(item.marker);
+        .removeLayer(
+          item.marker
+        );
 
     }catch(e){}
 
@@ -1109,17 +1147,11 @@ function setMapVehicle(item){
         item.lon
       ],
       {
-
         radius:8,
-
         weight:2,
-
         color:"#ffffff",
-
         fillColor:"#178cff",
-
         fillOpacity:0.95
-
       }
     );
 
@@ -1161,16 +1193,21 @@ function refreshMarkers(){
     return;
   }
 
+
   vehicleLayer.clearLayers();
 
 
-  for(const item of vehicleData){
+  for(
+    const item of vehicleData
+  ){
 
     item.marker = null;
+
 
     if(!item._visible){
       continue;
     }
+
 
     setMapVehicle(item);
 
@@ -1190,6 +1227,7 @@ function loadSavedKey(){
       "attila_bkk_api_key"
     ) || "";
 
+
   $("apiKey").value =
     key;
 
@@ -1199,7 +1237,9 @@ function loadSavedKey(){
 function saveKey(){
 
   const key =
-    $("apiKey").value.trim();
+    $("apiKey")
+      .value
+      .trim();
 
 
   if(!key){
@@ -1244,12 +1284,17 @@ function setBadge(
   const el =
     $(id);
 
+
   el.textContent =
     text;
 
+
   el.className =
     "badge " +
-    (kind || "warn");
+    (
+      kind ||
+      "warn"
+    );
 
 }
 
@@ -1397,9 +1442,7 @@ function parseCsv(text){
   const rows = [];
 
   let row = [];
-
   let cell = "";
-
   let quoted = false;
 
 
@@ -1515,12 +1558,16 @@ function parseCsv(text){
 
         const o = {};
 
+
         headers.forEach(
           (h,i)=>{
+
             o[h] =
               r[i] ?? "";
+
           }
         );
+
 
         return o;
 
@@ -1543,7 +1590,7 @@ async function loadBkkGtfs(){
 
 
     logLine(
-      "BKK static GTFS ZIP betöltése (GO)..."
+      "BKK static GTFS ZIP betöltése..."
     );
 
 
@@ -1585,10 +1632,6 @@ async function loadBkkGtfs(){
       new Map();
 
 
-    /* ----------------------------
-       STOPS
-       ---------------------------- */
-
     if(zip.file("stops.txt")){
 
       const text =
@@ -1601,12 +1644,15 @@ async function loadBkkGtfs(){
         parseCsv(text);
 
 
-      for(const r of rows){
+      for(
+        const r of rows
+      ){
 
         const lat =
           parseFloat(
             r.stop_lat
           );
+
 
         const lon =
           parseFloat(
@@ -1666,10 +1712,6 @@ async function loadBkkGtfs(){
     }
 
 
-    /* ----------------------------
-       ROUTES
-       ---------------------------- */
-
     if(zip.file("routes.txt")){
 
       const text =
@@ -1682,7 +1724,9 @@ async function loadBkkGtfs(){
         parseCsv(text);
 
 
-      for(const r of rows){
+      for(
+        const r of rows
+      ){
 
         const id =
           String(
@@ -1710,7 +1754,8 @@ async function loadBkkGtfs(){
     }
 
 
-    gtfsLoaded = true;
+    gtfsLoaded =
+      true;
 
 
     $("gtfsStatus").textContent =
@@ -1751,7 +1796,9 @@ async function loadBkkGtfs(){
 
   }catch(err){
 
-    gtfsLoaded = false;
+    gtfsLoaded =
+      false;
+
 
     $("gtfsStatus").textContent =
       "HIBA";
@@ -1778,10 +1825,9 @@ function findStopById(stopId){
 
 
   return (
-    gtfsStopsById
-      .get(
-        String(stopId)
-      ) ||
+    gtfsStopsById.get(
+      String(stopId)
+    ) ||
     null
   );
 
@@ -1834,9 +1880,11 @@ function findNearestStop(
       d < bestKm
     ){
 
-      bestKm = d;
+      bestKm =
+        d;
 
-      best = s;
+      best =
+        s;
 
     }
 
@@ -1850,15 +1898,20 @@ function findNearestStop(
 
   return {
 
-    id:best.id,
+    id:
+      best.id,
 
-    name:best.name,
+    name:
+      best.name,
 
-    lat:best.lat,
+    lat:
+      best.lat,
 
-    lon:best.lon,
+    lon:
+      best.lon,
 
-    code:best.code,
+    code:
+      best.code,
 
     distanceM:
       bestKm * 1000
@@ -1902,15 +1955,20 @@ function refreshStaticVehicleFields(){
 
       item.nearestStop = {
 
-        id:stop.id,
+        id:
+          stop.id,
 
-        name:stop.name,
+        name:
+          stop.name,
 
-        lat:stop.lat,
+        lat:
+          stop.lat,
 
-        lon:stop.lon,
+        lon:
+          stop.lon,
 
-        code:stop.code,
+        code:
+          stop.code,
 
         distanceM:
           distanceKm(
@@ -1950,284 +2008,356 @@ function refreshStaticVehicleFields(){
 async function fetchTripUpdates(){
 
   if(!getKey()){
+
+    lastTripFetchOK =
+      false;
+
     return false;
+
   }
 
 
-  let lastErr = null;
-
-
-  for(
-    const url of TRIP_UPDATES_URLS
-  ){
-
-    try{
-
-      const fullUrl =
-        url +
-        "?key=" +
-        encodeURIComponent(
-          getKey()
-        );
-
-
-      const res =
-        await fetch(
-          fullUrl,
-          {
-            cache:"no-store"
-          }
-        );
-
-
-      if(!res.ok){
-
-        lastErr =
-          new Error(
-            "HTTP " +
-            res.status
-          );
-
-        continue;
-
-      }
-
-
-      const buffer =
-        await res.arrayBuffer();
-
-
-      if(!buffer.byteLength){
-
-        lastErr =
-          new Error(
-            "üres válasz"
-          );
-
-        continue;
-
-      }
-
-
-      await loadProto();
-
-
-      const FeedMessage =
-        protoRoot.lookupType(
-          "transit_realtime.FeedMessage"
-        );
-
-
-      const feed =
-        FeedMessage.decode(
-          new Uint8Array(
-            buffer
-          )
-        );
-
-
-      const mapDelay =
-        new Map();
-
-      const seqDelay =
-        new Map();
-
-
-      for(
-        const entity of
-        (feed.entity || [])
-      ){
-
-        const tu =
-          entity.tripUpdate;
-
-
-        if(
-          !tu ||
-          !tu.trip
-        ){
-          continue;
-        }
-
-
-        const tripId =
-          String(
-            tu.trip.tripId || ""
-          );
-
-
-        if(!tripId){
-          continue;
-        }
-
-
-        for(
-          const stu of
-          (
-            tu.stopTimeUpdate ||
-            []
-          )
-        ){
-
-          let delay = null;
-
-
-          if(
-            stu.departure &&
-            stu.departure.delay !==
-            null &&
-            stu.departure.delay !==
-            undefined
-          ){
-
-            delay =
-              Number(
-                stu.departure.delay
-              );
-
-          }else if(
-            stu.arrival &&
-            stu.arrival.delay !==
-            null &&
-            stu.arrival.delay !==
-            undefined
-          ){
-
-            delay =
-              Number(
-                stu.arrival.delay
-              );
-
-          }
-
-
-          if(
-            !Number.isFinite(delay)
-          ){
-            continue;
-          }
-
-
-          const seq =
-            stu.stopSequence !==
-            null &&
-            stu.stopSequence !==
-            undefined
-              ?
-              String(
-                stu.stopSequence
-              )
-              :
-              "";
-
-
-          const stopId =
-            String(
-              stu.stopId || ""
-            );
-
-
-          if(seq){
-
-            mapDelay.set(
-              tripId +
-              "|seq|" +
-              seq,
-              delay
-            );
-
-            if(!seqDelay.has(tripId)){
-              seqDelay.set(tripId, []);
-            }
-
-            seqDelay.get(tripId).push({
-              seq:Number(seq),
-              delay
-            });
-
-          }
-
-
-          if(stopId){
-
-            mapDelay.set(
-              tripId +
-              "|stop|" +
-              stopId,
-              delay
-            );
-
-          }
-
-        }
-
-      }
-
-
-      for(const arr of seqDelay.values()){
-        arr.sort((a,b)=>a.seq-b.seq);
-      }
-
-
-      tripDelayMap =
-        mapDelay;
-
-      tripDelaySeqMap =
-        seqDelay;
-
-
-      lastTripFetchOK = true;
-
-
-      for(
-        const item of vehicleData
-      ){
-
-        item.delaySeconds =
-          resolveVehicleDelay(
-            item
-          );
-
-      }
-
-
-      logLine(
-        "TripUpdates OK: " +
-        mapDelay.size
-          .toLocaleString("hu-HU") +
-        " stop-idő eltérés."
-      );
-
-      logLine(
-        "KÉSÉS/SIETÉS: járműszintű hozzárendelés frissítve."
+  try{
+
+    const fullUrl =
+      TRIP_UPDATES_URL +
+      "?key=" +
+      encodeURIComponent(
+        getKey()
       );
 
 
-      return true;
+    const res =
+      await fetch(
+        fullUrl,
+        {
+          cache:"no-store"
+        }
+      );
 
 
-    }catch(err){
+    if(!res.ok){
 
-      lastErr = err;
+      throw new Error(
+        "HTTP " +
+        res.status
+      );
 
     }
 
+
+    const buffer =
+      await res.arrayBuffer();
+
+
+    if(!buffer.byteLength){
+
+      throw new Error(
+        "üres TripUpdates válasz"
+      );
+
+    }
+
+
+    await loadProto();
+
+
+    const FeedMessage =
+      protoRoot.lookupType(
+        "transit_realtime.FeedMessage"
+      );
+
+
+    const feed =
+      FeedMessage.decode(
+        new Uint8Array(
+          buffer
+        )
+      );
+
+
+    const mapDelay =
+      new Map();
+
+
+    const seqDelay =
+      new Map();
+
+
+    const tripDelay =
+      new Map();
+
+
+    let updateCount = 0;
+
+
+    for(
+      const entity of
+      (feed.entity || [])
+    ){
+
+      const tu =
+        entity.tripUpdate;
+
+
+      if(
+        !tu ||
+        !tu.trip
+      ){
+        continue;
+      }
+
+
+      const tripId =
+        String(
+          tu.trip.tripId || ""
+        );
+
+
+      if(!tripId){
+        continue;
+      }
+
+
+      updateCount++;
+
+
+      /*
+        GTFS-RT TripUpdate-ben a stopTimeUpdate
+        az elsődleges késésforrás.
+
+        Csak ténylegesen megadott delay értéket
+        veszünk át.
+      */
+
+
+      for(
+        const stu of
+        (
+          tu.stopTimeUpdate ||
+          []
+        )
+      ){
+
+        let delay =
+          null;
+
+
+        if(
+          stu.departure &&
+          stu.departure.delay !==
+          null &&
+          stu.departure.delay !==
+          undefined
+        ){
+
+          delay =
+            Number(
+              stu.departure.delay
+            );
+
+        }else if(
+          stu.arrival &&
+          stu.arrival.delay !==
+          null &&
+          stu.arrival.delay !==
+          undefined
+        ){
+
+          delay =
+            Number(
+              stu.arrival.delay
+            );
+
+        }
+
+
+        if(
+          !Number.isFinite(delay)
+        ){
+          continue;
+        }
+
+
+        const seq =
+          stu.stopSequence !==
+          null &&
+          stu.stopSequence !==
+          undefined
+            ?
+            String(
+              stu.stopSequence
+            )
+            :
+            "";
+
+
+        const stopId =
+          String(
+            stu.stopId || ""
+          );
+
+
+        if(seq){
+
+          mapDelay.set(
+            tripId +
+            "|seq|" +
+            seq,
+            delay
+          );
+
+
+          if(
+            !seqDelay.has(
+              tripId
+            )
+          ){
+
+            seqDelay.set(
+              tripId,
+              []
+            );
+
+          }
+
+
+          seqDelay
+            .get(tripId)
+            .push({
+
+              seq:
+                Number(seq),
+
+              delay
+
+            });
+
+        }
+
+
+        if(stopId){
+
+          mapDelay.set(
+            tripId +
+            "|stop|" +
+            stopId,
+            delay
+          );
+
+        }
+
+      }
+
+    }
+
+
+    for(
+      const arr of
+      seqDelay.values()
+    ){
+
+      arr.sort(
+        (a,b)=>
+        a.seq-b.seq
+      );
+
+    }
+
+
+    tripDelayMap =
+      mapDelay;
+
+
+    tripDelaySeqMap =
+      seqDelay;
+
+
+    /*
+      Fontos:
+      nem töltünk be 0-t olyan járműre,
+      amelyhez nincs tényleges TripUpdate.
+    */
+
+    tripDelayTripMap =
+      tripDelay;
+
+
+    lastTripFetchOK =
+      true;
+
+
+    let assigned = 0;
+
+
+    for(
+      const item of
+      vehicleData
+    ){
+
+      item.delaySeconds =
+        resolveVehicleDelay(
+          item
+        );
+
+
+      if(
+        Number.isFinite(
+          item.delaySeconds
+        )
+      ){
+
+        assigned++;
+
+      }
+
+    }
+
+
+    logLine(
+      "TripUpdates OK: " +
+      updateCount.toLocaleString("hu-HU") +
+      " trip frissítés, " +
+      mapDelay.size.toLocaleString("hu-HU") +
+      " stop-idő eltérés."
+    );
+
+
+    logLine(
+      "KÉSÉS/SIETÉS hozzárendelve: " +
+      assigned.toLocaleString("hu-HU") +
+      " jármű."
+    );
+
+
+    return true;
+
+
+  }catch(err){
+
+    lastTripFetchOK =
+      false;
+
+
+    /*
+      Hiba esetén sem szabad
+      a meglévő járműveket 0-ra állítani.
+      Az előző sikeres adatot nem gyártjuk újra.
+    */
+
+
+    logLine(
+      "TripUpdates HIBA: " +
+      (
+        err?.message ||
+        "ismeretlen"
+      )
+    );
+
+
+    return false;
+
   }
-
-
-  lastTripFetchOK = false;
-
-
-  logLine(
-    "TripUpdates HIBA: " +
-    (
-      lastErr?.message ||
-      "ismeretlen"
-    )
-  );
-
-
-  return false;
 
 }
 
@@ -2246,8 +2376,9 @@ function resolveVehicleDelay(item){
 
 
   /*
-    1) Pontos stop-sequence egyezés.
+    1. Pontos stop_sequence
   */
+
   if(
     Number.isFinite(
       item.stopSequence
@@ -2267,47 +2398,56 @@ function resolveVehicleDelay(item){
     if(
       Number.isFinite(exact)
     ){
+
       return exact;
+
     }
 
   }
 
 
   /*
-    2) Pontos stop_id egyezés.
+    2. Pontos stop_id
   */
+
   if(item.stopId){
 
     const exact =
       tripDelayMap.get(
         tripId +
         "|stop|" +
-        String(item.stopId)
+        String(
+          item.stopId
+        )
       );
 
 
     if(
       Number.isFinite(exact)
     ){
+
       return exact;
+
     }
 
   }
 
 
   /*
-    3) Ha a VehiclePosition és a TripUpdate nem ugyanazon
-       a pillanatban ugyanazt a stop_sequence-t adja, a
-       legközelebbi TripUpdate stop eltérést használjuk.
-       Csak kis eltérésnél engedjük, hogy ne keverjünk
-       össze távoli megállókat.
+    3. Legközelebbi stop_sequence.
+       Maximum 3 megálló eltérés.
   */
+
   if(
-    Number.isFinite(item.stopSequence)
+    Number.isFinite(
+      item.stopSequence
+    )
   ){
 
     const arr =
-      tripDelaySeqMap.get(tripId);
+      tripDelaySeqMap.get(
+        tripId
+      );
 
 
     if(
@@ -2316,19 +2456,35 @@ function resolveVehicleDelay(item){
     ){
 
       let best = null;
-      let bestDiff = Infinity;
 
-      for(const x of arr){
+      let bestDiff =
+        Infinity;
+
+
+      for(
+        const x of arr
+      ){
 
         const diff =
           Math.abs(
             x.seq -
-            Number(item.stopSequence)
+            Number(
+              item.stopSequence
+            )
           );
 
-        if(diff < bestDiff){
-          bestDiff = diff;
-          best = x;
+
+        if(
+          diff <
+          bestDiff
+        ){
+
+          bestDiff =
+            diff;
+
+          best =
+            x;
+
         }
 
       }
@@ -2337,9 +2493,13 @@ function resolveVehicleDelay(item){
       if(
         best &&
         bestDiff <= 3 &&
-        Number.isFinite(best.delay)
+        Number.isFinite(
+          best.delay
+        )
       ){
+
         return best.delay;
+
       }
 
     }
@@ -2347,9 +2507,14 @@ function resolveVehicleDelay(item){
   }
 
 
+  /*
+    NINCS MEGBÍZHATÓ TRIPUPDATE.
+  */
+
   return null;
 
 }
+
 
 /* ============================================================
    VEHICLEPOSITIONS
@@ -2437,10 +2602,10 @@ function parseVehicleFeed(buffer){
       Number.isFinite(
         speedMs
       )
-      ?
-      speedMs * 3.6
-      :
-      null;
+        ?
+        speedMs * 3.6
+        :
+        null;
 
 
     const routeId =
@@ -2455,10 +2620,26 @@ function parseVehicleFeed(buffer){
       );
 
 
+    const stopSequence =
+      v.currentStopSequence !==
+      null &&
+      v.currentStopSequence !==
+      undefined
+        ?
+        Number(
+          v.currentStopSequence
+        )
+        :
+        null;
+
+
     const item = {
 
       source:
         "BKK GTFS-RT",
+
+      provider:
+        "BKK",
 
       vehicleId:
         String(
@@ -2501,17 +2682,7 @@ function parseVehicleFeed(buffer){
 
       stopId,
 
-      stopSequence:
-        v.currentStopSequence !==
-        null &&
-        v.currentStopSequence !==
-        undefined
-          ?
-          Number(
-            v.currentStopSequence
-          )
-          :
-          null,
+      stopSequence,
 
       lat,
 
@@ -2527,11 +2698,26 @@ function parseVehicleFeed(buffer){
       delaySeconds:
         null,
 
+      /*
+        A BKK GTFS-RT VehiclePositions
+        önmagában nem ad hivatalos
+        FORGALMI mezőt.
+      */
+
       forgalmi:
         null,
 
+      /*
+        BKK-nál nincs FORDA.
+      */
+
       forda:
         null,
+
+      /*
+        VehiclePositionsből nem
+        nevezünk át más mezőt típusnak.
+      */
 
       vehicleType:
         null,
@@ -2608,7 +2794,9 @@ function parseVehicleFeed(buffer){
     }
 
 
-    out.push(item);
+    out.push(
+      item
+    );
 
   }
 
@@ -2717,8 +2905,8 @@ async function testFeed(){
 
 
     /*
-      Csak sikeres decode után cseréljük le
-      a régi valódi adatot.
+      Csak sikeres decode után
+      cseréljük le a valódi adatot.
     */
 
     vehicleData =
@@ -2771,7 +2959,9 @@ async function testFeed(){
 
 
     if(myPos){
+
       updateVehicleDistances();
+
     }
 
 
@@ -2781,25 +2971,29 @@ async function testFeed(){
 
 
     /*
-      JÁRMŰSZINTŰ FUTÁR ADATOK
+      FUTÁR valódi járműadatok.
     */
 
     await loadFutarVehicles();
 
 
     /*
-      A FUTÁR-összefésülés után is újraszámoljuk a
-      késést/sietést, mert közben új járművek kerülhetnek
-      a vehicleData tömbbe.
+      FUTÁR illesztés után újra
+      kiszámítjuk a TripUpdate kapcsolatot.
     */
-    for(const item of vehicleData){
+
+    for(
+      const item of vehicleData
+    ){
+
       item.delaySeconds =
-        resolveVehicleDelay(item);
+        null;
+
     }
 
 
     /*
-      VALÓS KÉSÉS / SIETÉS
+      VALÓDI KÉSÉS / SIETÉS.
     */
 
     await fetchTripUpdates();
@@ -2841,8 +3035,8 @@ async function testFeed(){
 
 
     /*
-      Ha a protobuf feed hibás,
-      megpróbáljuk a FUTÁR réteget.
+      Ha a GTFS-RT feed nem ment,
+      megpróbáljuk a valódi FUTÁR adatot.
     */
 
     try{
@@ -2850,6 +3044,15 @@ async function testFeed(){
       await loadFutarVehicles(
         true
       );
+
+
+      await fetchTripUpdates();
+
+
+      renderVehicles();
+
+      refreshMarkers();
+
 
     }catch(e){
 
@@ -2919,15 +3122,10 @@ function findCandidateVehicleArrays(json){
   const direct = [
 
     json?.data?.list,
-
     json?.data?.entry,
-
     json?.list,
-
     json?.entry,
-
     json?.data?.vehicles,
-
     json?.vehicles
 
   ];
@@ -2941,7 +3139,9 @@ function findCandidateVehicleArrays(json){
       Array.isArray(x)
     ){
 
-      candidates.push(x);
+      candidates.push(
+        x
+      );
 
     }
 
@@ -2952,6 +3152,10 @@ function findCandidateVehicleArrays(json){
 
 }
 
+
+/* ============================================================
+   FUTÁR REKORD KERESÉS
+   ============================================================ */
 
 function extractFutarVehicles(json){
 
@@ -3043,7 +3247,9 @@ function extractFutarVehicles(json){
         String(lon);
 
 
-      if(seen.has(key)){
+      if(
+        seen.has(key)
+      ){
         return;
       }
 
@@ -3074,8 +3280,7 @@ function extractFutarVehicles(json){
 
 
   /*
-    Mélyebb keresés, ha a válasz
-    nem a megszokott OTP struktúrában érkezik.
+    Mélyebb keresés.
   */
 
   if(!out.length){
@@ -3084,7 +3289,7 @@ function extractFutarVehicles(json){
       (x,depth=0)=>{
 
         if(
-          depth > 6 ||
+          depth > 7 ||
           x == null
         ){
           return;
@@ -3167,17 +3372,29 @@ function extractFutarVehicles(json){
 }
 
 
+/* ============================================================
+   VALÓDI MEZŐ KERESÉSE
+   ============================================================ */
+
 function explicitField(
   obj,
   names
 ){
+
+  if(
+    !obj ||
+    typeof obj !==
+    "object"
+  ){
+    return null;
+  }
+
 
   for(
     const name of names
   ){
 
     if(
-      obj &&
       obj[name] !==
       undefined &&
       obj[name] !==
@@ -3193,7 +3410,7 @@ function explicitField(
 
 
     if(
-      obj?.vehicle &&
+      obj.vehicle &&
       obj.vehicle[name] !==
       undefined &&
       obj.vehicle[name] !==
@@ -3214,6 +3431,97 @@ function explicitField(
 
 }
 
+
+/*
+  Explicit mező keresés.
+
+  FONTOS:
+  A FORGALMI / TÍPUS nem a LABEL-ből,
+  nem az ID-ből és nem más hasonló
+  mezőből készül.
+*/
+
+function explicitDeepField(
+  obj,
+  names,
+  depth=0
+){
+
+  if(
+    !obj ||
+    typeof obj !==
+    "object" ||
+    depth > 5
+  ){
+    return null;
+  }
+
+
+  const direct =
+    explicitField(
+      obj,
+      names
+    );
+
+
+  if(
+    direct !== null
+  ){
+    return direct;
+  }
+
+
+  for(
+    const key of
+    Object.keys(obj)
+  ){
+
+    if(
+      key === "references"
+    ){
+      continue;
+    }
+
+
+    const child =
+      obj[key];
+
+
+    if(
+      child &&
+      typeof child ===
+      "object"
+    ){
+
+      const found =
+        explicitDeepField(
+          child,
+          names,
+          depth+1
+        );
+
+
+      if(
+        found !== null
+      ){
+
+        return found;
+
+      }
+
+    }
+
+  }
+
+
+  return null;
+
+}
+
+
+/* ============================================================
+   FUTÁR NORMALIZÁLÁS
+   ============================================================ */
 
 function normalizeFutarVehicle(obj){
 
@@ -3241,7 +3549,7 @@ function normalizeFutarVehicle(obj){
 
   const routeId =
     String(
-      explicitField(
+      explicitDeepField(
         obj,
         [
           "routeId"
@@ -3254,7 +3562,7 @@ function normalizeFutarVehicle(obj){
 
   const tripId =
     String(
-      explicitField(
+      explicitDeepField(
         obj,
         [
           "tripId"
@@ -3267,7 +3575,7 @@ function normalizeFutarVehicle(obj){
 
   const vehicleId =
     String(
-      explicitField(
+      explicitDeepField(
         obj,
         [
           "vehicleId"
@@ -3279,7 +3587,7 @@ function normalizeFutarVehicle(obj){
 
 
   const licensePlate =
-    explicitField(
+    explicitDeepField(
       obj,
       [
         "licensePlate",
@@ -3290,7 +3598,7 @@ function normalizeFutarVehicle(obj){
 
 
   const label =
-    explicitField(
+    explicitDeepField(
       obj,
       [
         "label"
@@ -3299,13 +3607,18 @@ function normalizeFutarVehicle(obj){
 
 
   /*
-    FONTOS:
-    A FUTÁR általános label mezőjét NEM
-    nevezzük át automatikusan FORGALMI-ra.
+    FORGALMI:
+
+    Csak ténylegesen ilyen nevű
+    explicit mezőt fogadunk el.
+
+    A LABEL NEM FORGALMI.
+    A vehicleId NEM FORGALMI.
+    A rendszám NEM FORGALMI.
   */
 
   const forgalmi =
-    explicitField(
+    explicitDeepField(
       obj,
       [
         "forgalmi",
@@ -3313,41 +3626,50 @@ function normalizeFutarVehicle(obj){
         "fleetNo",
         "fleet_number",
         "vehicleNumber",
-        "vehicle_number",
-        "vehicleLabel"
+        "vehicle_number"
       ]
     );
 
+
+  /*
+    FORDA:
+
+    BKK FUTÁR esetén nincs adat.
+  */
 
   const forda =
-    explicitField(
-      obj,
-      [
-        "forda",
-        "blockId",
-        "vehicleBlockId",
-        "vehicle_block_id"
-      ]
-    );
+    null;
 
+
+  /*
+    JÁRMŰTÍPUS:
+
+    Csak explicit vehicleType /
+    vehicle_type / model mező.
+
+    Az általános "type" mezőt
+    szándékosan nem használjuk,
+    mert az API más objektumának
+    típusa is lehet.
+  */
 
   const vehicleType =
-    explicitField(
+    explicitDeepField(
       obj,
       [
         "vehicleType",
         "vehicle_type",
-        "type",
         "model"
       ]
     );
 
 
-  let speedKmh = null;
+  let speedKmh =
+    null;
 
 
   const rawSpeed =
-    explicitField(
+    explicitDeepField(
       obj,
       [
         "speed"
@@ -3370,7 +3692,8 @@ function normalizeFutarVehicle(obj){
       Number.isFinite(n)
     ){
 
-      speedKmh = n;
+      speedKmh =
+        n;
 
     }
 
@@ -3378,8 +3701,8 @@ function normalizeFutarVehicle(obj){
 
 
   /*
-    Ha egyértelműen position.speed érkezik,
-    azt GTFS-RT m/s-ként kezeljük.
+    Ha position.speed,
+    akkor GTFS-RT szerint m/s.
   */
 
   const nestedSpeed =
@@ -3417,24 +3740,20 @@ function normalizeFutarVehicle(obj){
     );
 
 
+  const rawSequence =
+    obj.stopSequence ??
+    obj.vehicle?.stopSequence ??
+    null;
+
+
   const stopSequence =
-    obj.stopSequence !==
-    undefined
+    rawSequence !== null
       ?
       Number(
-        obj.stopSequence
+        rawSequence
       )
       :
-      (
-        obj.vehicle?.stopSequence !==
-        undefined
-          ?
-          Number(
-            obj.vehicle.stopSequence
-          )
-          :
-          null
-      );
+      null;
 
 
   return {
@@ -3446,7 +3765,9 @@ function normalizeFutarVehicle(obj){
         ?
         ""
         :
-        String(label),
+        String(
+          label
+        ),
 
     licensePlate:
       licensePlate === null
@@ -3466,14 +3787,7 @@ function normalizeFutarVehicle(obj){
           forgalmi
         ),
 
-    forda:
-      forda === null
-        ?
-        null
-        :
-        String(
-          forda
-        ),
+    forda,
 
     vehicleType:
       vehicleType === null
@@ -3505,14 +3819,21 @@ function normalizeFutarVehicle(obj){
 }
 
 
+/* ============================================================
+   FUTÁR → BKK ILLESZTÉS
+   ============================================================ */
+
 function matchFutarToVehicle(
   fv
 ){
 
-  let best = null;
+  let best =
+    null;
 
 
-  if(fv.vehicleId){
+  if(
+    fv.vehicleId
+  ){
 
     best =
       vehicleData.find(
@@ -3543,7 +3864,8 @@ function matchFutarToVehicle(
   }
 
 
-  return best || null;
+  return best ||
+    null;
 
 }
 
@@ -3560,6 +3882,7 @@ async function loadFutarVehicles(
 
     $("futarHttp").textContent =
       "API-KULCS KELL";
+
 
     return false;
 
@@ -3716,7 +4039,8 @@ async function loadFutarVehicles(
     }
 
 
-    let matched = 0;
+    let matched =
+      0;
 
 
     for(
@@ -3729,151 +4053,155 @@ async function loadFutarVehicles(
         );
 
 
-      if(target){
-
-        target.futarMatched =
-          true;
-
-
-        target.futarLabel =
-          fv.label ||
-          null;
+      if(!target){
+        continue;
+      }
 
 
-        if(
-          fv.licensePlate
-        ){
-
-          target.licensePlate =
-            fv.licensePlate;
-
-        }
+      target.futarMatched =
+        true;
 
 
-        if(
-          fv.forgalmi
-        ){
-
-          target.forgalmi =
-            fv.forgalmi;
-
-        }
+      target.futarLabel =
+        fv.label ||
+        null;
 
 
-        if(
-          fv.forda
-        ){
+      if(
+        fv.licensePlate
+      ){
 
-          target.forda =
-            fv.forda;
-
-        }
-
-
-        if(
-          fv.vehicleType
-        ){
-
-          target.vehicleType =
-            fv.vehicleType;
-
-        }
-
-
-        if(
-          !Number.isFinite(
-            target.lat
-          ) &&
-          Number.isFinite(
-            fv.lat
-          ) &&
-          Number.isFinite(
-            fv.lon
-          )
-        ){
-
-          target.lat =
-            fv.lat;
-
-          target.lon =
-            fv.lon;
-
-        }
-
-
-        if(
-          !Number.isFinite(
-            target.speedKmh
-          ) &&
-          Number.isFinite(
-            fv.speedKmh
-          )
-        ){
-
-          target.speedKmh =
-            fv.speedKmh;
-
-        }
-
-
-        if(
-          !Number.isFinite(
-            target.bearing
-          ) &&
-          Number.isFinite(
-            fv.bearing
-          )
-        ){
-
-          target.bearing =
-            fv.bearing;
-
-        }
-
-
-        if(
-          !target.stopId &&
-          fv.stopId
-        ){
-
-          target.stopId =
-            fv.stopId;
-
-        }
-
-
-        if(
-          !Number.isFinite(
-            target.stopSequence
-          ) &&
-          Number.isFinite(
-            fv.stopSequence
-          )
-        ){
-
-          target.stopSequence =
-            fv.stopSequence;
-
-        }
-
-
-        if(target.routeId){
-
-          target.routeShortName =
-            gtfsRoutes.get(
-              String(
-                target.routeId
-              )
-            ) ||
-            target.routeShortName ||
-            "";
-
-        }
-
-
-        matched++;
+        target.licensePlate =
+          fv.licensePlate;
 
       }
+
+
+      /*
+        FORGALMI csak explicit
+        valódi mezőből.
+      */
+
+      if(
+        fv.forgalmi
+      ){
+
+        target.forgalmi =
+          fv.forgalmi;
+
+      }
+
+
+      /*
+        BKK FORDA = NINCS ADAT.
+      */
+
+      target.forda =
+        null;
+
+
+      if(
+        fv.vehicleType
+      ){
+
+        target.vehicleType =
+          fv.vehicleType;
+
+      }
+
+
+      if(
+        !Number.isFinite(
+          target.lat
+        ) &&
+        Number.isFinite(
+          fv.lat
+        ) &&
+        Number.isFinite(
+          fv.lon
+        )
+      ){
+
+        target.lat =
+          fv.lat;
+
+        target.lon =
+          fv.lon;
+
+      }
+
+
+      if(
+        !Number.isFinite(
+          target.speedKmh
+        ) &&
+        Number.isFinite(
+          fv.speedKmh
+        )
+      ){
+
+        target.speedKmh =
+          fv.speedKmh;
+
+      }
+
+
+      if(
+        !Number.isFinite(
+          target.bearing
+        ) &&
+        Number.isFinite(
+          fv.bearing
+        )
+      ){
+
+        target.bearing =
+          fv.bearing;
+
+      }
+
+
+      if(
+        !target.stopId &&
+        fv.stopId
+      ){
+
+        target.stopId =
+          fv.stopId;
+
+      }
+
+
+      if(
+        !Number.isFinite(
+          target.stopSequence
+        ) &&
+        Number.isFinite(
+          fv.stopSequence
+        )
+      ){
+
+        target.stopSequence =
+          fv.stopSequence;
+
+      }
+
+
+      if(target.routeId){
+
+        target.routeShortName =
+          gtfsRoutes.get(
+            String(
+              target.routeId
+            )
+          ) ||
+          target.routeShortName ||
+          "";
+
+      }
+
+
+      matched++;
 
     }
 
@@ -3906,8 +4234,11 @@ async function loadFutarVehicles(
 
 
     /*
-      Ha a GTFS-RT feed nem ment,
-      valódi FUTÁR rekordokat is megjelenítünk.
+      FUTÁR fallback csak akkor
+      hoz létre új rekordot,
+      ha a GTFS-RT nem működik.
+
+      Ezek is valódi FUTÁR rekordok.
     */
 
     if(
@@ -3959,6 +4290,9 @@ async function loadFutarVehicles(
           source:
             "BKK FUTÁR",
 
+          provider:
+            "BKK",
+
           vehicleId:
             fv.vehicleId,
 
@@ -4009,7 +4343,7 @@ async function loadFutarVehicles(
             fv.forgalmi,
 
           forda:
-            fv.forda,
+            null,
 
           vehicleType:
             fv.vehicleType,
@@ -4386,7 +4720,9 @@ function updateVehicleDistances(){
 
 
     if(
-      item.nearestStop
+      item.nearestStop &&
+      Number.isFinite(item.lat) &&
+      Number.isFinite(item.lon)
     ){
 
       item.nearestStop.distanceM =
@@ -4438,6 +4774,8 @@ function vehicleSearchText(
     item.nearestStop?.name,
 
     item.source,
+
+    item.provider,
 
     item.futarLabel
 
@@ -4502,6 +4840,7 @@ function matchesFilters(
         item.routeId
       );
 
+
     const r2 =
       normalize(
         item.routeShortName
@@ -4526,6 +4865,7 @@ function matchesFilters(
       normalize(
         item.licensePlate
       );
+
 
     const p2 =
       normalize(
@@ -4656,7 +4996,7 @@ function setRadius(
 
 
 /* ============================================================
-   MEGJELENÍTÉS
+   JÁRAT MEGJELENÍTÉS
    ============================================================ */
 
 function routeDisplay(
@@ -4721,6 +5061,43 @@ function stopDisplay(
 }
 
 
+/* ============================================================
+   FORDA
+   ============================================================ */
+
+function fordDisplay(
+  item
+){
+
+  /*
+    FORDA csak HÉV / MÁV esetén.
+
+    A jelenlegi build BKK-only,
+    ezért BKK = NINCS ADAT.
+  */
+
+  if(
+    item.provider !== "HEV" &&
+    item.provider !== "MÁV" &&
+    item.provider !== "MAV"
+  ){
+
+    return "NINCS ADAT";
+
+  }
+
+
+  return val(
+    item.forda
+  );
+
+}
+
+
+/* ============================================================
+   FORRÁS
+   ============================================================ */
+
 function sourceLabel(
   item
 ){
@@ -4730,7 +5107,37 @@ function sourceLabel(
     "BKK FUTÁR"
   ){
 
-    return "FUTÁR";
+    return "BKK FUTÁR";
+
+  }
+
+
+  if(
+    item.provider ===
+    "HEV"
+  ){
+
+    return "MÁV-HÉV";
+
+  }
+
+
+  if(
+    item.provider ===
+    "MÁV"
+  ){
+
+    return "MÁV";
+
+  }
+
+
+  if(
+    item.provider ===
+    "VOLÁN"
+  ){
+
+    return "VOLÁN";
 
   }
 
@@ -4767,6 +5174,7 @@ function buildPopup(
         </span>
       </div>
 
+
       <div class="pf">
         <b>LABEL</b>
         <span>
@@ -4776,14 +5184,16 @@ function buildPopup(
         </span>
       </div>
 
+
       <div class="pf">
         <b>FORDA</b>
         <span>
           ${escapeHtml(
-            val(item.forda)
+            fordDisplay(item)
           )}
         </span>
       </div>
+
 
       <div class="pf">
         <b>RENDSZÁM</b>
@@ -4794,6 +5204,7 @@ function buildPopup(
         </span>
       </div>
 
+
       <div class="pf">
         <b>FORGALMI</b>
         <span>
@@ -4803,6 +5214,7 @@ function buildPopup(
         </span>
       </div>
 
+
       <div class="pf">
         <b>MEGÁLLÓ</b>
         <span>
@@ -4811,6 +5223,7 @@ function buildPopup(
           )}
         </span>
       </div>
+
 
       <div class="pf">
         <b>SEBESSÉG</b>
@@ -4823,6 +5236,7 @@ function buildPopup(
         </span>
       </div>
 
+
       <div class="pf">
         <b>SAJÁT GPS</b>
         <span>
@@ -4834,6 +5248,7 @@ function buildPopup(
         </span>
       </div>
 
+
       <div class="pf">
         <b>JÁRMŰ ID</b>
         <span>
@@ -4843,12 +5258,14 @@ function buildPopup(
         </span>
       </div>
 
+
       <div class="pf">
         <b>ELTÉRÉS</b>
         <span class="pdelay">
           ${delay}
         </span>
       </div>
+
 
       <div class="pf">
         <b>JÁRMŰTÍPUS</b>
@@ -4859,6 +5276,7 @@ function buildPopup(
         </span>
       </div>
 
+
       <div class="pf">
         <b>TRIP</b>
         <span>
@@ -4867,6 +5285,7 @@ function buildPopup(
           )}
         </span>
       </div>
+
 
       <div class="pf">
         <b>STOP ID</b>
@@ -4877,6 +5296,7 @@ function buildPopup(
         </span>
       </div>
 
+
       <div class="pf">
         <b>STOP SORREND</b>
         <span>
@@ -4885,6 +5305,7 @@ function buildPopup(
           )}
         </span>
       </div>
+
 
       <div class="pf">
         <b>IRÁNY</b>
@@ -4902,6 +5323,7 @@ function buildPopup(
         </span>
       </div>
 
+
       <div class="pf">
         <b>GPS</b>
         <span>
@@ -4914,19 +5336,20 @@ function buildPopup(
               item.lon
             )
 
-              ?
+            ?
 
-              item.lat.toFixed(8) +
-              ", " +
-              item.lon.toFixed(8)
+            item.lat.toFixed(8) +
+            ", " +
+            item.lon.toFixed(8)
 
-              :
+            :
 
-              "NINCS ADAT"
+            "NINCS ADAT"
 
           )}
         </span>
       </div>
+
 
       <div class="pf">
         <b>FORRÁS</b>
@@ -5018,7 +5441,7 @@ function vehicleCard(
       <b>FORDA</b>
       <span>
         ${escapeHtml(
-          val(item.forda)
+          fordDisplay(item)
         )}
       </span>
     </div>
@@ -5229,7 +5652,8 @@ function renderVehicles(){
     "";
 
 
-  let shown = 0;
+  let shown =
+    0;
 
 
   for(
@@ -5281,7 +5705,7 @@ function renderVehicles(){
 
 
 /* ============================================================
-   VONAL ÖSSZES
+   VONAL ÖSSZES JÁRMŰVE
    ============================================================ */
 
 function routeAllVehicles(){
@@ -5420,6 +5844,7 @@ function toggleAuto(){
         autoTimer
       );
 
+
       autoTimer =
         null;
 
@@ -5473,9 +5898,7 @@ function toggleAuto(){
   autoTimer =
     setInterval(
       ()=>{
-
         testFeed();
-
       },
       10000
     );
@@ -5638,26 +6061,37 @@ document.addEventListener(
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ indul."
+      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ REAL DATA FIX indul."
     );
 
 
     logLine(
-      "REAL DATA mód: nincs kitalált járműadat."
+      "NINCS KITALÁLT JÁRMŰADAT."
+    );
+
+
+    logLine(
+      "FORGALMI: csak valódi explicit forrásmezőből."
+    );
+
+
+    logLine(
+      "FORDA: BKK-nál NINCS ADAT; csak HÉV/MÁV integráció után használható."
+    );
+
+
+    logLine(
+      "JÁRMŰTÍPUS: csak explicit valódi forrásmezőből."
+    );
+
+
+    logLine(
+      "KÉSÉS/SIETÉS: csak valódi TripUpdates alapján."
     );
 
 
     /*
-      FONTOS JAVÍTÁS:
-
-      A GTFS most automatikusan elindul.
-      Ez javítja azt a korábbi hibát, amikor:
-
-      - VONALI SZÁM = NINCS ADAT
-      - JÁRMŰ → MEGÁLLÓ = NINCS ADAT
-
-      azért maradt, mert a static GTFS
-      nem töltődött be induláskor.
+      GTFS automatikus betöltése.
     */
 
     loadBkkGtfs();
