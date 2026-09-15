@@ -805,7 +805,7 @@ let myMarker = null;
 let myPos = null;
 let gpsWatchId = null;
 let autoTimer = null;
-let autoRunning = false;
+let autoRunning = false; let feedBusy = false;
 let protoRoot = null;
 
 
@@ -816,7 +816,7 @@ let gtfsStopsById = new Map();
 let gtfsRoutes = new Map();
 let gtfsLoaded = false;
 
-let futarVehicleCache = new Map();
+let futarVehicleCache = new Map(); let futarRouteMetaCache = new Map(); let futarRouteMetaTime = new Map();
 
 let tripDelayMap = new Map();
 let tripDelaySeqMap = new Map();
@@ -2920,10 +2920,264 @@ async function fetchBinary(url){
 
 
 /* ============================================================
+   FUTÁR JÁRAT-SZINTŰ VALÓS JÁRMŰADAT – FIX9
+   ============================================================ */
+
+function collectFutarVehicleObjects(node, out=[]){
+
+  if(node === null || node === undefined){
+    return out;
+  }
+
+  if(Array.isArray(node)){
+    for(const x of node){
+      collectFutarVehicleObjects(x,out);
+    }
+    return out;
+  }
+
+  if(typeof node !== "object"){
+    return out;
+  }
+
+  const hasVehicleFields =
+    !!(
+      node.vehicleId ||
+      node.licensePlate ||
+      node.vehicle?.vehicleId ||
+      node.vehicle?.licensePlate
+    );
+
+  if(hasVehicleFields){
+    out.push(node);
+  }
+
+  for(const key of Object.keys(node)){
+    if(key === "references" || key === "routes" || key === "stops"){
+      continue;
+    }
+
+    const value = node[key];
+
+    if(value && typeof value === "object"){
+      collectFutarVehicleObjects(value,out);
+    }
+  }
+
+  return out;
+}
+
+
+function mergeFutarRouteMeta(normalized){
+
+  let matched = 0;
+
+  for(const fv of normalized){
+
+    const target = matchFutarToVehicle(fv);
+
+    if(!target){
+      continue;
+    }
+
+    target.futarMatched = true;
+
+    if(fv.licensePlate && !target.licensePlate){
+      target.licensePlate = fv.licensePlate;
+    }
+
+    /* FORGALMI: csak explicit valódi FUTÁR mezőből. */
+    if(fv.forgalmi){
+      target.forgalmi = fv.forgalmi;
+    }
+
+    /* JÁRMŰTÍPUS: csak explicit valódi FUTÁR mezőből. */
+    if(fv.vehicleType){
+      target.vehicleType = fv.vehicleType;
+    }
+
+    if(fv.blockId){
+      target.blockId = fv.blockId;
+    }
+
+    if(fv.blockVehicleNumber){
+      target.blockVehicleNumber = fv.blockVehicleNumber;
+    }
+
+    if(fv.lowFloor !== null && fv.lowFloor !== undefined){
+      target.lowFloor = fv.lowFloor;
+    }
+
+    matched++;
+  }
+
+  return matched;
+}
+
+
+async function loadFutarRouteVehicles(routeText){
+
+  const route =
+    String(routeText || "").trim();
+
+  if(!route || !getKey()){
+    return false;
+  }
+
+  /*
+    243 -> GTFS routeId 2430, ha a betöltött GTFS ezt
+    egyértelműen megadja. Egyébként a beírt értéket használjuk.
+  */
+  let routeIds = [];
+
+  const wanted = normalize(route);
+
+  for(const [id,info] of gtfsRoutes){
+
+    const rid = normalize(id);
+    const short = normalize(info?.shortName);
+
+    if(rid === wanted || short === wanted){
+      routeIds.push(String(id));
+    }
+  }
+
+  if(!routeIds.length){
+    routeIds = [route];
+  }
+
+  let totalMatched = 0;
+
+  for(const routeId of routeIds){
+
+    const cacheKey = normalize(routeId);
+    const previous =
+      Number(futarRouteMetaTime.get(cacheKey) || 0);
+
+    /* Egy kiválasztott járatot sem kérünk le percenként többször. */
+    if(Date.now() - previous < 60000){
+      continue;
+    }
+
+    const url =
+      FUTAR_URL
+        .replace(
+          "/vehicles-for-location.json",
+          "/vehicles-for-route.json"
+        ) +
+      "?key=" + encodeURIComponent(getKey()) +
+      "&version=3" +
+      "&appVersion=" +
+        encodeURIComponent("AttilaKozlekedes-Vadasz") +
+      "&routeId=" + encodeURIComponent(routeId);
+
+    try{
+
+      const res =
+        await fetch(
+          url,
+          {
+            cache:"no-store"
+          }
+        );
+
+      if(!res.ok){
+        throw new Error("HTTP " + res.status);
+      }
+
+      const json = await res.json();
+
+      const raw =
+        collectFutarVehicleObjects(json,[]);
+
+      const seen = new Set();
+      const normalized = [];
+
+      for(const obj of raw){
+
+        const fv =
+          normalizeFutarVehicle(obj);
+
+        const key =
+          [
+            fv.vehicleId,
+            fv.licensePlate,
+            fv.tripId
+          ]
+          .filter(Boolean)
+          .join("|");
+
+        if(!key || seen.has(key)){
+          continue;
+        }
+
+        seen.add(key);
+        normalized.push(fv);
+      }
+
+      const matched =
+        mergeFutarRouteMeta(normalized);
+
+      futarRouteMetaTime.set(
+        cacheKey,
+        Date.now()
+      );
+
+      futarRouteMetaCache.set(
+        cacheKey,
+        normalized
+      );
+
+      totalMatched += matched;
+
+      logLine(
+        "FUTÁR járat-adat: " +
+        routeId +
+        " → " +
+        normalized.length +
+        " rekord, " +
+        matched +
+        " illesztés."
+      );
+
+    }catch(err){
+
+      logLine(
+        "FUTÁR járat-adat HIBA " +
+        routeId +
+        ": " +
+        (err?.message || err)
+      );
+
+    }
+  }
+
+  if(totalMatched){
+    renderVehicles();
+    refreshMarkers();
+  }
+
+  return true;
+}
+
+
+/* ============================================================
    BKK FEED TESZT
    ============================================================ */
 
+
 async function testFeed(){
+
+  if(feedBusy){
+
+    logLine(
+      "AUTO: előző frissítés még fut, az átfedő lekérés kihagyva."
+    );
+
+    return;
+  }
+
+  feedBusy = true;
 
   if(!getKey()){
 
@@ -3125,12 +3379,17 @@ async function testFeed(){
         "FUTÁR fallback HIBA: " +
         e.message
       );
-
+ 
     }
+
+  }finally{
+
+    feedBusy = false;
 
   }
 
 }
+
 
 
 /* ============================================================
@@ -6319,7 +6578,7 @@ function renderVehicles(){
    VONAL ÖSSZES JÁRMŰVE
    ============================================================ */
 
-function routeAllVehicles(){
+async function routeAllVehicles(){
 
   const route =
     $("routeSearch")
@@ -6349,6 +6608,19 @@ function routeAllVehicles(){
 
   $("plateSearch")
     .value = "";
+
+
+  /*
+    FIX9 / 3:
+    A VONAL ÖSSZES JÁRMŰVE gomb a kiválasztott
+    járat hivatalos FUTÁR járműlistáját is lekéri.
+    Így a 243-asnál a valódi forgalmi/típus is
+    megpróbál bekerülni a már meglévő járműkártyába.
+  */
+
+  await loadFutarRouteVehicles(
+    route
+  );
 
 
   radiusMode =
