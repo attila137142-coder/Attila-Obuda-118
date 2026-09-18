@@ -355,68 +355,6 @@ select:focus{
   font-weight:800;
 }
 
-/* ============================================================
-   V10 IPHONE XR / TÉRKÉP LÁTHATÓSÁG FIX
-   ============================================================ */
-.mapVehicleLabel{
-  min-width:48px;
-  max-width:110px;
-  padding:3px 6px;
-  border:2px solid #ffffff;
-  border-radius:8px;
-  background:#087cff;
-  color:#ffffff;
-  font-size:14px;
-  line-height:1.05;
-  font-weight:900;
-  text-align:center;
-  white-space:nowrap;
-  box-shadow:0 2px 7px rgba(0,0,0,.55);
-}
-.mapVehicleLabel .mvRoute{font-size:17px;line-height:1.05;}
-.mapVehicleLabel .mvLabel{font-size:12px;line-height:1.05;}
-.scheduleBox{
-  margin-top:8px;
-  padding:7px;
-  border:1px solid #38596b;
-  border-radius:8px;
-  background:#07151e;
-}
-.scheduleBox b{color:#5ee7ff;}
-.scheduleRow{
-  display:flex;
-  justify-content:space-between;
-  gap:8px;
-  padding:4px 0;
-  border-bottom:1px dotted #28404d;
-  font-size:13px;
-}
-.scheduleRow:last-child{border-bottom:0;}
-.scheduleTime{font-size:16px;font-weight:900;color:#ffffff;}
-.scheduleDelay{font-weight:800;}
-.scheduleBtn{
-  width:100%;
-  margin-top:7px;
-  background:#123747;
-  border-color:#3d809a;
-  color:#ffffff;
-  font-weight:800;
-}
-.scheduleBtn:hover{background:#185269;}
-@media(max-width:900px){
-  #map{
-    height:70vh;
-    min-height:500px;
-  }
-  .vehicleCard{padding:11px;}
-  .vehicleTitle{font-size:18px;}
-  .field{font-size:14px;padding:4px 0;}
-  .field b{min-width:116px;}
-  .leaflet-popup-content{font-size:14px!important;}
-  .popup{min-width:300px;}
-  .popup .pf{padding:5px 0;}
-}
-
 @media(max-width:900px){
 
   html,
@@ -437,8 +375,8 @@ select:focus{
     right:auto;
     bottom:auto;
     width:100%;
-    height:70vh;
-    min-height:500px;
+    height:58vh;
+    min-height:360px;
   }
 
   #side{
@@ -848,6 +786,9 @@ const VEHICLE_URL =
 const TRIP_UPDATES_URL =
 "https://go.bkk.hu/api/query/v1/ws/gtfs-rt/full/TripUpdates.pb";
 
+const TRIP_DETAILS_URL =
+"https://go.bkk.hu/api/query/v1/ws/otp/api/where/trip-details.json";
+
 
 const PROTO_URL =
 "https://raw.githubusercontent.com/google/transit/master/gtfs-realtime/proto/gtfs-realtime.proto";
@@ -880,18 +821,18 @@ let gtfsLoaded = false;
 
 let futarVehicleCache = new Map();
 
+let tripDetailsCache = new Map();
+let tripDetailsInFlight = new Set();
+
 let tripDelayMap = new Map();
 let tripDelaySeqMap = new Map();
 let tripDelayTripMap = new Map();
-let tripDelayVehicleMap = new Map();
-let tripDelayLabelMap = new Map();
 
 let radiusMode = Infinity;
 
 let lastVehicleFetchOK = false;
 let lastFutarFetchOK = false;
 let lastTripFetchOK = false;
-let scheduleRequestSeq = 0;
 
 
 const $ = id =>
@@ -1222,26 +1163,18 @@ function setMapVehicle(item){
   }
 
 
-  const routeText = escapeHtml(
-    item.routeShortName || item.routeId || "?"
-  );
-  const labelText = escapeHtml(
-    item.label || item.licensePlate || ""
-  );
-
   const marker =
-    L.marker(
-      [item.lat,item.lon],
+    L.circleMarker(
+      [
+        item.lat,
+        item.lon
+      ],
       {
-        icon:L.divIcon({
-          className:"",
-          html:'<div class="mapVehicleLabel"><div class="mvRoute">'+routeText+'</div>' +
-               (labelText ? '<div class="mvLabel">'+labelText+'</div>' : '') +
-               '</div>',
-          iconSize:null,
-          iconAnchor:[0,18],
-          popupAnchor:[0,-16]
-        })
+        radius:8,
+        weight:2,
+        color:"#ffffff",
+        fillColor:"#178cff",
+        fillOpacity:0.95
       }
     );
 
@@ -2099,7 +2032,8 @@ function normalizeTripKey(value){
 
   return String(value ?? "")
     .trim()
-    .replace(/\s+/g, "");
+    .replace(/\s+/g, "")
+    .replace(/^BKK_/i, "");
 
 }
 
@@ -2186,12 +2120,6 @@ async function fetchTripUpdates(){
     const tripDelay =
       new Map();
 
-    const vehicleDelay =
-      new Map();
-
-    const labelDelay =
-      new Map();
-
 
     let updateCount = 0;
 
@@ -2225,9 +2153,6 @@ async function fetchTripUpdates(){
 
 
       updateCount++;
-
-      const tuVehicleId = normalizeTripKey(tu.vehicle?.id);
-      const tuVehicleLabel = normalizeTripKey(tu.vehicle?.label);
 
       /*
         Valódi TripUpdate-kat egyben is megőrizzük,
@@ -2304,13 +2229,6 @@ async function fetchTripUpdates(){
             tripId,
             delay
           );
-        }
-
-        if(tuVehicleId && !vehicleDelay.has(tuVehicleId)){
-          vehicleDelay.set(tuVehicleId, delay);
-        }
-        if(tuVehicleLabel && !labelDelay.has(tuVehicleLabel)){
-          labelDelay.set(tuVehicleLabel, delay);
         }
 
 
@@ -2416,12 +2334,6 @@ async function fetchTripUpdates(){
 
     tripDelayTripMap =
       tripDelay;
-
-    tripDelayVehicleMap =
-      vehicleDelay;
-
-    tripDelayLabelMap =
-      labelDelay;
 
 
     lastTripFetchOK =
@@ -2649,24 +2561,7 @@ function resolveVehicleDelay(item){
 
 
   /*
-    4. JÁRMŰ-ID / LABEL alapú valódi TripUpdate kapcsolat.
-    Ez akkor is működhet, ha a VehiclePositions tripId-je
-    nem karakterre azonos a TripUpdates tripId-jével.
-  */
-  const vehicleKey = normalizeTripKey(item.vehicleId);
-  if(vehicleKey){
-    const byVehicle = tripDelayVehicleMap.get(vehicleKey);
-    if(Number.isFinite(byVehicle)) return byVehicle;
-  }
-
-  const labelKey = normalizeTripKey(item.label);
-  if(labelKey){
-    const byLabel = tripDelayLabelMap.get(labelKey);
-    if(Number.isFinite(byLabel)) return byLabel;
-  }
-
-  /*
-    5. Valódi TripUpdate trip-szintű tartalék.
+    4. Valódi TripUpdate trip-szintű tartalék.
     Csak akkor használjuk, ha a feedben ténylegesen
     volt ehhez a triphez megadott késés.
   */
@@ -3174,11 +3069,14 @@ async function testFeed(){
 
     await fetchTripUpdates();
 
-
-
     renderVehicles();
-
     refreshMarkers();
+
+    /*
+      Valódi BKK FUTÁR trip-details metaadat:
+      FORGALMI / JÁRMŰTÍPUS / további explicit mezők.
+    */
+    await enrichVisibleBkkVehicles();
 
 
   }catch(err){
@@ -3225,10 +3123,10 @@ async function testFeed(){
 
       await fetchTripUpdates();
 
-
       renderVehicles();
-
       refreshMarkers();
+
+      await enrichVisibleBkkVehicles();
 
 
     }catch(e){
@@ -3698,43 +3596,6 @@ function explicitDeepField(
 /* ============================================================
    FUTÁR NORMALIZÁLÁS
    ============================================================ */
-
-function findFutarReferenceObject(json, id){
-  const target = normalizeId(id);
-  if(!target) return null;
-  const refs = json?.references;
-  if(!refs || typeof refs !== "object") return null;
-
-  const walk = (x, depth=0)=>{
-    if(!x || typeof x !== "object" || depth>6) return null;
-    if(Array.isArray(x)){
-      for(const y of x){
-        const r=walk(y,depth+1); if(r) return r;
-      }
-      return null;
-    }
-    const ids=[x.id,x.vehicleId,x.vehicle?.id];
-    if(ids.some(v=>normalizeId(v)===target)) return x;
-    for(const k of Object.keys(x)){
-      const r=walk(x[k],depth+1); if(r) return r;
-    }
-    return null;
-  };
-  return walk(refs);
-}
-
-function mergeExplicitFutarReference(base, ref){
-  if(!ref) return base;
-  const b = normalizeFutarVehicle(ref);
-  for(const k of ["forgalmi","vehicleType","blockId","blockVehicleNumber","lowFloor"]){
-    if((base[k]===null || base[k]===undefined || base[k]==="") && b[k]!==null && b[k]!==undefined && b[k]!==""){
-      base[k]=b[k];
-    }
-  }
-  if(!base.licensePlate && b.licensePlate) base.licensePlate=b.licensePlate;
-  if(!base.label && b.label) base.label=b.label;
-  return base;
-}
 
 function normalizeFutarVehicle(obj){
 
@@ -4322,13 +4183,7 @@ async function loadFutarVehicles(
     const normalized =
       rawVehicles
         .map(
-          raw => {
-            const fv = normalizeFutarVehicle(raw);
-            return mergeExplicitFutarReference(
-              fv,
-              findFutarReferenceObject(json, fv.vehicleId)
-            );
-          }
+          normalizeFutarVehicle
         )
         .filter(
           v =>
@@ -5765,6 +5620,446 @@ function buildPopup(
 
 
 /* ============================================================
+   BKK FUTÁR TRIP-DETAILS – VALÓS JÁRMŰMETAADAT
+   ============================================================ */
+
+/*
+  A VehiclePositions/vehicles-for-location feed nem minden esetben
+  adja vissza a FORGALMI és JÁRMŰTÍPUS mezőt. A BKK FUTÁR
+  trip-details végpontja erre való; a hivatalos BKK dokumentációban
+  a vehicleId alapján lekérhető járműrendszám is szerepel.
+  Csak ténylegesen visszakapott mezőt írunk a kártyába.
+*/
+
+function deepFindNamed(obj, names, depth=0){
+  if(
+    !obj ||
+    typeof obj !== "object" ||
+    depth > 8
+  ){
+    return null;
+  }
+
+  const wanted = new Set(
+    names.map(x => String(x).toLowerCase())
+  );
+
+  for(const key of Object.keys(obj)){
+    if(wanted.has(String(key).toLowerCase())){
+      const value = obj[key];
+
+      if(
+        value !== null &&
+        value !== undefined &&
+        String(value).trim() !== ""
+      ){
+        return value;
+      }
+    }
+  }
+
+  for(const key of Object.keys(obj)){
+    const child = obj[key];
+
+    if(
+      child &&
+      typeof child === "object"
+    ){
+      const found = deepFindNamed(
+        child,
+        names,
+        depth + 1
+      );
+
+      if(found !== null){
+        return found;
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizeTripDetails(data){
+  const root =
+    data?.data?.entry ??
+    data?.entry ??
+    data?.data ??
+    data;
+
+  if(!root || typeof root !== "object"){
+    return null;
+  }
+
+  const vehicle =
+    root.vehicle ??
+    root.vehicleDetails ??
+    root.vehicleInfo ??
+    null;
+
+  const forgalmi =
+    deepFindNamed(
+      root,
+      [
+        "forgalmi",
+        "forgalmiSzam",
+        "forgalmi_szam",
+        "fleetNumber",
+        "fleetNo",
+        "fleet_number",
+        "internalNumber",
+        "internal_number"
+      ]
+    );
+
+  const vehicleType =
+    deepFindNamed(
+      root,
+      [
+        "vehicleType",
+        "vehicle_type",
+        "vehicleTypeName",
+        "vehicle_type_name",
+        "vehicleModel",
+        "vehicle_model",
+        "vehicleModelName",
+        "vehicle_model_name",
+        "modelName",
+        "model_name"
+      ]
+    );
+
+  const licensePlate =
+    deepFindNamed(
+      root,
+      [
+        "licensePlate",
+        "licencePlate",
+        "plate"
+      ]
+    );
+
+  const blockId =
+    deepFindNamed(
+      root,
+      [
+        "blockId",
+        "block_id",
+        "blockIdentifier",
+        "block_identifier",
+        "blockNumber",
+        "block_number"
+      ]
+    );
+
+  const blockVehicleNumber =
+    deepFindNamed(
+      root,
+      [
+        "blockVehicleNumber",
+        "block_vehicle_number",
+        "vehicleNumberInBlock",
+        "vehicle_number_in_block"
+      ]
+    );
+
+  const lowFloor =
+    deepFindNamed(
+      root,
+      [
+        "lowFloor",
+        "low_floor",
+        "lowfloor",
+        "wheelchairAccessible"
+      ]
+    );
+
+  return {
+    forgalmi:
+      forgalmi === null
+        ? null
+        : String(forgalmi),
+
+    vehicleType:
+      vehicleType === null
+        ? null
+        : String(vehicleType),
+
+    licensePlate:
+      licensePlate === null
+        ? null
+        : String(licensePlate),
+
+    blockId:
+      blockId === null
+        ? null
+        : String(blockId),
+
+    blockVehicleNumber:
+      blockVehicleNumber === null
+        ? null
+        : String(blockVehicleNumber),
+
+    lowFloor:
+      lowFloor === null
+        ? null
+        : lowFloor,
+
+    rawVehicleId:
+      vehicle?.id ??
+      root.vehicleId ??
+      null
+  };
+}
+
+async function fetchTripDetailsForItem(item){
+
+  if(
+    !item ||
+    item.provider !== "BKK" ||
+    !getKey()
+  ){
+    return false;
+  }
+
+  const tripId =
+    String(item.tripId || "").trim();
+
+  if(!tripId){
+    return false;
+  }
+
+  const cacheKey =
+    normalizeTripKey(tripId);
+
+  if(
+    tripDetailsCache.has(cacheKey)
+  ){
+    const meta =
+      tripDetailsCache.get(cacheKey);
+
+    applyTripDetailsMeta(
+      item,
+      meta
+    );
+
+    return true;
+  }
+
+  if(
+    tripDetailsInFlight.has(cacheKey)
+  ){
+    return false;
+  }
+
+  tripDetailsInFlight.add(cacheKey);
+
+  try{
+
+    const params =
+      new URLSearchParams();
+
+    params.set(
+      "key",
+      getKey()
+    );
+
+    params.set(
+      "version",
+      "3"
+    );
+
+    params.set(
+      "appVersion",
+      "AttilaKozlekedes-Vadasz"
+    );
+
+    params.set(
+      "tripId",
+      tripId.startsWith("BKK_")
+        ? tripId
+        : "BKK_" + tripId
+    );
+
+    params.set(
+      "includeReferences",
+      "true"
+    );
+
+    /*
+      A BKK dokumentáció szerint a trip-details
+      járműazonosítóval is használható. Megpróbáljuk
+      a tripId-alapú lekérést először; ha a válasz
+      tényleges metaadatot ad, csak azt vesszük át.
+    */
+
+    const res =
+      await fetch(
+        TRIP_DETAILS_URL +
+        "?" +
+        params.toString(),
+        {
+          cache:"no-store"
+        }
+      );
+
+    if(!res.ok){
+      throw new Error(
+        "TripDetails HTTP " +
+        res.status
+      );
+    }
+
+    const json =
+      await res.json();
+
+    const meta =
+      normalizeTripDetails(json);
+
+    if(!meta){
+      throw new Error(
+        "TripDetails: nincs használható adat"
+      );
+    }
+
+    tripDetailsCache.set(
+      cacheKey,
+      meta
+    );
+
+    applyTripDetailsMeta(
+      item,
+      meta
+    );
+
+    return true;
+
+  }catch(err){
+
+    /*
+      Hibánál NINCS ADAT marad.
+      Nem gyártunk semmit.
+    */
+
+    return false;
+
+  }finally{
+
+    tripDetailsInFlight.delete(
+      cacheKey
+    );
+
+  }
+
+}
+
+function applyTripDetailsMeta(
+  item,
+  meta
+){
+
+  if(!item || !meta){
+    return;
+  }
+
+  if(meta.licensePlate){
+    item.licensePlate =
+      meta.licensePlate;
+  }
+
+  if(meta.forgalmi){
+    item.forgalmi =
+      meta.forgalmi;
+  }
+
+  if(meta.vehicleType){
+    item.vehicleType =
+      meta.vehicleType;
+  }
+
+  if(meta.blockId){
+    item.blockId =
+      meta.blockId;
+  }
+
+  if(meta.blockVehicleNumber){
+    item.blockVehicleNumber =
+      meta.blockVehicleNumber;
+  }
+
+  if(
+    meta.lowFloor !== null &&
+    meta.lowFloor !== undefined
+  ){
+    item.lowFloor =
+      meta.lowFloor;
+  }
+}
+
+async function enrichVisibleBkkVehicles(){
+
+  const candidates =
+    vehicleData.filter(
+      item =>
+        item.provider === "BKK" &&
+        (
+          item.forgalmi === null ||
+          item.vehicleType === null
+        ) &&
+        item.tripId
+    );
+
+  /*
+    Nem lövünk több száz/ezer kérést egyszerre.
+    A látható/első 30 járművet óvatosan, kis
+    párhuzamossággal kérjük le.
+  */
+
+  const selected =
+    candidates.slice(0,30);
+
+  let changed = false;
+
+  for(
+    let i=0;
+    i<selected.length;
+    i+=5
+  ){
+
+    const batch =
+      selected.slice(
+        i,
+        i+5
+      );
+
+    const results =
+      await Promise.all(
+        batch.map(
+          item =>
+            fetchTripDetailsForItem(
+              item
+            )
+        )
+      );
+
+    if(
+      results.some(Boolean)
+    ){
+      changed = true;
+    }
+  }
+
+  if(changed){
+
+    renderVehicles();
+    refreshMarkers();
+
+  }
+
+}
+
+
+/* ============================================================
    WINMENETREND – VALÓS FORRÁSKAPCSOLAT
 
    FONTOS:
@@ -6097,88 +6392,6 @@ function winMenetrendLinks(item){
    JÁRMŰ KÁRTYA
    ============================================================ */
 
-function formatScheduleTime(ms){
-  if(!Number.isFinite(ms)) return "NINCS ADAT";
-  let sec=Math.floor(ms/1000);
-  sec=((sec%86400)+86400)%86400;
-  const h=Math.floor(sec/3600);
-  const m=Math.floor((sec%3600)/60);
-  const s=sec%60;
-  return String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+(s ? ":"+String(s).padStart(2,"0") : "");
-}
-
-function scheduleDepartureMs(x){
-  const v = x?.predictedDepartureTime ?? x?.departureTime ?? x?.scheduledDepartureTime ?? x?.scheduledDeparture;
-  if(v===null || v===undefined || v==="") return null;
-  if(typeof v === "object" && v.time !== undefined) return Number(v.time)*1000;
-  const n=Number(v);
-  if(Number.isFinite(n)) return n < 100000000000 ? n*1000 : n;
-  const d=Date.parse(v);
-  return Number.isFinite(d) ? d : null;
-}
-
-function extractScheduleEntries(json){
-  const out=[]; const seen=new Set();
-  const looks=x=>x && typeof x==="object" && (
-    x.scheduledDepartureTime!==undefined || x.predictedDepartureTime!==undefined ||
-    x.departureTime!==undefined || x.scheduledDeparture!==undefined
-  );
-  const walk=(x,depth=0)=>{
-    if(!x || typeof x!=="object" || depth>8) return;
-    if(Array.isArray(x)){ for(const y of x) walk(y,depth+1); return; }
-    if(looks(x)){
-      const t=scheduleDepartureMs(x);
-      if(Number.isFinite(t)){
-        const key=String(x.tripId||x.routeId||"")+"|"+t+"|"+String(x.stopId||"");
-        if(!seen.has(key)){seen.add(key);out.push({...x,_departureMs:t});}
-      }
-    }
-    for(const k of Object.keys(x)) walk(x[k],depth+1);
-  };
-  walk(json);
-  return out.sort((a,b)=>a._departureMs-b._departureMs);
-}
-
-async function loadStopDepartures(item, host){
-  if(!getKey() || !item?.nearestStop?.id){
-    host.innerHTML='<div class="small">NINCS ADAT – nincs API-kulcs vagy megállóazonosító.</div>';
-    return;
-  }
-  const seq=++scheduleRequestSeq;
-  host.innerHTML='<div class="small">INDULÁSOK LEKÉRÉSE...</div>';
-  try{
-    const url="https://go.bkk.hu/api/query/v1/ws/otp/api/where/arrivals-and-departures-for-stop.json"+
-      "?stopId="+encodeURIComponent(item.nearestStop.id)+
-      "&key="+encodeURIComponent(getKey())+
-      "&minutesBefore=0&minutesAfter=60&includeReferences=true";
-    const res=await fetch(url,{cache:"no-store"});
-    const text=await res.text();
-    if(!res.ok) throw new Error("HTTP "+res.status);
-    const json=JSON.parse(text);
-    const entries=extractScheduleEntries(json)
-      .filter(x=>{
-        const rid=String(x.routeId||x.route?.id||"");
-        return !item.routeId || !rid || sameId(rid,item.routeId) || sameId(rid,"BKK_"+item.routeId);
-      })
-      .slice(0,10);
-    if(seq!==scheduleRequestSeq) return;
-    if(!entries.length){
-      host.innerHTML='<div class="small">NINCS KÖVETKEZŐ INDULÁS A KÖVETKEZŐ 60 PERCBEN.</div>';
-      return;
-    }
-    host.innerHTML='<b>MEGÁLLÓ MENETREND / INDULÁSOK</b>'+entries.map(x=>{
-      const route=x.routeShortName||x.route?.shortName||x.routeId||item.routeShortName||item.routeId||"?";
-      const head=x.tripHeadsign||x.destinationName||x.headsign||x.trip?.tripHeadsign||"";
-      const pred=x.predictedDepartureTime!==undefined || x.departureTime!==undefined;
-      return '<div class="scheduleRow"><span><span class="scheduleTime">'+escapeHtml(formatScheduleTime(x._departureMs))+'</span> '+escapeHtml(String(route))+(head?' → '+escapeHtml(String(head)):'')+'</span>'+
-        '<span class="scheduleDelay '+(pred?'delay-blue':'')+'">'+(pred?'REALTIME':'MENETREND')+'</span></div>';
-    }).join("");
-  }catch(err){
-    if(seq!==scheduleRequestSeq) return;
-    host.innerHTML='<div class="small">MENETREND HIBA: '+escapeHtml(err?.message||err)+'</div>';
-  }
-}
-
 function vehicleCard(
   item
 ){
@@ -6284,9 +6497,6 @@ function vehicleCard(
       </span>
     </div>
 
-
-    <div class="scheduleBox" data-schedule-host></div>
-    <button class="scheduleBtn" type="button" data-schedule-btn>📋 MEGÁLLÓ MENETREND / INDULÁSOK</button>
 
     <div class="field">
       <b>SEBESSÉG</b>
@@ -6439,18 +6649,34 @@ function vehicleCard(
   `;
 
 
-  const scheduleBtn = card.querySelector("[data-schedule-btn]");
-  const scheduleHost = card.querySelector("[data-schedule-host]");
-  if(scheduleBtn && scheduleHost){
-    scheduleBtn.addEventListener("click", e=>{
-      e.stopPropagation();
-      loadStopDepartures(item, scheduleHost);
-    });
-  }
-
   card.addEventListener(
     "click",
-    ()=>{
+    async()=>{
+
+      /*
+        Ha a kártyán még nincs FORGALMI/JÁRMŰTÍPUS,
+        kattintáskor is megpróbáljuk a valódi FUTÁR
+        trip-details adatot lekérni.
+      */
+      if(
+        item.provider === "BKK" &&
+        (
+          item.forgalmi === null ||
+          item.vehicleType === null
+        ) &&
+        item.tripId
+      ){
+        await fetchTripDetailsForItem(
+          item
+        );
+
+        /*
+          A kártya tartalmát frissítjük,
+          de nem indítunk újabb teljes feedet.
+        */
+        renderVehicles();
+        refreshMarkers();
+      }
 
       if(
         map &&
@@ -6947,6 +7173,10 @@ document.addEventListener(
 
     logLine(
       "KÉSÉS/SIETÉS: csak valódi TripUpdates alapján."
+    );
+
+    logLine(
+      "BKK FORGALMI/JÁRMŰTÍPUS: valódi FUTÁR trip-details alapján; hiány esetén NINCS ADAT."
     );
 
 
