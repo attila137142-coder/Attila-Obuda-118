@@ -1,1 +1,185 @@
-fthj
+async function fetchTripDetailsForItem(item){
+
+  if(
+    !item ||
+    item.provider !== "BKK" ||
+    !getKey()
+  ){
+    return false;
+  }
+
+  /*
+    FONTOS:
+    A FUTÁR trip-details kapcsolatnál a valódi
+    BKK vehicleId az elsődleges azonosító.
+
+    Példa:
+      vehicleId = 1234
+      FUTÁR    = BKK_1234
+
+    NEM a GTFS tripId-t használjuk a jármű-metaadat
+    lekérésének azonosítására.
+  */
+
+  const vehicleId =
+    String(
+      item.vehicleId ||
+      item.rawVehicleId ||
+      ""
+    ).trim();
+
+  if(!vehicleId){
+    return false;
+  }
+
+  const futarVehicleId =
+    vehicleId.startsWith("BKK_")
+      ? vehicleId
+      : "BKK_" + vehicleId;
+
+  const cacheKey =
+    normalizeTripKey(
+      futarVehicleId
+    );
+
+  /*
+    Ha már megvan a valódi válasz,
+    nem kérjük le újra.
+  */
+
+  if(
+    tripDetailsCache.has(cacheKey)
+  ){
+
+    const meta =
+      tripDetailsCache.get(cacheKey);
+
+    applyTripDetailsMeta(
+      item,
+      meta
+    );
+
+    return true;
+  }
+
+  /*
+    Ugyanarra a járműre már fut lekérés.
+  */
+
+  if(
+    tripDetailsInFlight.has(cacheKey)
+  ){
+    return false;
+  }
+
+  tripDetailsInFlight.add(
+    cacheKey
+  );
+
+  try{
+
+    const params =
+      new URLSearchParams();
+
+    params.set(
+      "key",
+      getKey()
+    );
+
+    params.set(
+      "version",
+      "3"
+    );
+
+    params.set(
+      "appVersion",
+      "AttilaKozlekedes-Vadasz"
+    );
+
+    /*
+      A JAVÍTÁS LÉNYEGE:
+      vehicleId, nem tripId.
+    */
+
+    params.set(
+      "vehicleId",
+      futarVehicleId
+    );
+
+    params.set(
+      "includeReferences",
+      "true"
+    );
+
+    const res =
+      await fetch(
+        TRIP_DETAILS_URL +
+        "?" +
+        params.toString(),
+        {
+          cache:"no-store"
+        }
+      );
+
+    if(!res.ok){
+
+      throw new Error(
+        "TripDetails HTTP " +
+        res.status
+      );
+
+    }
+
+    const json =
+      await res.json();
+
+    const meta =
+      normalizeTripDetails(
+        json
+      );
+
+    if(!meta){
+
+      throw new Error(
+        "TripDetails: nincs használható adat"
+      );
+
+    }
+
+    /*
+      Csak valódi, ténylegesen visszakapott
+      adat kerül cache-be.
+    */
+
+    tripDetailsCache.set(
+      cacheKey,
+      meta
+    );
+
+    applyTripDetailsMeta(
+      item,
+      meta
+    );
+
+    return true;
+
+  }catch(err){
+
+    /*
+      NINCS kitalált adat.
+      Hiba esetén a meglévő értéket nem
+      írjuk át hamis adattal.
+    */
+
+    return false;
+
+  }finally{
+
+    tripDetailsInFlight.delete(
+      cacheKey
+    );
+
+  }
+
+}
+
