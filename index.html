@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes">
-<title>ATTILA KÖZLEKEDÉS – BKK VADÁSZ PROTO FIX2</title>
+<title>ATTILA KÖZLEKEDÉS – BKK VADÁSZ PROTO FIX3</title>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
 <style>
 *{box-sizing:border-box}html,body{margin:0;height:100%;font-family:Arial,sans-serif;background:#0b0f12;color:#e8eef2}body{overflow:hidden}
@@ -42,7 +42,7 @@ const FUTAR_URL="https://go.bkk.hu/api/query/v1/ws/otp/api/where/vehicles-for-lo
 let map=null,vehicleLayer=null,myMarker=null,myPos=null,gpsWatchId=null,autoTimer=null,autoRunning=false,protoRoot=null;
 let vehicleData=[],gtfsStops=[],gtfsStopsById=new Map(),gtfsRoutes=new Map(),gtfsLoaded=false;
 let futarVehicleCache=new Map(),tripDetailsCache=new Map(),tripDetailsInFlight=new Set();
-let tripDelayMap=new Map(),tripDelaySeqMap=new Map(),tripDelayTripMap=new Map();
+let tripDelayMap=new Map(),tripDelaySeqMap=new Map(),tripDelayTripMap=new Map(),tripDelayVehicleMap=new Map();
 let radiusMode=Infinity,lastVehicleFetchOK=false,lastFutarFetchOK=false,lastTripFetchOK=false;
 const $=id=>document.getElementById(id);
 const nowText=()=>new Date().toLocaleString("hu-HU");
@@ -154,8 +154,8 @@ async function fetchTripUpdates(){
   }
 }
 
-function resolveVehicleDelay(item){const trip=String(item.tripId||"");if(!trip)return null;const seq=Number(item.stopSequence),sid=String(item.stopId||"");if(Number.isFinite(seq)&&tripDelayMap.has(trip+"|seq|"+seq))return tripDelayMap.get(trip+"|seq|"+seq);if(sid&&tripDelayMap.has(trip+"|stop|"+sid))return tripDelayMap.get(trip+"|stop|"+sid);const arr=tripDelaySeqMap.get(trip);if(Number.isFinite(seq)&&arr?.length){let best=null,bestDiff=Infinity;for(const x of arr){const diff=Math.abs(x.seq-seq);if(diff<bestDiff){best=x;bestDiff=diff}}if(best&&bestDiff<=3&&Number.isFinite(best.delay))return best.delay}const tripFallback=tripDelayTripMap.get(trip);if(Number.isFinite(tripFallback))return tripFallback;return null}
-function clearVehicleDelays(){for(const i of vehicleData)i.delaySeconds=null;tripDelayMap.clear();tripDelaySeqMap.clear();tripDelayTripMap.clear()}
+function resolveVehicleDelay(item){const trip=String(item.tripId||"");const vid=String(item.vehicleId||"");const seq=Number(item.stopSequence),sid=String(item.stopId||"");if(trip){if(Number.isFinite(seq)&&tripDelayMap.has(trip+"|seq|"+seq))return tripDelayMap.get(trip+"|seq|"+seq);if(sid&&tripDelayMap.has(trip+"|stop|"+sid))return tripDelayMap.get(trip+"|stop|"+sid);const arr=tripDelaySeqMap.get(trip);if(Number.isFinite(seq)&&arr?.length){let best=null,bestDiff=Infinity;for(const x of arr){const diff=Math.abs(x.seq-seq);if(diff<bestDiff){best=x;bestDiff=diff}}if(best&&bestDiff<=3&&Number.isFinite(best.delay))return best.delay}const tripFallback=tripDelayTripMap.get(trip);if(Number.isFinite(tripFallback))return tripFallback}if(vid&&tripDelayVehicleMap.has(vid)){const d=tripDelayVehicleMap.get(vid);if(Number.isFinite(d))return d}return null}
+function clearVehicleDelays(){for(const i of vehicleData)i.delaySeconds=null;tripDelayMap.clear();tripDelaySeqMap.clear();tripDelayTripMap.clear();tripDelayVehicleMap.clear()}
 async function fetchBinary(url){const res=await fetch(url+"?key="+encodeURIComponent(getKey()),{cache:"no-store"});const buffer=await res.arrayBuffer();if(!res.ok)throw Error("HTTP "+res.status);if(!buffer.byteLength)throw Error("üres válasz");return{res,buffer}}
 function parseVehicleFeed(buffer){if(!protoRoot)throw Error("protobuf nincs betöltve");const FeedMessage=protoRoot.lookupType("transit_realtime.FeedMessage"),feed=FeedMessage.decode(new Uint8Array(buffer)),out=[];for(const entity of feed.entity||[]){const v=entity.vehicle;if(!v)continue;const pos=v.position,trip=v.trip,vehicle=v.vehicle;const lat=num(pos?.latitude),lon=num(pos?.longitude);if(!Number.isFinite(lat)||!Number.isFinite(lon))continue;const speedMs=num(pos?.speed),speedKmh=Number.isFinite(speedMs)?speedMs*3.6:null,routeId=String(trip?.routeId||""),stopId=String(v.stopId||""),stopSequence=v.currentStopSequence!=null?Number(v.currentStopSequence):null,item={source:"BKK GTFS-RT",provider:"BKK",vehicleId:String(vehicle?.id||""),label:String(vehicle?.label||""),licensePlate:String(vehicle?.licensePlate||""),routeId,routeShortName:gtfsRoutes.get(routeId)||"",tripId:String(trip?.tripId||""),directionId:trip?.directionId!=null?String(trip.directionId):"",stopId,stopSequence,lat,lon,speedKmh,bearing:num(pos?.bearing),delaySeconds:null,forgalmi:null,forda:null,vehicleType:null,futarMatched:false,nearestStop:null,gpsDistanceKm:myPos?distanceKm(myPos,{lat,lon}):null,marker:null,blockId:null,blockVehicleNumber:null,lowFloor:null};const exact=findStopById(stopId);item.nearestStop=exact?{id:exact.id,name:exact.name,lat:exact.lat,lon:exact.lon,code:exact.code,distanceM:distanceKm({lat,lon},exact)*1000}:findNearestStop(lat,lon);out.push(item)}return out}
 async function testFeed(){if(!getKey()){setBadge("feedBadge","BKK: API-KULCS KELL","err");logLine("BKK feed: nincs API-kulcs.");return}try{setBadge("feedBadge","BKK: LEKÉRÉS...","warn");await loadProto();const result=await fetchBinary(VEHICLE_URL);vehicleData=parseVehicleFeed(result.buffer);lastVehicleFetchOK=true;$("feedHttp").textContent=result.res.status;$("feedBytes").textContent=result.buffer.byteLength.toLocaleString("hu-HU");$("feedTime").textContent=nowText();$("vehicleCount").textContent=vehicleData.length.toLocaleString("hu-HU");setBadge("feedBadge","BKK: OK ("+vehicleData.length+")","ok");logLine("VehiclePositions OK: "+vehicleData.length.toLocaleString("hu-HU")+" valós jármű.");updateVehicleDistances();renderVehicles();refreshMarkers();await loadFutarVehicles();for(const i of vehicleData)i.delaySeconds=null;await fetchTripUpdates();renderVehicles();refreshMarkers();await enrichVisibleBkkVehicles()}catch(err){lastVehicleFetchOK=false;setBadge("feedBadge","BKK: HIBA","err");$("feedHttp").textContent="HIBA";$("feedTime").textContent=nowText();logLine("VehiclePositions HIBA: "+err.message);try{await loadFutarVehicles(true);await fetchTripUpdates();renderVehicles();refreshMarkers();await enrichVisibleBkkVehicles()}catch(e){logLine("FUTÁR fallback HIBA: "+e.message)}}}
@@ -223,13 +223,25 @@ async function fetchTripDetailsForItem(item){
     let meta=normalizeTripDetails(await r.json());
 
     // A trip-details válaszban a járműadatok lehetnek references alatt is.
-    // Ha ott nincs meg minden, próbáljuk a vehicle-for-trip végpontot is.
-    if(!meta || [meta.forgalmi,meta.vehicleType,meta.blockId,meta.blockVehicleNumber].every(v=>v===null||v===undefined||v==="")){
-      try{
-        const q=new URLSearchParams({key:getKey(),version:"3",appVersion:"AttilaKozlekedes-Vadasz",tripId:tripParam,includeReferences:"true"});
-        const vr=await fetch(VEHICLE_FOR_TRIP_URL+"?"+q,{cache:"no-store"});
-        if(vr.ok) meta=mergeTripMeta(meta,normalizeTripDetails(await vr.json()));
-      }catch(e){}
+    // Nincs kitalált másodlagos végpont: ha a TripDetails nem adja vissza
+    // a négy mezőt, a már lekért valódi FUTÁR-rekordból próbálunk illeszteni.
+    const hasVehicleMeta=meta && [meta.forgalmi,meta.vehicleType,meta.blockId,meta.blockVehicleNumber].some(v=>v!==null&&v!==undefined&&String(v).trim()!=="");
+    if(!hasVehicleMeta){
+      const cached=Array.from(futarVehicleCache.values()).find(f=>
+        (item.vehicleId&&sameId(f.vehicleId,item.vehicleId)) ||
+        (item.tripId&&sameId(f.tripId,item.tripId)) ||
+        (item.licensePlate&&sameId(f.licensePlate,item.licensePlate))
+      );
+      if(cached){
+        meta=mergeTripMeta(meta,{
+          forgalmi:cached.forgalmi,
+          vehicleType:cached.vehicleType,
+          licensePlate:cached.licensePlate,
+          blockId:cached.blockId,
+          blockVehicleNumber:cached.blockVehicleNumber,
+          lowFloor:cached.lowFloor
+        });
+      }
     }
     if(!meta) throw Error("TripDetails: nincs használható adat");
     tripDetailsCache.set(ck,meta);
@@ -271,7 +283,7 @@ function routeAllVehicles(){const r=$("routeSearch").value.trim();if(!r){logLine
 function clearSearch(){$("universalSearch").value="";$("routeSearch").value="";$("plateSearch").value="";setRadius(Infinity);applyFilters()}
 function toggleAuto(){if(autoRunning){autoRunning=false;if(autoTimer)clearInterval(autoTimer);autoTimer=null;$("autoBtn").textContent="AUTO";logLine("AUTO frissítés leállítva.");return}if(!getKey()){logLine("AUTO nem indul: nincs API-kulcs.");return}autoRunning=true;$("autoBtn").textContent="AUTO STOP";logLine("AUTO frissítés: 10 másodperc.");testFeed();autoTimer=setInterval(testFeed,10000)}
 function bindButtons(){$("saveKey").addEventListener("click",saveKey);$("feedTest").addEventListener("click",testFeed);$("gpsBtn").addEventListener("click",startGPS);$("autoBtn").addEventListener("click",toggleAuto);["universalSearch","routeSearch","plateSearch"].forEach(id=>$(id).addEventListener("input",applyFilters));$("routeAllBtn").addEventListener("click",routeAllVehicles);$("clearSearchBtn").addEventListener("click",clearSearch);document.querySelectorAll(".radiusGrid button").forEach(b=>b.addEventListener("click",()=>setRadius(b.dataset.radius==="all"?Infinity:Number(b.dataset.radius))));$("apiKey").addEventListener("keydown",e=>{if(e.key==="Enter")saveKey()});$("routeSearch").addEventListener("keydown",e=>{if(e.key==="Enter")routeAllVehicles()})}
-document.addEventListener("DOMContentLoaded",async()=>{initMap();loadSavedKey();bindButtons();logLine("ATTILA KÖZLEKEDÉS – BKK VADÁSZ PROTO FIX2 indul.");logLine("NINCS KITALÁLT JÁRMŰADAT.");logLine("FORGALMI: csak valódi explicit forrásmezőből.");logLine("FORDA: BKK-nál NINCS ADAT; csak HÉV/MÁV integráció után használható.");logLine("JÁRMŰTÍPUS: csak explicit valódi forrásmezőből.");logLine("KÉSÉS/SIETÉS: csak valódi TripUpdates alapján.");logLine("BKK FORGALMI/JÁRMŰTÍPUS: valódi FUTÁR trip-details alapján; hiány esetén NINCS ADAT.");loadBkkGtfs()});
+document.addEventListener("DOMContentLoaded",async()=>{initMap();loadSavedKey();bindButtons();logLine("ATTILA KÖZLEKEDÉS – BKK VADÁSZ PROTO FIX3 indul.");logLine("NINCS KITALÁLT JÁRMŰADAT.");logLine("FORGALMI: csak valódi explicit forrásmezőből.");logLine("FORDA: BKK-nál NINCS ADAT; csak HÉV/MÁV integráció után használható.");logLine("JÁRMŰTÍPUS: csak explicit valódi forrásmezőből.");logLine("KÉSÉS/SIETÉS: csak valódi TripUpdates alapján.");logLine("BKK FORGALMI/JÁRMŰTÍPUS: valódi FUTÁR vagy TripDetails adatból; hiány esetén NINCS ADAT.");loadBkkGtfs()});
 </script>
 </body>
 </html>
