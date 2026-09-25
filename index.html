@@ -214,7 +214,7 @@ const PROTO='https://raw.githubusercontent.com/google/transit/master/gtfs-realti
 const NOM='https://nominatim.openstreetmap.org/reverse';
 
 let map=null,vehicleLayer=null,myMarker=null;
-let protoRoot=null,protoPromise=null;
+let protoRoot=null,protoPromise=null,gtfsPromise=null;
 let vehicles=[],gtfsStops=[],gtfsRoutes=[],gtfsTrips=[];
 let gtfsStopsById=new Map(),gtfsRoutesById=new Map();
 let tripDelayMap=new Map(),tripDelaySeqMap=new Map(),vehicleDelayMap=new Map();
@@ -298,30 +298,37 @@ function gtfsCsv(text){
   return rows.map(r=>{const o={};head.forEach((h,i)=>o[h]=r[i]??'');return o})
 }
 async function loadGtfs(){
-  if(gtfsStops.length){return}
-  setBadge('gtfsBadge','GTFS: BETÖLTÉS…',null);log('BKK GTFS betöltése...');
-  try{
-    const r=await fetchTimeout(BKK.GTFS,{},30000);
-    if(!r.ok)throw new Error('GTFS HTTP '+r.status);
-    const zip=await JSZip.loadAsync(await r.arrayBuffer());
-    const read=async n=>zip.file(n)?await zip.file(n).async('text'):null;
-    const st=await read('stops.txt'),rt=await read('routes.txt'),tr=await read('trips.txt');
-    if(st){
-      gtfsStops=gtfsCsv(st).map(x=>({id:x.stop_id,name:x.stop_name,lat:num(x.stop_lat),lon:num(x.stop_lon),code:x.stop_code}));
-      gtfsStops.forEach(x=>gtfsStopsById.set(x.id,x));
-    }
-    if(rt){
-      gtfsRoutes=gtfsCsv(rt).map(x=>({id:x.route_id,short:x.route_short_name,long:x.route_long_name,type:x.route_type}));
-      gtfsRoutes.forEach(x=>gtfsRoutesById.set(x.id,x));
-    }
-    if(tr){
-      gtfsTrips=gtfsCsv(tr).map(x=>({id:x.trip_id,routeId:x.route_id,headsign:x.trip_headsign,direction:x.direction_id}));
-    }
-    setBadge('gtfsBadge','GTFS: '+gtfsStops.length+' megálló / '+gtfsRoutes.length+' vonal',true);
-    log('BKK GTFS betöltve: '+gtfsStops.length+' megálló, '+gtfsRoutes.length+' vonal.');
-  }catch(e){
-    setBadge('gtfsBadge','GTFS: HIBA',false);log('GTFS hiba: '+e.message)
-  }
+  if(gtfsStops.length||gtfsRoutes.length)return;
+  if(gtfsPromise)return gtfsPromise;
+  gtfsPromise=(async()=>{
+    setBadge('gtfsBadge','GTFS: BETÖLTÉS…',null);log('BKK GTFS betöltése...');
+    try{
+      const r=await fetchTimeout(BKK.GTFS,{},30000);
+      if(!r.ok)throw new Error('GTFS HTTP '+r.status);
+      const zip=await JSZip.loadAsync(await r.arrayBuffer());
+      const fileByBase={};
+      Object.keys(zip.files).forEach(n=>{const base=n.split('/').pop().toLowerCase();if(base)fileByBase[base]=n});
+      const read=async n=>{const key=n.toLowerCase();const path=fileByBase[key];return path?await zip.file(path).async('text'):null};
+      const st=await read('stops.txt'),rt=await read('routes.txt'),tr=await read('trips.txt');
+      if(!st&&!rt&&!tr)throw new Error('A GTFS ZIP-ben nem található stops.txt/routes.txt/trips.txt.');
+      if(st){
+        gtfsStops=gtfsCsv(st).map(x=>({id:x.stop_id,name:x.stop_name,lat:num(x.stop_lat),lon:num(x.stop_lon),code:x.stop_code})).filter(x=>x.id&&x.name);
+        gtfsStops.forEach(x=>gtfsStopsById.set(x.id,x));
+      }
+      if(rt){
+        gtfsRoutes=gtfsCsv(rt).map(x=>({id:x.route_id,short:x.route_short_name,long:x.route_long_name,type:x.route_type})).filter(x=>x.id);
+        gtfsRoutes.forEach(x=>gtfsRoutesById.set(x.id,x));
+      }
+      if(tr){
+        gtfsTrips=gtfsCsv(tr).map(x=>({id:x.trip_id,routeId:x.route_id,headsign:x.trip_headsign,direction:x.direction_id})).filter(x=>x.id);
+      }
+      setBadge('gtfsBadge','GTFS: '+gtfsStops.length+' megálló / '+gtfsRoutes.length+' vonal',true);
+      log('BKK GTFS betöltve: '+gtfsStops.length+' megálló, '+gtfsRoutes.length+' vonal.');
+    }catch(e){
+      setBadge('gtfsBadge','GTFS: HIBA',false);log('GTFS hiba: '+e.message);
+    }finally{gtfsPromise=null}
+  })();
+  return gtfsPromise;
 }
 
 function unwrapEntity(x){
@@ -329,8 +336,8 @@ function unwrapEntity(x){
   if(x.toObject)return x.toObject({longs:Number,enums:String,defaults:false});
   return x;
 }
-function parseVP(buf){
-  const root=protoRoot||protobuf.Root.fromJSON({});
+async function parseVP(buf){
+  const root=await getProto();
   const FeedMessage=root.lookupType('transit_realtime.FeedMessage');
   const msg=FeedMessage.decode(new Uint8Array(buf));
   const out=[];
@@ -369,7 +376,7 @@ async function fetchVP(){
   try{
     const r=await fetchTimeout(withKey(BKK.VP),{headers:{Accept:'application/x-protobuf'}},15000);
     if(!r.ok)throw new Error('status '+r.status);
-    const data=parseVP(await r.arrayBuffer());
+    const data=await parseVP(await r.arrayBuffer());
     lastVehicleFetchOK=true;setBadge('bkkBadge','BKK: OK',true);log('VehiclePositions: '+data.length+' valódi jármű.');
     return data
   }catch(e){
@@ -427,8 +434,15 @@ function candidateArrays(x,depth=0,out=[]){
 function normalizeFutar(x){
   if(!x||typeof x!=='object')return null;
   const s=JSON.stringify(x).toLowerCase();
-  if(!/vehicle|route|trip|latitude|longitude|licenseplate|forgalmi/.test(s))return null;
-  const pick=(names)=>{for(const n of names){if(x[n]!=null&&String(x[n]).trim()!=='')return x[n]}return null};
+  if(!/vehicle|route|trip|latitude|longitude|licenseplate|forgalmi|fleet|model/.test(s))return null;
+  const lowerKeys=Object.keys(x).reduce((m,k)=>{m[k.toLowerCase()]=k;return m},{});
+  const pick=(names)=>{
+    for(const n of names){
+      const k=lowerKeys[n.toLowerCase()];
+      if(k!==undefined&&x[k]!=null&&String(x[k]).trim()!=='')return x[k]
+    }
+    return null
+  };
   const lat=num(pick(['lat','latitude'])),lon=num(pick(['lon','lng','longitude']));
   return {
     vehicleId:val(pick(['vehicleId','vehicle_id','id'])),
@@ -468,6 +482,44 @@ function mergeOne(v){
   v.delay=chooseDelay(v.vehicleId,v.tripId,v.stopSequence,v.stopId);
   return v
 }
+async function fetchBkkMetaForVehicle(v){
+  const tripId=(v.tripId&&v.tripId!==NINCS)?v.tripId:'';
+  const vehicleId=(v.vehicleId&&v.vehicleId!==NINCS)?v.vehicleId:'';
+  if(!tripId&&!vehicleId)return;
+  const cacheKey=vehicleId+'|'+tripId;
+  if(metaCache.has(cacheKey)){
+    const m=metaCache.get(cacheKey); if(m)applyMeta(v,m); return;
+  }
+  const urls=[];
+  if(tripId)urls.push(withKey(BKK.TRIP,{tripId}));
+  if(vehicleId)urls.push(withKey(BKK.VEHICLE,{vehicleId}));
+  let merged={};
+  for(const u of urls){
+    try{
+      const r=await fetchTimeout(u,{},9000); if(!r.ok)continue;
+      const j=await r.json();
+      for(const a of candidateArrays(j))for(const x of a){const n=normalizeFutar(x);if(n){
+        if(n.forgalmi!==NINCS)merged.forgalmi=n.forgalmi;
+        if(n.vehicleType!==NINCS)merged.vehicleType=n.vehicleType;
+        if(n.block!==NINCS)merged.block=n.block;
+        if(n.plate!==NINCS)merged.plate=n.plate;
+      }}
+    }catch(_){/* optional enrichment; no fake data */}
+  }
+  metaCache.set(cacheKey,merged);applyMeta(v,merged);
+}
+function applyMeta(v,m){
+  for(const k of ['forgalmi','vehicleType','block','plate'])if((v[k]==null||v[k]===NINCS)&&m[k]&&m[k]!==NINCS)v[k]=m[k];
+}
+async function enrichMeta(){
+  const list=vehicles.slice(0,48);let done=0;
+  for(let i=0;i<list.length;i+=4){
+    await Promise.all(list.slice(i,i+4).map(async v=>{await fetchBkkMetaForVehicle(v);done++}));
+    await sleep(20);
+  }
+  if(done)render();
+}
+
 function routeName(v){
   const r=gtfsRoutesById.get(v.routeId);
   return r?.short||v.routeId||NINCS
@@ -579,6 +631,7 @@ async function runFeed(){
     const tu=await fetchTripUpdates();
     vehicles.forEach(v=>v.delay=chooseDelay(v.vehicleId,v.tripId,v.stopSequence,v.stopId));
     render();
+    await enrichMeta();
     const forgalmi=vehicles.filter(v=>v.forgalmi&&v.forgalmi!==NINCS).length;
     const types=vehicles.filter(v=>v.vehicleType&&v.vehicleType!==NINCS).length;
     const delays=vehicles.filter(v=>v.delay!==null&&Number.isFinite(v.delay)).length;
