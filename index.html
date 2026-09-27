@@ -6348,156 +6348,69 @@ function wmExtractFields(html){
   return result;
 }
 
-function winMenetrendLinks(item){
-
-  const plate =
-    String(item?.licensePlate || "").trim();
-
-  const tripId =
-    String(item?.tripId || "").trim();
-
-  const route =
-    String(
-      item?.routeShortName ||
-      ""
-    ).trim();
-
-  const forgalmi =
-    String(item?.forgalmi || "").trim();
-
-  const blockId =
-    String(item?.blockId || "").trim();
-
-  const links = [];
-
-  /*
-    1. VALÓDI RENDSZÁM -> járműtörténet
-  */
-  if(plate){
-
-    const url =
-      "https://online.winmenetrend.hu/futar/history/vehicles/" +
-      encodeURIComponent(plate) +
-      "?date=" +
-      localDateYmd();
-
-    links.push(
-      '<a href="' +
-      url +
-      '" target="_blank" rel="noopener noreferrer" ' +
-      'class="wmLink" onclick="event.stopPropagation()">' +
-      'JÁRMŰTÖRTÉNET</a>'
-    );
-
-  }
-
-
-  /*
-    2. VALÓDI JÁRAT + VALÓDI FORGALMI ->
-       a WinMenetrend forgalmi/blokk oldala.
-
-    Példa a valós forrásból:
-      243 + F1 -> lines/2430/1
-      941 + F2 -> lines/9410/2
-
-    A 0 csak a WinMenetrend útvonalazonosítója,
-    nem kitalált járműadat.
-  */
-  if(
-    route &&
-    forgalmi
-  ){
-
-    const match =
-      forgalmi.match(
-        /^F(?:0*)?(\d+)$/i
-      );
-
-    if(match){
-
-      const fNumber =
-        match[1];
-
-      const lineCode =
-        /^\d+$/.test(route)
-          ? route + "0"
-          : route;
-
-      const url =
-        "https://online.winmenetrend.hu/futar/history/lines/" +
-        encodeURIComponent(lineCode) +
-        "/" +
-        encodeURIComponent(fNumber) +
-        "?date=" +
-        localDateYmd();
-
-      links.push(
-        '<a href="' +
-        url +
-        '" target="_blank" rel="noopener noreferrer" ' +
-        'class="wmLink" onclick="event.stopPropagation()">' +
-        'FORGALMI / BLOKK</a>'
-      );
-
-    }
-
-  }
-
-
-  /*
-    3. Ha a forrás tényleges blokkazonosítót is ad,
-       megnyitjuk az exact blokkoldalt.
-  */
-  if(/^\d+$/.test(blockId)){
-
-    const url =
-      "https://online.winmenetrend.hu/budapest/latest/block/" +
-      encodeURIComponent(blockId) +
-      "?date=" +
-      localDateYmd();
-
-    links.push(
-      '<a href="' +
-      url +
-      '" target="_blank" rel="noopener noreferrer" ' +
-      'class="wmLink" onclick="event.stopPropagation()">' +
-      'BLOKK ' +
-      escapeHtml(blockId) +
-      '</a>'
-    );
-
-  }
-
-
-  /*
-    4. Valódi D... tripId -> pontos menetlap.
-  */
-  if(/^D[0-9]+$/i.test(tripId)){
-
-    const url =
-      "https://online.winmenetrend.hu/futar/trip/" +
-      encodeURIComponent(tripId) +
-      "?date=" +
-      localDateYmd();
-
-    links.push(
-      '<a href="' +
-      url +
-      '" target="_blank" rel="noopener noreferrer" ' +
-      'class="wmLink" onclick="event.stopPropagation()">' +
-      'MENET TÁBLA</a>'
-    );
-
-  }
-
-
-  if(!links.length){
-    return "NINCS VALÓDI WINMENETREND-LINK";
-  }
-
-  return links.join(" ");
+function wmSlug(value){
+  return String(value||'')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'')
+    .toLowerCase().trim()
+    .replace(/[^a-z0-9]+/g,'-')
+    .replace(/^-+|-+$/g,'');
 }
 
+function wmRouteCode(item){
+  const r=String(item?.routeShortName||item?.route||'').trim();
+  if(!r) return '';
+  return /^\d+$/.test(r) ? r+'0' : r;
+}
+
+function winMenetrendLinks(item){
+  const plate=String(item?.licensePlate||'').trim();
+  const tripId=String(item?.tripId||'').trim();
+  const route=String(item?.routeShortName||item?.route||'').trim();
+  const routeCode=wmRouteCode(item);
+  const forgalmi=String(item?.forgalmi||'').trim();
+  const blockId=String(item?.blockId||'').trim();
+  const stopId=String(item?.stopId||'').trim();
+  const stopName=String(item?.stopName||item?.nearestStop?.name||item?.stop||'').trim();
+  const links=[];
+  const add=(label,url)=>links.push('<a class="wmLink" href="'+url+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">'+label+'</a>');
+
+  /* A már meglévő két alaplink megmarad. */
+  if(plate) add('JÁRMŰTÖRTÉNET','https://online.winmenetrend.hu/futar/history/vehicles/'+encodeURIComponent(plate)+'?date='+localDateYmd());
+  else links.push('<span class="wmMissing">JÁRMŰTÖRTÉNET: NINCS ADAT</span>');
+
+  const fm=forgalmi.match(/^F(?:0*)?(\d+)$/i);
+  if(routeCode && fm) add('FORGALMI / BLOKK','https://online.winmenetrend.hu/futar/history/lines/'+encodeURIComponent(routeCode)+'/'+encodeURIComponent(fm[1])+'?date='+localDateYmd());
+  else links.push('<span class="wmMissing">FORGALMI / BLOKK: NINCS ADAT</span>');
+
+  /* ÚJ: az adott járat összes aktuális járműve. */
+  if(routeCode) add('JÁRAT JÁRMŰVEI','https://online.winmenetrend.hu/budapest/latest/lines/'+encodeURIComponent(routeCode)+'/vehicles?date='+localDateYmd());
+
+  /* ÚJ: közös FUTÁR járműtábla – nem kötünk hozzá kitalált azonosítót. */
+  add('FUTÁR JÁRMŰTÁBLA','https://online.winmenetrend.hu/futar/vehicles?more_info=2');
+
+  /* ÚJ: az adott vonal FUTÁR története. */
+  if(routeCode) add('JÁRAT TÖRTÉNET','https://online.winmenetrend.hu/futar/history/lines/'+encodeURIComponent(routeCode)+'?date='+localDateYmd());
+
+  /* ÚJ: pontos menetlap, ha valódi D... tripId áll rendelkezésre. */
+  if(/^D[0-9]+$/i.test(tripId)) add('MENET TÁBLA','https://online.winmenetrend.hu/futar/trip/'+encodeURIComponent(tripId)+'?date='+localDateYmd());
+
+  /* ÚJ: pontos blokkoldal, ha valódi numerikus blokkazonosító áll rendelkezésre. */
+  if(/^\d+$/.test(blockId)) add('BLOKK '+escapeHtml(blockId),'https://online.winmenetrend.hu/budapest/latest/block/'+encodeURIComponent(blockId)+'?date='+localDateYmd());
+
+  /* ÚJ: megálló FUTÁR oldala. */
+  if(stopId) add('MEGÁLLÓ','https://online.winmenetrend.hu/futar/stop/'+encodeURIComponent(stopId));
+
+  /* ÚJ: megálló indulásai. A slug kizárólag a valós stop_name-ből készül. */
+  if(stopId && stopName){
+    const slug=wmSlug(stopName);
+    if(slug) add('INDULÁSOK','https://online.winmenetrend.hu/budapest/latest/stations/'+encodeURIComponent(slug)+'/'+encodeURIComponent(stopId)+'/departures?date='+localDateYmd());
+  }
+
+  /* ÚJ: teljes FUTÁR történeti vonallista. */
+  add('FUTÁR TÖRTÉNETI VONALAK','https://online.winmenetrend.hu/futar/history/lines');
+
+  return links.join(' ');
+}
 
 /* ============================================================
    JÁRMŰ KÁRTYA
@@ -7368,7 +7281,7 @@ function wm1(i){const p=String(i?.licensePlate||"").trim();if(!p)return '<span c
 function wm2(i){const r=String(i?.routeShortName||"").trim(),f=String(i?.forgalmi||"").trim(),m=f.match(/^F(?:0*)?(\d+)$/i);if(!r||!m)return '<span class="wmMissing">FORGALMI / BLOKK: NINCS ADAT</span>';const lc=/^\d+$/.test(r)?r+"0":r;return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/lines/'+encodeURIComponent(lc)+'/'+encodeURIComponent(m[1])+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">FORGALMI / BLOKK</a>';}
 function wm3(i){const c=String(i?.winLineCode||"").trim().toUpperCase();if(!/^R[0-9]+$/.test(c))return '<span class="wmMissing">FORGALMI SZÁM / INDULÁSOK: NINCS ADAT</span>';return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/lines/'+encodeURIComponent(c)+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">FORGALMI SZÁM / INDULÁSOK</a>';}
 function wmExtra(i){const a=[];const b=String(i?.blockId||"").trim(),d=String(i?.tripId||"").trim();if(/^\d+$/.test(b))a.push('<a class="wmLink" href="https://online.winmenetrend.hu/budapest/latest/block/'+encodeURIComponent(b)+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">BLOKK '+escapeHtml(b)+'</a>');if(/^D[0-9]+$/i.test(d))a.push('<a class="wmLink" href="https://online.winmenetrend.hu/futar/trip/'+encodeURIComponent(d)+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">MENET TÁBLA</a>');return a.length?a.join(" "):'';}
-window.winMenetrendLinks=function(i){return '<div class="wmGroup"><span class="wmTitle">WINMENETREND – 3 FŐ FUNKCIÓ</span>'+wm1(i)+wm2(i)+wm3(i)+wmExtra(i)+' '+wmHome()+'</div>';};
+window.winMenetrendLinks=function(i){return '<div class="wmGroup"><span class="wmTitle">WINMENETREND – JÁRMŰ / JÁRAT / BLOKK / MEGÁLLÓ</span>'+winMenetrendLinks(i)+'</div>';};
 
 /* OKÉ gombok akkor is létrejönnek, ha a régi HTML-ben hiányoztak. */
 function addOke(){
