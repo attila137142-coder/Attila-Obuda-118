@@ -719,6 +719,10 @@ select:focus{
 
       <div class="radiusGrid">
 
+        <button data-radius="1">
+          1 km
+        </button>
+
         <button data-radius="2.5">
           2,5 km
         </button>
@@ -4380,68 +4384,40 @@ function matchFutarToVehicle(
   fv
 ){
 
-  let best =
-    null;
-
-
-  if(
-    fv.vehicleId
-  ){
-
-    best =
-      vehicleData.find(
-        v =>
-        sameId(
-          v.vehicleId,
-          fv.vehicleId
-        )
-      );
-
-  }
-
-
-  if(
-    !best &&
-    fv.tripId
-  ){
-
-    best =
-      vehicleData.find(
-        v =>
-        sameId(
-          v.tripId,
-          fv.tripId
-        )
-      );
-
-  }
-
-
   /*
-    A FUTÁR-ban előfordulhat eltérő vehicleId-reprezentáció.
-    Ha a rendszám valódi és egyezik, ez még mindig erős,
-    explicit kapcsolat.
+    JÁRMŰAZONOSÍTÁSI PRIORITÁS – FIX18+4
+
+    1. RENDSZÁM – elsődleges, mert a WinMenetrend/FUTÁR
+       járműadatoknál ez a legstabilabb közös kulcs.
+    2. vehicleId – másodlagos, csak valódi azonosító-egyezéssel.
+    3. TRIP – harmadlagos, csak akkor, ha az előző kettő nem adott találatot.
+
+    Így egy azonos járaton lévő másik jármű nem kaphatja meg
+    véletlenül az RVY744-hez tartozó FORGALMI/JÁRMŰTÍPUS adatot.
   */
-  if(
-    !best &&
-    fv.licensePlate
-  ){
 
-    best =
-      vehicleData.find(
-        v =>
-        v.licensePlate &&
-        sameId(
-          v.licensePlate,
-          fv.licensePlate
-        )
-      );
+  let best = null;
 
+  if(fv.licensePlate){
+    best = vehicleData.find(v =>
+      v.licensePlate &&
+      sameId(v.licensePlate, fv.licensePlate)
+    );
   }
 
+  if(!best && fv.vehicleId){
+    best = vehicleData.find(v =>
+      sameId(v.vehicleId, fv.vehicleId)
+    );
+  }
 
-  return best ||
-    null;
+  if(!best && fv.tripId){
+    best = vehicleData.find(v =>
+      sameId(v.tripId, fv.tripId)
+    );
+  }
+
+  return best || null;
 
 }
 
@@ -6091,9 +6067,16 @@ function parseWinRealtimeHtml(html){
         if(route.toLowerCase().startsWith("volan_")) provider="VOLÁN";
         else if(/^H[0-9]/i.test(route)) provider="MÁV-HÉV";
         else if(/^(S|Z|IR|IC|EX|G)/i.test(route) && !/^\d/.test(route)) provider="MÁV";
+        const vehicleIdHeader =
+          heads.includes("jármű id") ? "jármű id" :
+          heads.includes("vehicle id") ? "vehicle id" :
+          heads.includes("vehicleid") ? "vehicleid" :
+          heads.includes("id") ? "id" : null;
+
         out.push({
           provider,
           plate,
+          vehicleId:vehicleIdHeader ? (c[idx[vehicleIdHeader]]||null) : null,
           route:route||null,
           forgalmi:c[idx["forgalmi"]]||null,
           trip:c[idx["menet"]]||null,
@@ -6173,6 +6156,17 @@ async function updateWinRealtime(){
       );
     }
 
+    const vehicleKey =
+      rtNorm(r.vehicleId);
+
+    if(vehicleKey){
+      if(!window.winRealtimeVehicleCache) window.winRealtimeVehicleCache=new Map();
+      window.winRealtimeVehicleCache.set(
+        vehicleKey,
+        r
+      );
+    }
+
     const tripKey =
       rtNorm(r.trip);
 
@@ -6207,15 +6201,21 @@ async function updateWinRealtime(){
 
   for(const item of vehicleData){
 
+    /* 1. RENDSZÁM */
     let r =
       winRealtimeCache.get(
         rtNorm(item.licensePlate)
       );
 
-    if(
-      !r &&
-      item.tripId
-    ){
+    /* 2. vehicleId – csak explicit WinMenetrend mezőből */
+    if(!r && item.vehicleId && window.winRealtimeVehicleCache){
+      r = window.winRealtimeVehicleCache.get(
+        rtNorm(item.vehicleId)
+      );
+    }
+
+    /* 3. TRIP */
+    if(!r && item.tripId){
       r =
         winRealtimeTripCache.get(
           rtNorm(item.tripId)
@@ -7693,6 +7693,7 @@ function findNamedStopNear(name,lat,lon){
       get:function(){ return winRealtimeRows; },
       set:function(v){ winRealtimeRows=v; }
     });
+    if(!window.winRealtimeVehicleCache) window.winRealtimeVehicleCache=new Map();
   }catch(e){}
 })();
 
@@ -7705,9 +7706,14 @@ window.updateWinRealtime = async function(){
     let enriched=0;
     for(const item of vehicleData){
       const plateKey=sameKey(item.licensePlate);
+      const vehicleKey=sameKey(item.vehicleId);
       const tripKey=sameTrip(item.tripId);
       let r=null;
+      /* 1. RENDSZÁM */
       if(plateKey) r=winRealtimeRows.find(x=>sameKey(x.plate)===plateKey) || null;
+      /* 2. vehicleId */
+      if(!r && vehicleKey) r=winRealtimeRows.find(x=>sameKey(x.vehicleId)===vehicleKey) || null;
+      /* 3. TRIP */
       if(!r && tripKey) r=winRealtimeRows.find(x=>sameTrip(x.trip)===tripKey) || null;
       if(!r) continue;
       if(!item.licensePlate && r.plate) item.licensePlate=r.plate;
@@ -7767,8 +7773,13 @@ else setTimeout(ready,350);
       for(const item of window.vehicleData){
         let r=null;
         const p=normPlate(item.licensePlate);
+        const v=normPlate(item.vehicleId);
         const t=normTrip(item.tripId);
+        /* 1. RENDSZÁM */
         if(p) r=window.winRealtimeRows.find(x=>normPlate(x.plate)===p)||null;
+        /* 2. vehicleId */
+        if(!r&&v) r=window.winRealtimeRows.find(x=>normPlate(x.vehicleId)===v)||null;
+        /* 3. TRIP */
         if(!r&&t) r=window.winRealtimeRows.find(x=>normTrip(x.trip)===t)||null;
         if(!r) continue;
         if(r.forgalmi && !item.forgalmi) item.forgalmi=r.forgalmi;
