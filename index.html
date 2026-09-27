@@ -7301,5 +7301,220 @@ window.normalizeFutarVehicle=function(o){
 document.addEventListener("DOMContentLoaded",()=>{setTimeout(()=>{addOke();fixMapTiles();},300);});
 })();
 </script>
+
+<script>
+/* ============================================================
+   FIX16 – TÉRKÉP + OKÉ + VALÓDI WIN/FUTÁR ENRICHMENT
+   Nincs kitalált adat. Csak ténylegesen visszakapott mező kerül be.
+   ============================================================ */
+(function(){
+"use strict";
+
+function fixMapTilesFinal(){
+  try{
+    if(typeof map === "undefined" || !map) return;
+    if(typeof vehicleLayer !== "undefined" && vehicleLayer) map.removeLayer(vehicleLayer);
+    map.eachLayer(function(layer){
+      try{
+        if(layer instanceof L.TileLayer) map.removeLayer(layer);
+      }catch(e){}
+    });
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+      maxZoom:19,
+      attribution:"© OpenStreetMap"
+    }).addTo(map);
+    if(typeof vehicleLayer !== "undefined" && vehicleLayer) vehicleLayer.addTo(map);
+    if(typeof logLine === "function") logLine("Térkép: világos OpenStreetMap réteg visszaállítva.");
+  }catch(e){
+    try{ if(typeof logLine === "function") logLine("Térkép javítás HIBA: "+e.message); }catch(x){}
+  }
+}
+
+function addOkeFinal(){
+  const h=document.getElementById("header");
+  if(!h) return;
+  const add=(id,label,fn)=>{
+    if(document.getElementById(id)) return;
+    const b=document.createElement("button");
+    b.id=id; b.textContent=label; b.title=label;
+    b.style.fontWeight="800";
+    b.style.borderColor="#55aaff";
+    b.addEventListener("click",fn);
+    h.appendChild(b);
+  };
+  add("bkkOkeBtnFinal","BKK OKÉ",()=>{ if(typeof testFeed==="function") testFeed(); });
+  add("futarOkeBtnFinal","FUTÁR OKÉ",async()=>{
+    try{
+      if(typeof loadFutarVehicles==="function") await loadFutarVehicles(false);
+    }catch(e){
+      try{ setBadge("futarBadge","FUTÁR: HIBA","err"); }catch(x){}
+    }
+  });
+  add("winOkeBtnFinal","WINMENETREND OKÉ",async()=>{
+    try{
+      winRealtimeLastFetch=0;
+      if(typeof updateWinRealtime==="function") await updateWinRealtime();
+    }catch(e){
+      try{ logLine("WINMENETREND HIBA: "+e.message); }catch(x){}
+    }
+  });
+}
+
+/* FUTÁR: a tényleges rekord lehet közvetlen lat/lon mezős, GeoJSON-os,
+   vagy a vehicle/location alatt. */
+const oldExtractFutar = window.extractFutarVehicles;
+window.extractFutarVehicles = function(json){
+  const out=[], seen=new Set();
+  const locOf=o=>{
+    const xs=[
+      o?.location,o?.position,o?.vehicle?.location,o?.vehicle?.position,
+      o?.geometry,o?.vehicle?.geometry
+    ];
+    for(const x of xs){
+      if(!x || typeof x!=="object") continue;
+      let lat=num(x.lat ?? x.latitude), lon=num(x.lon ?? x.longitude);
+      if((!Number.isFinite(lat)||!Number.isFinite(lon)) && Array.isArray(x.coordinates)){
+        lon=num(x.coordinates[0]); lat=num(x.coordinates[1]);
+      }
+      if(Number.isFinite(lat)&&Number.isFinite(lon)) return {lat,lon};
+    }
+    const lat=num(o?.lat ?? o?.latitude ?? o?.vehicle?.lat ?? o?.vehicle?.latitude);
+    const lon=num(o?.lon ?? o?.longitude ?? o?.vehicle?.lon ?? o?.vehicle?.longitude);
+    return {lat,lon};
+  };
+  const push=o=>{
+    if(!o||typeof o!=="object") return;
+    const q=locOf(o);
+    const id=o.vehicleId ?? o.vehicle?.vehicleId ?? o.vehicle?.id ?? o.id ?? null;
+    const rid=o.routeId ?? o.trip?.routeId ?? o.vehicle?.routeId ?? o.vehicle?.trip?.routeId ?? "";
+    const tid=o.tripId ?? o.trip?.tripId ?? o.vehicle?.tripId ?? o.vehicle?.trip?.tripId ?? "";
+    const plate=o.licensePlate ?? o.licencePlate ?? o.vehicle?.licensePlate ?? o.vehicle?.licencePlate ?? "";
+    if(!id&&!plate&&!(rid||tid||Number.isFinite(q.lat)&&Number.isFinite(q.lon))) return;
+    const k=String(id||plate||"")+"|"+tid+"|"+rid+"|"+q.lat+"|"+q.lon;
+    if(seen.has(k)) return;
+    seen.add(k); out.push(o);
+  };
+  const walk=(x,d=0)=>{
+    if(x==null||d>14) return;
+    if(Array.isArray(x)){ for(const y of x) walk(y,d+1); return; }
+    if(typeof x!=="object") return;
+    push(x);
+    for(const k of Object.keys(x)){
+      const v=x[k];
+      if(v&&typeof v==="object") walk(v,d+1);
+    }
+  };
+  walk(json);
+  return out;
+};
+
+/* A normalizáló vegye át a valódi pozíciót akkor is, ha a FUTÁR másik
+   objektumszinten adja meg. */
+const oldNormFutar = window.normalizeFutarVehicle;
+window.normalizeFutarVehicle = function(o){
+  const v=oldNormFutar(o);
+  const get=(...xs)=>{
+    for(const x of xs){ if(x!==null&&x!==undefined&&String(x)!=="") return x; }
+    return null;
+  };
+  const rawLoc=[o?.location,o?.position,o?.vehicle?.location,o?.vehicle?.position,o?.geometry,o?.vehicle?.geometry];
+  let lat=null,lon=null;
+  for(const x of rawLoc){
+    if(!x||typeof x!=="object") continue;
+    lat=num(x.lat ?? x.latitude); lon=num(x.lon ?? x.longitude);
+    if((!Number.isFinite(lat)||!Number.isFinite(lon))&&Array.isArray(x.coordinates)){
+      lon=num(x.coordinates[0]); lat=num(x.coordinates[1]);
+    }
+    if(Number.isFinite(lat)&&Number.isFinite(lon)) break;
+  }
+  if(!Number.isFinite(lat)) lat=num(o?.lat ?? o?.latitude ?? o?.vehicle?.lat ?? o?.vehicle?.latitude);
+  if(!Number.isFinite(lon)) lon=num(o?.lon ?? o?.longitude ?? o?.vehicle?.lon ?? o?.vehicle?.longitude);
+  if(!Number.isFinite(v.lat)&&Number.isFinite(lat)) v.lat=lat;
+  if(!Number.isFinite(v.lon)&&Number.isFinite(lon)) v.lon=lon;
+  const rawRoute=get(o?.routeId,o?.trip?.routeId,o?.vehicle?.routeId);
+  const rawTrip=get(o?.tripId,o?.trip?.tripId,o?.vehicle?.tripId,o?.vehicle?.trip?.tripId);
+  const rawPlate=get(o?.licensePlate,o?.licencePlate,o?.vehicle?.licensePlate,o?.vehicle?.licencePlate);
+  if(!v.routeId&&rawRoute!=null) v.routeId=String(rawRoute);
+  if(!v.tripId&&rawTrip!=null) v.tripId=String(rawTrip);
+  if(!v.licensePlate&&rawPlate!=null) v.licensePlate=String(rawPlate);
+  const rawR=get(o?.winLineCode,o?.win_line_code,o?.lineCode,o?.line_code,o?.winLineId,o?.win_line_id);
+  v.winLineCode=/^R[0-9]+$/i.test(String(rawR||""))?String(rawR).toUpperCase():null;
+  return v;
+};
+
+function sameKey(v){
+  return String(v||"").toUpperCase().replace(/[^A-Z0-9ÁÉÍÓÖŐÚÜŰ]/g,"");
+}
+function sameTrip(v){ return String(v||"").trim().replace(/\s+/g,"").toUpperCase(); }
+function findNamedStopNear(name,lat,lon){
+  if(!gtfsLoaded||!Array.isArray(gtfsStops)||!name) return null;
+  const target=String(name).trim().toLowerCase();
+  let best=null,bestD=Infinity;
+  for(const s of gtfsStops){
+    if(String(s.name||"").trim().toLowerCase()!==target) continue;
+    const d=(Number.isFinite(lat)&&Number.isFinite(lon))?distanceKm({lat,lon},s):0;
+    if(d<bestD){bestD=d;best=s;}
+  }
+  return best;
+}
+
+/* A WinMenetrend online táblázatból a valódi rendszám + menet alapján
+   illesztünk. Route-only illesztés szándékosan nincs. */
+const oldWinUpdate = window.updateWinRealtime;
+window.updateWinRealtime = async function(){
+  const result=await oldWinUpdate();
+  try{
+    let enriched=0;
+    for(const item of vehicleData){
+      const plateKey=sameKey(item.licensePlate);
+      const tripKey=sameTrip(item.tripId);
+      let r=null;
+      if(plateKey) r=winRealtimeRows.find(x=>sameKey(x.plate)===plateKey) || null;
+      if(!r && tripKey) r=winRealtimeRows.find(x=>sameTrip(x.trip)===tripKey) || null;
+      if(!r) continue;
+      if(!item.licensePlate && r.plate) item.licensePlate=r.plate;
+      if(r.forgalmi) item.forgalmi=r.forgalmi;
+      if(r.vehicleType) item.vehicleType=r.vehicleType;
+      if(!item.tripId && r.trip) item.tripId=r.trip;
+      if(!item.label && r.label) item.label=r.label;
+      const s=findNamedStopNear(r.stop,item.lat,item.lon);
+      if(s){
+        item.nearestStop={id:s.id,name:s.name,lat:s.lat,lon:s.lon,code:s.code,distanceM:distanceKm({lat:item.lat,lon:item.lon},s)*1000};
+        if(!item.stopId) item.stopId=s.id;
+      }
+      item.winRealtimeMatched=true;
+      enriched++;
+    }
+    if(enriched){
+      renderVehicles(); refreshMarkers();
+      logLine("WinMenetrend: "+enriched+" BKK járműhöz valódi forgalmi/járműtípus/helyadat illesztve.");
+    }
+  }catch(e){ try{logLine("WinMenetrend illesztés HIBA: "+e.message);}catch(x){} }
+  return result;
+};
+
+/* A részletes stopadat mindig jelenjen meg név + GTFS ID + méter formában. */
+const oldStopDisplay = window.stopDisplay;
+window.stopDisplay = function(item){
+  try{
+    const s=item?.nearestStop;
+    if(s && s.name){
+      const id=s.id||item?.stopId||"NINCS ADAT";
+      const m=Number.isFinite(s.distanceM)?Math.round(s.distanceM)+" m":"NINCS ADAT";
+      return String(s.name)+" | GTFS: "+String(id)+" | "+m;
+    }
+  }catch(e){}
+  return typeof oldStopDisplay==="function" ? oldStopDisplay(item) : "NINCS ADAT";
+};
+
+function ready(){
+  addOkeFinal();
+  fixMapTilesFinal();
+}
+if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",()=>setTimeout(ready,350));
+else setTimeout(ready,350);
+})();
+</script>
+
 </body>
 </html>
