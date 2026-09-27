@@ -638,6 +638,42 @@ select:focus{
 
   </section>
 
+  <section class="panel" id="commonStopPanel">
+    <h3>
+      🚌 KÖZÖS KÖZLEKEDÉSI MEGÁLLÓKERESŐ
+    </h3>
+    <div class="panelBody">
+      <div class="small" style="margin-bottom:8px">
+        BKV/BKK + VOLÁN + MÁV megállók keresése. A találatok csak a ténylegesen betöltött GTFS-adatokból jelennek meg.
+      </div>
+      <div class="searchGrid">
+        <input id="commonStopSearch" class="wide" placeholder="Megálló keresése: pl. Szelidi-tó, Camping / Szelidi to camping">
+        <button id="commonStopSearchBtn" type="button">KERESÉS</button>
+        <label class="small" style="display:flex;align-items:center;gap:6px">
+          VOLÁN GTFS ZIP <input id="volanGtfsFile" type="file" accept=".zip">
+        </label>
+        <label class="small" style="display:flex;align-items:center;gap:6px">
+          MÁV GTFS ZIP <input id="mavGtfsFile" type="file" accept=".zip">
+        </label>
+      </div>
+      <div id="commonStopStatus" class="small" style="margin-top:8px">BKV/BKK: betöltés alatt • VOLÁN: nincs betöltött GTFS • MÁV: nincs betöltött GTFS</div>
+      <div id="nearestCommonStops" style="margin-top:10px"></div>
+      <div id="commonStopResults" style="margin-top:10px"></div>
+    </div>
+  </section>
+
+  <section class="panel" id="userNearestStopsPanel">
+    <h3>
+      📍 HELYZETEMHEZ LEGKÖZELEBBI MEGÁLLÓK
+    </h3>
+    <div class="panelBody">
+      <div class="small" style="margin-bottom:8px">
+        A saját GPS-helyzethez külön keresi a legközelebbi BKV/BKK, VOLÁN és MÁV megállót. A távolság légvonalban, méterben értendő.
+      </div>
+      <div id="userNearestStops" class="small">GPS-helyzet szükséges.</div>
+    </div>
+  </section>
+
   <section class="panel">
 
     <h3>
@@ -7748,6 +7784,126 @@ else setTimeout(ready,350);
   setTimeout(enrich,1800);
   setTimeout(enrich,4500);
   setInterval(enrich,120000);
+})();
+</script>
+
+
+<script>
+/* FIX18+ – KÖZÖS KÖZLEKEDÉSI MEGÁLLÓKERESŐ
+   BKV/BKK meglévő GTFS + külön betölthető valódi VOLÁN/MÁV GTFS ZIP.
+   Nincs kitalált megálló, ID vagy távolság. */
+(function(){
+  "use strict";
+  const commonProviders = {
+    BKV: {name:"BKV/BKK", icon:"🔵", stops:[], loaded:true},
+    VOLAN: {name:"VOLÁN", icon:"🟠", stops:[], loaded:false},
+    MAV: {name:"MÁV", icon:"🟤", stops:[], loaded:false}
+  };
+
+  function norm(v){
+    return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .replace(/[-–—_.,;:/()]/g," ").replace(/\s+/g," ").trim();
+  }
+  function haversineM(a,b,c,d){
+    const R=6371000, p1=a*Math.PI/180, p2=c*Math.PI/180, dp=(c-a)*Math.PI/180, dl=(d-b)*Math.PI/180;
+    const x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;
+    return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+  }
+  function gps(){
+    const lat=parseFloat(document.getElementById("gpsLat")?.textContent);
+    const lon=parseFloat(document.getElementById("gpsLon")?.textContent);
+    return Number.isFinite(lat)&&Number.isFinite(lon)?{lat,lon}:null;
+  }
+  function stopFromRow(r){
+    const lat=parseFloat(r.stop_lat), lon=parseFloat(r.stop_lon);
+    if(!Number.isFinite(lat)||!Number.isFinite(lon)) return null;
+    return {
+      id:String(r.stop_id||""),
+      name:String(r.stop_name||""),
+      code:String(r.stop_code||""),
+      lat,lon
+    };
+  }
+  function updateStatus(){
+    const e=document.getElementById("commonStopStatus"); if(!e)return;
+    e.textContent="BKV/BKK: "+(commonProviders.BKV.stops.length?commonProviders.BKV.stops.length.toLocaleString("hu-HU")+" megálló":"nincs")+
+      " • VOLÁN: "+(commonProviders.VOLAN.loaded?commonProviders.VOLAN.stops.length.toLocaleString("hu-HU")+" megálló":"nincs betöltött GTFS")+
+      " • MÁV: "+(commonProviders.MAV.loaded?commonProviders.MAV.stops.length.toLocaleString("hu-HU")+" megálló":"nincs betöltött GTFS");
+  }
+  function syncBkk(){
+    try{
+      if(Array.isArray(window.gtfsStops)) commonProviders.BKV.stops=window.gtfsStops.map(s=>({id:String(s.id||""),name:String(s.name||""),code:String(s.code||""),lat:+s.lat,lon:+s.lon})).filter(s=>Number.isFinite(s.lat)&&Number.isFinite(s.lon));
+    }catch(e){}
+    updateStatus(); renderNearest();
+  }
+  async function loadProvider(file, key){
+    if(!file)return;
+    try{
+      const zip=await JSZip.loadAsync(await file.arrayBuffer());
+      const f=zip.file("stops.txt");
+      if(!f)throw new Error("stops.txt hiányzik");
+      const rows=parseCsv(await f.async("text"));
+      const stops=rows.map(stopFromRow).filter(Boolean);
+      if(!stops.length)throw new Error("nincs koordinátás megálló");
+      commonProviders[key].stops=stops; commonProviders[key].loaded=true;
+      updateStatus(); renderNearest(); runSearch();
+      if(typeof logLine==="function") logLine(commonProviders[key].name+" GTFS: "+stops.length.toLocaleString("hu-HU")+" megálló betöltve.");
+    }catch(e){
+      commonProviders[key].loaded=false; commonProviders[key].stops=[]; updateStatus();
+      if(typeof logLine==="function") logLine(commonProviders[key].name+" GTFS HIBA: "+e.message);
+    }
+  }
+  function rowHTML(p,s,dist){
+    const code=s.code?" | stop_code: "+escapeHtml(s.code):"";
+    const d=Number.isFinite(dist)?Math.round(dist).toLocaleString("hu-HU")+" m":"NINCS ADAT";
+    return '<div style="padding:8px 6px;border-top:1px solid rgba(128,128,128,.25)">'+p.icon+' <b>'+p.name+'</b> — '+escapeHtml(s.name||"NINCS ADAT")+'<br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+code+' • '+d+' légvonalban</span></div>';
+  }
+  function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[m]));}
+  function renderNearest(){
+    const el=document.getElementById("userNearestStops"); if(!el)return;
+    const g=gps();
+    if(!g){el.textContent="GPS-helyzet szükséges.";return;}
+    const out=[];
+    for(const key of ["BKV","VOLAN","MAV"]){
+      const p=commonProviders[key];
+      if(!p.loaded||!p.stops.length){out.push('<div style="padding:7px 0;border-top:1px solid rgba(128,128,128,.2)">'+p.icon+' <b>'+p.name+'</b>: NINCS ADAT</div>');continue;}
+      let best=null,bestD=Infinity;
+      for(const s of p.stops){const d=haversineM(g.lat,g.lon,s.lat,s.lon);if(d<bestD){bestD=d;best=s;}}
+      out.push(rowHTML(p,best,bestD));
+    }
+    el.innerHTML=out.join("");
+  }
+  function runSearch(){
+    const q=norm(document.getElementById("commonStopSearch")?.value);
+    const el=document.getElementById("commonStopResults"); if(!el)return;
+    if(!q){el.innerHTML="<div class=\"small\">Írj be egy megállónevet vagy GTFS azonosítót.</div>";return;}
+    const terms=q.split(" ").filter(Boolean); const g=gps(); const hits=[];
+    for(const key of ["BKV","VOLAN","MAV"]){
+      const p=commonProviders[key]; if(!p.loaded)continue;
+      for(const s of p.stops){
+        const hay=norm(s.name+" "+s.id+" "+s.code);
+        if(terms.every(t=>hay.includes(t))){
+          const d=g?haversineM(g.lat,g.lon,s.lat,s.lon):NaN;
+          hits.push({p,s,d});
+        }
+      }
+    }
+    hits.sort((a,b)=>(Number.isFinite(a.d)?a.d:Infinity)-(Number.isFinite(b.d)?b.d:Infinity));
+    const shown=hits.slice(0,50);
+    if(!shown.length){el.innerHTML="<div class=\"small\">NINCS ADAT – ilyen név/GTFS azonosító nincs a jelenleg betöltött GTFS-ekben.</div>";return;}
+    el.innerHTML='<div class="small" style="margin-bottom:5px">Találatok: '+hits.length.toLocaleString("hu-HU")+' (első 50)</div>'+shown.map(x=>rowHTML(x.p,x.s,x.d)).join("");
+  }
+  window.commonTransitStopSearch=runSearch;
+  window.commonTransitNearest=renderNearest;
+  document.addEventListener("DOMContentLoaded",()=>{
+    const vf=document.getElementById("volanGtfsFile"), mf=document.getElementById("mavGtfsFile");
+    vf?.addEventListener("change",e=>loadProvider(e.target.files?.[0],"VOLAN"));
+    mf?.addEventListener("change",e=>loadProvider(e.target.files?.[0],"MAV"));
+    document.getElementById("commonStopSearchBtn")?.addEventListener("click",runSearch);
+    document.getElementById("commonStopSearch")?.addEventListener("input",()=>{clearTimeout(window.__commonStopTimer);window.__commonStopTimer=setTimeout(runSearch,180);});
+    syncBkk();
+    setInterval(()=>{syncBkk();},3000);
+  });
 })();
 </script>
 
