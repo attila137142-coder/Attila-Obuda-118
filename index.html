@@ -5980,24 +5980,56 @@ function parseWinRealtimeHtml(html){
     const doc=new DOMParser().parseFromString(String(html||""),"text/html");
     const tables=[...doc.querySelectorAll("table")];
     for(const table of tables){
-      const heads=[...table.querySelectorAll("thead th")].map(x=>rtClean(x.textContent).toLowerCase());
+      /*
+        A WinMenetrend oldalon a fejléc nem minden válaszban <thead>-ben
+        érkezik. Ezért először a thead-et, majd a teljes első fejlécsort
+        keressük meg. Így a Rendszám + Járat + Forgalmi + Menet +
+        Viszonylat + Megálló + Jármű típus oszlopok biztosan felismerhetők.
+      */
+      let headerCells=[...table.querySelectorAll("thead th")];
+      if(!headerCells.length){
+        const allRows=[...table.querySelectorAll("tr")];
+        for(const tr of allRows){
+          const cells=[...tr.querySelectorAll("th,td")];
+          const hs=cells.map(x=>rtClean(x.textContent).toLowerCase());
+          if(hs.includes("rendszám") && hs.includes("jármű típus")){
+            headerCells=cells;
+            break;
+          }
+        }
+      }
+      const heads=headerCells.map(x=>rtClean(x.textContent).toLowerCase());
       if(!heads.includes("rendszám") || !heads.includes("jármű típus")) continue;
       const idx={}; heads.forEach((h,i)=>idx[h]=i);
       const out=[];
-      for(const tr of table.querySelectorAll("tbody tr")){
+      const rows=[...table.querySelectorAll("tr")];
+      for(const tr of rows){
+        if(tr.querySelectorAll("th").length) continue;
         const c=[...tr.querySelectorAll("td")].map(x=>rtClean(x.textContent));
         if(c.length<heads.length) continue;
-        const route=c[idx["járat"]]||"";
         const plate=c[idx["rendszám"]]||"";
-        if(!plate || !route) continue;
-        let provider="MÁV";
+        if(!plate) continue;
+        const route=c[idx["járat"]]||"";
+        let provider="BKK";
         if(route.toLowerCase().startsWith("volan_")) provider="VOLÁN";
         else if(/^H[0-9]/i.test(route)) provider="MÁV-HÉV";
-        out.push({provider,plate,route,forgalmi:c[idx["forgalmi"]]||null,trip:c[idx["menet"]]||null,label:c[idx["viszonylat"]]||null,stop:c[idx["megálló"]]||null,vehicleType:c[idx["jármű típus"]]||null});
+        else if(/^(S|Z|IR|IC|EX|G)/i.test(route) && !/^\d/.test(route)) provider="MÁV";
+        out.push({
+          provider,
+          plate,
+          route:route||null,
+          forgalmi:c[idx["forgalmi"]]||null,
+          trip:c[idx["menet"]]||null,
+          label:c[idx["viszonylat"]]||null,
+          stop:c[idx["megálló"]]||null,
+          vehicleType:c[idx["jármű típus"]]||null
+        });
       }
       if(out.length) return out;
     }
-  }catch(e){}
+  }catch(e){
+    try{logLine("WinMenetrend HTML parser: "+e.message);}catch(x){}
+  }
   return [];
 }
 
@@ -6141,14 +6173,14 @@ function wmFindLabeledValue(text, labels){
     const line = lines[i];
 
     for(const label of labels){
-      const re = new RegExp("^" + label + "Hiba! A hiperhivatkozás érvénytelen.","i");
+      const re = new RegExp("^" + label.replace(/[.*+?^${}()|[\]\\]/g,"\\$&") + "\\s*:?\\s*(.+)$","i");
       const m = line.match(re);
 
       if(m && wmCleanText(m[1])){
         return wmCleanText(m[1]);
       }
 
-      if(new RegExp("^" + label + "Hiba! A hiperhivatkozás érvénytelen.","i").test(line)){
+      if(new RegExp("^" + label.replace(/[.*+?^${}()|[\]\\]/g,"\\$&") + "\\s*:?\\s*(.+)$","i").test(line)){
         if(lines[i+1]){
           return wmCleanText(lines[i+1]);
         }
@@ -7513,6 +7545,38 @@ function ready(){
 }
 if(document.readyState==="loading") document.addEventListener("DOMContentLoaded",()=>setTimeout(ready,350));
 else setTimeout(ready,350);
+})();
+</script>
+
+<script>
+/* FIX17 – WinMenetrend táblaillesztés javítása.
+   Csak a ténylegesen kiolvasott mezőket írjuk be. */
+(function(){
+  function normPlate(v){return String(v||"").toUpperCase().replace(/[^A-Z0-9ÁÉÍÓÖŐÚÜŰ]/g,"");}
+  function normTrip(v){return String(v||"").trim().replace(/\s+/g,"").toUpperCase();}
+  async function enrich(){
+    try{
+      if(!Array.isArray(window.winRealtimeRows)||!window.vehicleData) return;
+      let n=0;
+      for(const item of window.vehicleData){
+        let r=null;
+        const p=normPlate(item.licensePlate);
+        const t=normTrip(item.tripId);
+        if(p) r=window.winRealtimeRows.find(x=>normPlate(x.plate)===p)||null;
+        if(!r&&t) r=window.winRealtimeRows.find(x=>normTrip(x.trip)===t)||null;
+        if(!r) continue;
+        if(r.forgalmi && !item.forgalmi) item.forgalmi=r.forgalmi;
+        if(r.vehicleType && !item.vehicleType) item.vehicleType=r.vehicleType;
+        if(r.trip && !item.tripId) item.tripId=r.trip;
+        if(r.label && (!item.label || item.label==="")) item.label=r.label;
+        n++;
+      }
+      if(n && typeof renderVehicles==='function') renderVehicles();
+      if(n && typeof logLine==='function') logLine("FIX17: WinMenetrend mezők illesztve: "+n);
+    }catch(e){try{logLine("FIX17 Win illesztés HIBA: "+e.message);}catch(x){}}
+  }
+  setTimeout(enrich,1800);
+  setInterval(enrich,120000);
 })();
 </script>
 
