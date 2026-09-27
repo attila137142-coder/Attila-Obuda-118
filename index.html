@@ -2189,17 +2189,22 @@ async function fetchTripUpdates(){
         először közvetlenül a valós járműhöz rendeljük a késést.
       */
       const tuVehicleId = String(
-        tu.vehicle?.id ??
-        tu.vehicle?.label ??
-        ""
+        tu.vehicle?.id ?? ""
+      ).trim();
+      const tuVehicleLabel = String(
+        tu.vehicle?.label ?? ""
       ).trim();
       const tuPlate = String(
-        tu.vehicle?.licensePlate ??
-        ""
+        tu.vehicle?.licensePlate ?? ""
       ).trim();
 
+      /* A valódi TripUpdate vehicle.id és vehicle.label
+         külön kulcs. Egyik sem veszhet el. */
       if(tuVehicleId){
         vehicleDelay.set("id|" + normalizeId(tuVehicleId), null);
+      }
+      if(tuVehicleLabel){
+        vehicleDelay.set("label|" + normalizeId(tuVehicleLabel), null);
       }
       if(tuPlate){
         vehicleDelay.set("plate|" + normalizeId(tuPlate), null);
@@ -2483,17 +2488,11 @@ function resolveVehicleDelay(item){
       item.tripId
     );
 
-
-  if(!tripId){
-    return null;
-  }
-
-
   /*
-    1. Pontos stop_sequence
+    1. Pontos trip + stop_sequence.
   */
-
   if(
+    tripId &&
     Number.isFinite(
       item.stopSequence
     )
@@ -2508,23 +2507,20 @@ function resolveVehicleDelay(item){
         )
       );
 
-
     if(
       Number.isFinite(exact)
     ){
-
       return exact;
-
     }
-
   }
 
-
   /*
-    2. Pontos stop_id
+    2. Pontos trip + stop_id.
   */
-
-  if(item.stopId){
+  if(
+    tripId &&
+    item.stopId
+  ){
 
     const exact =
       tripDelayMap.get(
@@ -2535,24 +2531,19 @@ function resolveVehicleDelay(item){
         )
       );
 
-
     if(
       Number.isFinite(exact)
     ){
-
       return exact;
-
     }
-
   }
 
-
   /*
-    3. Legközelebbi stop_sequence.
-       Maximum 3 megálló eltérés.
+    3. Legközelebbi valódi stop_sequence,
+       maximum 3 megálló eltérés.
   */
-
   if(
+    tripId &&
     Number.isFinite(
       item.stopSequence
     )
@@ -2563,17 +2554,13 @@ function resolveVehicleDelay(item){
         tripId
       );
 
-
     if(
       Array.isArray(arr) &&
       arr.length
     ){
 
       let best = null;
-
-      let bestDiff =
-        Infinity;
-
+      let bestDiff = Infinity;
 
       for(
         const x of arr
@@ -2587,22 +2574,14 @@ function resolveVehicleDelay(item){
             )
           );
 
-
         if(
           diff <
           bestDiff
         ){
-
-          bestDiff =
-            diff;
-
-          best =
-            x;
-
+          bestDiff = diff;
+          best = x;
         }
-
       }
-
 
       if(
         best &&
@@ -2611,38 +2590,86 @@ function resolveVehicleDelay(item){
           best.delay
         )
       ){
-
         return best.delay;
-
       }
-
     }
-
   }
 
-
   /*
-    4. Valódi TripUpdate trip-szintű tartalék.
-    Csak akkor használjuk, ha a feedben ténylegesen
-    volt ehhez a triphez megadott késés.
+    4. Valódi trip-szintű tartalék.
   */
-
-  const tripFallback =
-    tripDelay.get(tripId);
-
   if(
-    Number.isFinite(tripFallback)
+    tripId
   ){
 
-    return tripFallback;
+    const tripFallback =
+      tripDelayTripMap.get(
+        tripId
+      );
 
+    if(
+      Number.isFinite(
+        tripFallback
+      )
+    ){
+      return tripFallback;
+    }
   }
 
+  /*
+    5. Közvetlen GTFS-RT TripUpdate -> jármű
+       kapcsolat. Csak valódi vehicle.id,
+       vehicle.label vagy licensePlate alapján.
+  */
+  const directKeys = [];
+
+  if(item.vehicleId){
+    directKeys.push(
+      "id|" +
+      normalizeId(
+        item.vehicleId
+      )
+    );
+  }
+
+  if(item.label){
+    directKeys.push(
+      "label|" +
+      normalizeId(
+        item.label
+      )
+    );
+  }
+
+  if(item.licensePlate){
+    directKeys.push(
+      "plate|" +
+      normalizeId(
+        item.licensePlate
+      )
+    );
+  }
+
+  for(
+    const key of directKeys
+  ){
+
+    const direct =
+      tripDelayVehicleMap.get(
+        key
+      );
+
+    if(
+      Number.isFinite(direct)
+    ){
+      return direct;
+    }
+  }
 
   /*
-    NINCS MEGBÍZHATÓ TRIPUPDATE.
+    Nincs hiteles TripUpdate:
+    nem adunk 0:00-t, hanem NINCS ADAT.
   */
-
   return null;
 
 }
@@ -4018,6 +4045,10 @@ function normalizeFutarVehicle(obj){
         "forgalmi",
         "forgalmiSzam",
         "forgalmi_szam",
+        "forgalmiNumber",
+        "forgalmi_number",
+        "trafficNumber",
+        "traffic_number",
         "fleetNumber",
         "fleetNo",
         "fleet_number",
@@ -4494,10 +4525,15 @@ async function loadFutarVehicles(
     }
 
 
+    /*
+      A második FIX overlay robusztus FUTÁR-extractort is tartalmaz.
+      Ha az elérhető, ezt használjuk, mert kezeli a data/features,
+      geometry/coordinates és több beágyazott valódi járműstruktúrát is.
+    */
     const rawVehicles =
-      extractFutarVehicles(
-        json
-      );
+      (typeof window.extractFutarVehicles === "function")
+        ? window.extractFutarVehicles(json)
+        : extractFutarVehicles(json);
 
 
     const normalized =
@@ -5078,12 +5114,18 @@ function startGPS(){
           );
 
 
+          const gpsReason =
+            err?.code === 1
+              ? "GPS-hozzáférés megtagadva / a dokumentum nem kapott geolocation engedélyt."
+              : err?.code === 2
+                ? "GPS-helyzet nem áll rendelkezésre."
+                : err?.code === 3
+                  ? "GPS-időtúllépés."
+                  : (err?.message || "ismeretlen");
+
           logLine(
             "GPS HIBA: " +
-            (
-              err?.message ||
-              "ismeretlen"
-            )
+            gpsReason
           );
 
         },
@@ -6077,27 +6119,125 @@ async function updateWinRealtime(){
     return;
   }
   winRealtimeRows=rows;
+
+  /* Valódi WinMenetrend kulcsok:
+     rendszám és menet/trip. */
   winRealtimeCache=new Map();
+  const winRealtimeTripCache=new Map();
+
   for(const r of rows){
-    const key=rtNorm(r.plate);
-    if(key) winRealtimeCache.set(key,r);
+
+    const plateKey =
+      rtNorm(r.plate);
+
+    if(plateKey){
+      winRealtimeCache.set(
+        plateKey,
+        r
+      );
+    }
+
+    const tripKey =
+      rtNorm(r.trip);
+
+    if(tripKey){
+      winRealtimeTripCache.set(
+        tripKey,
+        r
+      );
+    }
   }
-  regionalRealtimeRows=rows.filter(r=>r.provider==="VOLÁN" || r.provider==="MÁV" || r.provider==="MÁV-HÉV");
+
+  regionalRealtimeRows=rows.filter(
+    r =>
+      r.provider==="VOLÁN" ||
+      r.provider==="MÁV" ||
+      r.provider==="MÁV-HÉV"
+  );
+
   renderRegionalRealtime();
-  const st=$("regionalRealtimeStatus"); if(st) st.textContent="Valós online rekord: "+rows.length.toLocaleString("hu-HU")+" | VOLÁN/MÁV: "+regionalRealtimeRows.length.toLocaleString("hu-HU");
+
+  const st=$("regionalRealtimeStatus");
+
+  if(st){
+    st.textContent=
+      "Valós online rekord: " +
+      rows.length.toLocaleString("hu-HU") +
+      " | VOLÁN/MÁV: " +
+      regionalRealtimeRows.length.toLocaleString("hu-HU");
+  }
 
   let enriched=0;
+
   for(const item of vehicleData){
-    const r=winRealtimeCache.get(rtNorm(item.licensePlate));
-    if(!r) continue;
-    if(r.forgalmi) item.forgalmi=r.forgalmi;
-    if(r.vehicleType) item.vehicleType=r.vehicleType;
-    if(r.trip && !item.tripId) item.tripId=r.trip;
-    if(r.route && (!item.routeShortName || item.routeShortName==="")){ item.routeShortName=r.route; }
-    item.winRealtimeMatched=true;
+
+    let r =
+      winRealtimeCache.get(
+        rtNorm(item.licensePlate)
+      );
+
+    if(
+      !r &&
+      item.tripId
+    ){
+      r =
+        winRealtimeTripCache.get(
+          rtNorm(item.tripId)
+        );
+    }
+
+    if(!r){
+      continue;
+    }
+
+    /* Csak a WinMenetrend valódi,
+       explicit FORGALMI / JÁRMŰTÍPUS mezője kerül át. */
+    if(r.forgalmi){
+      item.forgalmi =
+        r.forgalmi;
+    }
+
+    if(r.vehicleType){
+      item.vehicleType =
+        r.vehicleType;
+    }
+
+    if(
+      r.trip &&
+      !item.tripId
+    ){
+      item.tripId =
+        r.trip;
+    }
+
+    if(
+      r.route &&
+      (
+        !item.routeShortName ||
+        item.routeShortName === ""
+      )
+    ){
+      item.routeShortName =
+        r.route;
+    }
+
+    item.winRealtimeMatched =
+      true;
+
     enriched++;
   }
-  if(enriched){ renderVehicles(); refreshMarkers(); }
+
+  if(enriched){
+
+    logLine(
+      "WinMenetrend illesztve: " +
+      enriched.toLocaleString("hu-HU") +
+      " jármű."
+    );
+
+    renderVehicles();
+    refreshMarkers();
+  }
 }
 
 /* ============================================================
@@ -6525,6 +6665,11 @@ function vehicleCard(
         ${escapeHtml(
           val(item.forgalmi)
         )}
+        ${
+          item.forgalmi
+            ? '<span class="small"> • valódi forrás</span>'
+            : ''
+        }
       </span>
     </div>
 
@@ -6587,6 +6732,11 @@ function vehicleCard(
         ${escapeHtml(
           val(item.vehicleType)
         )}
+        ${
+          item.vehicleType
+            ? '<span class="small"> • valódi forrás</span>'
+            : ''
+        }
       </span>
     </div>
 
@@ -7489,6 +7639,27 @@ function findNamedStopNear(name,lat,lon){
   return best;
 }
 
+/* FIX – globális híd a régi WinMenetrend-illesztéshez.
+   A let/lexical változók önmaguktól NEM kerülnek a window objektumra.
+   A korábbi FIX17 kód viszont window.vehicleData / window.winRealtimeRows
+   alatt kereste őket, ezért a két mező (FORGALMI/JÁRMŰTÍPUS) nem tudott
+   visszakerülni a járműkártyába. Itt csak a már meglévő valódi adatot
+   tesszük elérhetővé, új adatot nem gyártunk. */
+(function(){
+  try{
+    Object.defineProperty(window,"vehicleData",{
+      configurable:true,
+      get:function(){ return vehicleData; },
+      set:function(v){ vehicleData=v; }
+    });
+    Object.defineProperty(window,"winRealtimeRows",{
+      configurable:true,
+      get:function(){ return winRealtimeRows; },
+      set:function(v){ winRealtimeRows=v; }
+    });
+  }catch(e){}
+})();
+
 /* A WinMenetrend online táblázatból a valódi rendszám + menet alapján
    illesztünk. Route-only illesztés szándékosan nincs. */
 const oldWinUpdate = window.updateWinRealtime;
@@ -7575,6 +7746,7 @@ else setTimeout(ready,350);
     }catch(e){try{logLine("FIX17 Win illesztés HIBA: "+e.message);}catch(x){}}
   }
   setTimeout(enrich,1800);
+  setTimeout(enrich,4500);
   setInterval(enrich,120000);
 })();
 </script>
