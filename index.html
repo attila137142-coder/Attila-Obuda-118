@@ -3299,39 +3299,44 @@ async function testFeed(){
 
 
     /*
-      FUTÁR valódi járműadatok.
+      FONTOS FIX21:
+      A BKK GTFS-RT sikerét nem szabad felülírnia
+      egy külön FUTÁR / WinMenetrend / TripUpdates hibának.
+      A BKK badge itt már OK, ezért az utána következő
+      kiegészítő adatforrásokat külön-külön kezeljük.
     */
 
-    await loadFutarVehicles();
-
-    await updateWinRealtime();
-
-
-    /*
-      FUTÁR illesztés után újra
-      kiszámítjuk a TripUpdate kapcsolatot.
-    */
-
-    for(
-      const item of vehicleData
-    ){
-
-      item.delaySeconds =
-        null;
-
+    try{
+      await loadFutarVehicles();
+    }catch(e){
+      logLine("FUTÁR kiegészítő adat HIBA: " + (e?.message || e));
     }
 
+    try{
+      await updateWinRealtime();
+    }catch(e){
+      logLine("WinMenetrend illesztés HIBA: " + (e?.message || e));
+    }
 
-    /*
-      VALÓDI KÉSÉS / SIETÉS.
-    */
+    for(const item of vehicleData){
+      item.delaySeconds = null;
+    }
 
-    await fetchTripUpdates();
+    try{
+      await fetchTripUpdates();
+    }catch(e){
+      lastTripFetchOK = false;
+      logLine("TripUpdates HIBA: " + (e?.message || e));
+    }
 
-
-
+    /* A BKK badge itt is megmarad OK állapotban, ha a feed dekódolása sikerült. */
+    setBadge(
+      "feedBadge",
+      "BKK: OK (" + vehicleData.length + ")",
+      "ok"
+    );
+    $("vehicleCount").textContent = vehicleData.length.toLocaleString("hu-HU");
     renderVehicles();
-
     refreshMarkers();
 
 
