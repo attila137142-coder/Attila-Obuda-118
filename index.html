@@ -423,6 +423,167 @@ select:focus{
   background:#174355;
   color:#ffffff;
 }
+
+/* ============================================================
+   NAGY TELEFONOS KÉPERNYŐ / ÉJSZAKAI MÓD
+   ============================================================ */
+.displayModeBar{
+  display:flex;
+  gap:6px;
+  margin-top:8px;
+  flex-wrap:wrap;
+}
+
+body.bigScreen{
+  overflow:auto;
+  background:#f3f3f3;
+  color:#111;
+}
+body.bigScreen #header{
+  position:sticky;
+  background:#fff;
+  color:#111;
+  border-bottom:1px solid #aaa;
+}
+body.bigScreen #side{
+  position:relative;
+  top:auto;
+  width:100%;
+  max-width:none;
+  border-left:0;
+  background:#f3f3f3;
+  color:#111;
+  padding:12px;
+}
+body.bigScreen #map{
+  position:relative;
+  top:auto;
+  right:auto;
+  height:42vh;
+  min-height:280px;
+}
+body.bigScreen .panel,
+body.bigScreen .vehicleCard{
+  background:#fff;
+  color:#111;
+  border-color:#999;
+}
+body.bigScreen .panel h3{
+  background:#e7e7e7;
+  color:#111;
+  font-size:20px;
+}
+body.bigScreen .row,
+body.bigScreen .field{
+  font-size:18px;
+  line-height:1.45;
+}
+body.bigScreen .vehicleTitle{
+  font-size:27px;
+}
+body.bigScreen .field b{
+  color:#111;
+}
+body.bigScreen .k,
+body.bigScreen .small{
+  color:#444;
+  font-size:16px;
+}
+body.bigScreen .v{
+  color:#111;
+}
+body.bigScreen input,
+body.bigScreen button{
+  background:#fff;
+  color:#111;
+  border-color:#777;
+  font-size:18px;
+  min-height:46px;
+}
+body.bigScreen .radiusGrid{
+  grid-template-columns:repeat(4,minmax(110px,1fr));
+}
+body.bigScreen .radiusGrid button{
+  min-height:52px;
+  font-size:20px;
+}
+body.bigScreen .vehicleCard{
+  padding:14px;
+}
+body.bigScreen .sourceTag{
+  color:#333;
+  border-color:#777;
+}
+
+body.nightMode{
+  --bg:#050709;
+  --panel:#080b0d;
+  --panel2:#0a0e10;
+  --line:#24282b;
+  --text:#dce5e8;
+  --muted:#89969b;
+  --green:#49d38a;
+  --blue:#61a9e8;
+}
+body.nightMode:after{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  border-left:3px solid rgba(150,0,0,.22);
+  border-right:3px solid rgba(150,0,0,.22);
+  z-index:2000;
+}
+body.nightMode .vehicleTitle{
+  color:#49d38a;
+}
+body.nightMode .pdelay{
+  color:#61a9e8;
+}
+body.nightMode .vehicleCard{
+  background:#080c0f;
+}
+
+@media(max-width:700px){
+  #header{
+    min-height:56px;
+  }
+  .title{font-size:15px}
+  #apiKey{width:150px}
+  #map{
+    top:56px;
+    right:0;
+    height:36vh;
+    min-height:230px;
+  }
+  #side{
+    position:relative;
+    top:auto;
+    width:100%;
+    border-left:0;
+    padding:6px;
+    overflow:visible;
+  }
+  body:not(.bigScreen) #map{
+    position:relative;
+    top:auto;
+  }
+  body:not(.bigScreen){
+    overflow:auto;
+  }
+  .radiusGrid{
+    grid-template-columns:repeat(3,1fr);
+  }
+  .vehicleCard{
+    min-width:760px;
+    font-size:16px;
+  }
+  #vehicleList{
+    overflow-x:auto;
+    -webkit-overflow-scrolling:touch;
+  }
+}
+
 </style>
 </head>
 
@@ -740,6 +901,14 @@ select:focus{
 
       <div class="radiusGrid">
 
+        <button data-radius="0.1">
+          100 m
+        </button>
+
+        <button data-radius="0.2">
+          200 m
+        </button>
+
         <button data-radius="1">
           1 km
         </button>
@@ -770,6 +939,11 @@ select:focus{
         style="margin-top:7px"
       >
         Kombinálható: univerzális + járat + rendszám/forgalmi + GPS-sugár.
+      </div>
+
+      <div class="displayModeBar">
+        <button id="bigScreenBtn" type="button">NAGY KÉPERNYŐ</button>
+        <button id="nightModeBtn" type="button">ÉJSZAKAI MÓD</button>
       </div>
 
     </div>
@@ -2344,6 +2518,9 @@ async function fetchTripUpdates(){
         if(tuVehicleId){
           vehicleDelay.set("id|" + normalizeId(tuVehicleId), delay);
         }
+        if(tuVehicleLabel){
+          vehicleDelay.set("label|" + normalizeId(tuVehicleLabel), delay);
+        }
         if(tuPlate){
           vehicleDelay.set("plate|" + normalizeId(tuPlate), delay);
         }
@@ -2512,7 +2689,6 @@ async function fetchTripUpdates(){
       assigned.toLocaleString("hu-HU") +
       " jármű."
     );
-    logLine("TripUpdates kulcsok: TRIP=" + tripDelay.size + ", JÁRMŰ=" + vehicleDelay.size + ", stop-idő=" + mapDelay.size + ".");
 
 
     return true;
@@ -2979,7 +3155,7 @@ function collectFutarVehicleObjects(node, out=[]){
   }
 
   for(const key of Object.keys(node)){
-    if(key === "references" || key === "routes" || key === "stops"){
+    if(key === "routes" || key === "stops"){
       continue;
     }
 
@@ -3095,7 +3271,8 @@ async function loadFutarRouteVehicles(routeText){
       "&version=3" +
       "&appVersion=" +
         encodeURIComponent("AttilaKozlekedes-Vadasz") +
-      "&routeId=" + encodeURIComponent(routeId);
+      "&routeId=" + encodeURIComponent(routeId) +
+      "&includeReferences=true";
 
     try{
 
@@ -3245,6 +3422,7 @@ async function testFeed(){
     );
 
 
+    feedBusy = false;
     return;
 
   }
@@ -3767,46 +3945,34 @@ function extractFutarVehicles(json){
   }
 
 
-  /* FUTÁR references -> jármű összekötés */
+  /* FUTÁR references: a metaadat külön jármű-objektumban érkezhet. */
   const refObjects = [];
-  const walkRefs = (x, depth=0)=>{
+  const refWalk = (x, depth=0)=>{
     if(x == null || depth > 10) return;
-    if(Array.isArray(x)){ for(const y of x) walkRefs(y, depth+1); return; }
+    if(Array.isArray(x)){ for(const y of x) refWalk(y, depth+1); return; }
     if(typeof x !== "object") return;
-    for(const [key,value] of Object.entries(x)){
-      if(key === "references" && value && typeof value === "object"){
-        const collect=(z)=>{
-          if(z == null) return;
-          if(Array.isArray(z)){ for(const q of z) collect(q); return; }
-          if(typeof z !== "object") return;
-          refObjects.push(z);
-          for(const q of Object.values(z)) if(q && typeof q === "object") collect(q);
-        };
-        collect(value);
-      }else if(value && typeof value === "object") walkRefs(value, depth+1);
-    }
+    const id = x.vehicleId ?? x.vehicle?.id ?? x.id ?? null;
+    const plate = x.licensePlate ?? x.vehicle?.licensePlate ?? x.licencePlate ?? null;
+    const label = x.label ?? x.vehicle?.label ?? null;
+    if(id != null || plate != null || label != null) refObjects.push(x);
+    for(const k of Object.keys(x)) refWalk(x[k], depth+1);
   };
-  walkRefs(json);
-  const refIndex = new Map();
-  const normRef = v => String(v ?? "").trim().toUpperCase().replace(/[\s-]/g, "");
-  const addRef=(prefix,v,ref)=>{ const k=normRef(v); if(k && !refIndex.has(prefix+k)) refIndex.set(prefix+k,ref); };
-  for(const ref of refObjects){
-    addRef("id|",ref.vehicleId,ref); addRef("id|",ref.id,ref); addRef("id|",ref.vehicle?.id,ref);
-    addRef("plate|",ref.licensePlate,ref); addRef("plate|",ref.licencePlate,ref); addRef("plate|",ref.vehicle?.licensePlate,ref);
-    addRef("label|",ref.label,ref); addRef("label|",ref.vehicle?.label,ref);
+  refWalk(json?.references);
+  refWalk(json?.data?.references);
+
+  const refKey = v => String(v ?? "").trim().toUpperCase().replace(/[\s-]/g, "");
+  const refMap = new Map();
+  for(const r of refObjects){
+    for(const v of [r.vehicleId,r.vehicle?.id,r.id,r.licensePlate,r.vehicle?.licensePlate,r.licencePlate,r.label,r.vehicle?.label]){
+      const k=refKey(v);
+      if(k && !refMap.has(k)) refMap.set(k,r);
+    }
   }
-  let referenceMatches=0;
-  for(const obj of out){
-    const candidates=[
-      ["id|",obj.vehicleId ?? obj.vehicle?.id ?? obj.id],
-      ["plate|",obj.licensePlate ?? obj.vehicle?.licensePlate],
-      ["label|",obj.label ?? obj.vehicle?.label]
-    ];
-    let ref=null;
-    for(const [prefix,v] of candidates){ ref=refIndex.get(prefix+normRef(v)); if(ref) break; }
-    if(ref){ obj.__futarReference=ref; referenceMatches++; }
+  for(const v of out){
+    const keys=[v.vehicleId,v.vehicle?.id,v.id,v.licensePlate,v.vehicle?.licensePlate,v.licencePlate,v.label,v.vehicle?.label];
+    const ref=keys.map(refKey).map(k=>refMap.get(k)).find(Boolean);
+    if(ref) v.__futarReference=ref;
   }
-  try{ window.__futarReferenceStats={references:refObjects.length,matches:referenceMatches}; }catch(e){}
 
   return out;
 
@@ -3917,6 +4083,7 @@ function explicitDeepField(
     Object.keys(obj)
   ){
 
+
     const child =
       obj[key];
 
@@ -3959,10 +4126,8 @@ function explicitDeepField(
 
 function normalizeFutarVehicle(obj){
 
-  const ref = obj?.__futarReference;
-  const sourceObj = ref && typeof ref === "object"
-    ? Object.assign({}, obj, {__reference: ref})
-    : obj;
+  const ref = obj?.__futarReference || obj?.futarReference;
+  const sourceObj = ref && typeof ref === "object" ? Object.assign({}, obj, {__reference:ref}) : obj;
 
   const loc =
     obj.location ??
@@ -3989,7 +4154,7 @@ function normalizeFutarVehicle(obj){
   const routeId =
     String(
       explicitDeepField(
-        sourceObj,
+        obj,
         [
           "routeId"
         ]
@@ -4002,7 +4167,7 @@ function normalizeFutarVehicle(obj){
   const tripId =
     String(
       explicitDeepField(
-        sourceObj,
+        obj,
         [
           "tripId"
         ]
@@ -4015,11 +4180,12 @@ function normalizeFutarVehicle(obj){
   const vehicleId =
     String(
       explicitDeepField(
-        sourceObj,
+        obj,
         [
           "vehicleId"
         ]
       ) ??
+      obj.vehicle?.id ??
       obj.id ??
       ""
     );
@@ -4114,6 +4280,8 @@ function normalizeFutarVehicle(obj){
         "vehicle_model",
         "vehicleModelName",
         "vehicle_model_name",
+        "vehicleModelType",
+        "vehicle_model_type",
         "modelName",
         "model_name",
         "model"
@@ -4168,8 +4336,10 @@ function normalizeFutarVehicle(obj){
         "lowFloor",
         "low_floor",
         "lowfloor",
+        "lowFloorVehicle",
+        "low_floor_vehicle",
         "alacsonypadlos",
-        "alacsonypadlos"
+        "alacsonypadlós"
       ]
     );
 
@@ -4524,6 +4694,53 @@ async function loadFutarVehicles(
         ? window.extractFutarVehicles(json)
         : extractFutarVehicles(json);
 
+    /*
+      FUTÁR valódi jármű-metaadatok gyakran a válasz
+      references.vehicles részében vannak. Ezeket nem
+      szabad elveszíteni csak azért, mert a pozíciós rekord
+      és a metaadat külön objektumban érkezik.
+      Csak azonosítható, valódi vehicleId alapján
+      egyesítünk; értéket nem generálunk.
+    */
+    const refVehicles = [];
+    const collectReferenceVehicles = (node, depth=0)=>{
+      if(node == null || depth > 6) return;
+      if(Array.isArray(node)){
+        for(const x of node) collectReferenceVehicles(x, depth+1);
+        return;
+      }
+      if(typeof node !== "object") return;
+
+      const rid =
+        node.vehicleId ??
+        node.id ??
+        node.vehicle?.vehicleId ??
+        node.vehicle?.id ??
+        null;
+      if(rid !== null && rid !== undefined && String(rid).trim() !== ""){
+        refVehicles.push(node);
+      }
+      for(const key of Object.keys(node)){
+        if(key === "references") continue;
+        const child=node[key];
+        if(child && typeof child === "object") collectReferenceVehicles(child, depth+1);
+      }
+    };
+    collectReferenceVehicles(json.references);
+
+    if(refVehicles.length){
+      const refMap = new Map();
+      for(const ref of refVehicles){
+        const rid = String(ref.vehicleId ?? ref.id ?? ref.vehicle?.vehicleId ?? ref.vehicle?.id ?? "").trim();
+        if(rid && !refMap.has(rid)) refMap.set(rid, ref);
+      }
+      for(const raw of rawVehicles){
+        const rid = String(raw.vehicleId ?? raw.id ?? raw.vehicle?.vehicleId ?? raw.vehicle?.id ?? "").trim();
+        const ref = rid ? refMap.get(rid) : null;
+        if(ref){ raw.__futarReference = ref; raw.futarReference = ref; }
+      }
+    }
+
 
     const normalized =
       rawVehicles
@@ -4547,17 +4764,10 @@ async function loadFutarVehicles(
     logLine(
       "FUTÁR parser: " +
       normalized.length.toLocaleString("hu-HU") +
-      " valódi rekord."
+      " valódi rekord; referencia-metaadat: " +
+      refVehicles.length.toLocaleString("hu-HU") +
+      "."
     );
-
-    const refStats = window.__futarReferenceStats || {references:0,matches:0};
-    let nForgalmi=0,nType=0,nLow=0;
-    for(const fv of normalized){
-      if(fv.forgalmi) nForgalmi++;
-      if(fv.vehicleType) nType++;
-      if(fv.lowFloor !== null && fv.lowFloor !== undefined) nLow++;
-    }
-    logLine("FUTÁR references: " + refStats.references + " rekord, " + refStats.matches + " járműhöz illesztve; explicit mezők: FORGALMI=" + nForgalmi + ", TÍPUS=" + nType + ", ALACSONYPADLÓS=" + nLow + ".");
 
 
     futarVehicleCache =
@@ -4928,6 +5138,15 @@ async function loadFutarVehicles(
 
           vehicleType:
             fv.vehicleType,
+
+          lowFloor:
+            fv.lowFloor,
+
+          blockId:
+            fv.blockId,
+
+          blockVehicleNumber:
+            fv.blockVehicleNumber,
 
           futarMatched:
             true,
@@ -6258,6 +6477,7 @@ async function enrichOneVehicleFromWin(item){
       if(rr){
         if(rr.forgalmi && !item.forgalmi){ item.forgalmi=rr.forgalmi; got=true; }
         if(rr.vehicleType && !item.vehicleType){ item.vehicleType=rr.vehicleType; got=true; }
+        if(rr.lowFloor!==null && rr.lowFloor!==undefined && (item.lowFloor===null || item.lowFloor===undefined)){ item.lowFloor=rr.lowFloor; got=true; }
       }
     }catch(e){}
   }
@@ -6268,6 +6488,7 @@ async function enrichOneVehicleFromWin(item){
       if(rf){
         if(rf.forgalmi && !item.forgalmi){ item.forgalmi=rf.forgalmi; got=true; }
         if(rf.vehicleType && !item.vehicleType){ item.vehicleType=rf.vehicleType; got=true; }
+        if(rf.lowFloor!==null && rf.lowFloor!==undefined && (item.lowFloor===null || item.lowFloor===undefined)){ item.lowFloor=rf.lowFloor; got=true; }
       }
     }catch(e){}
   }
@@ -6404,6 +6625,10 @@ async function updateWinRealtime(){
         r.vehicleType;
     }
 
+    if(r.lowFloor !== null && r.lowFloor !== undefined){
+      item.lowFloor = r.lowFloor;
+    }
+
     if(
       r.trip &&
       !item.tripId
@@ -6447,11 +6672,13 @@ async function updateWinRealtime(){
   const seen=new Set();
   const queue=[...priority,...missing];
 
-  /* Egy ciklusban legfeljebb 20 célzott oldal; a következő frissítés újabbakat vehet elő. */
+  /* Telefonon csak kevés célzott oldalt kérünk le; PC-n marad a teljesebb feldolgozás. */
+  const mobileLite = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent || "");
+  const detailLimit = mobileLite ? 3 : 20;
   for(const item of queue){
     if(seen.has(item)) continue;
     seen.add(item);
-    if(detailEnriched>=20) break;
+    if(detailEnriched>=detailLimit) break;
     try{ if(await enrichOneVehicleFromWin(item)) detailEnriched++; }catch(e){}
   }
 
@@ -7449,6 +7676,36 @@ function bindButtons(){
     );
 
 
+  const bigBtn = $("bigScreenBtn");
+  if(bigBtn){
+    bigBtn.addEventListener("click",()=>{
+      document.body.classList.toggle("bigScreen");
+      bigBtn.textContent = document.body.classList.contains("bigScreen") ? "NORMÁL KÉPERNYŐ" : "NAGY KÉPERNYŐ";
+      try{localStorage.setItem("attilaBigScreen",document.body.classList.contains("bigScreen")?"1":"0");}catch(e){}
+      setTimeout(()=>{try{map.invalidateSize();}catch(e){}},120);
+    });
+  }
+
+  const nightBtn = $("nightModeBtn");
+  if(nightBtn){
+    nightBtn.addEventListener("click",()=>{
+      document.body.classList.toggle("nightMode");
+      nightBtn.textContent = document.body.classList.contains("nightMode") ? "NAPPALI MÓD" : "ÉJSZAKAI MÓD";
+      try{localStorage.setItem("attilaNightMode",document.body.classList.contains("nightMode")?"1":"0");}catch(e){}
+    });
+  }
+
+  try{
+    if(localStorage.getItem("attilaBigScreen")==="1" && !document.body.classList.contains("bigScreen")){
+      document.body.classList.add("bigScreen");
+      if(bigBtn) bigBtn.textContent="NORMÁL KÉPERNYŐ";
+    }
+    if(localStorage.getItem("attilaNightMode")==="1" && !document.body.classList.contains("nightMode")){
+      document.body.classList.add("nightMode");
+      if(nightBtn) nightBtn.textContent="NAPPALI MÓD";
+    }
+  }catch(e){}
+
   $("apiKey")
     .addEventListener(
       "keydown",
@@ -7503,7 +7760,7 @@ document.addEventListener(
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ WINMENETREND KAPCSOLAT FIX26 indul."
+      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ | 4 ADATKAPCSOLAT + NAGY TELEFONOS KÉPERNYŐ indul."
     );
 
 
@@ -7513,7 +7770,7 @@ document.addEventListener(
 
 
     logLine(
-      "FIX26: célzott WinMenetrend-illesztés; csak valódi explicit mezők kerülnek a járműpanelbe."
+      "4 ADATKAPCSOLAT: FORGALMI + JÁRMŰTÍPUS + ALACSONYPADLÓS + SIETÉS/KÉSÉS; csak valódi explicit forrásadat."
     );
 
 
@@ -7578,6 +7835,8 @@ function fixMapTiles(){
 /* FUTÁR: GeoJSON / data.features / coordinates / többféle valódi struktúra. */
 window.extractFutarVehicles=function(json){
   const out=[],seen=new Set();
+  const mobileLite=/Android|iPhone|iPad|iPod/i.test(navigator.userAgent||"");
+  const maxDepth=mobileLite?4:6;
   const locOf=o=>{
     const a=[o?.location,o?.position,o?.vehicle?.location,o?.vehicle?.position,o?.geometry,o?.vehicle?.geometry];
     for(const x of a){
@@ -7599,12 +7858,18 @@ window.extractFutarVehicles=function(json){
     const k=String(id||plate||"")+"|"+tid+"|"+rid+"|"+q.lat+"|"+q.lon;
     if(seen.has(k)) return; seen.add(k); out.push(o);
   };
+  const direct=[json?.data?.list,json?.data?.entry,json?.data?.vehicles,json?.data?.features,json?.list,json?.entry,json?.vehicles,json?.features];
+  for(const arr of direct){if(Array.isArray(arr)) for(const x of arr) push(x?.properties&&typeof x.properties==="object"?Object.assign({},x.properties,{geometry:x.geometry}):x);}
+  if(out.length) return out;
   const walk=(x,d=0)=>{
-    if(x==null||d>12) return;
+    if(x==null||d>maxDepth) return;
     if(Array.isArray(x)){for(const y of x)walk(y,d+1);return;}
     if(typeof x!=="object") return;
     push(x);
-    for(const k of Object.keys(x)){const v=x[k];if(v&&typeof v==="object")walk(v,d+1);}
+    for(const k of Object.keys(x)){
+      if(k==="references"||k==="routes"||k==="stops") continue;
+      const v=x[k]; if(v&&typeof v==="object") walk(v,d+1);
+    }
   };
   walk(json);
   return out;
