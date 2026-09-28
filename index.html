@@ -585,6 +585,20 @@ body.nightMode .vehicleCard{
 }
 
 </style>
+
+<style>
+.departureBox{margin-top:8px;padding:8px;border:1px solid rgba(128,128,128,.28);border-radius:8px;background:rgba(127,127,127,.06)}
+.departureTitle{font-weight:800;margin-bottom:6px}
+.departureTable{width:100%;border-collapse:collapse;font-size:12px}
+.departureTable th,.departureTable td{padding:5px 6px;border-bottom:1px solid rgba(128,128,128,.22);text-align:left;white-space:nowrap}
+.depReal{font-weight:800}
+.depLate{font-weight:800}
+.depMissing{font-weight:700}
+.stopDepBtn{margin:6px 6px 0 0;padding:5px 8px;border-radius:6px;border:1px solid #5b8394;background:#102b38;color:#d9f6ff;font-weight:800;cursor:pointer}
+.stopDepBtn:hover{filter:brightness(1.15)}
+.departureSource{font-size:10px;opacity:.75;margin-top:5px}
+</style>
+
 </head>
 
 <body>
@@ -8329,5 +8343,258 @@ window.extractFutarVehicles = function(json){
   setTimeout(normalizeStatuses,6000);
 })();
 </script>
+\n<script>
+/* ============================================================
+   FIX – 1/2/3: MEGÁLLÓI INDULÁSOK + REALTIME INDULÁS +
+   BKK VEHICLE/TRIPUPDATE KÖZÖS ILLESZTÉS
+   Csak tényleges GTFS / GTFS-RT adat.
+   ============================================================ */
+(function(){
+  "use strict";
+
+  const schedule={BKV:new Map(),VOLAN:new Map(),MAV:new Map()};
+  const trips={BKV:new Map(),VOLAN:new Map(),MAV:new Map()};
+  const realtimeByStop=new Map();
+  const realtimeByTripStop=new Map();
+  let bkkScheduleReady=false;
+  let rtBusy=false;
+
+  function clean(v){return String(v??"").trim();}
+  function norm(v){return clean(v).toLowerCase();}
+  function epoch(v){
+    if(v==null)return null;
+    if(typeof v==="number"&&Number.isFinite(v))return v>100000000000?Math.round(v/1000):Math.round(v);
+    if(typeof v==="object"&&typeof v.toNumber==="function"){try{return epoch(v.toNumber());}catch(e){}}
+    const n=Number(v);
+    return Number.isFinite(n)?(n>100000000000?Math.round(n/1000):Math.round(n)):null;
+  }
+  function hmsSec(v){
+    const m=clean(v).match(/^(\d+):(\d{2}):(\d{2})$/);
+    return m?(+m[1]*3600 + +m[2]*60 + +m[3]):null;
+  }
+  function activeServices(calendarText,exceptionsText){
+    const d=new Date(), y=d.getFullYear(), mo=d.getMonth()+1, day=d.getDate();
+    const ymd=String(y)+String(mo).padStart(2,"0")+String(day).padStart(2,"0");
+    const dow=d.getDay();
+    const dowKey=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][dow];
+    const active=new Set();
+    if(calendarText){
+      const rows=parseCsv(calendarText);
+      for(const r of rows){
+        const st=clean(r.start_date), en=clean(r.end_date);
+        if(st&&en&&ymd>=st&&ymd<=en&&String(r[dowKey]||"")==="1") active.add(clean(r.service_id));
+      }
+    }
+    if(exceptionsText){
+      const rows=parseCsv(exceptionsText);
+      for(const r of rows){
+        if(clean(r.date)!==ymd)continue;
+        const sid=clean(r.service_id); if(!sid)continue;
+        if(clean(r.exception_type)==="1")active.add(sid);
+        if(clean(r.exception_type)==="2")active.delete(sid);
+      }
+    }
+    return active;
+  }
+  function addSchedule(stopId,row){
+    if(!stopId||row.timeSec==null)return;
+    let a=schedule[row.provider].get(stopId);
+    if(!a){a=[];schedule[row.provider].set(stopId,a);}
+    a.push(row);
+  }
+  function finalizeProvider(provider){
+    for(const [sid,a] of schedule[provider]){
+      a.sort((x,y)=>x.timeSec-y.timeSec);
+      /* ugyanaz a trip+stop csak egyszer */
+      const seen=new Set(), out=[];
+      for(const x of a){const k=x.tripId+"|"+x.timeSec;if(seen.has(k))continue;seen.add(k);out.push(x);}
+      schedule[provider].set(sid,out);
+    }
+  }
+  function parseStopTimesCompact(text,provider,tripMeta){
+    const lines=String(text||"").split(/\r?\n/);
+    if(!lines.length)return 0;
+    const head=parseCsv(lines[0]);
+    const idx={}; head.forEach((h,i)=>idx[h]=i);
+    const si=idx.stop_id, ti=idx.trip_id, di=idx.departure_time, ai=idx.arrival_time, qi=idx.stop_sequence;
+    if(si==null||ti==null||(di==null&&ai==null))return 0;
+    let count=0;
+    for(let n=1;n<lines.length;n++){
+      const line=lines[n]; if(!line)continue;
+      const r=parseCsvLine(line);
+      const tripId=clean(r[ti]); const stopId=clean(r[si]);
+      if(!tripId||!stopId)continue;
+      const meta=tripMeta.get(tripId); if(!meta)continue;
+      const t=hmsSec(clean(r[di!=null?di:ai])); if(t==null)continue;
+      addSchedule(stopId,{provider,tripId,routeId:meta.routeId,routeShortName:meta.routeShortName,headsign:meta.headsign,timeSec:t,stopSequence:qi!=null?Number(r[qi]):null});
+      count++;
+    }
+    return count;
+  }
+  function parseCsvLine(line){
+    const out=[];let c="",q=false;
+    for(let i=0;i<line.length;i++){const ch=line[i];
+      if(ch==='"'){if(q&&line[i+1]==='"'){c+='"';i++;}else q=!q;}
+      else if(ch===','&&!q){out.push(c);c="";} else c+=ch;
+    }
+    out.push(c);return out;
+  }
+  async function buildScheduleFromZip(zip,provider){
+    const tripsFile=zip.file("trips.txt"), stopFile=zip.file("stop_times.txt");
+    if(!tripsFile||!stopFile)throw new Error("trips.txt vagy stop_times.txt hiányzik");
+    const routeMap=new Map();
+    if(zip.file("routes.txt")){
+      const rr=parseCsv(await zip.file("routes.txt").async("text"));
+      for(const r of rr){const id=clean(r.route_id);if(id)routeMap.set(id,clean(r.route_short_name)||clean(r.route_long_name));}
+    }
+    const active=activeServices(
+      zip.file("calendar.txt")?await zip.file("calendar.txt").async("text"):"",
+      zip.file("calendar_dates.txt")?await zip.file("calendar_dates.txt").async("text"):""
+    );
+    const tr=parseCsv(await tripsFile.async("text"));
+    const tm=new Map();
+    for(const r of tr){
+      const id=clean(r.trip_id), sid=clean(r.service_id);
+      if(!id||!sid||(active.size&&!active.has(sid)))continue;
+      tm.set(id,{routeId:clean(r.route_id),routeShortName:routeMap.get(clean(r.route_id))||clean(r.route_id),headsign:clean(r.trip_headsign)});
+    }
+    trips[provider]=tm;
+    const st=await stopFile.async("text");
+    const n=parseStopTimesCompact(st,provider,tm);
+    finalizeProvider(provider);
+    return {trips:tm.size,rows:n};
+  }
+  async function loadBkkSchedule(){
+    if(bkkScheduleReady)return;
+    try{
+      if(typeof GTFS_URL==="undefined")return;
+      const res=await fetch(GTFS_URL,{cache:"no-store"});
+      if(!res.ok)throw new Error("GTFS HTTP "+res.status);
+      const zip=await JSZip.loadAsync(await res.arrayBuffer());
+      const r=await buildScheduleFromZip(zip,"BKV");
+      bkkScheduleReady=true;
+      if(typeof logLine==="function")logLine("BKK menetrendi indulások: "+r.rows.toLocaleString("hu-HU")+" stop-idő, "+r.trips.toLocaleString("hu-HU")+" aktív menet.");
+      augmentStopResults();
+    }catch(e){if(typeof logLine==="function")logLine("BKK menetrendi indulások HIBA: "+(e?.message||e));}
+  }
+  async function loadLocalSchedule(file,provider){
+    try{
+      const zip=await JSZip.loadAsync(await file.arrayBuffer());
+      const r=await buildScheduleFromZip(zip,provider);
+      if(typeof logLine==="function")logLine((provider==="VOLAN"?"VOLÁN":"MÁV")+" menetrendi indulások: "+r.rows.toLocaleString("hu-HU")+" stop-idő, "+r.trips.toLocaleString("hu-HU")+" aktív menet.");
+      augmentStopResults();
+    }catch(e){if(typeof logLine==="function")logLine((provider==="VOLAN"?"VOLÁN":"MÁV")+" menetrendi indulások HIBA: "+(e?.message||e));}
+  }
+  function formatClock(sec){
+    if(sec==null)return "NINCS ADAT";
+    const s=((sec%86400)+86400)%86400;
+    return String(Math.floor(s/3600)).padStart(2,"0")+":"+String(Math.floor(s%3600/60)).padStart(2,"0");
+  }
+  function nowServiceSec(){const d=new Date();return d.getHours()*3600+d.getMinutes()*60+d.getSeconds();}
+  function delayText(sec){
+    if(!Number.isFinite(sec))return "NINCS ADAT";
+    const sg=sec<0?"−":"+", a=Math.abs(Math.round(sec));
+    return sg+Math.floor(a/60)+":"+String(a%60).padStart(2,"0");
+  }
+  function realtimeFor(stopId,tripId){
+    return realtimeByTripStop.get(clean(tripId)+"|"+clean(stopId))||null;
+  }
+  function renderDepartures(provider,stopId,stopName){
+    const a=schedule[provider].get(clean(stopId))||[];
+    const now=nowServiceSec();
+    const upcoming=a.filter(x=>x.timeSec>=now-300).slice(0,12);
+    const title=(provider==="BKV"?"🔵 BKK":provider==="VOLAN"?"🟠 VOLÁN":"🟤 MÁV");
+    let html='<div class="departureBox"><div class="departureTitle">🕐 INDULÁSOK – '+title+' – '+escapeHtml(stopName||stopId)+'</div>';
+    if(!upcoming.length){html+='<div class="small">NINCS ADAT – erre a napra nincs további GTFS-indulás.</div></div>';return html;}
+    html+='<table class="departureTable"><thead><tr><th>JÁRAT</th><th>MENETREND</th><th>VÁRHATÓ</th><th>ELTÉRÉS</th><th>JÁRMŰ</th><th>FORRÁS</th></tr></thead><tbody>';
+    for(const x of upcoming){
+      const rt=provider==="BKV"?realtimeFor(stopId,x.tripId):null;
+      const real=rt?.timeSec!=null?formatClock(new Date(rt.timeSec*1000).getHours()*3600+new Date(rt.timeSec*1000).getMinutes()*60+new Date(rt.timeSec*1000).getSeconds()):"NINCS ADAT";
+      const d=rt?.delay!=null?delayText(rt.delay):"NINCS ADAT";
+      const veh=rt?.vehicleId||rt?.plate||"NINCS ADAT";
+      const src=rt?"BKK GTFS-RT TripUpdate":"GTFS";
+      html+='<tr><td><b>'+escapeHtml(x.routeShortName||x.routeId||"NINCS ADAT")+'</b></td><td>'+formatClock(x.timeSec)+'</td><td class="depReal">'+real+'</td><td class="depLate">'+d+'</td><td>'+escapeHtml(veh)+'</td><td>'+src+'</td></tr>';
+    }
+    html+='</tbody></table><div class="departureSource">Menetrend = statikus GTFS. Várható idő / eltérés = csak tényleges BKK TripUpdate; hiányzó realtime adatnál NINCS ADAT.</div></div>';
+    return html;
+  }
+  function providerKeyFromText(text){if(text.includes("VOLÁN"))return "VOLAN";if(text.includes("MÁV"))return "MAV";return "BKV";}
+  function augmentStopResults(){
+    const el=document.getElementById("commonStopResults");if(!el)return;
+    for(const row of Array.from(el.children)){
+      if(row.dataset.depReady==="1")continue;
+      const text=row.textContent||"";
+      const m=text.match(/GTFS:\s*([^|•\s]+)/);if(!m)continue;
+      const stopId=m[1].trim();
+      const key=providerKeyFromText(text);
+      const stopName=(text.split("—")[1]||"").split("GTFS:")[0].trim();
+      const btn=document.createElement("button");btn.className="stopDepBtn";btn.textContent="INDULÁSOK";
+      btn.addEventListener("click",()=>showDepartureFor(key,stopId,stopName,row));
+      row.appendChild(btn);row.dataset.depReady="1";
+    }
+  }
+  function showDepartureFor(provider,stopId,stopName,row){
+    const old=row.querySelector(".departureBox");if(old)old.remove();
+    row.insertAdjacentHTML("beforeend",renderDepartures(provider,stopId,stopName));
+  }
+  async function refreshBkkRealtimeDepartures(){
+    if(rtBusy||typeof getKey!=="function"||!getKey())return;
+    rtBusy=true;
+    try{
+      const res=await fetch(TRIP_UPDATES_URL+"?key="+encodeURIComponent(getKey()),{cache:"no-store"});
+      if(!res.ok)throw new Error("HTTP "+res.status);
+      const buf=await res.arrayBuffer();if(!buf.byteLength)throw new Error("üres TripUpdates");
+      if(typeof loadProto==="function")await loadProto();
+      const FeedMessage=protoRoot.lookupType("transit_realtime.FeedMessage");
+      const feed=FeedMessage.decode(new Uint8Array(buf));
+      realtimeByStop.clear();realtimeByTripStop.clear();
+      let entities=0,stopUpdates=0;
+      for(const e of (feed.entity||[])){
+        const tu=e.tripUpdate;if(!tu?.trip?.tripId)continue;
+        const tripId=clean(tu.trip.tripId);
+        const vid=clean(tu.vehicle?.id), plate=clean(tu.vehicle?.licensePlate), label=clean(tu.vehicle?.label);
+        entities++;
+        for(const stu of (tu.stopTimeUpdate||[])){
+          const sid=clean(stu.stopId);if(!sid)continue;
+          const dep=epoch(stu.departure?.time), arr=epoch(stu.arrival?.time);
+          const t=dep??arr;
+          const del=(stu.departure?.delay!=null?Number(stu.departure.delay):stu.arrival?.delay!=null?Number(stu.arrival.delay):null);
+          if(t==null&& !Number.isFinite(del))continue;
+          const x={tripId,stopId:sid,timeSec:t,delay:Number.isFinite(del)?del:null,vehicleId:vid,label,plate};
+          realtimeByTripStop.set(tripId+"|"+sid,x);
+          if(!realtimeByStop.has(sid))realtimeByStop.set(sid,[]);
+          realtimeByStop.get(sid).push(x);stopUpdates++;
+        }
+      }
+      if(typeof logLine==="function")logLine("BKK TripUpdate indulások: "+entities.toLocaleString("hu-HU")+" trip, "+stopUpdates.toLocaleString("hu-HU")+" megálló-idő.");
+      augmentStopResults();
+      document.querySelectorAll(".departureBox").forEach(box=>{
+        const row=box.parentElement;const text=row?.textContent||"";const m=text.match(/GTFS:\s*([^|•\s]+)/);
+        if(m){const key=providerKeyFromText(text);const name=(text.split("—")[1]||"").split("GTFS:")[0].trim();const fresh=renderDepartures(key,m[1],name);box.outerHTML=fresh;}
+      });
+    }catch(e){if(typeof logLine==="function")logLine("BKK TripUpdate indulások HIBA: "+(e?.message||e));}
+    finally{rtBusy=false;}
+  }
+
+  const originalSearch=window.commonTransitStopSearch;
+  window.commonTransitStopSearch=function(){
+    const r=originalSearch?originalSearch():null;
+    Promise.resolve(r).then(()=>{augmentStopResults();});
+    return r;
+  };
+
+  document.addEventListener("DOMContentLoaded",()=>{
+    setTimeout(loadBkkSchedule,1800);
+    setInterval(()=>{
+      loadBkkSchedule();
+      refreshBkkRealtimeDepartures();
+    },30000);
+    document.getElementById("volanGtfsFile")?.addEventListener("change",e=>{if(e.target.files?.[0])loadLocalSchedule(e.target.files[0],"VOLAN");});
+    document.getElementById("mavGtfsFile")?.addEventListener("change",e=>{if(e.target.files?.[0])loadLocalSchedule(e.target.files[0],"MAV");});
+    setTimeout(refreshBkkRealtimeDepartures,3500);
+  });
+})();
+</script>
+
 </body>
 </html>
