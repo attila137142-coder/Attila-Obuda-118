@@ -2981,7 +2981,7 @@ function collectFutarVehicleObjects(node, out=[]){
   }
 
   for(const key of Object.keys(node)){
-    if(key === "references" || key === "routes" || key === "stops"){
+    if(key === "routes" || key === "stops"){
       continue;
     }
 
@@ -3770,6 +3770,35 @@ function extractFutarVehicles(json){
   }
 
 
+  /* FUTÁR references: a metaadat külön jármű-objektumban érkezhet. */
+  const refObjects = [];
+  const refWalk = (x, depth=0)=>{
+    if(x == null || depth > 10) return;
+    if(Array.isArray(x)){ for(const y of x) refWalk(y, depth+1); return; }
+    if(typeof x !== "object") return;
+    const id = x.vehicleId ?? x.vehicle?.id ?? x.id ?? null;
+    const plate = x.licensePlate ?? x.vehicle?.licensePlate ?? x.licencePlate ?? null;
+    const label = x.label ?? x.vehicle?.label ?? null;
+    if(id != null || plate != null || label != null) refObjects.push(x);
+    for(const k of Object.keys(x)) refWalk(x[k], depth+1);
+  };
+  refWalk(json?.references);
+  refWalk(json?.data?.references);
+
+  const refKey = v => String(v ?? "").trim().toUpperCase().replace(/[\s-]/g, "");
+  const refMap = new Map();
+  for(const r of refObjects){
+    for(const v of [r.vehicleId,r.vehicle?.id,r.id,r.licensePlate,r.vehicle?.licensePlate,r.licencePlate,r.label,r.vehicle?.label]){
+      const k=refKey(v);
+      if(k && !refMap.has(k)) refMap.set(k,r);
+    }
+  }
+  for(const v of out){
+    const keys=[v.vehicleId,v.vehicle?.id,v.id,v.licensePlate,v.vehicle?.licensePlate,v.licencePlate,v.label,v.vehicle?.label];
+    const ref=keys.map(refKey).map(k=>refMap.get(k)).find(Boolean);
+    if(ref) v.__futarReference=ref;
+  }
+
   return out;
 
 }
@@ -3879,12 +3908,6 @@ function explicitDeepField(
     Object.keys(obj)
   ){
 
-    if(
-      key === "references"
-    ){
-      continue;
-    }
-
 
     const child =
       obj[key];
@@ -3927,6 +3950,9 @@ function explicitDeepField(
    ============================================================ */
 
 function normalizeFutarVehicle(obj){
+
+  const ref = obj?.__futarReference;
+  const sourceObj = ref && typeof ref === "object" ? Object.assign({}, obj, {__reference:ref}) : obj;
 
   const loc =
     obj.location ??
@@ -3992,7 +4018,7 @@ function normalizeFutarVehicle(obj){
 
   const licensePlate =
     explicitDeepField(
-      obj,
+      sourceObj,
       [
         "licensePlate",
         "licencePlate",
@@ -4003,7 +4029,7 @@ function normalizeFutarVehicle(obj){
 
   const label =
     explicitDeepField(
-      obj,
+      sourceObj,
       [
         "label"
       ]
@@ -4023,7 +4049,7 @@ function normalizeFutarVehicle(obj){
 
   const forgalmi =
     explicitDeepField(
-      obj,
+      sourceObj,
       [
         "forgalmi",
         "forgalmiSzam",
@@ -4069,7 +4095,7 @@ function normalizeFutarVehicle(obj){
 
   const vehicleType =
     explicitDeepField(
-      obj,
+      sourceObj,
       [
         "vehicleType",
         "vehicle_type",
@@ -4096,7 +4122,7 @@ function normalizeFutarVehicle(obj){
 
   const blockId =
     explicitDeepField(
-      obj,
+      sourceObj,
       [
         "blockId",
         "block_id",
@@ -4114,7 +4140,7 @@ function normalizeFutarVehicle(obj){
 
   const blockVehicleNumber =
     explicitDeepField(
-      obj,
+      sourceObj,
       [
         "blockVehicleNumber",
         "block_vehicle_number",
@@ -4130,7 +4156,7 @@ function normalizeFutarVehicle(obj){
 
   const lowFloor =
     explicitDeepField(
-      obj,
+      sourceObj,
       [
         "lowFloor",
         "low_floor",
@@ -4149,7 +4175,7 @@ function normalizeFutarVehicle(obj){
 
   const rawSpeed =
     explicitDeepField(
-      obj,
+      sourceObj,
       [
         "speed"
       ]
