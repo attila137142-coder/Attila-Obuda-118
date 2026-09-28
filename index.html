@@ -2344,9 +2344,6 @@ async function fetchTripUpdates(){
         if(tuVehicleId){
           vehicleDelay.set("id|" + normalizeId(tuVehicleId), delay);
         }
-        if(tuVehicleLabel){
-          vehicleDelay.set("label|" + normalizeId(tuVehicleLabel), delay);
-        }
         if(tuPlate){
           vehicleDelay.set("plate|" + normalizeId(tuPlate), delay);
         }
@@ -2515,6 +2512,7 @@ async function fetchTripUpdates(){
       assigned.toLocaleString("hu-HU") +
       " jármű."
     );
+    logLine("TripUpdates kulcsok: TRIP=" + tripDelay.size + ", JÁRMŰ=" + vehicleDelay.size + ", stop-idő=" + mapDelay.size + ".");
 
 
     return true;
@@ -2981,7 +2979,7 @@ function collectFutarVehicleObjects(node, out=[]){
   }
 
   for(const key of Object.keys(node)){
-    if(key === "routes" || key === "stops"){
+    if(key === "references" || key === "routes" || key === "stops"){
       continue;
     }
 
@@ -3097,8 +3095,7 @@ async function loadFutarRouteVehicles(routeText){
       "&version=3" +
       "&appVersion=" +
         encodeURIComponent("AttilaKozlekedes-Vadasz") +
-      "&routeId=" + encodeURIComponent(routeId) +
-      "&includeReferences=true";
+      "&routeId=" + encodeURIComponent(routeId);
 
     try{
 
@@ -3770,34 +3767,46 @@ function extractFutarVehicles(json){
   }
 
 
-  /* FUTÁR references: a metaadat külön jármű-objektumban érkezhet. */
+  /* FUTÁR references -> jármű összekötés */
   const refObjects = [];
-  const refWalk = (x, depth=0)=>{
+  const walkRefs = (x, depth=0)=>{
     if(x == null || depth > 10) return;
-    if(Array.isArray(x)){ for(const y of x) refWalk(y, depth+1); return; }
+    if(Array.isArray(x)){ for(const y of x) walkRefs(y, depth+1); return; }
     if(typeof x !== "object") return;
-    const id = x.vehicleId ?? x.vehicle?.id ?? x.id ?? null;
-    const plate = x.licensePlate ?? x.vehicle?.licensePlate ?? x.licencePlate ?? null;
-    const label = x.label ?? x.vehicle?.label ?? null;
-    if(id != null || plate != null || label != null) refObjects.push(x);
-    for(const k of Object.keys(x)) refWalk(x[k], depth+1);
-  };
-  refWalk(json?.references);
-  refWalk(json?.data?.references);
-
-  const refKey = v => String(v ?? "").trim().toUpperCase().replace(/[\s-]/g, "");
-  const refMap = new Map();
-  for(const r of refObjects){
-    for(const v of [r.vehicleId,r.vehicle?.id,r.id,r.licensePlate,r.vehicle?.licensePlate,r.licencePlate,r.label,r.vehicle?.label]){
-      const k=refKey(v);
-      if(k && !refMap.has(k)) refMap.set(k,r);
+    for(const [key,value] of Object.entries(x)){
+      if(key === "references" && value && typeof value === "object"){
+        const collect=(z)=>{
+          if(z == null) return;
+          if(Array.isArray(z)){ for(const q of z) collect(q); return; }
+          if(typeof z !== "object") return;
+          refObjects.push(z);
+          for(const q of Object.values(z)) if(q && typeof q === "object") collect(q);
+        };
+        collect(value);
+      }else if(value && typeof value === "object") walkRefs(value, depth+1);
     }
+  };
+  walkRefs(json);
+  const refIndex = new Map();
+  const normRef = v => String(v ?? "").trim().toUpperCase().replace(/[\s-]/g, "");
+  const addRef=(prefix,v,ref)=>{ const k=normRef(v); if(k && !refIndex.has(prefix+k)) refIndex.set(prefix+k,ref); };
+  for(const ref of refObjects){
+    addRef("id|",ref.vehicleId,ref); addRef("id|",ref.id,ref); addRef("id|",ref.vehicle?.id,ref);
+    addRef("plate|",ref.licensePlate,ref); addRef("plate|",ref.licencePlate,ref); addRef("plate|",ref.vehicle?.licensePlate,ref);
+    addRef("label|",ref.label,ref); addRef("label|",ref.vehicle?.label,ref);
   }
-  for(const v of out){
-    const keys=[v.vehicleId,v.vehicle?.id,v.id,v.licensePlate,v.vehicle?.licensePlate,v.licencePlate,v.label,v.vehicle?.label];
-    const ref=keys.map(refKey).map(k=>refMap.get(k)).find(Boolean);
-    if(ref) v.__futarReference=ref;
+  let referenceMatches=0;
+  for(const obj of out){
+    const candidates=[
+      ["id|",obj.vehicleId ?? obj.vehicle?.id ?? obj.id],
+      ["plate|",obj.licensePlate ?? obj.vehicle?.licensePlate],
+      ["label|",obj.label ?? obj.vehicle?.label]
+    ];
+    let ref=null;
+    for(const [prefix,v] of candidates){ ref=refIndex.get(prefix+normRef(v)); if(ref) break; }
+    if(ref){ obj.__futarReference=ref; referenceMatches++; }
   }
+  try{ window.__futarReferenceStats={references:refObjects.length,matches:referenceMatches}; }catch(e){}
 
   return out;
 
@@ -3908,7 +3917,6 @@ function explicitDeepField(
     Object.keys(obj)
   ){
 
-
     const child =
       obj[key];
 
@@ -3952,7 +3960,9 @@ function explicitDeepField(
 function normalizeFutarVehicle(obj){
 
   const ref = obj?.__futarReference;
-  const sourceObj = ref && typeof ref === "object" ? Object.assign({}, obj, {__reference:ref}) : obj;
+  const sourceObj = ref && typeof ref === "object"
+    ? Object.assign({}, obj, {__reference: ref})
+    : obj;
 
   const loc =
     obj.location ??
@@ -3979,7 +3989,7 @@ function normalizeFutarVehicle(obj){
   const routeId =
     String(
       explicitDeepField(
-        obj,
+        sourceObj,
         [
           "routeId"
         ]
@@ -3992,7 +4002,7 @@ function normalizeFutarVehicle(obj){
   const tripId =
     String(
       explicitDeepField(
-        obj,
+        sourceObj,
         [
           "tripId"
         ]
@@ -4005,12 +4015,11 @@ function normalizeFutarVehicle(obj){
   const vehicleId =
     String(
       explicitDeepField(
-        obj,
+        sourceObj,
         [
           "vehicleId"
         ]
       ) ??
-      obj.vehicle?.id ??
       obj.id ??
       ""
     );
@@ -4105,8 +4114,6 @@ function normalizeFutarVehicle(obj){
         "vehicle_model",
         "vehicleModelName",
         "vehicle_model_name",
-        "vehicleModelType",
-        "vehicle_model_type",
         "modelName",
         "model_name",
         "model"
@@ -4161,10 +4168,8 @@ function normalizeFutarVehicle(obj){
         "lowFloor",
         "low_floor",
         "lowfloor",
-        "lowFloorVehicle",
-        "low_floor_vehicle",
         "alacsonypadlos",
-        "alacsonypadlós"
+        "alacsonypadlos"
       ]
     );
 
@@ -4519,53 +4524,6 @@ async function loadFutarVehicles(
         ? window.extractFutarVehicles(json)
         : extractFutarVehicles(json);
 
-    /*
-      FUTÁR valódi jármű-metaadatok gyakran a válasz
-      references.vehicles részében vannak. Ezeket nem
-      szabad elveszíteni csak azért, mert a pozíciós rekord
-      és a metaadat külön objektumban érkezik.
-      Csak azonosítható, valódi vehicleId alapján
-      egyesítünk; értéket nem generálunk.
-    */
-    const refVehicles = [];
-    const collectReferenceVehicles = (node, depth=0)=>{
-      if(node == null || depth > 6) return;
-      if(Array.isArray(node)){
-        for(const x of node) collectReferenceVehicles(x, depth+1);
-        return;
-      }
-      if(typeof node !== "object") return;
-
-      const rid =
-        node.vehicleId ??
-        node.id ??
-        node.vehicle?.vehicleId ??
-        node.vehicle?.id ??
-        null;
-      if(rid !== null && rid !== undefined && String(rid).trim() !== ""){
-        refVehicles.push(node);
-      }
-      for(const key of Object.keys(node)){
-        if(key === "references") continue;
-        const child=node[key];
-        if(child && typeof child === "object") collectReferenceVehicles(child, depth+1);
-      }
-    };
-    collectReferenceVehicles(json.references);
-
-    if(refVehicles.length){
-      const refMap = new Map();
-      for(const ref of refVehicles){
-        const rid = String(ref.vehicleId ?? ref.id ?? ref.vehicle?.vehicleId ?? ref.vehicle?.id ?? "").trim();
-        if(rid && !refMap.has(rid)) refMap.set(rid, ref);
-      }
-      for(const raw of rawVehicles){
-        const rid = String(raw.vehicleId ?? raw.id ?? raw.vehicle?.vehicleId ?? raw.vehicle?.id ?? "").trim();
-        const ref = rid ? refMap.get(rid) : null;
-        if(ref) raw.futarReference = ref;
-      }
-    }
-
 
     const normalized =
       rawVehicles
@@ -4589,10 +4547,17 @@ async function loadFutarVehicles(
     logLine(
       "FUTÁR parser: " +
       normalized.length.toLocaleString("hu-HU") +
-      " valódi rekord; referencia-metaadat: " +
-      refVehicles.length.toLocaleString("hu-HU") +
-      "."
+      " valódi rekord."
     );
+
+    const refStats = window.__futarReferenceStats || {references:0,matches:0};
+    let nForgalmi=0,nType=0,nLow=0;
+    for(const fv of normalized){
+      if(fv.forgalmi) nForgalmi++;
+      if(fv.vehicleType) nType++;
+      if(fv.lowFloor !== null && fv.lowFloor !== undefined) nLow++;
+    }
+    logLine("FUTÁR references: " + refStats.references + " rekord, " + refStats.matches + " járműhöz illesztve; explicit mezők: FORGALMI=" + nForgalmi + ", TÍPUS=" + nType + ", ALACSONYPADLÓS=" + nLow + ".");
 
 
     futarVehicleCache =
@@ -4963,15 +4928,6 @@ async function loadFutarVehicles(
 
           vehicleType:
             fv.vehicleType,
-
-          lowFloor:
-            fv.lowFloor,
-
-          blockId:
-            fv.blockId,
-
-          blockVehicleNumber:
-            fv.blockVehicleNumber,
 
           futarMatched:
             true,
