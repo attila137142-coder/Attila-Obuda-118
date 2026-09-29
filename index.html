@@ -1293,11 +1293,28 @@ function setMapVehicle(item){
 
   marker.on(
     "click",
-    ()=>{
+    async ()=>{
 
       marker.setPopupContent(
         buildPopup(item)
       );
+
+      /* A megnyitott járművet nem kell megváratni a körforgó batch-csel.
+         Pontosan ezt a rendszámot kérjük le azonnal. */
+      if(typeof window.fix35EnrichVehicle==='function' && item.licensePlate){
+        const changed=await window.fix35EnrichVehicle(item);
+        if(changed){
+          marker.setPopupContent(buildPopup(item));
+          try{
+            const active=document.querySelector('.leaflet-popup-content');
+            if(active) active.innerHTML=buildPopup(item);
+          }catch(e){}
+          try{
+            const cardId=item._cardId;
+            if(cardId){ const el=document.getElementById(cardId); if(el) el.outerHTML=buildVehicleCard(item); }
+          }catch(e){}
+        }
+      }
 
     }
   );
@@ -6978,7 +6995,16 @@ function vehicleCard(
 
   card.addEventListener(
     "click",
-    ()=>{
+    async ()=>{
+
+      if(typeof window.fix35EnrichVehicle==='function' && item.licensePlate){
+        try{
+          const changed=await window.fix35EnrichVehicle(item);
+          if(changed){
+            try{ renderVehicles(); }catch(e){}
+          }
+        }catch(e){}
+      }
 
       if(
         map &&
@@ -8221,12 +8247,23 @@ window.extractFutarVehicles = function(json){
         const p=pk(v.licensePlate);
         if((plateSearch&&p===plateSearch)||(universal&&p===universal)) priority.push(v); else rest.push(v);
       }
-      /* Keresett jármű mindig első. Keresés nélkül ciklusonként korlátozott
-         számú valódi oldal, hogy az iPhone-t ne terheljük több száz kéréssel. */
-      const queue=[...priority,...rest.slice(0,12)];
+      /* Keresett jármű mindig első. A többi járműnél NEM az első 12 rekordot
+         választjuk ki minden alkalommal. Körforgó index biztosítja, hogy a teljes
+         BKK járműállomány sorban megkapja az esélyt, miközben az iPhone-t nem
+         terheljük több száz egyidejű kéréssel. */
+      if(!window.fix35BatchCursor) window.fix35BatchCursor=0;
+      const batchSize=12;
+      const batch=[];
+      for(let k=0;k<rest.length && batch.length<batchSize;k++){
+        const idx=(window.fix35BatchCursor+k)%rest.length;
+        const item=rest[idx];
+        if(item && !batch.includes(item)) batch.push(item);
+      }
+      if(rest.length) window.fix35BatchCursor=(window.fix35BatchCursor+batch.length)%rest.length;
+      const queue=[...priority,...batch];
       let merged=0, checked=0;
       for(const item of queue){
-        if(checked>=13) break;
+        if(checked>=priority.length+batchSize) break;
         checked++;
         const data=await exactWin(item.licensePlate,item.routeId||item.routeShortName||item.route||'');
         if(!data) continue;
@@ -8247,13 +8284,37 @@ window.extractFutarVehicles = function(json){
       }
       const st=$("regionalRealtimeStatus");
       if(st) st.textContent='FIX35 WinMenetrend: '+merged+' járműhöz került valódi explicit mező.';
-      log('FIX35: ellenőrzött járművek='+checked+' | új mezőillesztés='+merged);
+      log('FIX35: ellenőrzött járművek='+checked+' | új mezőillesztés='+merged+' | körforgó batch: '+(batch.length||0));
       return merged;
     }catch(e){
       log('FIX35: WinMenetrend FŐ HIBA: '+(e?.message||e));
       return 0;
     }finally{ running=false; }
   }
+
+  /* Egyetlen kiválasztott jármű célzott lekérése. Nem a lista helyzete dönti el,
+     hogy melyik jármű kap adatot: amelyiket a felhasználó megnyitja, azt azonnal
+     külön lekérjük és a közös védett merge-en keresztül frissítjük. */
+  window.fix35EnrichVehicle=async function(item){
+    if(!item || !real(item.licensePlate)) return false;
+    try{
+      const data=await exactWin(item.licensePlate,item.routeId||item.routeShortName||item.route||'');
+      if(!data) return false;
+      const changed=window.mergeVehicleData(item,data);
+      if(changed){
+        log('FIX35: '+item.licensePlate+' → KIVÁLASZTOTT JÁRMŰ MERGE: '+[
+          real(data.forgalmi)?'FORGALMI':'',
+          real(data.vehicleType)?'JÁRMŰTÍPUS':'',
+          real(data.blockId)?'BLOKK':'',
+          real(data.blockVehicleNumber)?'JÁRMŰ#':''
+        ].filter(Boolean).join(', '));
+      }
+      return changed;
+    }catch(e){
+      log('FIX35: '+item.licensePlate+' → kiválasztott jármű HIBA: '+(e?.message||e));
+      return false;
+    }
+  };
 
   window.fix35EnrichCurrent=run;
   window.updateWinRealtime=run;
