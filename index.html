@@ -926,6 +926,7 @@ let winRealtimeCache = new Map();
 var winRealtimeRows = [];
 let winRealtimeLastFetch = 0;
 let tripDelayVehicleMap = new Map();
+let tripDelayVehicleSeqMap = new Map();
 let regionalRealtimeRows = [];
 
 let tripDelayMap = new Map();
@@ -2153,459 +2154,134 @@ function normalizeTripKey(value){
 
 
 async function fetchTripUpdates(){
-
   if(!getKey()){
-
-    lastTripFetchOK =
-      false;
-
+    lastTripFetchOK=false;
     return false;
-
   }
-
 
   try{
+    const fullUrl=TRIP_UPDATES_URL+"?key="+encodeURIComponent(getKey());
+    const res=await fetch(fullUrl,{cache:"no-store"});
+    if(!res.ok) throw new Error("HTTP "+res.status);
 
-    const fullUrl =
-      TRIP_UPDATES_URL +
-      "?key=" +
-      encodeURIComponent(
-        getKey()
-      );
-
-
-    const res =
-      await fetch(
-        fullUrl,
-        {
-          cache:"no-store"
-        }
-      );
-
-
-    if(!res.ok){
-
-      throw new Error(
-        "HTTP " +
-        res.status
-      );
-
-    }
-
-
-    const buffer =
-      await res.arrayBuffer();
-
-
-    if(!buffer.byteLength){
-
-      throw new Error(
-        "üres TripUpdates válasz"
-      );
-
-    }
-
+    const buffer=await res.arrayBuffer();
+    if(!buffer.byteLength) throw new Error("üres TripUpdates válasz");
 
     await loadProto();
+    const FeedMessage=protoRoot.lookupType("transit_realtime.FeedMessage");
+    const feed=FeedMessage.decode(new Uint8Array(buffer));
 
+    const mapDelay=new Map();
+    const seqDelay=new Map();
+    const tripDelay=new Map();
+    const vehicleDelay=new Map();
+    const vehicleSeqDelay=new Map();
+    let updateCount=0;
+    let delayValueCount=0;
 
-    const FeedMessage =
-      protoRoot.lookupType(
-        "transit_realtime.FeedMessage"
-      );
+    for(const entity of (feed.entity||[])){
+      const tu=entity.tripUpdate;
+      if(!tu || !tu.trip) continue;
 
-
-    const feed =
-      FeedMessage.decode(
-        new Uint8Array(
-          buffer
-        )
-      );
-
-
-    const mapDelay =
-      new Map();
-
-
-    const seqDelay =
-      new Map();
-
-
-    const tripDelay =
-      new Map();
-
-    const vehicleDelay =
-      new Map();
-
-
-    let updateCount = 0;
-
-
-    for(
-      const entity of
-      (feed.entity || [])
-    ){
-
-      const tu =
-        entity.tripUpdate;
-
-
-      if(
-        !tu ||
-        !tu.trip
-      ){
-        continue;
-      }
-
-
-      const tripId =
-        normalizeTripKey(
-          tu.trip.tripId
-        );
-
-
-      if(!tripId){
-        continue;
-      }
-
-
+      const tripId=normalizeTripKey(tu.trip.tripId);
+      if(!tripId) continue;
       updateCount++;
 
-      /*
-        FIX10 – közvetlen járműkapcsolat.
-        A GTFS-RT TripUpdate entity saját vehicle mezője alapján
-        először közvetlenül a valós járműhöz rendeljük a késést.
-      */
-      const tuVehicleId = String(
-        tu.vehicle?.id ?? ""
-      ).trim();
-      const tuVehicleLabel = String(
-        tu.vehicle?.label ?? ""
-      ).trim();
-      const tuPlate = String(
-        tu.vehicle?.licensePlate ?? ""
-      ).trim();
+      const tuVehicleId=String(tu.vehicle?.id??"").trim();
+      const tuVehicleLabel=String(tu.vehicle?.label??"").trim();
+      const tuPlate=String(tu.vehicle?.licensePlate??"").trim();
+      const vehicleKeys=[];
+      if(tuVehicleId) vehicleKeys.push("id|"+normalizeId(tuVehicleId));
+      if(tuVehicleLabel) vehicleKeys.push("label|"+normalizeId(tuVehicleLabel));
+      if(tuPlate) vehicleKeys.push("plate|"+normalizeId(tuPlate));
 
-      /* A valódi TripUpdate vehicle.id és vehicle.label
-         külön kulcs. Egyik sem veszhet el. */
-      if(tuVehicleId){
-        vehicleDelay.set("id|" + normalizeId(tuVehicleId), null);
+      for(const stu of (tu.stopTimeUpdate||[])){
+        let delay=null;
+        if(stu.departure && stu.departure.delay!==null && stu.departure.delay!==undefined){
+          delay=Number(stu.departure.delay);
+        }else if(stu.arrival && stu.arrival.delay!==null && stu.arrival.delay!==undefined){
+          delay=Number(stu.arrival.delay);
+        }
+        if(!Number.isFinite(delay)) continue;
+        delayValueCount++;
+
+        const seq=(stu.stopSequence!==null && stu.stopSequence!==undefined) ? Number(stu.stopSequence) : null;
+        const seqKey=Number.isFinite(seq)?String(seq):"";
+        const stopId=String(stu.stopId||"").trim();
+
+        if(seqKey){
+          mapDelay.set(tripId+"|seq|"+seqKey,delay);
+          if(!seqDelay.has(tripId)) seqDelay.set(tripId,[]);
+          seqDelay.get(tripId).push({seq,stopId,delay});
+        }
+        if(stopId) mapDelay.set(tripId+"|stop|"+stopId,delay);
+
+        if(!tripDelay.has(tripId)) tripDelay.set(tripId,[]);
+        tripDelay.get(tripId).push({seq,stopId,delay});
+
+        for(const key of vehicleKeys){
+          if(!vehicleDelay.has(key)) vehicleDelay.set(key,[]);
+          vehicleDelay.get(key).push({tripId,seq,stopId,delay});
+          if(Number.isFinite(seq)) vehicleSeqDelay.set(key+"|seq|"+String(seq),delay);
+        }
       }
-      if(tuVehicleLabel){
-        vehicleDelay.set("label|" + normalizeId(tuVehicleLabel), null);
-      }
-      if(tuPlate){
-        vehicleDelay.set("plate|" + normalizeId(tuPlate), null);
-      }
-
-      /*
-        Valódi TripUpdate-kat egyben is megőrizzük,
-        hogy akkor is legyen kapaszkodó, ha a jármű
-        aktuális stop_sequence / stop_id mezője hiányos.
-      */
-      if(!tripDelay.has(tripId)){
-        tripDelay.set(tripId, null);
-      }
-
-
-      /*
-        GTFS-RT TripUpdate-ben a stopTimeUpdate
-        az elsődleges késésforrás.
-
-        Csak ténylegesen megadott delay értéket
-        veszünk át.
-      */
-
-
-      for(
-        const stu of
-        (
-          tu.stopTimeUpdate ||
-          []
-        )
-      ){
-
-        let delay =
-          null;
-
-
-        if(
-          stu.departure &&
-          stu.departure.delay !==
-          null &&
-          stu.departure.delay !==
-          undefined
-        ){
-
-          delay =
-            Number(
-              stu.departure.delay
-            );
-
-        }else if(
-          stu.arrival &&
-          stu.arrival.delay !==
-          null &&
-          stu.arrival.delay !==
-          undefined
-        ){
-
-          delay =
-            Number(
-              stu.arrival.delay
-            );
-
-        }
-
-
-        if(
-          !Number.isFinite(delay)
-        ){
-          continue;
-        }
-
-        if(tuVehicleId){
-          vehicleDelay.set("id|" + normalizeId(tuVehicleId), delay);
-        }
-        if(tuPlate){
-          vehicleDelay.set("plate|" + normalizeId(tuPlate), delay);
-        }
-
-        if(
-          !Number.isFinite(
-            tripDelay.get(tripId)
-          )
-        ){
-          tripDelay.set(
-            tripId,
-            delay
-          );
-        }
-
-
-        const seq =
-          stu.stopSequence !==
-          null &&
-          stu.stopSequence !==
-          undefined
-            ?
-            String(
-              stu.stopSequence
-            )
-            :
-            "";
-
-
-        const stopId =
-          String(
-            stu.stopId || ""
-          );
-
-
-        if(seq){
-
-          mapDelay.set(
-            tripId +
-            "|seq|" +
-            seq,
-            delay
-          );
-
-
-          if(
-            !seqDelay.has(
-              tripId
-            )
-          ){
-
-            seqDelay.set(
-              tripId,
-              []
-            );
-
-          }
-
-
-          seqDelay
-            .get(tripId)
-            .push({
-
-              seq:
-                Number(seq),
-
-              delay
-
-            });
-
-        }
-
-
-        if(stopId){
-
-          mapDelay.set(
-            tripId +
-            "|stop|" +
-            stopId,
-            delay
-          );
-
-        }
-
-      }
-
     }
 
+    for(const arr of seqDelay.values()) arr.sort((a,b)=>a.seq-b.seq);
+    for(const arr of tripDelay.values()) arr.sort((a,b)=>(Number.isFinite(a.seq)?a.seq:1e15)-(Number.isFinite(b.seq)?b.seq:1e15));
+    for(const arr of vehicleDelay.values()) arr.sort((a,b)=>(Number.isFinite(a.seq)?a.seq:1e15)-(Number.isFinite(b.seq)?b.seq:1e15));
 
-    for(
-      const arr of
-      seqDelay.values()
-    ){
+    tripDelayMap=mapDelay;
+    tripDelaySeqMap=seqDelay;
+    tripDelayTripMap=tripDelay;
+    tripDelayVehicleMap=vehicleDelay;
+    tripDelayVehicleSeqMap=vehicleSeqDelay;
+    lastTripFetchOK=true;
 
-      arr.sort(
-        (a,b)=>
-        a.seq-b.seq
-      );
-
+    let assigned=0;
+    for(const item of vehicleData){
+      item.delaySeconds=resolveVehicleDelay(item);
+      if(Number.isFinite(item.delaySeconds)) assigned++;
     }
 
-
-    tripDelayMap =
-      mapDelay;
-
-
-    tripDelaySeqMap =
-      seqDelay;
-
-
-    /*
-      Fontos:
-      nem töltünk be 0-t olyan járműre,
-      amelyhez nincs tényleges TripUpdate.
-    */
-
-    tripDelayTripMap =
-      tripDelay;
-
-    tripDelayVehicleMap =
-      vehicleDelay;
-
-
-    lastTripFetchOK =
-      true;
-
-
-    let assigned = 0;
-
-
-    for(
-      const item of
-      vehicleData
-    ){
-
-      item.delaySeconds =
-        resolveVehicleDelay(
-          item
-        );
-
-
-      if(
-        Number.isFinite(
-          item.delaySeconds
-        )
-      ){
-
-        assigned++;
-
-      }
-
-    }
-
-
-    logLine(
-      "TripUpdates OK: " +
-      updateCount.toLocaleString("hu-HU") +
-      " trip frissítés, " +
-      mapDelay.size.toLocaleString("hu-HU") +
-      " stop-idő eltérés."
-    );
-
-
-    logLine(
-      "KÉSÉS/SIETÉS hozzárendelve: " +
-      assigned.toLocaleString("hu-HU") +
-      " jármű."
-    );
-
-
+    logLine("TripUpdates OK: "+updateCount.toLocaleString("hu-HU")+
+      " trip frissítés, "+mapDelay.size.toLocaleString("hu-HU")+
+      " stop-idő eltérés, "+delayValueCount.toLocaleString("hu-HU")+
+      " valódi delay érték.");
+    logLine("KÉSÉS/SIETÉS hozzárendelve: "+assigned.toLocaleString("hu-HU")+" jármű.");
     return true;
-
-
   }catch(err){
-
-    lastTripFetchOK =
-      false;
-
-
-    /*
-      Hiba esetén sem szabad
-      a meglévő járműveket 0-ra állítani.
-      Az előző sikeres adatot nem gyártjuk újra.
-    */
-
-
-    logLine(
-      "TripUpdates HIBA: " +
-      (
-        err?.message ||
-        "ismeretlen"
-      )
-    );
-
-
+    lastTripFetchOK=false;
+    logLine("TripUpdates HIBA: "+(err?.message||"ismeretlen"));
     return false;
-
   }
-
 }
 
-
 function resolveVehicleDelay(item){
+  const tripId=normalizeTripKey(item.tripId);
+  const itemSeq=Number.isFinite(item.stopSequence)?Number(item.stopSequence):null;
+  const itemStop=String(item.stopId||"").trim();
 
-  const tripId = normalizeTripKey(item.tripId);
-
-  /*
-    KÉSÉS/SIETÉS – valódi TripUpdate kapcsolat.
-    PRIORITÁS:
-    1. pontos trip + stop_sequence
-    2. pontos trip + stop_id
-    3. közeli stop_sequence (max 3)
-    4. közvetlen vehicle.id / label / licensePlate
-    5. trip-szintű érték CSAK UTOLSÓ tartalék.
-
-    Fontos: a közvetlen járműazonosításnak meg kell előznie
-    a trip-szintű fallbacket, különben egy 0 másodperces trip
-    elfedheti a konkrét jármű valódi késését/sietését.
-  */
-
-  if(tripId && Number.isFinite(item.stopSequence)){
-    const exact = tripDelayMap.get(tripId + "|seq|" + String(item.stopSequence));
+  /* Csak tényleges TripUpdates delay érték. Hiányzó adat = null. */
+  if(tripId && itemSeq!==null){
+    const exact=tripDelayMap.get(tripId+"|seq|"+String(itemSeq));
+    if(Number.isFinite(exact)) return exact;
+  }
+  if(tripId && itemStop){
+    const exact=tripDelayMap.get(tripId+"|stop|"+itemStop);
     if(Number.isFinite(exact)) return exact;
   }
 
-  if(tripId && item.stopId){
-    const exact = tripDelayMap.get(tripId + "|stop|" + String(item.stopId));
-    if(Number.isFinite(exact)) return exact;
-  }
-
-  if(tripId && Number.isFinite(item.stopSequence)){
-    const arr = tripDelaySeqMap.get(tripId);
-    if(Array.isArray(arr) && arr.length){
-      let best=null, bestDiff=Infinity;
+  if(tripId && itemSeq!==null){
+    const arr=tripDelaySeqMap.get(tripId);
+    if(Array.isArray(arr)&&arr.length){
+      let best=null,bestDiff=Infinity;
       for(const x of arr){
-        const diff=Math.abs(x.seq-Number(item.stopSequence));
-        if(diff<bestDiff){ bestDiff=diff; best=x; }
+        if(!Number.isFinite(x.seq)) continue;
+        const diff=Math.abs(x.seq-itemSeq);
+        if(diff<bestDiff){bestDiff=diff;best=x;}
       }
-      if(best && bestDiff<=3 && Number.isFinite(best.delay)) return best.delay;
+      if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
     }
   }
 
@@ -2615,18 +2291,48 @@ function resolveVehicleDelay(item){
   if(item.licensePlate) directKeys.push("plate|"+normalizeId(item.licensePlate));
 
   for(const key of directKeys){
-    const direct=tripDelayVehicleMap.get(key);
-    if(Number.isFinite(direct)) return direct;
+    if(itemSeq!==null){
+      const bySeq=tripDelayVehicleSeqMap.get(key+"|seq|"+String(itemSeq));
+      if(Number.isFinite(bySeq)) return bySeq;
+    }
+    const arr=tripDelayVehicleMap.get(key);
+    if(!Array.isArray(arr)||!arr.length) continue;
+
+    if(itemStop){
+      const byStop=arr.find(x=>x.stopId===itemStop&&Number.isFinite(x.delay));
+      if(byStop) return byStop.delay;
+    }
+    if(itemSeq!==null){
+      let best=null,bestDiff=Infinity;
+      for(const x of arr){
+        if(!Number.isFinite(x.seq)) continue;
+        const diff=Math.abs(x.seq-itemSeq);
+        if(diff<bestDiff){bestDiff=diff;best=x;}
+      }
+      if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
+    }
   }
 
   if(tripId){
-    const tripFallback=tripDelayTripMap.get(tripId);
-    if(Number.isFinite(tripFallback)) return tripFallback;
+    const arr=tripDelayTripMap.get(tripId);
+    if(Array.isArray(arr)&&arr.length){
+      if(itemStop){
+        const byStop=arr.find(x=>x.stopId===itemStop&&Number.isFinite(x.delay));
+        if(byStop) return byStop.delay;
+      }
+      if(itemSeq!==null){
+        let best=null,bestDiff=Infinity;
+        for(const x of arr){
+          if(!Number.isFinite(x.seq)) continue;
+          const diff=Math.abs(x.seq-itemSeq);
+          if(diff<bestDiff){bestDiff=diff;best=x;}
+        }
+        if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
+      }
+    }
   }
-
   return null;
 }
-
 
 /* ============================================================
    VEHICLEPOSITIONS
