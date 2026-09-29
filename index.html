@@ -424,6 +424,14 @@ select:focus{
   color:#ffffff;
 }
 </style>
+
+<style>
+.mobile-data-note{padding:10px;margin:8px 0;border:1px solid #777;border-radius:10px;font-size:13px;line-height:1.35;background:#111;color:#fff;}
+@media (max-width:700px){
+  #vehicleList{contain:content;}
+  .vehicle-card{content-visibility:auto;contain:layout paint style;}
+}
+</style>
 </head>
 
 <body>
@@ -1333,30 +1341,20 @@ function setMapVehicle(item){
 
 function refreshMarkers(){
 
-  if(!vehicleLayer){
-    return;
-  }
-
+  if(!vehicleLayer) return;
 
   vehicleLayer.clearLayers();
+  const mobile = window.innerWidth <= 700;
+  const maxMarkers = mobile ? 120 : 1000;
+  let n=0;
 
-
-  for(
-    const item of vehicleData
-  ){
-
-    item.marker = null;
-
-
-    if(!item._visible){
-      continue;
-    }
-
-
+  for(const item of vehicleData){
+    item.marker=null;
+    if(!item._visible) continue;
+    if(n>=maxMarkers) break;
     setMapVehicle(item);
-
+    n++;
   }
-
 }
 
 
@@ -7058,63 +7056,35 @@ function vehicleCard(
 
 function renderVehicles(){
 
-  const list =
-    $("vehicleList");
+  const list = $("vehicleList");
+  if(!list) return;
 
+  list.innerHTML = "";
 
-  list.innerHTML =
-    "";
+  const mobile = window.innerWidth <= 700;
+  const limit = mobile ? 80 : 500;
+  let shown = 0;
+  let matchedTotal = 0;
 
-
-  let shown =
-    0;
-
-
-  for(
-    let i=0;
-    i<vehicleData.length;
-    i++
-  ){
-
-    const item =
-      vehicleData[i];
-
-
-    item._visible =
-      matchesFilters(
-        item
-      );
-
-
-    if(
-      !item._visible
-    ){
-      continue;
-    }
-
-
-    list.appendChild(
-      vehicleCard(item)
-    );
-
-
+  for(let i=0;i<vehicleData.length;i++){
+    const item = vehicleData[i];
+    item._visible = matchesFilters(item);
+    if(!item._visible) continue;
+    matchedTotal++;
+    if(shown >= limit) continue;
+    list.appendChild(vehicleCard(item));
     shown++;
-
   }
 
+  $("shownCount").textContent = matchedTotal.toLocaleString("hu-HU");
+  $("vehicleCount").textContent = vehicleData.length.toLocaleString("hu-HU");
 
-  $("shownCount").textContent =
-    shown.toLocaleString(
-      "hu-HU"
-    );
-
-
-  $("vehicleCount").textContent =
-    vehicleData.length
-      .toLocaleString(
-        "hu-HU"
-      );
-
+  if(mobile && matchedTotal > limit){
+    const note=document.createElement("div");
+    note.className="mobile-data-note";
+    note.textContent="Telefonos mód: "+limit+" járműkártya látható egyszerre. A teljes valódi járműállomány memóriában megmarad; járat- vagy rendszámkereséssel a kívánt jármű megjeleníthető.";
+    list.appendChild(note);
+  }
 }
 
 
@@ -7488,7 +7458,7 @@ document.addEventListener(
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ WINMENETREND KAPCSOLAT FIX35 indul."
+      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ WINMENETREND KAPCSOLAT FIX36 MOBIL STABIL indul."
     );
 
 
@@ -7498,7 +7468,7 @@ document.addEventListener(
 
 
     logLine(
-      "FIX35: javított célzott WinMenetrend-illesztés; a BKK rendszám után valódi explicit mezők kerülnek a járműpanelbe."
+      "FIX36: mobil stabilizálás + javított célzott WinMenetrend-illesztés; a BKK rendszám után valódi explicit mezők kerülnek a járműpanelbe."
     );
 
 
@@ -8252,7 +8222,7 @@ window.extractFutarVehicles = function(json){
          BKK járműállomány sorban megkapja az esélyt, miközben az iPhone-t nem
          terheljük több száz egyidejű kéréssel. */
       if(!window.fix35BatchCursor) window.fix35BatchCursor=0;
-      const batchSize=12;
+      const batchSize = window.innerWidth <= 700 ? 0 : 4;
       const batch=[];
       for(let k=0;k<rest.length && batch.length<batchSize;k++){
         const idx=(window.fix35BatchCursor+k)%rest.length;
@@ -8319,19 +8289,26 @@ window.extractFutarVehicles = function(json){
   window.fix35EnrichCurrent=run;
   window.updateWinRealtime=run;
 
-  /* Nem egyszer, túl korán próbálkozunk: megvárjuk, amíg a BKK valódi
-     VehiclePositions betölti a vehicleData tömböt. */
-  let tries=0;
-  const boot=setInterval(()=>{
-    tries++;
-    if(Array.isArray(window.vehicleData) && window.vehicleData.length){
-      run();
-      if(tries>20) clearInterval(boot);
-    }else if(tries>30){
-      clearInterval(boot);
-    }
-  },1500);
-  setInterval(()=>{ if(Array.isArray(window.vehicleData)&&window.vehicleData.length) run(); },120000);
+  /* MOBIL STABIL: iPhone-on nem indul háttérben WinMenetrend-körforgó.
+     A BKK valódi feed betöltése és a TripUpdates ettől független.
+     Mobilon csak a felhasználó által megnyitott jármű célzott lekérése fut. */
+  if(window.innerWidth > 700){
+    let tries=0;
+    const boot=setInterval(()=>{
+      tries++;
+      if(Array.isArray(window.vehicleData) && window.vehicleData.length){
+        run();
+        if(tries>20) clearInterval(boot);
+      }else if(tries>30){
+        clearInterval(boot);
+      }
+    },1500);
+    setInterval(()=>{
+      if(Array.isArray(window.vehicleData)&&window.vehicleData.length) run();
+    },120000);
+  } else {
+    log('FIX36: mobil mód – automatikus WinMenetrend-körforgó kikapcsolva; célzott járműlekérés marad.');
+  }
 })();
 </script>
 </body>
