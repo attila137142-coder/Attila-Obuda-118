@@ -10,7 +10,7 @@
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – BKK VADÁSZ REAL DATA FIX27 – TARTÓS PDF / GTFS / WINMENETREND KAPCSOLAT</title>
+<title>ATTILA KÖZLEKEDÉS – BKK VADÁSZ REAL DATA FIX32 – BKV 4 ADAT + 100/200 M GPS KERESŐ</title>
 
 <link
   rel="stylesheet"
@@ -431,7 +431,7 @@ select:focus{
 <div id="header">
 
   <div class="title">
-    🚍 ATTILA KÖZLEKEDÉS – BKK VADÁSZ FIX27
+    🚍 ATTILA KÖZLEKEDÉS – BKK VADÁSZ FIX32
   </div>
 
   <div id="feedBadge" class="badge warn">
@@ -739,6 +739,14 @@ select:focus{
       </div>
 
       <div class="radiusGrid">
+
+        <button data-radius="0.1">
+          100 m
+        </button>
+
+        <button data-radius="0.2">
+          200 m
+        </button>
 
         <button data-radius="1">
           1 km
@@ -2479,12 +2487,10 @@ async function fetchTripUpdates(){
       vehicleData
     ){
 
-      const resolvedDelay = resolveVehicleDelay(item);
-      if(Number.isFinite(resolvedDelay)){
-        setTripUpdateDelay(item,resolvedDelay);
-      }else{
-        item.delaySeconds=null;
-      }
+      item.delaySeconds =
+        resolveVehicleDelay(
+          item
+        );
 
 
       if(
@@ -2995,6 +3001,64 @@ function collectFutarVehicleObjects(node, out=[]){
 }
 
 
+function hasRealVehicleValue(value){
+  if(value === null || value === undefined) return false;
+  if(typeof value === "string" && !value.trim()) return false;
+  return true;
+}
+
+/* ============================================================
+   KÖZÖS VÉDETT JÁRMŰ-ADATILLESZTÉS – BKK FIX32
+   Csak explicit, valódi forrásértéket ír be.
+   Soha nem töröl már megtalált adatot üres/null értékkel.
+   A késés külön, TripUpdates-alapú mező.
+   ============================================================ */
+function mergeVehicleData(target, source, options={}){
+  if(!target || !source) return false;
+  let changed=false;
+
+  const copyIfReal=(key)=>{
+    if(hasRealVehicleValue(source[key])){
+      if(!hasRealVehicleValue(target[key]) || options.overwriteReal === true){
+        if(target[key] !== source[key]){
+          target[key]=source[key];
+          changed=true;
+        }
+      }
+    }
+  };
+
+  /* Csak explicit forrásból érkező járműadatok. */
+  [
+    "licensePlate",
+    "forgalmi",
+    "vehicleType",
+    "blockId",
+    "blockVehicleNumber"
+  ].forEach(copyIfReal);
+
+  if(source.lowFloor !== null && source.lowFloor !== undefined){
+    if(target.lowFloor === null || target.lowFloor === undefined || options.overwriteReal === true){
+      if(target.lowFloor !== source.lowFloor){
+        target.lowFloor=source.lowFloor;
+        changed=true;
+      }
+    }
+  }
+
+  /* Ezeket csak akkor egészítjük ki, ha valóban hiányoznak. */
+  [
+    "tripId",
+    "routeShortName",
+    "label",
+    "stopId",
+    "stopSequence"
+  ].forEach(copyIfReal);
+
+  return changed;
+}
+
+
 function mergeFutarRouteMeta(normalized){
 
   let matched = 0;
@@ -3009,16 +3073,14 @@ function mergeFutarRouteMeta(normalized){
 
     target.futarMatched = true;
 
-    if(fv.licensePlate && !target.licensePlate){
-      target.licensePlate = fv.licensePlate;
-    }
-
-    /* KÖZÖS ILLESZTÉSI KAPU: FUTÁR csak valódi explicit mezőt adhat át. */
-    mergeVehicleData(target,fv,"FUTAR");
-
-    if(fv.lowFloor !== null && fv.lowFloor !== undefined){
-      target.lowFloor = fv.lowFloor;
-    }
+    mergeVehicleData(target,{
+      licensePlate:fv.licensePlate,
+      forgalmi:fv.forgalmi,
+      vehicleType:fv.vehicleType,
+      blockId:fv.blockId,
+      blockVehicleNumber:fv.blockVehicleNumber,
+      lowFloor:fv.lowFloor
+    });
 
     matched++;
   }
@@ -3172,110 +3234,6 @@ async function loadFutarRouteVehicles(routeText){
   return true;
 }
 
-
-/* ============================================================
-   KÖZÖS VÉDETT JÁRMŰADAT-ILLESZTÉSI RÉTEG – FIX31
-
-   Egyetlen kapun keresztül kerülhet be a járműkártyába a
-   FORGALMI / JÁRMŰTÍPUS / BLOKK / FORDA és néhány kapcsolódó,
-   explicit forrásból érkező mező.
-
-   SZABÁLYOK:
-   - csak valódi, nem üres forrásértéket fogadunk el;
-   - későbbi null/üres válasz nem töröl korábbi valódi adatot;
-   - forrás-prioritás védi a részletesebb WinMenetrend-adatot;
-   - FORDA-t nem gyártunk és nem vezetünk le más mezőből;
-   - a TripUpdates késését külön, saját útvonalon kezeljük.
-   ============================================================ */
-
-function hasRealVehicleValue(value){
-  if(value === null || value === undefined) return false;
-  if(typeof value === "boolean") return true;
-  if(typeof value === "number") return Number.isFinite(value);
-  const s=String(value).replace(/\u00a0/g," ").trim();
-  if(!s) return false;
-  if(/^NINCS\s+ADAT$/i.test(s)) return false;
-  if(s === "—" || s === "-") return false;
-  return true;
-}
-
-const VEHICLE_DATA_SOURCE_PRIORITY={
-  "VEHICLEPOSITIONS":10,
-  "FUTAR":20,
-  "WIN_REALTIME":30,
-  "WIN_ROUTE":35,
-  "WIN_DETAIL":40
-};
-
-const VEHICLE_MERGE_FIELDS=[
-  "forgalmi",
-  "vehicleType",
-  "blockId",
-  "blockVehicleNumber",
-  "forda",
-  "licensePlate",
-  "tripId",
-  "label"
-];
-
-function mergeVehicleData(target, source, sourceName="UNKNOWN"){
-  if(!target || !source) return false;
-
-  const priority=
-    VEHICLE_DATA_SOURCE_PRIORITY[String(sourceName||"").toUpperCase()] ?? 0;
-
-  if(!target.__vehicleMergePriority){
-    Object.defineProperty(target,"__vehicleMergePriority",{
-      value:{},
-      writable:true,
-      configurable:true,
-      enumerable:false
-    });
-  }
-
-  let changed=false;
-
-  for(const field of VEHICLE_MERGE_FIELDS){
-    const incoming=source[field];
-    if(!hasRealVehicleValue(incoming)) continue;
-
-    const current=target[field];
-    const oldPriority=Number(target.__vehicleMergePriority[field] ?? -1);
-
-    /*
-      Ugyanazon vagy magasabb prioritású valódi forrás frissíthet.
-      Alacsonyabb prioritású forrás viszont nem írhatja felül a
-      már megtalált, részletesebb valódi adatot.
-    */
-    if(!hasRealVehicleValue(current) || priority>=oldPriority){
-      if(String(current ?? "") !== String(incoming ?? "")) changed=true;
-      target[field]=incoming;
-      target.__vehicleMergePriority[field]=priority;
-    }
-  }
-
-  /* ALACSONYPADLÓS: a false/NEM is valódi adat, ezért külön kezeljük. */
-  if(source.lowFloor !== null && source.lowFloor !== undefined){
-    const oldPriority=Number(target.__vehicleMergePriority.lowFloor ?? -1);
-    if(target.lowFloor===null || target.lowFloor===undefined || priority>=oldPriority){
-      if(target.lowFloor !== source.lowFloor) changed=true;
-      target.lowFloor=source.lowFloor;
-      target.__vehicleMergePriority.lowFloor=priority;
-    }
-  }
-
-  return changed;
-}
-
-function setTripUpdateDelay(item, delay){
-  /* Késés/sietés kizárólag a valódi BKK TripUpdates útvonalról jöhet. */
-  if(!item) return false;
-  if(delay===null || delay===undefined || !Number.isFinite(Number(delay))) return false;
-  item.delaySeconds=Number(delay);
-  item.__delaySource="BKK_TRIP_UPDATES";
-  item.__delayUpdatedAt=Date.now();
-  return true;
-}
 
 /* ============================================================
    BKK FEED TESZT
@@ -3450,8 +3408,6 @@ async function testFeed(){
 
     for(const item of vehicleData){
       item.delaySeconds = null;
-      item.__delaySource = null;
-      item.__delayUpdatedAt = 0;
     }
 
     try{
@@ -4687,9 +4643,11 @@ async function loadFutarVehicles(
 
 
       /*
-        BKK FUTÁR nem szolgáltat FORDA-t ezen az útvonalon.
-        A közös illesztő ezért nem töröl meglévő valódi FORDA-adatot.
+        BKK FORDA = NINCS ADAT.
       */
+
+      target.forda =
+        null;
 
 
       if(
@@ -6298,7 +6256,7 @@ async function enrichOneVehicleFromWin(item){
     try{
       const rr=await fetchWinRealtimeExact(plate);
       if(rr){
-        if(mergeVehicleData(item,rr,"WIN_REALTIME")) got=true;
+        if(mergeVehicleData(item,rr)) got=true;
       }
     }catch(e){}
   }
@@ -6307,7 +6265,7 @@ async function enrichOneVehicleFromWin(item){
     try{
       const rf=await fetchWinRouteHistory(routeCode,plate);
       if(rf){
-        if(mergeVehicleData(item,rf,"WIN_ROUTE")) got=true;
+        if(mergeVehicleData(item,rf)) got=true;
       }
     }catch(e){}
   }
@@ -6321,8 +6279,7 @@ async function enrichOneVehicleFromWin(item){
   for(const u of urls){
     const f=await fetchWinDetailPage(u);
     if(!f) continue;
-    if(mergeVehicleData(item,f,"WIN_DETAIL")) got=true;
-    if(f.lowFloor!==null && f.lowFloor!==undefined && (item.lowFloor===null || item.lowFloor===undefined)){ item.lowFloor=f.lowFloor; got=true; }
+    if(mergeVehicleData(item,f)) got=true;
   }
   return got;
 }
@@ -6350,7 +6307,7 @@ async function updateWinRealtime(){
     const plateKey =
       String(r.plate || "").toUpperCase().replace(/[\s-]/g, "").trim();
 
-    if(plateKey){
+    if(plateKey && !winRealtimeCache.has(plateKey)){
       winRealtimeCache.set(
         plateKey,
         r
@@ -6429,27 +6386,17 @@ async function updateWinRealtime(){
       continue;
     }
 
-    /* KÖZÖS ILLESZTÉSI KAPU: WinMenetrend realtime. */
-    mergeVehicleData(item,r,"WIN_REALTIME");
-
-    if(
-      r.trip &&
-      !item.tripId
-    ){
-      item.tripId =
-        r.trip;
-    }
-
-    if(
-      r.route &&
-      (
-        !item.routeShortName ||
-        item.routeShortName === ""
-      )
-    ){
-      item.routeShortName =
-        r.route;
-    }
+    /* Csak a WinMenetrend valódi,
+       explicit FORGALMI / JÁRMŰTÍPUS mezője kerül át. */
+    mergeVehicleData(item,{
+      forgalmi:r.forgalmi,
+      vehicleType:r.vehicleType,
+      blockId:r.blockId,
+      blockVehicleNumber:r.blockVehicleNumber,
+      lowFloor:r.lowFloor,
+      tripId:r.trip,
+      routeShortName:r.route
+    });
 
     item.winRealtimeMatched =
       true;
@@ -7531,12 +7478,20 @@ document.addEventListener(
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ WINMENETREND KAPCSOLAT FIX26 indul."
+      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ WINMENETREND KAPCSOLAT FIX32 indul."
     );
 
 
     logLine(
       "NINCS KITALÁLT JÁRMŰADAT."
+    );
+
+    logLine(
+      "FIX32: közös védett jármű-adatillesztés – FORGALMI / JÁRMŰTÍPUS / BLOKK csak valódi explicit forrásból."
+    );
+
+    logLine(
+      "FIX32: GPS járműkereső: 100 m + 200 m sugár visszaállítva."
     );
 
 
@@ -7815,7 +7770,10 @@ window.extractFutarVehicles = function(json){
         /* 3. TRIP */
         if(!r&&t) r=window.winRealtimeRows.find(x=>normTrip(x.trip)===t)||null;
         if(!r) continue;
-        if(typeof mergeVehicleData==="function") mergeVehicleData(item,r,"WIN_REALTIME");
+        if(r.forgalmi && !item.forgalmi) item.forgalmi=r.forgalmi;
+        if(r.vehicleType && !item.vehicleType) item.vehicleType=r.vehicleType;
+        if(r.trip && !item.tripId) item.tripId=r.trip;
+        if(r.label && (!item.label || item.label==="")) item.label=r.label;
         n++;
       }
       if(n && typeof renderVehicles==='function') renderVehicles();
