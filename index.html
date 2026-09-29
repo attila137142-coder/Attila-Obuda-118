@@ -2196,13 +2196,25 @@ async function fetchTripUpdates(){
       if(tuPlate) vehicleKeys.push("plate|"+normalizeId(tuPlate));
 
       for(const stu of (tu.stopTimeUpdate||[])){
-        let delay=null;
-        if(stu.departure && stu.departure.delay!==null && stu.departure.delay!==undefined){
-          delay=Number(stu.departure.delay);
-        }else if(stu.arrival && stu.arrival.delay!==null && stu.arrival.delay!==undefined){
-          delay=Number(stu.arrival.delay);
-        }
-        if(!Number.isFinite(delay)) continue;
+        /*
+          FIX37 – KRITIKUS: protobufjs-nál a delay skalár mező hiánya
+          nem bizonyítja, hogy valódi 0 érkezett. A régi kód ezért sok
+          olyan StopTimeUpdate-ot is 0-nak vett, ahol a feed valójában
+          nem küldött késésadatot.
+
+          Csak akkor fogadunk el delay-t, ha a protobufban a mező
+          ténylegesen jelen van az adott arrival/departure objektumban.
+        */
+        const readRealDelay = (part) => {
+          if(!part || typeof part !== "object") return null;
+          if(!Object.prototype.hasOwnProperty.call(part,"delay")) return null;
+          const n=Number(part.delay);
+          return Number.isFinite(n) ? n : null;
+        };
+
+        let delay=readRealDelay(stu.departure);
+        if(delay===null) delay=readRealDelay(stu.arrival);
+        if(delay===null) continue;
         delayValueCount++;
 
         const seq=(stu.stopSequence!==null && stu.stopSequence!==undefined) ? Number(stu.stopSequence) : null;
@@ -2246,8 +2258,8 @@ async function fetchTripUpdates(){
 
     logLine("TripUpdates OK: "+updateCount.toLocaleString("hu-HU")+
       " trip frissítés, "+mapDelay.size.toLocaleString("hu-HU")+
-      " stop-idő eltérés, "+delayValueCount.toLocaleString("hu-HU")+
-      " valódi delay érték.");
+      " stop-idő illesztés, "+delayValueCount.toLocaleString("hu-HU")+
+      " TÉNYLEGESEN JELENLÉVŐ delay mező.");
     logLine("KÉSÉS/SIETÉS hozzárendelve: "+assigned.toLocaleString("hu-HU")+" jármű.");
     return true;
   }catch(err){
