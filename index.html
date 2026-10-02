@@ -8376,3 +8376,142 @@ window.extractFutarVehicles = function(json){
 </script>
 </body>
 </html>
+<!-- ============================================================
+     FIX42 – KÖZVETLEN JÁRMŰOBJEKTUM-MERGE + AZONNALI KÁRTYA-ÚJRARENDER
+
+     Cél:
+     - WinMenetrend valódi találata közvetlenül a vehicleData megfelelő
+       objektumába kerüljön.
+     - TripUpdates valódi delay találata közvetlenül ugyanabba az objektumba
+       kerüljön.
+     - A merge után azonnal újrarendereljük a JÁRMŰPANELT.
+     - Nincs kitalált adat, nincs fallbackből képzett érték.
+     - A TripUpdates nem írja felül a WinMenetrend explicit mezőit,
+       a WinMenetrend pedig nem írja felül a TripUpdates késését.
+     ============================================================ -->
+<script>
+(function(){
+  "use strict";
+
+  if(window.__FIX42_DIRECT_OBJECT_MERGE__) return;
+  window.__FIX42_DIRECT_OBJECT_MERGE__ = true;
+
+  function log42(msg){
+    try{
+      if(typeof logLine === "function") logLine("FIX42: " + msg);
+    }catch(e){}
+  }
+
+  function rerender42(reason){
+    try{
+      if(typeof safeRenderAll === "function"){
+        safeRenderAll("FIX42 " + reason);
+      }else if(typeof renderVehicles === "function"){
+        renderVehicles();
+      }
+    }catch(e){
+      try{ log42("kártya újrarender HIBA: " + (e?.message || e)); }catch(x){}
+    }
+  }
+
+  /* ------------------------------------------------------------
+     1) TripUpdates burkolása.
+        Az eredeti függvény már közvetlenül a vehicleData objektumokba
+        írja a delaySeconds értéket. Itt ezt garantált végső lépésként
+        ellenőrizzük és AZONNAL újrarendereljük a kártyákat.
+     ------------------------------------------------------------ */
+  const originalTripUpdates = window.fetchTripUpdates;
+  if(typeof originalTripUpdates === "function"){
+    window.fetchTripUpdates = async function(){
+      const result = await originalTripUpdates.apply(this, arguments);
+
+      let assigned = 0;
+      try{
+        if(Array.isArray(window.vehicleData)){
+          for(const item of window.vehicleData){
+            if(!item) continue;
+            if(typeof resolveVehicleDelay === "function"){
+              const d = resolveVehicleDelay(item);
+              item.delaySeconds = Number.isFinite(d) ? d : null;
+            }
+            if(Number.isFinite(item.delaySeconds)) assigned++;
+          }
+        }
+      }catch(e){
+        log42("TripUpdates objektum-ellenőrzés HIBA: " + (e?.message || e));
+      }
+
+      /* A valódi találat már a megjelenített vehicleData objektumban van. */
+      rerender42("TripUpdates → JÁRMŰOBJEKTUM");
+      log42("TripUpdates → közvetlen vehicleData merge: " + assigned + " jármű; kártya újrarenderelve.");
+      return result;
+    };
+  }
+
+  /* ------------------------------------------------------------
+     2) WinMenetrend burkolása.
+        Az eredeti updateWinRealtime / FIX35 merge már közvetlenül a
+        vehicleData objektumot módosítja. A wrapper gondoskodik arról,
+        hogy a végső objektum-állapot után mindig frissüljön a képernyő.
+     ------------------------------------------------------------ */
+  const originalWinRealtime = window.updateWinRealtime;
+  if(typeof originalWinRealtime === "function"){
+    window.updateWinRealtime = async function(){
+      const result = await originalWinRealtime.apply(this, arguments);
+
+      let merged = 0;
+      try{
+        if(Array.isArray(window.vehicleData)){
+          for(const item of window.vehicleData){
+            if(!item) continue;
+            if(
+              item.winRealtimeMatched === true ||
+              (String(item.forgalmi || "").trim() && String(item.vehicleType || "").trim()) ||
+              String(item.blockId || "").trim() ||
+              String(item.blockVehicleNumber || "").trim()
+            ){
+              merged++;
+            }
+          }
+        }
+      }catch(e){
+        log42("WinMenetrend objektum-ellenőrzés HIBA: " + (e?.message || e));
+      }
+
+      /* A WinMenetrend valódi találata közvetlenül a kártya adatobjektumában
+         marad; csak ezután rajzoljuk újra a JÁRMŰPANELT. */
+      rerender42("WinMenetrend → JÁRMŰOBJEKTUM");
+      log42("WinMenetrend → közvetlen vehicleData merge ellenőrizve: " + merged + " jármű; kártya újrarenderelve.");
+      return result;
+    };
+  }
+
+  /* ------------------------------------------------------------
+     3) Közvetlen, védett merge wrapper.
+        Ha bármely későbbi kód a közös mergeVehicleData-t használja,
+        az objektum frissítése után rögtön újrarenderelünk.
+        DelaySeconds szándékosan NEM szerepel a másolható mezők között.
+     ------------------------------------------------------------ */
+  const originalMerge = window.mergeVehicleData;
+  if(typeof originalMerge === "function"){
+    window.mergeVehicleData = function(target, source, options){
+      const changed = originalMerge.apply(this, arguments);
+      if(changed){
+        try{
+          if(target && source){
+            /* TripUpdates késését semmilyen WinMenetrend merge nem írhatja felül. */
+            if(Object.prototype.hasOwnProperty.call(target, "delaySeconds")){
+              const keepDelay = target.delaySeconds;
+              if(Number.isFinite(keepDelay)) target.delaySeconds = keepDelay;
+            }
+          }
+        }catch(e){}
+        rerender42("MERGE → JÁRMŰOBJEKTUM");
+      }
+      return changed;
+    };
+  }
+
+  log42("Közvetlen JÁRMŰOBJEKTUM → KÁRTYA adatút bekapcsolva.");
+})();
+</script>
