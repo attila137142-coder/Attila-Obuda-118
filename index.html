@@ -73,7 +73,7 @@ button:active{
 
 input,
 select{
-  background:#e9eef2;
+  background:#09141c;
   color:#eef7fb;
   border:1px solid #35505f;
   border-radius:7px;
@@ -1196,21 +1196,13 @@ function initMap(){
     );
 
 
-  const osm=L.tileLayer(
+  L.tileLayer(
     "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
-    {maxZoom:19,attribution:"© OpenStreetMap"}
+    {
+      maxZoom:19,
+      attribution:"© OpenStreetMap"
+    }
   ).addTo(map);
-  let mapFallbackUsed=false;
-  osm.on("tileerror",function(){
-    if(mapFallbackUsed) return;
-    mapFallbackUsed=true;
-    try{
-      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{
-        maxZoom:19,attribution:"© OpenStreetMap © CARTO"
-      }).addTo(map);
-      if(typeof logLine==="function") logLine("OSM csempehiba: világos térképi tartalék réteg aktiválva.");
-    }catch(e){}
-  });
 
 
   vehicleLayer =
@@ -2479,12 +2471,10 @@ async function fetchTripUpdates(){
       vehicleData
     ){
 
-      const resolvedDelay = resolveVehicleDelay(item);
-      if(Number.isFinite(resolvedDelay)){
-        setTripUpdateDelay(item,resolvedDelay);
-      }else{
-        item.delaySeconds=null;
-      }
+      item.delaySeconds =
+        resolveVehicleDelay(
+          item
+        );
 
 
       if(
@@ -3013,8 +3003,23 @@ function mergeFutarRouteMeta(normalized){
       target.licensePlate = fv.licensePlate;
     }
 
-    /* KÖZÖS ILLESZTÉSI KAPU: FUTÁR csak valódi explicit mezőt adhat át. */
-    mergeVehicleData(target,fv,"FUTAR");
+    /* FORGALMI: csak explicit valódi FUTÁR mezőből. */
+    if(fv.forgalmi){
+      target.forgalmi = fv.forgalmi;
+    }
+
+    /* JÁRMŰTÍPUS: csak explicit valódi FUTÁR mezőből. */
+    if(fv.vehicleType){
+      target.vehicleType = fv.vehicleType;
+    }
+
+    if(fv.blockId){
+      target.blockId = fv.blockId;
+    }
+
+    if(fv.blockVehicleNumber){
+      target.blockVehicleNumber = fv.blockVehicleNumber;
+    }
 
     if(fv.lowFloor !== null && fv.lowFloor !== undefined){
       target.lowFloor = fv.lowFloor;
@@ -3172,110 +3177,6 @@ async function loadFutarRouteVehicles(routeText){
   return true;
 }
 
-
-/* ============================================================
-   KÖZÖS VÉDETT JÁRMŰADAT-ILLESZTÉSI RÉTEG – FIX31
-
-   Egyetlen kapun keresztül kerülhet be a járműkártyába a
-   FORGALMI / JÁRMŰTÍPUS / BLOKK / FORDA és néhány kapcsolódó,
-   explicit forrásból érkező mező.
-
-   SZABÁLYOK:
-   - csak valódi, nem üres forrásértéket fogadunk el;
-   - későbbi null/üres válasz nem töröl korábbi valódi adatot;
-   - forrás-prioritás védi a részletesebb WinMenetrend-adatot;
-   - FORDA-t nem gyártunk és nem vezetünk le más mezőből;
-   - a TripUpdates késését külön, saját útvonalon kezeljük.
-   ============================================================ */
-
-function hasRealVehicleValue(value){
-  if(value === null || value === undefined) return false;
-  if(typeof value === "boolean") return true;
-  if(typeof value === "number") return Number.isFinite(value);
-  const s=String(value).replace(/\u00a0/g," ").trim();
-  if(!s) return false;
-  if(/^NINCS\s+ADAT$/i.test(s)) return false;
-  if(s === "—" || s === "-") return false;
-  return true;
-}
-
-const VEHICLE_DATA_SOURCE_PRIORITY={
-  "VEHICLEPOSITIONS":10,
-  "FUTAR":20,
-  "WIN_REALTIME":30,
-  "WIN_ROUTE":35,
-  "WIN_DETAIL":40
-};
-
-const VEHICLE_MERGE_FIELDS=[
-  "forgalmi",
-  "vehicleType",
-  "blockId",
-  "blockVehicleNumber",
-  "forda",
-  "licensePlate",
-  "tripId",
-  "label"
-];
-
-function mergeVehicleData(target, source, sourceName="UNKNOWN"){
-  if(!target || !source) return false;
-
-  const priority=
-    VEHICLE_DATA_SOURCE_PRIORITY[String(sourceName||"").toUpperCase()] ?? 0;
-
-  if(!target.__vehicleMergePriority){
-    Object.defineProperty(target,"__vehicleMergePriority",{
-      value:{},
-      writable:true,
-      configurable:true,
-      enumerable:false
-    });
-  }
-
-  let changed=false;
-
-  for(const field of VEHICLE_MERGE_FIELDS){
-    const incoming=source[field];
-    if(!hasRealVehicleValue(incoming)) continue;
-
-    const current=target[field];
-    const oldPriority=Number(target.__vehicleMergePriority[field] ?? -1);
-
-    /*
-      Ugyanazon vagy magasabb prioritású valódi forrás frissíthet.
-      Alacsonyabb prioritású forrás viszont nem írhatja felül a
-      már megtalált, részletesebb valódi adatot.
-    */
-    if(!hasRealVehicleValue(current) || priority>=oldPriority){
-      if(String(current ?? "") !== String(incoming ?? "")) changed=true;
-      target[field]=incoming;
-      target.__vehicleMergePriority[field]=priority;
-    }
-  }
-
-  /* ALACSONYPADLÓS: a false/NEM is valódi adat, ezért külön kezeljük. */
-  if(source.lowFloor !== null && source.lowFloor !== undefined){
-    const oldPriority=Number(target.__vehicleMergePriority.lowFloor ?? -1);
-    if(target.lowFloor===null || target.lowFloor===undefined || priority>=oldPriority){
-      if(target.lowFloor !== source.lowFloor) changed=true;
-      target.lowFloor=source.lowFloor;
-      target.__vehicleMergePriority.lowFloor=priority;
-    }
-  }
-
-  return changed;
-}
-
-function setTripUpdateDelay(item, delay){
-  /* Késés/sietés kizárólag a valódi BKK TripUpdates útvonalról jöhet. */
-  if(!item) return false;
-  if(delay===null || delay===undefined || !Number.isFinite(Number(delay))) return false;
-  item.delaySeconds=Number(delay);
-  item.__delaySource="BKK_TRIP_UPDATES";
-  item.__delayUpdatedAt=Date.now();
-  return true;
-}
 
 /* ============================================================
    BKK FEED TESZT
@@ -3450,8 +3351,6 @@ async function testFeed(){
 
     for(const item of vehicleData){
       item.delaySeconds = null;
-      item.__delaySource = null;
-      item.__delayUpdatedAt = 0;
     }
 
     try{
@@ -3460,15 +3359,6 @@ async function testFeed(){
     }catch(e){
       lastTripFetchOK = false;
       logLine("TripUpdates HIBA: " + (e?.message || e));
-    }
-
-    /* FIX29: a TripUpdates után újra lefuttatjuk a célzott WinMenetrend-illesztést,
-       így a végső járműkártya már a késés + forgalmi + típus adatokkal készül. */
-    try{
-      winRealtimeLastFetch=0;
-      await updateWinRealtime();
-    }catch(e){
-      logLine("FIX29 WinMenetrend második illesztés HIBA: " + (e?.message || e));
     }
 
     /* A BKK badge itt is megmarad OK állapotban, ha a feed dekódolása sikerült. */
@@ -4687,9 +4577,11 @@ async function loadFutarVehicles(
 
 
       /*
-        BKK FUTÁR nem szolgáltat FORDA-t ezen az útvonalon.
-        A közös illesztő ezért nem töröl meglévő valódi FORDA-adatot.
+        BKK FORDA = NINCS ADAT.
       */
+
+      target.forda =
+        null;
 
 
       if(
@@ -6134,68 +6026,6 @@ function parseWinRealtimeHtml(html){
   return [];
 }
 
-
-function wmExtractMarkdownRows(text){
-  const out=[];
-  const lines=String(text||"").split(/\r?\n/).map(wmCleanText).filter(Boolean);
-  for(let i=0;i<lines.length;i++){
-    if(!lines[i].includes("|")) continue;
-    const h=lines[i].split("|").map(wmCleanText).filter(Boolean).map(x=>x.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""));
-    if(h.indexOf("forgalmi")<0 || h.indexOf("jarmu")<0) continue;
-    let j=i+1;
-    if(j<lines.length && /^\|?\s*-{2,}/.test(lines[j])) j++;
-    for(;j<lines.length;j++){
-      if(!lines[j].includes("|")) break;
-      const c=lines[j].split("|").map(wmCleanText).filter(Boolean);
-      if(c.length<h.length) continue;
-      const fi=h.indexOf("forgalmi"), ji=h.indexOf("jarmu"), ti=h.indexOf("jarmu tipus"), ri=h.indexOf("viszonylat");
-      const plateIdx=h.findIndex(x=>x==="jarmu" || x==="rendszam" || x==="license plate");
-      const plate=plateIdx>=0?c[plateIdx]:"";
-      const forgalmi=fi>=0?c[fi]:"";
-      const vehicleType=ti>=0?c[ti]:"";
-      if(!plate || !forgalmi) continue;
-      out.push({plate,forgalmi:forgalmi||null,vehicleType:vehicleType||null,route:ri>=0?c[ri]:null});
-    }
-    if(out.length) return out;
-  }
-  return out;
-}
-
-async function fetchWinRouteHistory(routeCode, plate){
-  if(!routeCode || !plate) return null;
-  const wanted=rtNorm(plate);
-  const url="https://online.winmenetrend.hu/futar/history/lines/"+encodeURIComponent(routeCode)+"?date="+localDateYmd();
-  try{
-    const r=await fetch(url,{cache:"no-store"});
-    if(r.ok){
-      const t=await r.text();
-      /* FONTOS: vonalszintű oldalon NEM vehetjük az első sort.
-         Előbb mindig a pontos, valós szerelvényazonosítót keressük. */
-      const rows=wmExtractMarkdownRows(t);
-      const hit=rows.find(x=>rtNorm(x.plate)===wanted);
-      if(hit) return {forgalmi:hit.forgalmi||null,vehicleType:hit.vehicleType||null,blockId:null,blockVehicleNumber:null,lowFloor:null};
-      const f=wmExtractFields(t);
-      /* Csak akkor használjuk a címkés mezőket, ha az oldal jármű-specifikus
-         adatot adott; vonalszintű oldalon az első táblázatsor nem elfogadható. */
-      if(f && (f.forgalmi||f.vehicleType)){
-        const compact=String(t||"").replace(/\s+/g," ");
-        if(compact.toUpperCase().includes(String(plate).toUpperCase())) return f;
-      }
-    }
-  }catch(e){}
-  try{
-    const proxy="https://r.jina.ai/http://online.winmenetrend.hu/futar/history/lines/"+encodeURIComponent(routeCode)+"?date="+localDateYmd();
-    const r=await fetch(proxy,{cache:"no-store"});
-    if(r.ok){
-      const t=await r.text();
-      const rows=wmExtractMarkdownRows(t);
-      const hit=rows.find(x=>rtNorm(x.plate)===rtNorm(plate));
-      if(hit) return {forgalmi:hit.forgalmi||null,vehicleType:hit.vehicleType||null,blockId:null,blockVehicleNumber:null,lowFloor:null};
-    }
-  }catch(e){}
-  return null;
-}
-
 async function fetchWinRealtimePage(){
   const direct="https://online.winmenetrend.hu/futar/vehicles?more_info=1";
   try{
@@ -6211,10 +6041,6 @@ async function fetchWinRealtimePage(){
     const r=await fetch(proxy,{cache:"no-store"});
     if(r.ok){
       const text=await r.text();
-      /* Jina HTML-t is visszaadhat: előbb HTML-táblából olvassunk,
-         csak utána próbáljuk a pipe-os szöveges formátumot. */
-      const parsedHtml=parseWinRealtimeHtml(text);
-      if(parsedHtml.length) return parsedHtml;
       const parsed=parseWinRealtimeText(text);
       if(parsed.length) return parsed;
     }
@@ -6241,26 +6067,6 @@ function renderRegionalRealtime(){
    Csak akkor kérünk részletes oldalt, ha a rendszám vagy a valódi D... TRIP
    már megvan a GTFS-RT járműnél. Nincs kitalált adat. */
 const winDetailCache = new Map();
-
-async function fetchWinRealtimeExact(plate){
-  const wanted=rtNorm(plate);
-  if(!wanted) return null;
-  const url="https://online.winmenetrend.hu/futar/vehicles?more_info=1";
-  try{
-    const r=await fetch(url,{cache:"no-store"});
-    if(r.ok){
-      const html=await r.text();
-      const rows=parseWinRealtimeHtml(html);
-      const hit=rows.find(x=>rtNorm(x.plate)===wanted);
-      if(hit) return hit;
-      const text=String(html||"").replace(/<[^>]+>/g,"\n");
-      const txtRows=parseWinRealtimeText(text);
-      return txtRows.find(x=>rtNorm(x.plate)===wanted)||null;
-    }
-  }catch(e){}
-  return null;
-}
-
 async function fetchWinDetailPage(url){
   if(winDetailCache.has(url)) return winDetailCache.get(url);
   let html="";
@@ -6287,30 +6093,7 @@ async function enrichOneVehicleFromWin(item){
   const trip=String(item.tripId||"").trim().toUpperCase();
   if(!plate && !/^D\d+$/i.test(trip)) return false;
 
-  let got=false;
   const urls=[];
-  const routeCode=wmRouteCode(item);
-
-  /* Elsőként a közvetlen Online járműtáblából kérjük le a pontos
-     szerelvényazonosítót. Ez különösen fontos HÉV-nél, ahol a rendszám
-     egy teljes, kötőjeles szerelvényazonosító. */
-  if(plate){
-    try{
-      const rr=await fetchWinRealtimeExact(plate);
-      if(rr){
-        if(mergeVehicleData(item,rr,"WIN_REALTIME")) got=true;
-      }
-    }catch(e){}
-  }
-
-  if(routeCode && plate){
-    try{
-      const rf=await fetchWinRouteHistory(routeCode,plate);
-      if(rf){
-        if(mergeVehicleData(item,rf,"WIN_ROUTE")) got=true;
-      }
-    }catch(e){}
-  }
   if(isLikelyBusPlate(plate)){
     urls.push("https://online.winmenetrend.hu/futar/history/vehicles/"+encodeURIComponent(plate)+"?date="+localDateYmd());
   }
@@ -6318,10 +6101,14 @@ async function enrichOneVehicleFromWin(item){
     urls.push("https://online.winmenetrend.hu/futar/trip/"+encodeURIComponent(trip)+"?date="+localDateYmd());
   }
 
+  let got=false;
   for(const u of urls){
     const f=await fetchWinDetailPage(u);
     if(!f) continue;
-    if(mergeVehicleData(item,f,"WIN_DETAIL")) got=true;
+    if(f.forgalmi && !item.forgalmi){ item.forgalmi=f.forgalmi; got=true; }
+    if(f.vehicleType && !item.vehicleType){ item.vehicleType=f.vehicleType; got=true; }
+    if(f.blockId && !item.blockId){ item.blockId=f.blockId; got=true; }
+    if(f.blockVehicleNumber && !item.blockVehicleNumber){ item.blockVehicleNumber=f.blockVehicleNumber; got=true; }
     if(f.lowFloor!==null && f.lowFloor!==undefined && (item.lowFloor===null || item.lowFloor===undefined)){ item.lowFloor=f.lowFloor; got=true; }
   }
   return got;
@@ -6332,9 +6119,6 @@ async function updateWinRealtime(){
   winRealtimeLastFetch=Date.now();
   const rows=await fetchWinRealtimePage();
   if(!rows.length){
-    /* Ne zárjuk ki 120 másodpercre a következő próbálkozást,
-       ha a WinMenetrend pillanatnyilag nem olvasható. */
-    winRealtimeLastFetch=0;
     const st=$("regionalRealtimeStatus"); if(st) st.textContent="WinMenetrend realtime: NINCS ADAT / CORS vagy forrás-hiba";
     return;
   }
@@ -6429,8 +6213,17 @@ async function updateWinRealtime(){
       continue;
     }
 
-    /* KÖZÖS ILLESZTÉSI KAPU: WinMenetrend realtime. */
-    mergeVehicleData(item,r,"WIN_REALTIME");
+    /* Csak a WinMenetrend valódi,
+       explicit FORGALMI / JÁRMŰTÍPUS mezője kerül át. */
+    if(r.forgalmi){
+      item.forgalmi =
+        r.forgalmi;
+    }
+
+    if(r.vehicleType){
+      item.vehicleType =
+        r.vehicleType;
+    }
 
     if(
       r.trip &&
@@ -6652,45 +6445,6 @@ function wmExtractFields(html){
     }
   }
 
-  /*
-     FONTOS FIX28:
-     A WinMenetrend járműtörténeti oldalán a FORGALMI nem
-     "Forgalmi szám: ..." feliratként szerepel, hanem a
-     Kezdet | Vég | Viszonylat | Forgalmi táblázatban.
-     Ugyanez igaz az online járműtáblára is.
-     A táblázatos, valódi értéket ezért külön kiolvassuk.
-  */
-  for(const table of [...doc.querySelectorAll("table")]){
-    const trs=[...table.querySelectorAll("tr")];
-    if(!trs.length) continue;
-    let header=[];
-    let headerRow=null;
-    for(const tr of trs){
-      const cells=[...tr.querySelectorAll("th,td")].map(x=>wmCleanText(x.textContent));
-      const n=cells.map(norm);
-      if(n.some(x=>x==="forgalmi") && (n.some(x=>x==="viszonylat") || n.some(x=>x==="jarat") || n.some(x=>x==="jarmu"))){
-        header=cells; headerRow=tr; break;
-      }
-    }
-    if(!headerRow) continue;
-    const hn=header.map(norm);
-    const fi=hn.indexOf("forgalmi");
-    const vi=hn.indexOf("viszonylat")>=0 ? hn.indexOf("viszonylat") : hn.indexOf("jarat");
-    const ti=hn.indexOf("jarmu tipus");
-    const li=hn.indexOf("alacsonypadlos");
-    for(const tr of trs){
-      if(tr===headerRow || tr.querySelector("th")) continue;
-      const c=[...tr.querySelectorAll("td")].map(x=>wmCleanText(x.textContent));
-      if(!c.length) continue;
-      if(!result.forgalmi && fi>=0 && c[fi]) result.forgalmi=c[fi];
-      if(!result.vehicleType && ti>=0 && c[ti]) result.vehicleType=c[ti];
-      if(result.lowFloor===null && li>=0 && c[li]){
-        if(/^(igen|yes|true|1)$/i.test(c[li])) result.lowFloor=true;
-        else if(/^(nem|no|false|0)$/i.test(c[li])) result.lowFloor=false;
-      }
-    }
-  }
-
   /* Egysoros HTML/text tartalékok. */
   if(!result.forgalmi){
     const m=text.match(/Forgalmi\s*(?:szám|szam)?\s*:?\s*([A-Za-z0-9_/-]+)/i);
@@ -6699,13 +6453,6 @@ function wmExtractFields(html){
   if(!result.vehicleType){
     const m=text.match(/Jármű\s*típus\s*:?\s*([^\n|<]+?)(?=\s+(?:Telephely|Forgalmi|Dátum|Block|Blokk|Jármű#)|\s*$)/i);
     if(m) result.vehicleType=wmCleanText(m[1]);
-  }
-  if(!result.forgalmi || !result.vehicleType){
-    const rows=wmExtractMarkdownRows(text);
-    if(rows.length){
-      if(!result.forgalmi) result.forgalmi=rows[0].forgalmi||null;
-      if(!result.vehicleType) result.vehicleType=rows[0].vehicleType||null;
-    }
   }
   return result;
 }
@@ -7815,7 +7562,10 @@ window.extractFutarVehicles = function(json){
         /* 3. TRIP */
         if(!r&&t) r=window.winRealtimeRows.find(x=>normTrip(x.trip)===t)||null;
         if(!r) continue;
-        if(typeof mergeVehicleData==="function") mergeVehicleData(item,r,"WIN_REALTIME");
+        if(r.forgalmi && !item.forgalmi) item.forgalmi=r.forgalmi;
+        if(r.vehicleType && !item.vehicleType) item.vehicleType=r.vehicleType;
+        if(r.trip && !item.tripId) item.tripId=r.trip;
+        if(r.label && (!item.label || item.label==="")) item.label=r.label;
         n++;
       }
       if(n && typeof renderVehicles==='function') renderVehicles();
