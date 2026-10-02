@@ -2359,6 +2359,9 @@ async function fetchTripUpdates(){
              verzióban ellenőrizhető megbízhatóan csak hasOwnProperty-val.
              Először a dekódolt értéket vizsgáljuk, de csak akkor fogadjuk el,
              ha a mező ténylegesen definiált és numerikus. */
+          /* protobufjs decode után csak a ténylegesen kódolt scalar mezőt
+             fogadjuk el. A hiányzó delay nem válhat automatikusan 0-vá. */
+          if(!Object.prototype.hasOwnProperty.call(part,"delay")) return null;
           if(part.delay === null || part.delay === undefined) return null;
           const n=Number(part.delay);
           if(!Number.isFinite(n)) return null;
@@ -7336,12 +7339,16 @@ document.addEventListener(
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ WINMENETREND KAPCSOLAT FIX41 REAL ADATKAPCSOLAT + OSM indul."
+      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ WINMENETREND KAPCSOLAT FIX41 REAL ADATKAPCSOLAT – JÓ ÚTVONAL + 4 ADAT indul."
     );
 
 
     logLine(
       "NINCS KITALÁLT JÁRMŰADAT."
+    );
+
+    logLine(
+      "4 ADATÚTVONAL JAVÍTVA: UTAS-JÁRAT → WinMenetrend, TRIP+STOP+SORREND → TripUpdates, FORGALMI → ALACSONYPADLÓS."
     );
 
 
@@ -7965,13 +7972,23 @@ window.extractFutarVehicles = function(json){
   function nk(v){ return pk(v); }
   function rk(v){ return String(v||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,''); }
   function routeCandidates(v){
-    const x=rk(v); if(!x) return [];
-    const a=[x];
-    if(/^\d+$/.test(x)){
-      if(x.length>1 && x.endsWith('0')) a.push(x.slice(0,-1));
-      else a.push(x+'0');
+    const raw=String(v||'').trim();
+    if(!raw) return [];
+    const tokens=[raw,...(raw.match(/[A-Za-z0-9]+/g)||[])];
+    const out=[];
+    for(const token of tokens){
+      const x=rk(token);
+      if(!x) continue;
+      if(!out.includes(x)) out.push(x);
+      if(/^\d+$/.test(x)){
+        if(x.length>1 && x.endsWith('0')){
+          const y=x.slice(0,-1); if(y && !out.includes(y)) out.push(y);
+        }else{
+          const y=x+'0'; if(!out.includes(y)) out.push(y);
+        }
+      }
     }
-    return [...new Set(a)];
+    return out;
   }
   function log(msg){ try{ if(typeof logLine==='function') logLine(msg); }catch(e){} }
 
@@ -8241,7 +8258,7 @@ window.extractFutarVehicles = function(json){
       for(const item of queue){
         if(checked>=priorityLimited.length+batchSize) break;
         checked++;
-        const data=await exactWin(item.licensePlate,item.routeId||item.routeShortName||item.route||'');
+        const data=await exactWin(item.licensePlate,item.routeShortName||item.route||item.routeId||'');
         if(!data) continue;
         const before={forgalmi:item.forgalmi,vehicleType:item.vehicleType,blockId:item.blockId,blockVehicleNumber:item.blockVehicleNumber};
         const changed=window.mergeVehicleData(item,data);
@@ -8274,7 +8291,7 @@ window.extractFutarVehicles = function(json){
   window.fix35EnrichVehicle=async function(item){
     if(!item || !real(item.licensePlate)) return false;
     try{
-      const data=await exactWin(item.licensePlate,item.routeId||item.routeShortName||item.route||'');
+      const data=await exactWin(item.licensePlate,item.routeShortName||item.route||item.routeId||'');
       if(!data) return false;
       const changed=window.mergeVehicleData(item,data);
       if(changed){
@@ -8294,6 +8311,23 @@ window.extractFutarVehicles = function(json){
 
   window.fix35EnrichCurrent=run;
   window.updateWinRealtime=run;
+
+  /* A kijelölt/kártyán látható járműnél a célzott WinMenetrend-lekérés
+     mindig a UTAS (routeShortName) útvonalat próbálja először. */
+  window.fix35EnrichVisible=async function(){
+    try{
+      if(!Array.isArray(window.vehicleData)) return 0;
+      const visible=window.vehicleData.filter(v=>v && v._visible && real(v.licensePlate));
+      let n=0;
+      for(const item of visible.slice(0,3)){
+        if(await window.fix35EnrichVehicle(item)) n++;
+      }
+      if(n){
+        try{ if(typeof safeRenderAll==='function') safeRenderAll('FIX41 4ADAT'); else if(typeof renderVehicles==='function') renderVehicles(); }catch(e){}
+      }
+      return n;
+    }catch(e){ log('FIX41 4ADAT célzott HIBA: '+(e?.message||e)); return 0; }
+  };
 
   /* MOBIL STABIL: iPhone-on nem indul háttérben WinMenetrend-körforgó.
      A BKK valódi feed betöltése és a TripUpdates ettől független.
