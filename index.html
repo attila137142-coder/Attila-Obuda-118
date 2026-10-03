@@ -8515,3 +8515,61 @@ window.extractFutarVehicles = function(json){
   log42("Közvetlen JÁRMŰOBJEKTUM → KÁRTYA adatút bekapcsolva.");
 })();
 </script>
+
+
+<!-- FIX43 – JÁRMŰTÍPUS VÉDELEM + KÖZVETLEN OBJEKTUMFRISSÍTÉS
+     A FIX42-ben a VehiclePositions alapból helyesen NINCS ADAT volt,
+     ezért a valódi típust kizárólag a működő WinMenetrend/FUTÁR forrásból
+     töltjük vissza. Soha nem használunk kitalált vagy általános type mezőt. -->
+<script>
+(function(){
+  "use strict";
+  const real = v => v !== null && v !== undefined && String(v).trim() !== "" && String(v).trim() !== "NINCS ADAT";
+  const pk = v => String(v||"").toUpperCase().replace(/[\\s-]/g,"").trim();
+
+  async function restoreRealVehicleType(){
+    try{
+      if(!Array.isArray(window.vehicleData) || !window.vehicleData.length) return 0;
+      if(typeof window.fix35EnrichVehicle !== "function") return 0;
+
+      let changed=0;
+      const visible = window.vehicleData.filter(v => v && real(v.licensePlate) && (!real(v.vehicleType) || !real(v.forgalmi)));
+      const max = window.innerWidth <= 700 ? 5 : 12;
+
+      for(const item of visible.slice(0,max)){
+        const beforeType=item.vehicleType;
+        const beforeForgalmi=item.forgalmi;
+        try{
+          await window.fix35EnrichVehicle(item);
+        }catch(e){ continue; }
+        if(item.vehicleType !== beforeType || item.forgalmi !== beforeForgalmi) changed++;
+      }
+
+      if(changed && typeof renderVehicles === "function") renderVehicles();
+      return changed;
+    }catch(e){
+      try{ if(typeof logLine === "function") logLine("FIX43 JÁRMŰTÍPUS HIBA: "+(e.message||e)); }catch(x){}
+      return 0;
+    }
+  }
+
+  /* A már működő FIX41/35 célzott forrás marad az egyetlen adatforrás. */
+  window.fix43RestoreRealVehicleType = restoreRealVehicleType;
+
+  document.addEventListener("DOMContentLoaded", function(){
+    setTimeout(function(){ restoreRealVehicleType(); }, 1800);
+  });
+
+  /* Ha egy későbbi realtime frissítés új járműobjektumokat rak be,
+     rövid késleltetéssel újra csak a hiányos kártyákat ellenőrizzük. */
+  let last=0;
+  setInterval(function(){
+    if(Date.now()-last < 25000) return;
+    if(!Array.isArray(window.vehicleData) || !window.vehicleData.length) return;
+    const hasMissing=window.vehicleData.some(v=>v && real(v.licensePlate) && !real(v.vehicleType));
+    if(!hasMissing) return;
+    last=Date.now();
+    restoreRealVehicleType();
+  },10000);
+})();
+</script>
