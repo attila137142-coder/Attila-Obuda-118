@@ -2667,18 +2667,39 @@ function parseVehicleFeed(buffer){
     );
 
 
-  const feed =
-    FeedMessage.decode(
-      new Uint8Array(buffer)
-    );
+  const bytes = new Uint8Array(buffer);
 
+  let feed;
+  try{
+    feed = FeedMessage.decode(bytes);
+  }catch(err){
+    logLine(
+      "VehiclePositions protobuf DECODE HIBA: " +
+      (err?.message || err) +
+      " | byte=" + bytes.byteLength
+    );
+    throw err;
+  }
+
+  const entities = Array.isArray(feed.entity) ? feed.entity : [];
+
+  /* FIX REAL-DATA AUDIT: a 200-as, nem üres válasz önmagában nem jelent
+     járműadatot. Pontosan megmutatjuk, mit adott vissza a dekóder. */
+  logLine(
+    "VehiclePositions decode audit: byte=" +
+    bytes.byteLength +
+    " | entity=" + entities.length +
+    " | feedHeader=" + (feed.header ? "OK" : "NINCS")
+  );
 
   const out = [];
-
+  let entityWithVehicle = 0;
+  let entityWithPosition = 0;
+  let rejectedNoPosition = 0;
 
   for(
     const entity of
-    (feed.entity || [])
+    entities
   ){
 
     const v =
@@ -2688,7 +2709,7 @@ function parseVehicleFeed(buffer){
     if(!v){
       continue;
     }
-
+    entityWithVehicle++;
 
     const pos =
       v.position;
@@ -2697,6 +2718,7 @@ function parseVehicleFeed(buffer){
     const trip =
       v.trip;
 
+    if(pos) entityWithPosition++;
 
     const vehicle =
       v.vehicle;
@@ -2718,6 +2740,7 @@ function parseVehicleFeed(buffer){
       !Number.isFinite(lat) ||
       !Number.isFinite(lon)
     ){
+      rejectedNoPosition++;
       continue;
     }
 
@@ -2930,6 +2953,14 @@ function parseVehicleFeed(buffer){
 
   }
 
+
+  logLine(
+    "VehiclePositions parser audit: entity=" + entities.length +
+    " | vehicle=" + entityWithVehicle +
+    " | position=" + entityWithPosition +
+    " | GPS=" + out.length +
+    " | elutasítva=" + rejectedNoPosition
+  );
 
   return out;
 
@@ -3283,8 +3314,7 @@ async function testFeed(){
     logLine(
       "BKK feed: nincs API-kulcs."
     );
-
-
+    feedBusy = false;
     return;
 
   }
@@ -6969,6 +6999,27 @@ function vehicleCard(
     </div>
 
   `;
+
+  /* FIX PANEL-RENDSZER: a megjelenítés sorrendje most közvetlenül a
+     felhasználó által kért sorrendben történik, miközben az adatforrások
+     és a mezők nevei változatlanok maradnak. */
+  const wantedFieldOrder = [
+    "JÁRAT", "LABEL", "MEGÁLLÓ", "STOP ID", "STOP SORREND",
+    "ELTÉRÉS", "JÁRMŰTÍPUS", "ALACSONYPADLÓS", "RENDSZÁM",
+    "FORGALMI", "SEBESSÉG", "SAJÁT GPS", "TRIP",
+    "BLOKK AZONOSÍTÓ", "JÁRMŰ#", "FORDA", "JÁRMŰ ID", "GPS", "WINMENETREND"
+  ];
+  const fieldNodes = [...card.querySelectorAll(":scope > .field")];
+  const fieldMap = new Map(fieldNodes.map(n => [
+    String(n.querySelector("b")?.textContent || "").trim().toUpperCase(), n
+  ]));
+  for(const label of wantedFieldOrder){
+    const node = fieldMap.get(label);
+    if(node) card.appendChild(node);
+  }
+  for(const node of fieldNodes){
+    if(node.parentElement === card) card.appendChild(node);
+  }
 
 
   card.addEventListener(
