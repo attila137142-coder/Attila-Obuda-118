@@ -2479,6 +2479,13 @@ function resolveVehicleDelay(item){
       }
       if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
     }
+
+    /* Ha a TripUpdates a járműhöz tartozó összes stopnál ugyanazt
+       a valódi késést közli, az stop-sorrendtől függetlenül biztonságos
+       járműszintű találat. Ha több különböző érték van, nem találunk ki
+       választást: marad NINCS ADAT. */
+    const uniq=[...new Set(arr.filter(x=>Number.isFinite(x.delay)).map(x=>Number(x.delay)))];
+    if(uniq.length===1) return uniq[0];
   }
 
   if(tripId){
@@ -6057,19 +6064,40 @@ const winDetailCache = new Map();
 async function fetchWinRealtimeExact(plate){
   const wanted=rtNorm(plate);
   if(!wanted) return null;
-  const url="https://online.winmenetrend.hu/futar/vehicles?more_info=1";
-  try{
-    const r=await fetch(url,{cache:"no-store"});
-    if(r.ok){
-      const html=await r.text();
-      const rows=parseWinRealtimeHtml(html);
-      const hit=rows.find(x=>rtNorm(x.plate)===wanted);
-      if(hit) return hit;
-      const text=String(html||"").replace(/<[^>]+>/g,"\n");
-      const txtRows=parseWinRealtimeText(text);
-      return txtRows.find(x=>rtNorm(x.plate)===wanted)||null;
-    }
-  }catch(e){}
+  const urls=[
+    "https://online.winmenetrend.hu/futar/vehicles?more_info=1",
+    "https://online.winmenetrend.hu/futar/vehicles?more_info=2"
+  ];
+  for(const url of urls){
+    try{
+      const r=await fetch(url,{cache:"no-store",credentials:"omit"});
+      if(r.ok){
+        const html=await r.text();
+        const rows=parseWinRealtimeHtml(html);
+        const hit=rows.find(x=>rtNorm(x.plate)===wanted);
+        if(hit) return hit;
+        const text=String(html||"").replace(/<[^>]+>/g,"\n");
+        const txtRows=parseWinRealtimeText(text);
+        const hit2=txtRows.find(x=>rtNorm(x.plate)===wanted);
+        if(hit2) return hit2;
+      }
+    }catch(e){}
+    /* Ugyanennek a hivatalos WinMenetrend oldalnak kompatibilitási
+       olvasási útja; adatot nem generál, csak a forrás HTML-jét olvassa. */
+    try{
+      const proxy="https://r.jina.ai/http://"+url.replace(/^https?:\/\//,"");
+      const r=await fetch(proxy,{cache:"no-store"});
+      if(r.ok){
+        const html=await r.text();
+        const rows=parseWinRealtimeHtml(html);
+        const hit=rows.find(x=>rtNorm(x.plate)===wanted);
+        if(hit) return hit;
+        const txtRows=parseWinRealtimeText(html);
+        const hit2=txtRows.find(x=>rtNorm(x.plate)===wanted);
+        if(hit2) return hit2;
+      }
+    }catch(e){}
+  }
   return null;
 }
 
@@ -6125,7 +6153,10 @@ async function enrichOneVehicleFromWin(item){
       }
     }catch(e){}
   }
-  if(isLikelyBusPlate(plate)){
+  /* Nem csak buszoknál kell a járműtörténet.
+     A WinMenetrend valódi forgalmi/típus táblája villamosoknál,
+     troliknál és HÉV-nél is itt érhető el. */
+  if(plate){
     urls.push("https://online.winmenetrend.hu/futar/history/vehicles/"+encodeURIComponent(plate)+"?date="+localDateYmd());
   }
   if(/^D\d+$/i.test(trip)){
@@ -7976,15 +8007,30 @@ window.extractFutarVehicles = function(json){
     if(!raw) return [];
     const tokens=[raw,...(raw.match(/[A-Za-z0-9]+/g)||[])];
     const out=[];
+    const add=x=>{x=rk(x);if(x&&!out.includes(x))out.push(x);};
     for(const token of tokens){
       const x=rk(token);
       if(!x) continue;
-      if(!out.includes(x)) out.push(x);
+      add(x);
       if(/^\d+$/.test(x)){
-        if(x.length>1 && x.endsWith('0')){
-          const y=x.slice(0,-1); if(y && !out.includes(y)) out.push(y);
-        }else{
-          const y=x+'0'; if(!out.includes(y)) out.push(y);
+        /* A WinMenetrend vonalkódja nem egyszerűen route+"0".
+           Példák a valódi oldalakból: 3→3030, 4→3040, 6→3060,
+           14→3140, 22→0220, 28A→3281. */
+        if(x.length===1) add("30"+x+"0");
+        if(x.length===2){
+          add(x.padStart(3,"0")+"0");
+          add("3"+x+"0");
+        }
+        if(x.length===3) add(x+"0");
+        if(x.length>1 && x.endsWith("0")) add(x.slice(0,-1));
+        add(x+"0");
+      }else if(/^\d+[A-Z]$/i.test(x)){
+        const m=x.match(/^(\d+)([A-Z])$/i);
+        if(m){
+          const n=m[1],c=m[2].toUpperCase();
+          const cnum=c.charCodeAt(0)-64;
+          add(n.padStart(3,"0")+String(cnum));
+          add("3"+n+String(cnum));
         }
       }
     }
@@ -8577,7 +8623,7 @@ window.extractFutarVehicles = function(json){
 
 <script>
 /* ============================================================
-   FIX47 – VALÓDI 4 ADATÚTVONAL, EGYETLEN JÁRMŰOBJEKTUM
+   FIX48 – VALÓDI 4 ADATÚTVONAL, EGYETLEN JÁRMŰOBJEKTUM
    - VehiclePositions: alap jármű
    - TripUpdates: ELTÉRÉS
    - FUTÁR / WinMenetrend: FORGALMI + JÁRMŰTÍPUS + ALACSONYPADLÓS,
@@ -8747,6 +8793,28 @@ window.extractFutarVehicles = function(json){
     }catch(e){}
     busy=false;
   },30000);
+})();
+</script>
+
+<!-- FIX48 – VALÓDI ADATÚTVONAL JAVÍTÁSOK -->
+<script>
+(function(){
+  "use strict";
+  function real(v){return v!==null&&v!==undefined&&String(v).trim()!==""&&String(v).trim()!=="NINCS ADAT";}
+  function log48(m){try{if(typeof logLine==='function')logLine("FIX48: "+m);}catch(e){}}
+  async function directVisible(){
+    if(!Array.isArray(vehicleData)||!vehicleData.length)return;
+    const visible=vehicleData.filter(v=>v&&v.licensePlate&&(!real(v.forgalmi)||!real(v.vehicleType)||v.lowFloor===null||v.lowFloor===undefined));
+    let n=0;
+    for(const v of visible.slice(0,window.innerWidth<=700?6:15)){
+      try{if(await enrichOneVehicleFromWin(v))n++;}catch(e){log48("WinMenetrend HIBA: "+(e.message||e));}
+    }
+    let d=0,f=0,t=0,l=0;
+    for(const v of vehicleData){if(Number.isFinite(v.delaySeconds))d++;if(real(v.forgalmi))f++;if(real(v.vehicleType))t++;if(v.lowFloor!==null&&v.lowFloor!==undefined)l++;}
+    try{safeRenderAll("FIX48 közvetlen járműobjektum");}catch(e){try{renderVehicles();}catch(x){}}
+    log48("AUDIT: ELTÉRÉS="+d+" | FORGALMI="+f+" | JÁRMŰTÍPUS="+t+" | ALACSONYPADLÓS="+l+" | új Win találat="+n);
+  }
+  document.addEventListener("DOMContentLoaded",()=>setTimeout(directVisible,4500));
 })();
 </script>
 </body>
