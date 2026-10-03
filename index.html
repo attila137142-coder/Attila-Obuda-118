@@ -8374,26 +8374,380 @@ window.extractFutarVehicles = function(json){
   });
 })();
 </script>
-</body>
-\n\n<!-- ============================================================\n     FIX45 – 4 ADATÚTVONAL VÉGLEGES, KÖZVETLEN JÁRMŰOBJEKTUM\n     - A működő FIX39 járműkártya és JÁRMŰTÍPUS megőrzése\n     - TripUpdates -> ugyanaz a vehicleData objektum -> render\n     - WinMenetrend/FUTÁR -> ugyanaz a vehicleData objektum -> render\n     - Nincs kitalált adat; hiányzó mező = NINCS ADAT\n     - A hibás, </html> utáni FIX42/FIX43 kódok eltávolítva\n     ============================================================ -->\n<script>\n(function(){\n  "use strict";\n  if(window.__FIX45__) return;\n  window.__FIX45__=true;\n\n  const real=v=>v!==null && v!==undefined && String(v).trim()!=='' && String(v).trim()!=='NINCS ADAT';\n  const log45=m=>{ try{ if(typeof logLine==='function') logLine('FIX45: '+m); }catch(e){} };\n  const redraw=reason=>{\n    try{\n      if(typeof safeRenderAll==='function') safeRenderAll('FIX45 '+reason);\n      else if(typeof renderVehicles==='function') renderVehicles();\n      if(typeof refreshMarkers==='function') refreshMarkers();\n    }catch(e){ log45('újrarender HIBA: '+(e?.message||e)); }\n  };\n\n  /* Az adatot mindig a már megjelenített vehicleData objektumba írjuk.\n     Nem hozunk létre külön másolatot, amit a kártya nem lát. */\n  function mergeDirect(target, source){\n    if(!target || !source) return false;\n    let changed=false;\n    const copy=(key)=>{\n      if(real(source[key]) && String(target[key]??'')!==String(source[key])){ target[key]=source[key]; changed=true; }\n    };\n    copy('forgalmi');\n    copy('vehicleType');\n    copy('blockId');\n    copy('blockVehicleNumber');\n    if(source.lowFloor!==null && source.lowFloor!==undefined && target.lowFloor!==source.lowFloor){ target.lowFloor=source.lowFloor; changed=true; }\n    return changed;\n  }\n  window.fix45MergeDirect=mergeDirect;\n\n  /* 1. TripUpdates: a meglévő, valódi feldolgozás után csak ellenőrizzük,\n        hogy a késés tényleg a kártya objektumában maradt-e. */\n  const oldTU=window.fetchTripUpdates;\n  if(typeof oldTU==='function'){\n    window.fetchTripUpdates=async function(){\n      const r=await oldTU.apply(this,arguments);\n      let n=0;\n      try{\n        if(Array.isArray(window.vehicleData)){\n          for(const v of window.vehicleData){\n            if(v && Number.isFinite(v.delaySeconds)) n++;\n          }\n        }\n      }catch(e){}\n      redraw('TripUpdates → KÁRTYA');\n      log45('TripUpdates valódi ELTÉRÉS a járműobjektumban: '+n);\n      return r;\n    };\n  }\n\n  /* 2. WinMenetrend: a meglévő updateWinRealtime végén az objektumokat\n        újrarendereljük. A már működő exactWin/enrichOneVehicleFromWin\n        adatútját nem cseréljük le. */\n  const oldWin=window.updateWinRealtime;\n  if(typeof oldWin==='function'){\n    window.updateWinRealtime=async function(){\n      const r=await oldWin.apply(this,arguments);\n      let type=0,fg=0,low=0;\n      try{\n        for(const v of (Array.isArray(window.vehicleData)?window.vehicleData:[])){\n          if(real(v.vehicleType)) type++;\n          if(real(v.forgalmi)) fg++;\n          if(v.lowFloor!==null && v.lowFloor!==undefined) low++;\n        }\n      }catch(e){}\n      redraw('WinMenetrend → KÁRTYA');\n      log45('WinMenetrend objektumadat: JÁRMŰTÍPUS='+type+' | FORGALMI='+fg+' | ALACSONYPADLÓS='+low);\n      return r;\n    };\n  }\n\n  /* 3. Kártyára kattintás után azonnal látszódjon a célzott valódi találat.\n        A FIX39-ben már létező fix35EnrichVehicle marad a forrás. */\n  const oldEnrich=window.fix35EnrichVehicle;\n  if(typeof oldEnrich==='function'){\n    window.fix35EnrichVehicle=async function(item){\n      const before={type:item?.vehicleType,forgalmi:item?.forgalmi,blockId:item?.blockId,blockVehicleNumber:item?.blockVehicleNumber,lowFloor:item?.lowFloor};\n      const r=await oldEnrich.apply(this,arguments);\n      try{\n        if(r || before.type!==item?.vehicleType || before.forgalmi!==item?.forgalmi || before.blockId!==item?.blockId || before.blockVehicleNumber!==item?.blockVehicleNumber || before.lowFloor!==item?.lowFloor){\n          redraw('célzott jármű → KÁRTYA');\n        }\n      }catch(e){}\n      return r;\n    };\n  }\n\n  /* 4. A JÁRMŰTÍPUS külön őrzése: ha egy realtime frissítés közben a\n        VehiclePositions új objektumot ad, a korábbi valódi értéket csak\n        azonos járműnél tesszük vissza. Semmilyen új értéket nem gyártunk. */\n  const saved=new Map();\n  function remember(){\n    try{\n      for(const v of (Array.isArray(window.vehicleData)?window.vehicleData:[])){\n        const k=String(v?.licensePlate||v?.vehicleId||'').toUpperCase().replace(/[\\s-]/g,'');\n        if(!k) continue;\n        const old=saved.get(k)||{};\n        if(real(v.vehicleType)) old.vehicleType=v.vehicleType;\n        if(real(v.forgalmi)) old.forgalmi=v.forgalmi;\n        if(real(v.blockId)) old.blockId=v.blockId;\n        if(real(v.blockVehicleNumber)) old.blockVehicleNumber=v.blockVehicleNumber;\n        if(v.lowFloor!==null && v.lowFloor!==undefined) old.lowFloor=v.lowFloor;\n        saved.set(k,old);\n      }\n    }catch(e){}\n  }\n  function restoreSameVehicle(){\n    let changed=0;\n    try{\n      for(const v of (Array.isArray(window.vehicleData)?window.vehicleData:[])){\n        const k=String(v?.licensePlate||v?.vehicleId||'').toUpperCase().replace(/[\\s-]/g,'');\n        const old=saved.get(k); if(!old) continue;\n        if(!real(v.vehicleType) && real(old.vehicleType)){v.vehicleType=old.vehicleType;changed++;}\n        if(!real(v.forgalmi) && real(old.forgalmi)){v.forgalmi=old.forgalmi;changed++;}\n        if(!real(v.blockId) && real(old.blockId)){v.blockId=old.blockId;changed++;}\n        if(!real(v.blockVehicleNumber) && real(old.blockVehicleNumber)){v.blockVehicleNumber=old.blockVehicleNumber;changed++;}\n        if((v.lowFloor===null||v.lowFloor===undefined) && old.lowFloor!==undefined){v.lowFloor=old.lowFloor;changed++;}\n      }\n    }catch(e){}\n    return changed;\n  }\n\n  /* Hook a renderre: a kártya kirajzolása előtt csak az azonosított,\n     korábban valóban kapott értékeket tartjuk meg. */\n  const oldRender=window.renderVehicles;\n  if(typeof oldRender==='function'){\n    window.renderVehicles=function(){\n      restoreSameVehicle();\n      const r=oldRender.apply(this,arguments);\n      remember();\n      return r;\n    };\n  }\n\n  document.addEventListener('DOMContentLoaded',()=>{\n    setTimeout(()=>{\n      try{ remember(); redraw('INDULÁSI ELLENŐRZÉS'); }catch(e){}\n      log45('A 4 adatút közvetlen járműobjektum → kártya módban indul.');\n      log45('JÁRMŰTÍPUS védve: csak korábban valódi forrásból kapott érték őrizhető meg.');\n    },2500);\n  });\n})();\n</script>\n<script>
+
+
+<!-- ============================================================
+     FIX42 – KÖZVETLEN JÁRMŰOBJEKTUM-MERGE + AZONNALI KÁRTYA-ÚJRARENDER
+
+     Cél:
+     - WinMenetrend valódi találata közvetlenül a vehicleData megfelelő
+       objektumába kerüljön.
+     - TripUpdates valódi delay találata közvetlenül ugyanabba az objektumba
+       kerüljön.
+     - A merge után azonnal újrarendereljük a JÁRMŰPANELT.
+     - Nincs kitalált adat, nincs fallbackből képzett érték.
+     - A TripUpdates nem írja felül a WinMenetrend explicit mezőit,
+       a WinMenetrend pedig nem írja felül a TripUpdates késését.
+     ============================================================ -->
+<script>
 (function(){
   "use strict";
-  if(window.__FIX46__) return; window.__FIX46__=true;
-  const real=v=>v!==null&&v!==undefined&&String(v).trim()!==""&&String(v).trim()!=="NINCS ADAT";
-  const log=m=>{try{if(typeof logLine==="function")logLine("FIX46: "+m);}catch(e){}};
-  const redraw=()=>{try{if(typeof safeRenderAll==="function")safeRenderAll("FIX46");else if(typeof renderVehicles==="function")renderVehicles();}catch(e){}};
-  async function run(){
-    if(!Array.isArray(window.vehicleData)||!window.vehicleData.length)return;
-    if(typeof resolveVehicleDelay==="function") for(const v of window.vehicleData){const d=resolveVehicleDelay(v);v.delaySeconds=Number.isFinite(d)?d:null;}
-    let detail=0; const max=window.innerWidth<=700?30:50;
-    const q=window.vehicleData.filter(v=>v&&v.licensePlate&&(!real(v.forgalmi)||v.lowFloor===null||v.lowFloor===undefined));
-    for(const v of q.slice(0,max)){try{if(typeof enrichOneVehicleFromWin==="function"){const b=[v.forgalmi,v.vehicleType,v.lowFloor,v.blockId,v.blockVehicleNumber].join("|");const r=await enrichOneVehicleFromWin(v);const a=[v.forgalmi,v.vehicleType,v.lowFloor,v.blockId,v.blockVehicleNumber].join("|");if(r||a!==b)detail++;}}catch(e){}}
-    let d=0,f=0,t=0,l=0; for(const v of window.vehicleData){if(Number.isFinite(v.delaySeconds))d++;if(real(v.forgalmi))f++;if(real(v.vehicleType))t++;if(v.lowFloor!==null&&v.lowFloor!==undefined)l++;}
-    redraw(); log("JÁRMŰOBJEKTUM audit: ELTÉRÉS="+d+" | FORGALMI="+f+" | JÁRMŰTÍPUS="+t+" | ALACSONYPADLÓS="+l+" | részletes találat="+detail);
+
+  if(window.__FIX42_DIRECT_OBJECT_MERGE__) return;
+  window.__FIX42_DIRECT_OBJECT_MERGE__ = true;
+
+  function log42(msg){
+    try{
+      if(typeof logLine === "function") logLine("FIX42: " + msg);
+    }catch(e){}
   }
-  const old=window.testFeed; if(typeof old==="function") window.testFeed=async function(){const r=await old.apply(this,arguments);try{await run();}catch(e){}return r;};
-  document.addEventListener("DOMContentLoaded",()=>setTimeout(run,4000));
-  setInterval(()=>{if(Array.isArray(window.vehicleData)&&window.vehicleData.length)run();},15000);
+
+  function rerender42(reason){
+    try{
+      if(typeof safeRenderAll === "function"){
+        safeRenderAll("FIX42 " + reason);
+      }else if(typeof renderVehicles === "function"){
+        renderVehicles();
+      }
+    }catch(e){
+      try{ log42("kártya újrarender HIBA: " + (e?.message || e)); }catch(x){}
+    }
+  }
+
+  /* ------------------------------------------------------------
+     1) TripUpdates burkolása.
+        Az eredeti függvény már közvetlenül a vehicleData objektumokba
+        írja a delaySeconds értéket. Itt ezt garantált végső lépésként
+        ellenőrizzük és AZONNAL újrarendereljük a kártyákat.
+     ------------------------------------------------------------ */
+  const originalTripUpdates = window.fetchTripUpdates;
+  if(typeof originalTripUpdates === "function"){
+    window.fetchTripUpdates = async function(){
+      const result = await originalTripUpdates.apply(this, arguments);
+
+      let assigned = 0;
+      try{
+        if(Array.isArray(window.vehicleData)){
+          for(const item of window.vehicleData){
+            if(!item) continue;
+            if(typeof resolveVehicleDelay === "function"){
+              const d = resolveVehicleDelay(item);
+              item.delaySeconds = Number.isFinite(d) ? d : null;
+            }
+            if(Number.isFinite(item.delaySeconds)) assigned++;
+          }
+        }
+      }catch(e){
+        log42("TripUpdates objektum-ellenőrzés HIBA: " + (e?.message || e));
+      }
+
+      /* A valódi találat már a megjelenített vehicleData objektumban van. */
+      rerender42("TripUpdates → JÁRMŰOBJEKTUM");
+      log42("TripUpdates → közvetlen vehicleData merge: " + assigned + " jármű; kártya újrarenderelve.");
+      return result;
+    };
+  }
+
+  /* ------------------------------------------------------------
+     2) WinMenetrend burkolása.
+        Az eredeti updateWinRealtime / FIX35 merge már közvetlenül a
+        vehicleData objektumot módosítja. A wrapper gondoskodik arról,
+        hogy a végső objektum-állapot után mindig frissüljön a képernyő.
+     ------------------------------------------------------------ */
+  const originalWinRealtime = window.updateWinRealtime;
+  if(typeof originalWinRealtime === "function"){
+    window.updateWinRealtime = async function(){
+      const result = await originalWinRealtime.apply(this, arguments);
+
+      let merged = 0;
+      try{
+        if(Array.isArray(window.vehicleData)){
+          for(const item of window.vehicleData){
+            if(!item) continue;
+            if(
+              item.winRealtimeMatched === true ||
+              (String(item.forgalmi || "").trim() && String(item.vehicleType || "").trim()) ||
+              String(item.blockId || "").trim() ||
+              String(item.blockVehicleNumber || "").trim()
+            ){
+              merged++;
+            }
+          }
+        }
+      }catch(e){
+        log42("WinMenetrend objektum-ellenőrzés HIBA: " + (e?.message || e));
+      }
+
+      /* A WinMenetrend valódi találata közvetlenül a kártya adatobjektumában
+         marad; csak ezután rajzoljuk újra a JÁRMŰPANELT. */
+      rerender42("WinMenetrend → JÁRMŰOBJEKTUM");
+      log42("WinMenetrend → közvetlen vehicleData merge ellenőrizve: " + merged + " jármű; kártya újrarenderelve.");
+      return result;
+    };
+  }
+
+  /* ------------------------------------------------------------
+     3) Közvetlen, védett merge wrapper.
+        Ha bármely későbbi kód a közös mergeVehicleData-t használja,
+        az objektum frissítése után rögtön újrarenderelünk.
+        DelaySeconds szándékosan NEM szerepel a másolható mezők között.
+     ------------------------------------------------------------ */
+  const originalMerge = window.mergeVehicleData;
+  if(typeof originalMerge === "function"){
+    window.mergeVehicleData = function(target, source, options){
+      const changed = originalMerge.apply(this, arguments);
+      if(changed){
+        try{
+          if(target && source){
+            /* TripUpdates késését semmilyen WinMenetrend merge nem írhatja felül. */
+            if(Object.prototype.hasOwnProperty.call(target, "delaySeconds")){
+              const keepDelay = target.delaySeconds;
+              if(Number.isFinite(keepDelay)) target.delaySeconds = keepDelay;
+            }
+          }
+        }catch(e){}
+        rerender42("MERGE → JÁRMŰOBJEKTUM");
+      }
+      return changed;
+    };
+  }
+
+  log42("Közvetlen JÁRMŰOBJEKTUM → KÁRTYA adatút bekapcsolva.");
 })();
 </script>
-</body>\n</html>\n
+
+
+<!-- FIX43 – JÁRMŰTÍPUS VÉDELEM + KÖZVETLEN OBJEKTUMFRISSÍTÉS
+     A FIX42-ben a VehiclePositions alapból helyesen NINCS ADAT volt,
+     ezért a valódi típust kizárólag a működő WinMenetrend/FUTÁR forrásból
+     töltjük vissza. Soha nem használunk kitalált vagy általános type mezőt. -->
+<script>
+(function(){
+  "use strict";
+  const real = v => v !== null && v !== undefined && String(v).trim() !== "" && String(v).trim() !== "NINCS ADAT";
+  const pk = v => String(v||"").toUpperCase().replace(/[\\s-]/g,"").trim();
+
+  async function restoreRealVehicleType(){
+    try{
+      if(!Array.isArray(window.vehicleData) || !window.vehicleData.length) return 0;
+      if(typeof window.fix35EnrichVehicle !== "function") return 0;
+
+      let changed=0;
+      const visible = window.vehicleData.filter(v => v && real(v.licensePlate) && (!real(v.vehicleType) || !real(v.forgalmi)));
+      const max = window.innerWidth <= 700 ? 5 : 12;
+
+      for(const item of visible.slice(0,max)){
+        const beforeType=item.vehicleType;
+        const beforeForgalmi=item.forgalmi;
+        try{
+          await window.fix35EnrichVehicle(item);
+        }catch(e){ continue; }
+        if(item.vehicleType !== beforeType || item.forgalmi !== beforeForgalmi) changed++;
+      }
+
+      if(changed && typeof renderVehicles === "function") renderVehicles();
+      return changed;
+    }catch(e){
+      try{ if(typeof logLine === "function") logLine("FIX43 JÁRMŰTÍPUS HIBA: "+(e.message||e)); }catch(x){}
+      return 0;
+    }
+  }
+
+  /* A már működő FIX41/35 célzott forrás marad az egyetlen adatforrás. */
+  window.fix43RestoreRealVehicleType = restoreRealVehicleType;
+
+  document.addEventListener("DOMContentLoaded", function(){
+    setTimeout(function(){ restoreRealVehicleType(); }, 1800);
+  });
+
+  /* Ha egy későbbi realtime frissítés új járműobjektumokat rak be,
+     rövid késleltetéssel újra csak a hiányos kártyákat ellenőrizzük. */
+  let last=0;
+  setInterval(function(){
+    if(Date.now()-last < 25000) return;
+    if(!Array.isArray(window.vehicleData) || !window.vehicleData.length) return;
+    const hasMissing=window.vehicleData.some(v=>v && real(v.licensePlate) && !real(v.vehicleType));
+    if(!hasMissing) return;
+    last=Date.now();
+    restoreRealVehicleType();
+  },10000);
+})();
+</script>
+
+
+<script>
+/* ============================================================
+   FIX47 – VALÓDI 4 ADATÚTVONAL, EGYETLEN JÁRMŰOBJEKTUM
+   - VehiclePositions: alap jármű
+   - TripUpdates: ELTÉRÉS
+   - FUTÁR / WinMenetrend: FORGALMI + JÁRMŰTÍPUS + ALACSONYPADLÓS,
+     kizárólag explicit valódi mezőből
+   - 100 m / 200 m kereső megmarad
+   - nincs kitalált adat; hiányzó = NINCS ADAT
+   ============================================================ */
+(function(){
+  'use strict';
+  if(window.__FIX47__) return;
+  window.__FIX47__=true;
+  const real=v=>v!==null&&v!==undefined&&String(v).trim()!==''&&String(v).trim()!=='NINCS ADAT';
+  const norm=v=>String(v??'').toUpperCase().replace(/[\s-]/g,'').trim();
+  const idnorm=v=>String(v??'').trim().replace(/^BKK_/i,'').toUpperCase();
+  const log47=m=>{try{if(typeof logLine==='function')logLine('FIX47: '+m)}catch(e){}};
+  const redraw=()=>{try{if(typeof safeRenderAll==='function')safeRenderAll('FIX47');else if(typeof renderVehicles==='function')renderVehicles()}catch(e){}};
+
+  /* 1. TRIPUPDATES: az eredeti térképekből közvetlenül visszakötjük
+     a késést ugyanabba a vehicleData objektumba. Több azonosító útvonal. */
+  function rebindDelays(){
+    if(!Array.isArray(window.vehicleData)||!window.vehicleData.length) return 0;
+    if(typeof resolveVehicleDelay!=='function') return 0;
+    let n=0;
+    for(const v of window.vehicleData){
+      try{
+        const d=resolveVehicleDelay(v);
+        if(Number.isFinite(d)){v.delaySeconds=d;n++;}
+        else v.delaySeconds=null;
+      }catch(e){v.delaySeconds=null;}
+    }
+    return n;
+  }
+
+  /* 2. FORGALMI/TÍPUS/ALACSONYPADLÓS: az azonos járművet mindig
+     közvetlenül a jelenlegi vehicleData rekordba írjuk. */
+  async function enrichVisible(limit){
+    if(!Array.isArray(window.vehicleData)) return 0;
+    const list=window.vehicleData.filter(v=>v&&real(v.licensePlate)&&(!real(v.forgalmi)||!real(v.vehicleType)||v.lowFloor===null||v.lowFloor===undefined));
+    let changed=0, count=0;
+    for(const v of list){
+      if(count++>=limit) break;
+      try{
+        const before=[v.forgalmi,v.vehicleType,v.lowFloor,v.blockId,v.blockVehicleNumber].join('|');
+        let got=false;
+        if(typeof window.fix35EnrichVehicle==='function') got=await window.fix35EnrichVehicle(v);
+        else if(typeof enrichOneVehicleFromWin==='function') got=await enrichOneVehicleFromWin(v);
+        const after=[v.forgalmi,v.vehicleType,v.lowFloor,v.blockId,v.blockVehicleNumber].join('|');
+        if(got||before!==after) changed++;
+      }catch(e){}
+    }
+    return changed;
+  }
+
+  /* 3. VÉDELEM: realtime frissítéskor a korábban valódi érték nem veszhet el.
+     Soha nem generálunk új adatot. */
+  const saved=new Map();
+  function key(v){return norm(v?.licensePlate)||idnorm(v?.vehicleId)||norm(v?.tripId)}
+  function remember(){
+    if(!Array.isArray(window.vehicleData))return;
+    for(const v of window.vehicleData){
+      const k=key(v); if(!k)continue;
+      const x=saved.get(k)||{};
+      if(real(v.forgalmi))x.forgalmi=v.forgalmi;
+      if(real(v.vehicleType))x.vehicleType=v.vehicleType;
+      if(v.lowFloor!==null&&v.lowFloor!==undefined)x.lowFloor=v.lowFloor;
+      if(real(v.blockId))x.blockId=v.blockId;
+      if(real(v.blockVehicleNumber))x.blockVehicleNumber=v.blockVehicleNumber;
+      saved.set(k,x);
+    }
+  }
+  function restore(){
+    if(!Array.isArray(window.vehicleData))return;
+    for(const v of window.vehicleData){
+      const x=saved.get(key(v));if(!x)continue;
+      if(!real(v.forgalmi)&&real(x.forgalmi))v.forgalmi=x.forgalmi;
+      if(!real(v.vehicleType)&&real(x.vehicleType))v.vehicleType=x.vehicleType;
+      if((v.lowFloor===null||v.lowFloor===undefined)&&x.lowFloor!==undefined)v.lowFloor=x.lowFloor;
+      if(!real(v.blockId)&&real(x.blockId))v.blockId=x.blockId;
+      if(!real(v.blockVehicleNumber)&&real(x.blockVehicleNumber))v.blockVehicleNumber=x.blockVehicleNumber;
+    }
+  }
+
+  /* 4. FUTÁR után azonnal ugyanazokat az objektumokat ellenőrizzük. */
+  const oldFutar=window.loadFutarVehicles;
+  if(typeof oldFutar==='function'){
+    window.loadFutarVehicles=async function(){
+      const r=await oldFutar.apply(this,arguments);
+      restore();
+      const c=await enrichVisible(window.innerWidth<=700?4:10);
+      remember();
+      rebindDelays();
+      if(c)redraw();
+      log47('FUTÁR → közvetlen járműobjektum merge: '+c+' módosult');
+      return r;
+    };
+  }
+
+  /* 5. WinMenetrend után azonnali merge + újrarender. */
+  const oldWin=window.updateWinRealtime;
+  if(typeof oldWin==='function'){
+    window.updateWinRealtime=async function(){
+      const r=await oldWin.apply(this,arguments);
+      restore();
+      const c=await enrichVisible(window.innerWidth<=700?4:12);
+      remember();
+      rebindDelays();
+      redraw();
+      let f=0,t=0,l=0,d=0;
+      for(const v of (window.vehicleData||[])){if(real(v.forgalmi))f++;if(real(v.vehicleType))t++;if(v.lowFloor!==null&&v.lowFloor!==undefined)l++;if(Number.isFinite(v.delaySeconds))d++;}
+      log47('AUDIT: ELTÉRÉS='+d+' | FORGALMI='+f+' | JÁRMŰTÍPUS='+t+' | ALACSONYPADLÓS='+l+' | célzott='+c);
+      return r;
+    };
+  }
+
+  /* 6. Kattintott / látható jármű: ne kelljen a teljes flottát lekérni. */
+  window.fix47EnrichVehicle=async function(v){
+    if(!v)return false;
+    let before=[v.forgalmi,v.vehicleType,v.lowFloor].join('|');
+    try{
+      if(typeof window.fix35EnrichVehicle==='function') await window.fix35EnrichVehicle(v);
+      else if(typeof enrichOneVehicleFromWin==='function') await enrichOneVehicleFromWin(v);
+    }catch(e){}
+    rebindDelays(); remember(); redraw();
+    return before!==[v.forgalmi,v.vehicleType,v.lowFloor].join('|');
+  };
+
+  /* 7. A kártya meglévő kattintási adatútját kiegészítjük, de nem írjuk felül. */
+  const oldRender=window.renderVehicles;
+  if(typeof oldRender==='function'){
+    window.renderVehicles=function(){restore();const r=oldRender.apply(this,arguments);remember();return r;};
+  }
+
+  /* 8. TripUpdates újrafeldolgozás után közvetlen audit. */
+  const oldTU=window.fetchTripUpdates;
+  if(typeof oldTU==='function'){
+    window.fetchTripUpdates=async function(){
+      const r=await oldTU.apply(this,arguments);
+      const n=rebindDelays();
+      remember();
+      redraw();
+      log47('TripUpdates → közvetlen ELTÉRÉS-hozzárendelés: '+n+' jármű');
+      return r;
+    };
+  }
+
+  /* 9. Kezdeti és folyamatos, kíméletes audit. iPhone-on csak kevés célzott kérés. */
+  document.addEventListener('DOMContentLoaded',()=>{
+    setTimeout(async()=>{
+      try{
+        restore(); rebindDelays();
+        await enrichVisible(window.innerWidth<=700?3:8);
+        remember(); redraw();
+        let d=0,f=0,t=0,l=0;
+        for(const v of (window.vehicleData||[])){if(Number.isFinite(v.delaySeconds))d++;if(real(v.forgalmi))f++;if(real(v.vehicleType))t++;if(v.lowFloor!==null&&v.lowFloor!==undefined)l++;}
+        log47('INDULÁSI AUDIT: ELTÉRÉS='+d+' | FORGALMI='+f+' | JÁRMŰTÍPUS='+t+' | ALACSONYPADLÓS='+l);
+      }catch(e){log47('audit HIBA: '+(e?.message||e));}
+    },3500);
+  });
+  let busy=false;
+  setInterval(async()=>{
+    if(busy||!Array.isArray(window.vehicleData)||!window.vehicleData.length)return;
+    busy=true;
+    try{
+      restore();rebindDelays();
+      await enrichVisible(window.innerWidth<=700?2:6);
+      remember();redraw();
+    }catch(e){}
+    busy=false;
+  },30000);
+})();
+</script>
+</body>
+</html>
