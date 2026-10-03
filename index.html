@@ -2509,286 +2509,120 @@ function resolveVehicleDelay(item){
 function parseVehicleFeed(buffer){
 
   if(!protoRoot){
-
-    throw new Error(
-      "protobuf nincs betöltve"
-    );
-
+    throw new Error("protobuf nincs betöltve");
   }
 
-
-  const FeedMessage =
-    protoRoot.lookupType(
-      "transit_realtime.FeedMessage"
-    );
-
-
-  const feed =
-    FeedMessage.decode(
-      new Uint8Array(buffer)
-    );
-
-
+  const FeedMessage = protoRoot.lookupType("transit_realtime.FeedMessage");
+  const feed = FeedMessage.decode(new Uint8Array(buffer));
   const out = [];
 
+  let entityCount = 0;
+  let vehicleEntityCount = 0;
+  let positionCount = 0;
+  let coordinateCount = 0;
+  let rejectedCount = 0;
 
-  for(
-    const entity of
-    (feed.entity || [])
-  ){
-
-    const v =
-      entity.vehicle;
-
-
+  for(const entity of (feed.entity || [])){
+    entityCount++;
+    const v = entity?.vehicle;
     if(!v){
       continue;
     }
+    vehicleEntityCount++;
 
+    const pos = v.position || null;
+    const trip = v.trip || null;
+    const vehicle = v.vehicle || null;
 
-    const pos =
-      v.position;
+    if(pos) positionCount++;
 
+    const lat = num(pos?.latitude);
+    const lon = num(pos?.longitude);
+    const hasCoords = Number.isFinite(lat) && Number.isFinite(lon);
+    if(hasCoords) coordinateCount++;
 
-    const trip =
-      v.trip;
+    const vehicleId = String(vehicle?.id || "").trim();
+    const label = String(vehicle?.label || "").trim();
+    const licensePlate = String(vehicle?.licensePlate || "").trim();
+    const tripId = String(trip?.tripId || "").trim();
+    const routeId = String(trip?.routeId || "").trim();
 
-
-    const vehicle =
-      v.vehicle;
-
-
-    const lat =
-      num(
-        pos?.latitude
-      );
-
-
-    const lon =
-      num(
-        pos?.longitude
-      );
-
-
-    if(
-      !Number.isFinite(lat) ||
-      !Number.isFinite(lon)
-    ){
+    /*
+      FONTOS: valódi GTFS-RT járművet nem dobunk ki csak azért,
+      mert az adott pillanatban nincs hozzá GPS-koordináta.
+      A jármű ettől még valódi VehiclePosition entity.
+      Ilyenkor lat/lon = NINCS ADAT, térképes marker pedig nem készül.
+    */
+    if(!vehicleId && !label && !licensePlate && !tripId && !routeId && !hasCoords){
+      rejectedCount++;
       continue;
     }
 
-
-    const speedMs =
-      num(
-        pos?.speed
-      );
-
-
-    const speedKmh =
-      Number.isFinite(
-        speedMs
-      )
-        ?
-        speedMs * 3.6
-        :
-        null;
-
-
-    const routeId =
-      String(
-        trip?.routeId || ""
-      );
-
-
-    const stopId =
-      String(
-        v.stopId || ""
-      );
-
-
-    const stopSequence =
-      v.currentStopSequence !==
-      null &&
-      v.currentStopSequence !==
-      undefined
-        ?
-        Number(
-          v.currentStopSequence
-        )
-        :
-        null;
-
+    const speedMs = num(pos?.speed);
+    const speedKmh = Number.isFinite(speedMs) ? speedMs * 3.6 : null;
+    const stopId = String(v.stopId || "").trim();
+    const stopSequence = v.currentStopSequence !== null && v.currentStopSequence !== undefined
+      ? Number(v.currentStopSequence)
+      : null;
 
     const item = {
-
-      source:
-        "BKK GTFS-RT",
-
-      provider:
-        "BKK",
-
-      vehicleId:
-        String(
-          vehicle?.id || ""
-        ),
-
-      label:
-        String(
-          vehicle?.label || ""
-        ),
-
-      licensePlate:
-        String(
-          vehicle?.licensePlate || ""
-        ),
-
+      source: "BKK GTFS-RT",
+      provider: "BKK",
+      vehicleId,
+      label,
+      licensePlate,
       routeId,
-
-      routeShortName:
-        gtfsRoutes.get(
-          routeId
-        ) || "",
-
-      tripId:
-        String(
-          trip?.tripId || ""
-        ),
-
-      directionId:
-        trip?.directionId !==
-        null &&
-        trip?.directionId !==
-        undefined
-          ?
-          String(
-            trip.directionId
-          )
-          :
-          "",
-
+      routeShortName: gtfsRoutes.get(routeId) || "",
+      tripId,
+      directionId: trip?.directionId !== null && trip?.directionId !== undefined ? String(trip.directionId) : "",
       stopId,
-
       stopSequence,
-
       lat,
-
       lon,
-
       speedKmh,
-
-      bearing:
-        num(
-          pos?.bearing
-        ),
-
-      delaySeconds:
-        null,
-
-      /*
-        A BKK GTFS-RT VehiclePositions
-        önmagában nem ad hivatalos
-        FORGALMI mezőt.
-      */
-
-      forgalmi:
-        null,
-
-      /*
-        BKK-nál nincs FORDA.
-      */
-
-      forda:
-        null,
-
-      /*
-        VehiclePositionsből nem
-        nevezünk át más mezőt típusnak.
-      */
-
-      vehicleType:
-        null,
-
-      futarMatched:
-        false,
-
-      nearestStop:
-        null,
-
-      gpsDistanceKm:
-        myPos
-          ?
-          distanceKm(
-            myPos,
-            {
-              lat,
-              lon
-            }
-          )
-          :
-          null,
-
-      marker:
-        null
-
+      bearing: num(pos?.bearing),
+      delaySeconds: null,
+      forgalmi: null,
+      forda: null,
+      vehicleType: null,
+      lowFloor: null,
+      futarMatched: false,
+      nearestStop: null,
+      gpsDistanceKm: myPos && hasCoords ? distanceKm(myPos,{lat,lon}) : null,
+      marker: null
     };
 
-
-    const exactStop =
-      findStopById(
-        stopId
-      );
-
-
-    if(exactStop){
-
-      item.nearestStop = {
-
-        id:
-          exactStop.id,
-
-        name:
-          exactStop.name,
-
-        lat:
-          exactStop.lat,
-
-        lon:
-          exactStop.lon,
-
-        code:
-          exactStop.code,
-
-        distanceM:
-          distanceKm(
-            {
-              lat,
-              lon
-            },
-            exactStop
-          ) * 1000
-
-      };
-
-    }else{
-
-      item.nearestStop =
-        findNearestStop(
-          lat,
-          lon
-        );
-
+    if(hasCoords){
+      const exactStop = findStopById(stopId);
+      if(exactStop){
+        item.nearestStop = {
+          id: exactStop.id,
+          name: exactStop.name,
+          lat: exactStop.lat,
+          lon: exactStop.lon,
+          code: exactStop.code,
+          distanceM: distanceKm({lat,lon}, exactStop) * 1000
+        };
+      }else{
+        item.nearestStop = findNearestStop(lat,lon);
+      }
     }
 
-
-    out.push(
-      item
-    );
-
+    out.push(item);
   }
 
+  try{
+    logLine(
+      "VehiclePositions parser: entity=" + entityCount +
+      " | vehicle=" + vehicleEntityCount +
+      " | position=" + positionCount +
+      " | GPS=" + coordinateCount +
+      " | elfogadva=" + out.length +
+      " | elutasítva=" + rejectedCount
+    );
+  }catch(e){}
 
   return out;
-
 }
 
 
@@ -8375,6 +8209,56 @@ window.extractFutarVehicles = function(json){
 })();
 </script>
 </body>
+
+
+<!-- FIX44 – NÉGY ADATÚTVONAL VÉGLEGES OBJEKTUM-AUDIT
+     1) VehiclePositions = alap járműobjektum
+     2) TripUpdates = ELTÉRÉS
+     3) WinMenetrend/FUTÁR = FORGALMI + JÁRMŰTÍPUS + ALACSONYPADLÓS, csak explicit találatból
+     4) GTFS = járat/megálló statikus kapcsolatok
+     NINCS kitalált járműadat. -->
+<script>
+(function(){
+  "use strict";
+  if(window.__FIX44_DATA_ACCESS__) return;
+  window.__FIX44_DATA_ACCESS__=true;
+
+  const real=v=>v!==null&&v!==undefined&&String(v).trim()!==""&&String(v).trim()!=="NINCS ADAT";
+
+  function audit(){
+    try{
+      if(!Array.isArray(window.vehicleData)) return;
+      let delay=0, forgalmi=0, type=0, low=0;
+      for(const v of window.vehicleData){
+        if(!v) continue;
+        if(Number.isFinite(v.delaySeconds)) delay++;
+        if(real(v.forgalmi)) forgalmi++;
+        if(real(v.vehicleType)) type++;
+        if(v.lowFloor!==null&&v.lowFloor!==undefined) low++;
+      }
+      if(typeof logLine==='function') logLine(
+        "FIX44 adatút-audit: jármű="+window.vehicleData.length+
+        " | ELTÉRÉS="+delay+
+        " | FORGALMI="+forgalmi+
+        " | JÁRMŰTÍPUS="+type+
+        " | ALACSONYPADLÓS="+low
+      );
+    }catch(e){
+      try{ if(typeof logLine==='function') logLine("FIX44 audit HIBA: "+(e?.message||e)); }catch(x){}
+    }
+  }
+  window.fix44AuditVehicleData=audit;
+
+  const oldRender=window.renderVehicles;
+  if(typeof oldRender==='function'){
+    window.renderVehicles=function(){
+      const r=oldRender.apply(this,arguments);
+      audit();
+      return r;
+    };
+  }
+})();
+</script>
 </html>
 <!-- ============================================================
      FIX42 – KÖZVETLEN JÁRMŰOBJEKTUM-MERGE + AZONNALI KÁRTYA-ÚJRARENDER
