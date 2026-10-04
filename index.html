@@ -6706,6 +6706,15 @@ function vehicleCard(
 
 
     <div class="field">
+      <b>FORGALMI SZÁM / INDULÁSOK</b>
+      <span>
+        ${escapeHtml(val(item.forgalmi))}
+        ${winMenetrendLinks(item).includes('INDULÁSOK') ? '<span class="small"> • INDULÁSOK link a valódi megállóadatból</span>' : ''}
+      </span>
+    </div>
+
+
+    <div class="field">
       <b>MEGÁLLÓ</b>
       <span>
         ${escapeHtml(
@@ -8577,7 +8586,7 @@ window.extractFutarVehicles = function(json){
 
 <script>
 /* ============================================================
-   FIX48 – VALÓDI 4 ADATÚTVONAL, EGYETLEN JÁRMŰOBJEKTUM
+   FIX47 – VALÓDI 4 ADATÚTVONAL, EGYETLEN JÁRMŰOBJEKTUM
    - VehiclePositions: alap jármű
    - TripUpdates: ELTÉRÉS
    - FUTÁR / WinMenetrend: FORGALMI + JÁRMŰTÍPUS + ALACSONYPADLÓS,
@@ -8587,12 +8596,12 @@ window.extractFutarVehicles = function(json){
    ============================================================ */
 (function(){
   'use strict';
-  if(window.__FIX48__) return;
-  window.__FIX48__=true;
+  if(window.__FIX47__) return;
+  window.__FIX47__=true;
   const real=v=>v!==null&&v!==undefined&&String(v).trim()!==''&&String(v).trim()!=='NINCS ADAT';
   const norm=v=>String(v??'').toUpperCase().replace(/[\s-]/g,'').trim();
   const idnorm=v=>String(v??'').trim().replace(/^BKK_/i,'').toUpperCase();
-  const log47=m=>{try{if(typeof logLine==='function')logLine('FIX48: '+m)}catch(e){}};
+  const log47=m=>{try{if(typeof logLine==='function')logLine('FIX47: '+m)}catch(e){}};
   const redraw=()=>{try{if(typeof safeRenderAll==='function')safeRenderAll('FIX47');else if(typeof renderVehicles==='function')renderVehicles()}catch(e){}};
 
   /* 1. TRIPUPDATES: az eredeti térképekből közvetlenül visszakötjük
@@ -8735,120 +8744,55 @@ window.extractFutarVehicles = function(json){
         log47('INDULÁSI AUDIT: ELTÉRÉS='+d+' | FORGALMI='+f+' | JÁRMŰTÍPUS='+t+' | ALACSONYPADLÓS='+l);
       }catch(e){log47('audit HIBA: '+(e?.message||e));}
     },3500);
+    setTimeout(async()=>{ try{ await finalFourDataPass(); }catch(e){} },5200);
   });
+  /* BKV 4-ADATÚT BRIDGE – végső, célzott ellenőrzés.
+     A már működő VehiclePositions rekordot nem cseréljük és nem gyártunk adatot.
+     Csak a hiányzó négy paneladatot töltjük vissza valódi forrásból. */
+  async function finalFourDataPass(){
+    if(!Array.isArray(window.vehicleData)||!window.vehicleData.length) return 0;
+    restore();
+    rebindDelays();
+    /* A képernyőn látható járművek elsőbbséget kapnak; a többi körforgóan jön. */
+    const visible=window.vehicleData.filter(v=>v&&real(v.licensePlate)&&(v._visible===true || matchesFilters(v)));
+    const all=window.vehicleData.filter(v=>v&&real(v.licensePlate));
+    const queue=[];
+    for(const v of visible) if(!queue.includes(v)) queue.push(v);
+    for(const v of all) if(!queue.includes(v)) queue.push(v);
+    const limit=window.innerWidth<=700?4:10;
+    let changed=0;
+    for(const v of queue.slice(0,limit)){
+      try{
+        const before=[v.forgalmi,v.vehicleType,v.blockId,v.blockVehicleNumber,v.lowFloor].join('|');
+        if(typeof window.fix35EnrichVehicle==='function') await window.fix35EnrichVehicle(v);
+        const after=[v.forgalmi,v.vehicleType,v.blockId,v.blockVehicleNumber,v.lowFloor].join('|');
+        if(before!==after) changed++;
+      }catch(e){}
+    }
+    restore();
+    rebindDelays();
+    remember();
+    if(changed || visible.length) redraw();
+    let d=0,f=0,t=0,b=0;
+    for(const v of (window.vehicleData||[])){
+      if(Number.isFinite(v.delaySeconds)) d++;
+      if(real(v.forgalmi)) f++;
+      if(real(v.vehicleType)) t++;
+      if(real(v.blockId)||real(v.blockVehicleNumber)) b++;
+    }
+    log47('4-ADAT AUDIT: ELTÉRÉS='+d+' | JÁRMŰTÍPUS='+t+' | FORGALMI='+f+' | FORGALMI SZÁM/BLOKK='+b+' | frissült='+changed);
+    return changed;
+  }
+  window.fix47FinalFourDataPass=finalFourDataPass;
+
   let busy=false;
   setInterval(async()=>{
     if(busy||!Array.isArray(window.vehicleData)||!window.vehicleData.length)return;
     busy=true;
-    try{
-      restore();rebindDelays();
-      await enrichVisible(window.innerWidth<=700?2:6);
-      remember();redraw();
-    }catch(e){}
+    try{ await finalFourDataPass(); }catch(e){}
     busy=false;
   },30000);
 })();
 </script>
-
-
-<script>
-/* ============================================================
-   FIX48 – A 4 HIÁNYZÓ JÁRMŰPANEL-ADAT VÉGLEGESÍTÉSE
-   1) ELTÉRÉS = TripUpdates valódi delay
-   2) FORGALMI = explicit WinMenetrend/FUTÁR mező
-   3) JÁRMŰTÍPUS = explicit WinMenetrend/FUTÁR mező
-   4) ALACSONYPADLÓS = explicit valódi lowFloor mező
-
-   FONTOS: nincs kitalált adat. Ha nincs valódi forrásérték,
-   az objektumban null marad, a panel pedig NINCS ADAT-ot mutat.
-   A meglévő BKK VehiclePositions adatot nem cseréljük le.
-   ============================================================ */
-(function(){
-  'use strict';
-  if(window.__FIX48_FINAL__) return;
-  window.__FIX48_FINAL__=true;
-
-  const real48=v=>v!==null && v!==undefined && String(v).trim()!=='' && String(v).trim()!=='NINCS ADAT';
-  const log48=m=>{try{if(typeof logLine==='function')logLine('FIX48: '+m);}catch(e){}};
-
-  function rebindDelay48(){
-    if(!Array.isArray(window.vehicleData) || typeof resolveVehicleDelay!=='function') return 0;
-    let n=0;
-    for(const v of window.vehicleData){
-      try{
-        const d=resolveVehicleDelay(v);
-        v.delaySeconds=Number.isFinite(d)?d:null;
-        if(Number.isFinite(d)) n++;
-      }catch(e){v.delaySeconds=null;}
-    }
-    return n;
-  }
-
-  async function enrichMissing48(maxCount){
-    if(!Array.isArray(window.vehicleData) || typeof window.fix35EnrichVehicle!=='function') return 0;
-    const missing=window.vehicleData.filter(v=>v && real48(v.licensePlate) &&
-      (!real48(v.forgalmi) || !real48(v.vehicleType) || v.lowFloor===null || v.lowFloor===undefined));
-    let changed=0, checked=0;
-    for(const v of missing){
-      if(checked++>=maxCount) break;
-      try{
-        const before=[v.forgalmi,v.vehicleType,v.lowFloor,v.blockId,v.blockVehicleNumber].join('|');
-        await window.fix35EnrichVehicle(v);
-        const after=[v.forgalmi,v.vehicleType,v.lowFloor,v.blockId,v.blockVehicleNumber].join('|');
-        if(before!==after) changed++;
-      }catch(e){}
-    }
-    return changed;
-  }
-
-  window.fix48FinalizeVehicleData=async function(){
-    if(!Array.isArray(window.vehicleData) || !window.vehicleData.length) return 0;
-
-    /* A már betöltött valódi TripUpdates adatot közvetlenül ugyanabba
-       a járműobjektumba írjuk vissza, amelyet a panel és a térkép használ. */
-    const delays=rebindDelay48();
-
-    /* Asztali gépen több látható/hiányos jármű, iPhone-on csak kevés célzott
-       lekérés: így a működő BKK feedet nem terheljük túl. */
-    const max=window.innerWidth<=700 ? 3 : 10;
-    const changed=await enrichMissing48(max);
-
-    /* A WinMenetrend merge nem érintheti a TripUpdates késését. */
-    rebindDelay48();
-
-    try{
-      if(typeof safeRenderAll==='function') safeRenderAll('FIX48 végleges 4 adat');
-      else if(typeof renderVehicles==='function') renderVehicles();
-    }catch(e){}
-
-    let f=0,t=0,l=0,d=0;
-    for(const v of window.vehicleData){
-      if(real48(v.forgalmi)) f++;
-      if(real48(v.vehicleType)) t++;
-      if(v.lowFloor!==null && v.lowFloor!==undefined) l++;
-      if(Number.isFinite(v.delaySeconds)) d++;
-    }
-    log48('AUDIT: ELTÉRÉS='+d+' | FORGALMI='+f+' | JÁRMŰTÍPUS='+t+' | ALACSONYPADLÓS='+l+' | új merge='+changed);
-    return changed;
-  };
-
-  /* A FIX48 helper közvetlenül a valódi BKK frissítés végén fut.
-     Ez nem új adatforrás: csak a már meglévő adatkapcsolatokat véglegesíti
-     ugyanabban a vehicleData objektumban. */
-  document.addEventListener('DOMContentLoaded',()=>{
-    setTimeout(()=>{ window.fix48FinalizeVehicleData().catch(()=>{}); },4500);
-  });
-
-  /* Realtime frissítés után is lefut, de csak a hiányos mezőket célozza. */
-  let busy48=false;
-  setInterval(async()=>{
-    if(busy48 || !Array.isArray(window.vehicleData) || !window.vehicleData.length) return;
-    busy48=true;
-    try{ await window.fix48FinalizeVehicleData(); }catch(e){}
-    busy48=false;
-  },30000);
-})();
-</script>
-
 </body>
 </html>
