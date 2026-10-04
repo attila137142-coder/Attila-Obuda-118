@@ -2326,6 +2326,9 @@ async function fetchTripUpdates(){
     const vehicleSeqDelay=new Map();
     let updateCount=0;
     let delayValueCount=0;
+    let delayEntityCount=0;
+    let vehicleIdentityCount=0;
+    let stopUpdateCount=0;
 
     for(const entity of (feed.entity||[])){
       const tu=entity.tripUpdate;
@@ -2338,12 +2341,14 @@ async function fetchTripUpdates(){
       const tuVehicleId=String(tu.vehicle?.id??"").trim();
       const tuVehicleLabel=String(tu.vehicle?.label??"").trim();
       const tuPlate=String(tu.vehicle?.licensePlate??"").trim();
+      if(tuVehicleId || tuVehicleLabel || tuPlate) vehicleIdentityCount++;
       const vehicleKeys=[];
       if(tuVehicleId) vehicleKeys.push("id|"+normalizeId(tuVehicleId));
       if(tuVehicleLabel) vehicleKeys.push("label|"+normalizeId(tuVehicleLabel));
       if(tuPlate) vehicleKeys.push("plate|"+normalizeId(tuPlate));
 
       for(const stu of (tu.stopTimeUpdate||[])){
+        stopUpdateCount++;
         /*
           FIX37 – KRITIKUS: protobufjs-nál a delay skalár mező hiánya
           nem bizonyítja, hogy valódi 0 érkezett. A régi kód ezért sok
@@ -2372,6 +2377,7 @@ async function fetchTripUpdates(){
         if(delay===null) delay=readRealDelay(stu.arrival);
         if(delay===null) continue;
         delayValueCount++;
+        delayEntityCount++;
 
         const seq=(stu.stopSequence!==null && stu.stopSequence!==undefined) ? Number(stu.stopSequence) : null;
         const seqKey=Number.isFinite(seq)?String(seq):"";
@@ -2407,16 +2413,39 @@ async function fetchTripUpdates(){
     lastTripFetchOK=true;
 
     let assigned=0;
+    let exactTripSeq=0, exactTripStop=0, vehicleIdentityMatch=0, nearestSeqMatch=0;
     for(const item of vehicleData){
-      item.delaySeconds=resolveVehicleDelay(item);
-      if(Number.isFinite(item.delaySeconds)) assigned++;
+      const before=item.delaySeconds;
+      const resolved=resolveVehicleDelay(item);
+      item.delaySeconds=resolved;
+      if(Number.isFinite(resolved)) assigned++;
+
+      const tripId=normalizeTripKey(item.tripId);
+      const seq=Number.isFinite(item.stopSequence)?Number(item.stopSequence):null;
+      const stop=String(item.stopId||"").trim();
+      if(!Number.isFinite(resolved)) continue;
+      if(tripId && seq!==null && Number.isFinite(tripDelayMap.get(tripId+"|seq|"+String(seq)))) exactTripSeq++;
+      else if(tripId && stop && Number.isFinite(tripDelayMap.get(tripId+"|stop|"+stop))) exactTripStop++;
+      else {
+        const keys=[];
+        if(item.vehicleId) keys.push("id|"+normalizeId(item.vehicleId));
+        if(item.label) keys.push("label|"+normalizeId(item.label));
+        if(item.licensePlate) keys.push("plate|"+normalizeId(item.licensePlate));
+        if(keys.some(k=>tripDelayVehicleMap.has(k))) vehicleIdentityMatch++;
+        else if(tripId) nearestSeqMatch++;
+      }
     }
 
     logLine("TripUpdates OK: "+updateCount.toLocaleString("hu-HU")+
-      " trip frissítés, "+mapDelay.size.toLocaleString("hu-HU")+
-      " stop-idő illesztés, "+delayValueCount.toLocaleString("hu-HU")+
-      " TÉNYLEGESEN JELENLÉVŐ delay mező.");
-    logLine("KÉSÉS/SIETÉS hozzárendelve: "+assigned.toLocaleString("hu-HU")+" jármű.");
+      " trip frissítés | "+stopUpdateCount.toLocaleString("hu-HU")+
+      " stop update | "+delayValueCount.toLocaleString("hu-HU")+
+      " valódi delay | "+vehicleIdentityCount.toLocaleString("hu-HU")+
+      " járműazonosító.");
+    logLine("DELAY ILLESZTÉS: "+assigned.toLocaleString("hu-HU")+
+      " jármű | trip+seq "+exactTripSeq+
+      " | trip+stop "+exactTripStop+
+      " | vehicle ID/label/rendszám "+vehicleIdentityMatch+
+      " | további trip illesztés "+nearestSeqMatch+".");
     return true;
   }catch(err){
     lastTripFetchOK=false;
@@ -5900,10 +5929,13 @@ function parseWinRealtimeHtml(html){
         }
       }
       const heads=headerCells.map(x=>rtClean(x.textContent));
-      const plateIdx=findHeader(heads,["rendszám","rendszam","license plate","plate"]);
+      let plateIdx=findHeader(heads,["rendszám","rendszam","license plate","plate"]);
+      const vehicleColIdx=findHeader(heads,["jármű","jarmu","jármű#","jarmu#","vehicle","vehicle number"]);
+      if(plateIdx<0 && vehicleColIdx>=0) plateIdx=vehicleColIdx;
       const typeIdx=findHeader(heads,["jármű típus","jarmu tipus","járműtípus","jarmutípus","vehicle type","vehicletype","típus","tipus"]);
-      /* RENDSZÁM a kötelező azonosító. A JÁRMŰTÍPUS / FORGALMI oszlop hiánya
-         nem dobhatja ki az egész valódi WinMenetrend-táblát. */
+      /* A valós WinMenetrend-oldal egyes nézeteiben az azonosító oszlop
+         neve JÁRMŰ, más nézetekben RENDSZÁM. Mindkettőt elfogadjuk,
+         de az értéket változtatás nélkül, forrásadatként vesszük át. */
       if(plateIdx<0) continue;
 
       const routeIdx=findHeader(heads,["járat","jarat","route","route short name"]);
@@ -6110,7 +6142,7 @@ async function enrichOneVehicleFromWin(item){
     try{
       const rr=await fetchWinRealtimeExact(plate);
       if(rr){
-        if(rr.forgalmi && !item.forgalmi){ item.forgalmi=rr.forgalmi; got=true; }
+        if(rr.forgalmi && !item.forgalmi){ item.forgalmi=rr.forgalmi; item.forgalmiSource="WINMENETREND"; got=true; }
         if(rr.vehicleType && !item.vehicleType){ item.vehicleType=rr.vehicleType; got=true; }
       }
     }catch(e){}
@@ -6120,7 +6152,7 @@ async function enrichOneVehicleFromWin(item){
     try{
       const rf=await fetchWinRouteHistory(routeCode,plate);
       if(rf){
-        if(rf.forgalmi && !item.forgalmi){ item.forgalmi=rf.forgalmi; got=true; }
+        if(rf.forgalmi && !item.forgalmi){ item.forgalmi=rf.forgalmi; item.forgalmiSource="WINMENETREND"; got=true; }
         if(rf.vehicleType && !item.vehicleType){ item.vehicleType=rf.vehicleType; got=true; }
       }
     }catch(e){}
@@ -6135,7 +6167,7 @@ async function enrichOneVehicleFromWin(item){
   for(const u of urls){
     const f=await fetchWinDetailPage(u);
     if(!f) continue;
-    if(f.forgalmi && !item.forgalmi){ item.forgalmi=f.forgalmi; got=true; }
+    if(f.forgalmi && !item.forgalmi){ item.forgalmi=f.forgalmi; item.forgalmiSource="WINMENETREND"; got=true; }
     if(f.vehicleType && !item.vehicleType){ item.vehicleType=f.vehicleType; got=true; }
     if(f.blockId && !item.blockId){ item.blockId=f.blockId; got=true; }
     if(f.blockVehicleNumber && !item.blockVehicleNumber){ item.blockVehicleNumber=f.blockVehicleNumber; got=true; }
@@ -6698,18 +6730,9 @@ function vehicleCard(
         )}
         ${
           item.forgalmi
-            ? '<span class="small"> • valódi forrás</span>'
+            ? '<span class="small"> • '+escapeHtml(item.forgalmiSource||"WINMENETREND valódi forrás")+'</span>'
             : ''
         }
-      </span>
-    </div>
-
-
-    <div class="field">
-      <b>FORGALMI SZÁM / INDULÁSOK</b>
-      <span>
-        ${escapeHtml(val(item.forgalmi))}
-        ${winMenetrendLinks(item).includes('INDULÁSOK') ? '<span class="small"> • INDULÁSOK link a valódi megállóadatból</span>' : ''}
       </span>
     </div>
 
@@ -7475,7 +7498,25 @@ window.wmFindLabeledValue=function(text,labels){
 function wmHome(){return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/lines" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">WINMENETREND KEZDŐOLDAL</a>';}
 function wm1(i){const p=String(i?.licensePlate||"").trim();if(!p)return '<span class="wmMissing">JÁRMŰTÖRTÉNET: NINCS ADAT</span>';return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/vehicles/'+encodeURIComponent(p)+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">JÁRMŰTÖRTÉNET</a>';}
 function wm2(i){const r=String(i?.routeShortName||"").trim(),f=String(i?.forgalmi||"").trim(),m=f.match(/^F(?:0*)?(\d+)$/i);if(!r||!m)return '<span class="wmMissing">FORGALMI / BLOKK: NINCS ADAT</span>';const lc=/^\d+$/.test(r)?r+"0":r;return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/lines/'+encodeURIComponent(lc)+'/'+encodeURIComponent(m[1])+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">FORGALMI / BLOKK</a>';}
-function wm3(i){const c=String(i?.winLineCode||"").trim().toUpperCase();if(!/^R[0-9]+$/.test(c))return '<span class="wmMissing">FORGALMI SZÁM / INDULÁSOK: NINCS ADAT</span>';return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/lines/'+encodeURIComponent(c)+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">FORGALMI SZÁM / INDULÁSOK</a>';}
+function wm3(i){
+  const f=String(i?.forgalmi||"").trim();
+  const stopId=String(i?.stopId||"").trim();
+  const stopName=String(i?.nearestStop?.name||i?.stopName||"").trim();
+  const slug=wmSlug(stopName);
+  const parts=[];
+  if(f) parts.push('<span>FORGALMI: <b>'+escapeHtml(f)+'</b></span>');
+  else parts.push('<span class="wmMissing">FORGALMI SZÁM: NINCS ADAT</span>');
+
+  /* Az INDULÁSOK link nem függ a forgalmi számtól.
+     Csak a már meglévő valódi GTFS stopId + megállónév alapján készül. */
+  if(stopId && stopName && typeof slug==="string" && slug){
+    const url="https://online.winmenetrend.hu/budapest/latest/stations/"+encodeURIComponent(slug)+"/"+encodeURIComponent(stopId)+"/departures?date="+localDateYmd();
+    parts.push('<a class="wmLink" href="'+url+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">INDULÁSOK</a>');
+  }else{
+    parts.push('<span class="wmMissing">INDULÁSOK: NINCS ADAT</span>');
+  }
+  return parts.join(" • ");
+}
 function wmExtra(i){const a=[];const b=String(i?.blockId||"").trim(),d=String(i?.tripId||"").trim();if(/^\d+$/.test(b))a.push('<a class="wmLink" href="https://online.winmenetrend.hu/budapest/latest/block/'+encodeURIComponent(b)+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">BLOKK '+escapeHtml(b)+'</a>');if(/^D[0-9]+$/i.test(d))a.push('<a class="wmLink" href="https://online.winmenetrend.hu/futar/trip/'+encodeURIComponent(d)+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">MENET TÁBLA</a>');return a.length?a.join(" "):'';}
 window.winMenetrendLinks = winMenetrendLinks;
 
@@ -8744,52 +8785,16 @@ window.extractFutarVehicles = function(json){
         log47('INDULÁSI AUDIT: ELTÉRÉS='+d+' | FORGALMI='+f+' | JÁRMŰTÍPUS='+t+' | ALACSONYPADLÓS='+l);
       }catch(e){log47('audit HIBA: '+(e?.message||e));}
     },3500);
-    setTimeout(async()=>{ try{ await finalFourDataPass(); }catch(e){} },5200);
   });
-  /* BKV 4-ADATÚT BRIDGE – végső, célzott ellenőrzés.
-     A már működő VehiclePositions rekordot nem cseréljük és nem gyártunk adatot.
-     Csak a hiányzó négy paneladatot töltjük vissza valódi forrásból. */
-  async function finalFourDataPass(){
-    if(!Array.isArray(window.vehicleData)||!window.vehicleData.length) return 0;
-    restore();
-    rebindDelays();
-    /* A képernyőn látható járművek elsőbbséget kapnak; a többi körforgóan jön. */
-    const visible=window.vehicleData.filter(v=>v&&real(v.licensePlate)&&(v._visible===true || matchesFilters(v)));
-    const all=window.vehicleData.filter(v=>v&&real(v.licensePlate));
-    const queue=[];
-    for(const v of visible) if(!queue.includes(v)) queue.push(v);
-    for(const v of all) if(!queue.includes(v)) queue.push(v);
-    const limit=window.innerWidth<=700?4:10;
-    let changed=0;
-    for(const v of queue.slice(0,limit)){
-      try{
-        const before=[v.forgalmi,v.vehicleType,v.blockId,v.blockVehicleNumber,v.lowFloor].join('|');
-        if(typeof window.fix35EnrichVehicle==='function') await window.fix35EnrichVehicle(v);
-        const after=[v.forgalmi,v.vehicleType,v.blockId,v.blockVehicleNumber,v.lowFloor].join('|');
-        if(before!==after) changed++;
-      }catch(e){}
-    }
-    restore();
-    rebindDelays();
-    remember();
-    if(changed || visible.length) redraw();
-    let d=0,f=0,t=0,b=0;
-    for(const v of (window.vehicleData||[])){
-      if(Number.isFinite(v.delaySeconds)) d++;
-      if(real(v.forgalmi)) f++;
-      if(real(v.vehicleType)) t++;
-      if(real(v.blockId)||real(v.blockVehicleNumber)) b++;
-    }
-    log47('4-ADAT AUDIT: ELTÉRÉS='+d+' | JÁRMŰTÍPUS='+t+' | FORGALMI='+f+' | FORGALMI SZÁM/BLOKK='+b+' | frissült='+changed);
-    return changed;
-  }
-  window.fix47FinalFourDataPass=finalFourDataPass;
-
   let busy=false;
   setInterval(async()=>{
     if(busy||!Array.isArray(window.vehicleData)||!window.vehicleData.length)return;
     busy=true;
-    try{ await finalFourDataPass(); }catch(e){}
+    try{
+      restore();rebindDelays();
+      await enrichVisible(window.innerWidth<=700?2:6);
+      remember();redraw();
+    }catch(e){}
     busy=false;
   },30000);
 })();
