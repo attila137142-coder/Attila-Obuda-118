@@ -542,6 +542,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 </head>
 
 <body>
+<!-- FIX49: valódi BKK szerveroldali API-kulcsteszt; nincs adatgenerálás. -->
 
 <div id="header">
 
@@ -3127,6 +3128,34 @@ function safeRenderAll(context){
   }
 }
 
+async function testBkkKeyReal(){
+  const key=getKey();
+  if(!key){
+    logLine("FIX49: nincs beírt BKK API-kulcs.");
+    return false;
+  }
+  logLine("FIX49: VALÓDI BKK KULCSTESZT indul — a zöld jelzésen túl a BKK szerver válaszát ellenőrizzük.");
+  const tests=[
+    ["VehiclePositions.txt", VEHICLE_URL.replace(/\\.pb$/i,".txt")],
+    ["TripUpdates.txt", TRIP_UPDATES_URL.replace(/\\.pb$/i,".txt")]
+  ];
+  let okCount=0;
+  for(const [name,base] of tests){
+    try{
+      const url=base+(base.includes("?")?"&":"?")+"key="+encodeURIComponent(key);
+      const res=await fetch(url,{cache:"no-store",credentials:"omit"});
+      const text=await res.text();
+      const first=String(text||"").replace(/\\s+/g," ").slice(0,220);
+      logLine("FIX49: "+name+" HTTP "+res.status+(first?" | válasz="+first:""));
+      if(res.ok) okCount++;
+    }catch(e){
+      logLine("FIX49: "+name+" KÉRÉSI HIBA: "+(e?.message||e));
+    }
+  }
+  logLine("FIX49: BKK szerver oldali kulcsteszt eredmény: "+okCount+"/"+tests.length+" végpont OK.");
+  return okCount===tests.length;
+}
+
 async function testFeed(){
 
   if(feedBusy){
@@ -3166,6 +3195,8 @@ async function testFeed(){
       "BKK: LEKÉRÉS...",
       "warn"
     );
+
+    await testBkkKeyReal();
 
 
     await loadProto();
