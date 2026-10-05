@@ -1,5 +1,3 @@
-8378   soros htlm:
-
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -1497,7 +1495,7 @@ function loadSavedKey(){
 
 
   $("apiKey").value =
-    normalizeBkkKey(key);
+    key;
 
 }
 
@@ -1516,55 +1514,81 @@ function saveKey(){
       "API-kulcs üres."
     );
 
-    return;
+    return false;
 
   }
 
-
-  const normalizedKey = normalizeBkkKey(key);
-  $("apiKey").value = normalizedKey;
 
   localStorage.setItem(
     "attila_bkk_api_key",
-    normalizedKey
+    key
   );
+
+  /* A mentett kulcs legyen ugyanaz a kulcs, amit minden BKK fetch használ. */
+  $("apiKey").value = key;
+
 
   logLine(
-    "BKK API-kulcs elmentve. " + bkkKeyFingerprint(normalizedKey)
+    "BKK API-kulcs elmentve." +
+    " Egységes kulcslánc: VehiclePositions + TripUpdates + FUTÁR."
   );
-  logBkkKeyDiagnostics();
+
+  return true;
 
 }
 
-
-function normalizeBkkKey(value){
-  let key = String(value ?? "").trim();
-  /* Windows alatt gyakori másolási hiba: idézőjel kerül a kulcs köré.
-     Csak a külső idézőjeleket vesszük le; a kulcs tartalmát nem módosítjuk. */
-  if((key.startsWith("\"") && key.endsWith("\"")) || (key.startsWith("'") && key.endsWith("'"))){
-    key = key.slice(1,-1).trim();
-  }
-  return key;
-}
-
-function bkkKeyFingerprint(key){
-  const k = normalizeBkkKey(key);
-  if(!k) return "NINCS KULCS";
-  if(k.length <= 6) return `hossz=${k.length}`;
-  return `hossz=${k.length}, eleje=${k.slice(0,3)}***, vége=***${k.slice(-3)}`;
-}
 
 function getKey(){
-  const key = normalizeBkkKey($("apiKey")?.value || "");
+
+  /*
+    EGYETLEN kanonikus BKK-kulcs.
+    Először a képernyőn lévő kulcsot használjuk,
+    ha az üres, visszaesünk a korábban elmentett kulcsra.
+    Így a VehiclePositions, TripUpdates és FUTÁR ugyanazt
+    a konkrét kulcsértéket kapja.
+  */
+  const input =
+    String($("apiKey")?.value || "")
+      .trim();
+
+  const stored =
+    String(localStorage.getItem("attila_bkk_api_key") || "")
+      .trim();
+
+  const key = input || stored;
+
+  if(input && input !== stored){
+    localStorage.setItem("attila_bkk_api_key", input);
+  }
+
+  if($("apiKey") && key){
+    $("apiKey").value = key;
+  }
+
   return key;
+
 }
 
-function logBkkKeyDiagnostics(){
-  const fieldKey = normalizeBkkKey($("apiKey")?.value || "");
-  let savedKey = "";
-  try{ savedKey = normalizeBkkKey(localStorage.getItem("attila_bkk_api_key") || ""); }catch(e){}
-  const same = !!fieldKey && !!savedKey && fieldKey === savedKey;
-  logLine("BKK KULCS DIAG: mező=" + bkkKeyFingerprint(fieldKey) + "; localStorage=" + bkkKeyFingerprint(savedKey) + "; egyezik=" + (same ? "IGEN" : "NEM"));
+
+function bkkUrlWithKey(url, key){
+
+  const cleanUrl = String(url || "").trim();
+  const cleanKey = String(key || "").trim();
+
+  if(!cleanUrl || !cleanKey){
+    return cleanUrl;
+  }
+
+  /* Ne legyen ?key=...&key=... vagy régi kulcs maradvány. */
+  try{
+    const u = new URL(cleanUrl, window.location.href);
+    u.searchParams.delete("key");
+    u.searchParams.set("key", cleanKey);
+    return u.toString();
+  }catch(e){
+    const base = cleanUrl.replace(/[?&]key=[^&]*/gi, "");
+    return base + (base.includes("?") ? "&" : "?") + "key=" + encodeURIComponent(cleanKey);
+  }
 }
 
 
@@ -2304,13 +2328,16 @@ function normalizeTripKey(value){
 
 
 async function fetchTripUpdates(){
-  if(!getKey()){
+  const key = getKey();
+
+  if(!key){
     lastTripFetchOK=false;
     return false;
   }
 
   try{
-    const fullUrl=TRIP_UPDATES_URL+"?key="+encodeURIComponent(getKey());
+    /* UGYANAZ a kanonikus kulcs, amit a VehiclePositions is kap. */
+    const fullUrl = bkkUrlWithKey(TRIP_UPDATES_URL, key);
     const res=await fetch(fullUrl,{cache:"no-store"});
     if(!res.ok) throw new Error("HTTP "+res.status);
 
@@ -2357,17 +2384,9 @@ async function fetchTripUpdates(){
         */
         const readRealDelay = (part) => {
           if(!part || typeof part !== "object") return null;
-          /* protobufjs decode() esetén a scalar mező jelenléte nem minden
-             verzióban ellenőrizhető megbízhatóan csak hasOwnProperty-val.
-             Először a dekódolt értéket vizsgáljuk, de csak akkor fogadjuk el,
-             ha a mező ténylegesen definiált és numerikus. */
-          /* protobufjs decode után csak a ténylegesen kódolt scalar mezőt
-             fogadjuk el. A hiányzó delay nem válhat automatikusan 0-vá. */
           if(!Object.prototype.hasOwnProperty.call(part,"delay")) return null;
-          if(part.delay === null || part.delay === undefined) return null;
           const n=Number(part.delay);
-          if(!Number.isFinite(n)) return null;
-          return n;
+          return Number.isFinite(n) ? n : null;
         };
 
         let delay=readRealDelay(stu.departure);
@@ -2797,18 +2816,17 @@ function parseVehicleFeed(buffer){
 async function fetchBinary(url){
 
   const key = getKey();
+
   if(!key){
-    logBkkKeyDiagnostics();
-    throw new Error("HTTP 401 – nincs BKK API-kulcs");
+    throw new Error("API-kulcs hiányzik");
   }
 
-  const sep = url.includes("?") ? "&" : "?";
-  const requestUrl =
-    url + sep + "key=" + encodeURIComponent(key);
+  /* UGYANAZ a kanonikus kulcs megy a VehiclePositions kérésbe. */
+  const fullUrl = bkkUrlWithKey(url, key);
 
   const res =
     await fetch(
-      requestUrl,
+      fullUrl,
       {
         cache:"no-store"
       }
@@ -3155,6 +3173,8 @@ async function testFeed(){
 
 
   try{
+
+    logLine("FIX40 KULCSLÁNC: ugyanaz a kanonikus API-kulcs megy VehiclePositions + TripUpdates + FUTÁR kéréshez.");
 
     setBadge(
       "feedBadge",
@@ -4289,12 +4309,10 @@ async function loadFutarVehicles(
       getGpsQueryCenter();
 
 
-    const url =
-      FUTAR_URL +
-      "?key=" +
-      encodeURIComponent(
-        getKey()
-      ) +
+    const key = getKey();
+
+  const url =
+      bkkUrlWithKey(FUTAR_URL, key) +
       "&version=3" +
       "&appVersion=" +
       encodeURIComponent(
@@ -7335,13 +7353,12 @@ document.addEventListener(
     initMap();
 
     loadSavedKey();
-  setTimeout(logBkkKeyDiagnostics, 300);
 
     bindButtons();
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ WINMENETREND KAPCSOLAT FIX41 REAL ADATKAPCSOLAT – JÓ ÚTVONAL + 4 ADAT indul."
+      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ WINMENETREND KAPCSOLAT FIX36 MOBIL STABIL indul."
     );
 
 
@@ -7349,13 +7366,9 @@ document.addEventListener(
       "NINCS KITALÁLT JÁRMŰADAT."
     );
 
-    logLine(
-      "4 ADATÚTVONAL JAVÍTVA: UTAS-JÁRAT → WinMenetrend, TRIP+STOP+SORREND → TripUpdates, FORGALMI → ALACSONYPADLÓS."
-    );
-
 
     logLine(
-      "FIX40: mobil kijelzés megőrizve; BKK kulcsdiagnosztika + OSM réteg javítás."
+      "FIX36: mobil stabilizálás + javított célzott WinMenetrend-illesztés; a BKK rendszám után valódi explicit mezők kerülnek a járműpanelbe."
     );
 
 
@@ -7401,16 +7414,15 @@ document.addEventListener(
 /* A forrásban sérült térképcsempe helyett biztos OSM réteg. */
 function fixMapTiles(){
   try{
-    const leafletMap = (typeof map !== "undefined" && map instanceof L.Map) ? map : null;
-    if(!leafletMap) return;
+    if(!window.map) return;
     let hasTile=false;
-    leafletMap.eachLayer(function(layer){
+    window.map.eachLayer(function(layer){
       if(layer instanceof L.TileLayer) hasTile=true;
     });
     if(!hasTile){
       L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
         maxZoom:19, attribution:"© OpenStreetMap"
-      }).addTo(leafletMap);
+      }).addTo(window.map);
       if(typeof logLine==="function") logLine("OpenStreetMap térképréteg OK.");
     }
   }catch(e){
@@ -7484,7 +7496,11 @@ function addOke(){
 /* BKK: ne legyen néma protobuf-dekódolási hiba HTML/JSON válasznál. */
 const originalFetchBinary=window.fetchBinary;
 window.fetchBinary=async function(url){
-  const res=await fetch(url+"?key="+encodeURIComponent(getKey()),{cache:"no-store"});
+  const key=getKey();
+  if(!key) throw new Error("API-kulcs hiányzik");
+  /* Az overlay sem készíthet második, eltérő kulcsot. */
+  const fullUrl=bkkUrlWithKey(url,key);
+  const res=await fetch(fullUrl,{cache:"no-store"});
   const ct=String(res.headers.get("content-type")||"").toLowerCase();
   const buf=await res.arrayBuffer();
   let p="";try{p=new TextDecoder().decode(buf.slice(0,500));}catch(e){}
@@ -7974,23 +7990,13 @@ window.extractFutarVehicles = function(json){
   function nk(v){ return pk(v); }
   function rk(v){ return String(v||'').trim().toUpperCase().replace(/[^A-Z0-9]/g,''); }
   function routeCandidates(v){
-    const raw=String(v||'').trim();
-    if(!raw) return [];
-    const tokens=[raw,...(raw.match(/[A-Za-z0-9]+/g)||[])];
-    const out=[];
-    for(const token of tokens){
-      const x=rk(token);
-      if(!x) continue;
-      if(!out.includes(x)) out.push(x);
-      if(/^\d+$/.test(x)){
-        if(x.length>1 && x.endsWith('0')){
-          const y=x.slice(0,-1); if(y && !out.includes(y)) out.push(y);
-        }else{
-          const y=x+'0'; if(!out.includes(y)) out.push(y);
-        }
-      }
+    const x=rk(v); if(!x) return [];
+    const a=[x];
+    if(/^\d+$/.test(x)){
+      if(x.length>1 && x.endsWith('0')) a.push(x.slice(0,-1));
+      else a.push(x+'0');
     }
-    return out;
+    return [...new Set(a)];
   }
   function log(msg){ try{ if(typeof logLine==='function') logLine(msg); }catch(e){} }
 
@@ -8165,50 +8171,6 @@ window.extractFutarVehicles = function(json){
       }
     }
 
-    /* 3) AKTUÁLIS JÁRAT JÁRMŰLISTA – valódi WinMenetrend oldal.
-       Ez különösen fontos, mert ezen az oldalon a forgalmi/blokk/típus/
-       alacsonypadlós mezők táblázatban lehetnek, miközben a járműtörténet
-       oldalon csak részhalmazuk jelenik meg. */
-    for(const rc of routes){
-      if(result && real(result.forgalmi) && real(result.vehicleType) &&
-         real(result.blockId) && real(result.blockVehicleNumber) &&
-         result.lowFloor!==null && result.lowFloor!==undefined) break;
-      const cu='https://online.winmenetrend.hu/budapest/latest/lines/'+encodeURIComponent(rc)+'/vehicles?date='+date;
-      const ch=await fetchWin(cu,'AKTUÁLIS JÁRMŰLISTA '+rc+' / '+p);
-      if(!ch) continue;
-      const rows=parseTables(ch,p);
-      const hit=rows.find(x=>pk(x.plate)===key);
-      if(hit){
-        result=result||{plate:p,forgalmi:null,vehicleType:null,blockId:null,blockVehicleNumber:null,lowFloor:null};
-        ['forgalmi','vehicleType','blockId','blockVehicleNumber'].forEach(k=>{
-          if(!real(result[k]) && real(hit[k])) result[k]=hit[k];
-        });
-        if((result.lowFloor===null || result.lowFloor===undefined) &&
-           hit.lowFloor!==null && hit.lowFloor!==undefined) result.lowFloor=hit.lowFloor;
-        log('FIX41: '+p+' → aktuális járműlista '+rc+' → pontos rendszám-találat');
-      }
-    }
-
-    /* 4) KÖZÖS FUTÁR JÁRMŰTÁBLA – szintén csak tényleges rendszám-találat. */
-    if(!(result && real(result.forgalmi) && real(result.vehicleType) &&
-         real(result.blockId) && real(result.blockVehicleNumber))){
-      const fu='https://online.winmenetrend.hu/futar/vehicles?more_info=2';
-      const fh=await fetchWin(fu,'KÖZÖS FUTÁR JÁRMŰTÁBLA / '+p);
-      if(fh){
-        const rows=parseTables(fh,p);
-        const hit=rows.find(x=>pk(x.plate)===key);
-        if(hit){
-          result=result||{plate:p,forgalmi:null,vehicleType:null,blockId:null,blockVehicleNumber:null,lowFloor:null};
-          ['forgalmi','vehicleType','blockId','blockVehicleNumber'].forEach(k=>{
-            if(!real(result[k]) && real(hit[k])) result[k]=hit[k];
-          });
-          if((result.lowFloor===null || result.lowFloor===undefined) &&
-             hit.lowFloor!==null && hit.lowFloor!==undefined) result.lowFloor=hit.lowFloor;
-          log('FIX41: '+p+' → közös FUTÁR járműtábla → pontos rendszám-találat');
-        }
-      }
-    }
-
     cache.set(key,{time:Date.now(),data:result});
     if(result){
       log('FIX35: '+p+' → FORGALMI='+(real(result.forgalmi)?result.forgalmi:'NINCS ADAT')+' | JÁRMŰTÍPUS='+(real(result.vehicleType)?result.vehicleType:'NINCS ADAT')+' | BLOKK='+(real(result.blockId)?result.blockId:'NINCS ADAT')+' | JÁRMŰ#='+(real(result.blockVehicleNumber)?result.blockVehicleNumber:'NINCS ADAT'));
@@ -8230,13 +8192,6 @@ window.extractFutarVehicles = function(json){
       const all=window.vehicleData.filter(v=>v && real(v.licensePlate));
       const priority=[];
       const rest=[];
-      /* A képernyőn éppen látható, szűrt járművek kapnak elsőbbséget.
-         Így a kártyán ténylegesen megjelenő járműnél nem kell arra várni,
-         hogy a körforgó batch később érjen oda. */
-      const visible=all.filter(v=>v._visible===true || matchesFilters(v));
-      for(const v of visible){
-        if(!priority.includes(v)) priority.push(v);
-      }
       for(const v of all){
         const p=pk(v.licensePlate);
         if((plateSearch&&p===plateSearch)||(universal&&p===universal)) priority.push(v); else rest.push(v);
@@ -8254,13 +8209,12 @@ window.extractFutarVehicles = function(json){
         if(item && !batch.includes(item)) batch.push(item);
       }
       if(rest.length) window.fix35BatchCursor=(window.fix35BatchCursor+batch.length)%rest.length;
-      const priorityLimited=priority.slice(0, window.innerWidth<=700 ? 3 : 6);
-      const queue=[...priorityLimited,...batch.filter(v=>!priorityLimited.includes(v))];
+      const queue=[...priority,...batch];
       let merged=0, checked=0;
       for(const item of queue){
-        if(checked>=priorityLimited.length+batchSize) break;
+        if(checked>=priority.length+batchSize) break;
         checked++;
-        const data=await exactWin(item.licensePlate,item.routeShortName||item.route||item.routeId||'');
+        const data=await exactWin(item.licensePlate,item.routeId||item.routeShortName||item.route||'');
         if(!data) continue;
         const before={forgalmi:item.forgalmi,vehicleType:item.vehicleType,blockId:item.blockId,blockVehicleNumber:item.blockVehicleNumber};
         const changed=window.mergeVehicleData(item,data);
@@ -8293,7 +8247,7 @@ window.extractFutarVehicles = function(json){
   window.fix35EnrichVehicle=async function(item){
     if(!item || !real(item.licensePlate)) return false;
     try{
-      const data=await exactWin(item.licensePlate,item.routeShortName||item.route||item.routeId||'');
+      const data=await exactWin(item.licensePlate,item.routeId||item.routeShortName||item.route||'');
       if(!data) return false;
       const changed=window.mergeVehicleData(item,data);
       if(changed){
@@ -8313,23 +8267,6 @@ window.extractFutarVehicles = function(json){
 
   window.fix35EnrichCurrent=run;
   window.updateWinRealtime=run;
-
-  /* A kijelölt/kártyán látható járműnél a célzott WinMenetrend-lekérés
-     mindig a UTAS (routeShortName) útvonalat próbálja először. */
-  window.fix35EnrichVisible=async function(){
-    try{
-      if(!Array.isArray(window.vehicleData)) return 0;
-      const visible=window.vehicleData.filter(v=>v && v._visible && real(v.licensePlate));
-      let n=0;
-      for(const item of visible.slice(0,3)){
-        if(await window.fix35EnrichVehicle(item)) n++;
-      }
-      if(n){
-        try{ if(typeof safeRenderAll==='function') safeRenderAll('FIX41 4ADAT'); else if(typeof renderVehicles==='function') renderVehicles(); }catch(e){}
-      }
-      return n;
-    }catch(e){ log('FIX41 4ADAT célzott HIBA: '+(e?.message||e)); return 0; }
-  };
 
   /* MOBIL STABIL: iPhone-on nem indul háttérben WinMenetrend-körforgó.
      A BKK valódi feed betöltése és a TripUpdates ettől független.
