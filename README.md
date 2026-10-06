@@ -8284,5 +8284,98 @@ window.extractFutarVehicles = function(json){
   window.__ATTILA_TAKARITAS_2_KEYDIAG__=clean2KeyDiag;
 })();
 </script>
+
+<script>
+/* ============================================================
+   TAKARÍTÁS 3 – BKK VALÓDI HTTP-KÉRÉS DIAGNOSZTIKA
+   Nem írja ki az API-kulcs értékét.
+   A böngésző által ténylegesen elküldött go.bkk.hu kérést figyeli.
+   ============================================================ */
+(function(){
+  const MARKER='ATTILA TAKARÍTÁS 3 – BKK VALÓDI HTTP-KÉRÉS ELLENŐRZÉS';
+  const seen=new WeakSet();
+  function tlog(msg){
+    try{
+      if(typeof window.logLine==='function') window.logLine('TAKARÍTÁS 3: '+msg);
+      else console.log('TAKARÍTÁS 3: '+msg);
+    }catch(e){console.log('TAKARÍTÁS 3: '+msg);}
+  }
+  function safeUrl(raw){
+    try{
+      const u=new URL(String(raw),window.location.href);
+      const host=u.host;
+      const path=u.pathname;
+      const params=[...u.searchParams.keys()];
+      const hasKey=u.searchParams.has('key');
+      const key=u.searchParams.get('key')||'';
+      if(hasKey) u.searchParams.set('key','[REDACTED '+key.length+' karakter]');
+      return {host,path,params,hasKey,keyLength:key.length,url:u.toString()};
+    }catch(e){return {host:'?',path:'?',params:[],hasKey:false,keyLength:0,url:'INVALID URL'};}
+  }
+  function responseLog(info,res){
+    try{
+      const ct=String(res.headers.get('content-type')||'').toLowerCase()||'NINCS';
+      tlog(info.label+' VÁLASZ: HTTP '+res.status+' | '+ct+' | ok='+(res.ok?'IGEN':'NEM'));
+    }catch(e){}
+  }
+  const nativeFetch=window.fetch;
+  if(!nativeFetch || nativeFetch.__ATTIlaClean3Wrapped) return;
+  async function wrappedFetch(input,init){
+    let raw='';
+    try{raw=typeof input==='string'?input:(input&&input.url)||'';}catch(e){}
+    const info=safeUrl(raw);
+    const isBkk=info.host==='go.bkk.hu';
+    let label='BKK';
+    if(info.path.includes('VehiclePositions')) label='VehiclePositions';
+    else if(info.path.includes('TripUpdates')) label='TripUpdates';
+    else if(info.path.includes('vehicles-for-location')) label='FUTÁR';
+    else if(info.path.includes('vehicles-for-route')) label='FUTÁR-JÁRAT';
+    if(isBkk){
+      tlog(label+' KÉRÉS: host='+info.host+' | path='+info.path+' | keyParam='+(info.hasKey?'IGEN':'NEM')+' | keyLength='+info.keyLength+' | query='+info.params.join(','));
+    }
+    try{
+      const res=await nativeFetch.apply(this,arguments);
+      if(isBkk) responseLog({label},res);
+      return res;
+    }catch(e){
+      if(isBkk) tlog(label+' KÉRÉS HIBA: '+(e?.message||e));
+      throw e;
+    }
+  }
+  wrappedFetch.__ATTIlaClean3Wrapped=true;
+  window.fetch=wrappedFetch;
+  tlog(MARKER);
+  try{
+    const key=typeof getKey==='function'?getKey():'';
+    tlog('AKTÍV KULCS: '+(key?'IGEN ('+key.length+' karakter)':'NEM'));
+  }catch(e){tlog('AKTÍV KULCS: DIAG HIBA');}
+  window.__ATTILA_TAKARITAS_3__=true;
+})();
+</script>
+<script>
+/* TAKARÍTÁS 3 – Leaflet rétegellenőrzés javítása */
+(function(){
+  function tlog(msg){try{if(typeof window.logLine==='function')window.logLine('TAKARÍTÁS 3: '+msg);else console.log('TAKARÍTÁS 3: '+msg);}catch(e){}}
+  function fixMap(){
+    try{
+      const m=window.map;
+      if(!m){tlog('TÉRKÉP: window.map még nincs kész.');return;}
+      if(typeof m.eachLayer!=='function'){
+        tlog('TÉRKÉP: window.map nem Leaflet Map példány; OSM automatikus ellenőrzés kihagyva.');
+        return;
+      }
+      let hasTile=false;
+      m.eachLayer(layer=>{if(typeof L!=='undefined' && layer instanceof L.TileLayer) hasTile=true;});
+      if(!hasTile && typeof L!=='undefined'){
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(m);
+        tlog('OpenStreetMap térképréteg OK.');
+      }else tlog('OpenStreetMap térképréteg: '+(hasTile?'már jelen van':'Leaflet nem érhető el'));
+    }catch(e){tlog('OpenStreetMap réteg HIBA: '+(e?.message||e));}
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(fixMap,300),{once:true});
+  else setTimeout(fixMap,300);
+  window.__ATTILA_TAKARITAS_3_MAP__=fixMap;
+})();
+</script>
 </body>
 </html>
