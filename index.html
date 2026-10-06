@@ -8292,7 +8292,7 @@ window.extractFutarVehicles = function(json){
    A böngésző által ténylegesen elküldött go.bkk.hu kérést figyeli.
    ============================================================ */
 (function(){
-  const MARKER='ATTILA TAKARÍTÁS 3 – BKK VALÓDI HTTP-KÉRÉS ELLENŐRZÉS';
+  const MARKER='ATTILA TAKARÍTÁS 3 + 4 – BKK VALÓDI HTTP/AUTH ELLENŐRZÉS';
   const seen=new WeakSet();
   function tlog(msg){
     try{
@@ -8377,5 +8377,65 @@ window.extractFutarVehicles = function(json){
   window.__ATTILA_TAKARITAS_3_MAP__=fixMap;
 })();
 </script>
+
+<script>
+/* ================================================================
+   ATTILA TAKARÍTÁS 4 – BKK AUTH KERESZTELLENŐRZÉS
+   A kulcs értékét SOHA nem írjuk ki.
+   ================================================================ */
+(function(){
+  const T4='TAKARÍTÁS 4';
+  function t4log(msg){
+    try{ if(typeof logLine==='function') logLine(T4+': '+msg); else console.log(T4+': '+msg); }catch(e){ console.log(T4+': '+msg); }
+  }
+  function activeKey(){ try{return (typeof getKey==='function'?getKey():'').trim();}catch(e){return '';} }
+  function safeUrl(raw){
+    try{
+      const u=new URL(raw,location.href);
+      const key=activeKey();
+      if(key) u.searchParams.set('key',key);
+      return u;
+    }catch(e){ return null; }
+  }
+  function keyShape(){
+    const k=activeKey();
+    const chars=[...k];
+    const bad=[];
+    chars.forEach((c,i)=>{ if(/\s/.test(c)) bad.push('whitespace@'+i); if(c.charCodeAt(0)<32||c.charCodeAt(0)===127) bad.push('control@'+i); });
+    const special=(k.match(/[=&?%+#]/g)||[]).join('');
+    t4log('KULCS ALAK: jelenlét='+(k?'IGEN':'NEM')+' | hossz='+k.length+' | ASCII='+(chars.every(c=>c.charCodeAt(0)<=127)?'IGEN':'NEM')+' | whitespace='+(bad.some(x=>x.startsWith('whitespace'))?'VAN':'NINCS')+' | vezérlő='+(bad.some(x=>x.startsWith('control'))?'VAN':'NINCS')+' | speciális='+(special||'NINCS'));
+  }
+  async function probe(name, rawUrl, binaryExpected){
+    const u=safeUrl(rawUrl);
+    if(!u){ t4log(name+' KÉRÉS: URL-HIBA'); return; }
+    const key=u.searchParams.get('key')||'';
+    t4log(name+' KÉRÉS: host='+u.host+' | path='+u.pathname+' | keyParam='+(key?'IGEN':'NEM')+' | keyLength='+key.length+' | query='+[...u.searchParams.keys()].join(','));
+    try{
+      const r=await fetch(u.toString(),{cache:'no-store',headers:{'Accept':binaryExpected?'application/octet-stream, application/x-protobuf, */*':'application/json, text/plain, */*'}});
+      const ct=String(r.headers.get('content-type')||'').toLowerCase();
+      const b=await r.arrayBuffer();
+      let preview='';
+      try{preview=new TextDecoder().decode(b.slice(0,300)).replace(/\s+/g,' ').slice(0,180);}catch(e){}
+      t4log(name+' VÁLASZ: HTTP '+r.status+' | '+ct+' | bytes='+b.byteLength+' | ok='+(r.ok?'IGEN':'NEM')+(preview?' | text='+preview:''));
+    }catch(e){ t4log(name+' VÁLASZ: FETCH HIBA | '+String(e&&e.message||e)); }
+  }
+  async function runT4(){
+    t4log('ATTILA TAKARÍTÁS 4 – BKK AUTH KERESZTELLENŐRZÉS');
+    keyShape();
+    const k=activeKey();
+    if(!k){t4log('NINCS AKTÍV KULCS – tesztek kihagyva.'); return;}
+    const base='https://go.bkk.hu';
+    await probe('VehiclePositions.pb',base+'/api/query/v1/ws/gtfs-rt/full/VehiclePositions.pb',true);
+    await probe('TripUpdates.pb',base+'/api/query/v1/ws/gtfs-rt/full/TripUpdates.pb',true);
+    await probe('Alerts.pb',base+'/api/query/v1/ws/gtfs-rt/full/Alerts.pb',true);
+    await probe('FUTÁR-min',base+'/api/query/v1/ws/otp/api/where/vehicles-for-location.json?version=3&appVersion=AttilaKozlekedes-Vadasz&lat=47.4979&lon=19.0402&latSpan=0.02&lonSpan=0.02&includeReferences=true',false);
+    t4log('TAKARÍTÁS 4 VÉGE');
+  }
+  window.__ATTILA_TAKARITAS_4__=runT4;
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(runT4,1500));
+  else setTimeout(runT4,1500);
+})();
+</script>
+
 </body>
 </html>
