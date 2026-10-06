@@ -1335,6 +1335,9 @@ function initMap(){
       11
     );
 
+  /* FIX39: a MÁV realtime réteg számára is elérhetővé tesszük ugyanazt a Leaflet térképet. */
+  try{ window.map = map; }catch(e){}
+
 
   const osm=L.tileLayer(
     "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -6931,7 +6934,7 @@ function renderVehicles(){
 
 /* ============================================================
    VONAL ÖSSZES JÁRMŰVE
-      ============================================================ */
+   ============================================================ */
 
 async function routeAllVehicles(){
 
@@ -8252,60 +8255,255 @@ window.extractFutarVehicles = function(json){
 </script>
 <script>
 /* ============================================================
-   FIX39 + MÁV GRAPHQL / GYV VALÓS ADAT PRÓBA
-   Nem módosítja a meglévő BKK adatútvonalat.
-   A MÁV ág külön, hibatűrően indul.
+   FIX39 + MÁV / EMMA GRAPHQL VALÓS REALTIME
+   - közvetlen GraphQL POST
+   - nincs kitalált járműadat
+   - a MÁV/EMMA által ténylegesen visszaadott járművek jelennek meg
+   - ugyanabba a Leaflet térképbe kerülnek
+   - ugyanabba a VOLÁN/MÁV realtime táblába kerülnek
    ============================================================ */
 (function(){
+  'use strict';
+
   const MAV_GRAPHQL_URLS = [
+    'https://emma.mav.hu/otp2-backend/otp/routers/default/index/graphql',
     'https://mavplusz.hu/otp2-backend/otp/routers/default/index/graphql',
     'https://mavplusz.hu//otp2-backend/otp/routers/default/index/graphql'
   ];
+
+  /* Budapest + teljes magyarországi vasúti terület. */
+  const BBOX = { swLat:45.7, swLon:16.1, neLat:48.6, neLon:22.9 };
+
+  /*
+    Ezek a mezők a jelenleg elérhető EMMA GraphQL példában szereplő
+    VehiclePosition/Trip mezők. A lekérdezés nem talál ki UIC-ot vagy
+    rendszámot: amit az API nem ad, az NINCS ADAT marad.
+  */
+  const QUERY = `query VehiclePositions($swLat: Float!, $swLon: Float!, $neLat: Float!, $neLon: Float!) {
+    vehiclePositions(
+      swLat: $swLat,
+      swLon: $swLon,
+      neLat: $neLat,
+      neLon: $neLon,
+      modes: [RAIL, RAIL_REPLACEMENT_BUS, SUBURBAN_RAILWAY, TRAMTRAIN]
+    ) {
+      vehicleId
+      lat
+      lon
+      heading
+      label
+      lastUpdated
+      speed
+      nextStop { arrivalDelay }
+      trip {
+        gtfsId
+        domesticResTrainNumber
+      }
+    }
+  }`;
+
   const GYV_TESTS = [
     {uic:'98 55 8276 003-1', vehicle:'Mk45-2003', trainId:'00-2026.10.06. 30123', train:'30123'},
     {uic:'98 55 8276 005-6', vehicle:'Mk45-2005', trainId:'00-2026.10.06. 30224', train:'30224'}
   ];
+
+  let mavMarkers = new Map();
+  let lastGoodUrl = '';
+  let lastVehicles = [];
+
   function mavLog(msg){
-    try{ if(typeof logLine==='function') logLine('MÁV GraphQL: '+msg); }catch(e){}
-    console.log('[MÁV GraphQL]',msg);
+    try{ if(typeof logLine==='function') logLine('MÁV realtime: '+msg); }catch(e){}
+    console.log('[MÁV realtime]',msg);
   }
+
+  function txt(v){
+    return v===null || v===undefined || v==='' ? 'NINCS ADAT' : String(v);
+  }
+
+  function num(v){
+    const n=Number(v);
+    return Number.isFinite(n)?n:null;
+  }
+
+  function speedKmh(v){
+    const n=num(v);
+    return n===null ? null : n*3.6;
+  }
+
+  function delayText(sec){
+    const n=num(sec);
+    if(n===null) return 'NINCS ADAT';
+    if(n===0) return '0:00';
+    const sign=n>0?'+':'-';
+    const a=Math.abs(Math.round(n));
+    return sign+Math.floor(a/60)+':'+String(a%60).padStart(2,'0');
+  }
+
+  function makeQuery(){
+    return {query:QUERY,variables:BBOX,operationName:'VehiclePositions'};
+  }
+
+  async function post(url){
+    const r=await fetch(url,{
+      method:'POST',
+      headers:{'Accept':'application/json','Content-Type':'application/json'},
+      body:JSON.stringify(makeQuery()),
+      credentials:'omit',
+      cache:'no-store'
+    });
+    const raw=await r.text();
+    let data=null;
+    try{data=JSON.parse(raw)}catch(e){}
+    if(!r.ok) throw new Error('HTTP '+r.status+(raw?' – '+raw.slice(0,300):''));
+    if(data && Array.isArray(data.errors) && data.errors.length){
+      throw new Error('GraphQL: '+data.errors.map(x=>x.message||String(x)).join(' | '));
+    }
+    return data;
+  }
+
+  function setStatus(s){
+    const el=document.getElementById('mavGraphqlStatus');
+    if(el) el.textContent=s;
+    const re=document.getElementById('regionalRealtimeStatus');
+    if(re) re.textContent=s;
+  }
+
   function addMavPanel(){
     if(document.getElementById('mavGraphqlPanel')) return;
     const host=document.getElementById('side')||document.body;
-    const box=document.createElement('div'); box.id='mavGraphqlPanel'; box.className='panel';
-    box.innerHTML='<h3>🚆 MÁV / GYERMEKVASÚT – GRAPHQL</h3><div id="mavGraphqlStatus">Indítás…</div><div style="font-size:12px;line-height:1.45;margin-top:7px">2-es: Budapest–Esztergom<br>70-es: Budapest–Szob<br>GYV: Mk45-2003 / 30123<br>GYV: Mk45-2005 / 30224</div>';
+    const box=document.createElement('div');
+    box.id='mavGraphqlPanel';
+    box.className='panel';
+    box.innerHTML=`<h3>🚆 MÁV / GYERMEKVASÚT – REALTIME</h3>
+      <div id="mavGraphqlStatus">Indítás…</div>
+      <div style="font-size:12px;line-height:1.45;margin-top:7px">
+        GraphQL: EMMA / MÁV<br>
+        2-es: Budapest–Esztergom • 70-es: Budapest–Szob<br>
+        GYV tesztazonosítók: Mk45-2003 / 30123 • Mk45-2005 / 30224
+      </div>`;
     host.prepend(box);
   }
-  async function postGraphQL(url,query){
-    const r=await fetch(url,{method:'POST',headers:{'Accept':'application/json','Content-Type':'application/json'},body:JSON.stringify({query})});
-    const text=await r.text();
-    return {status:r.status,text:text};
+
+  function ensureMarkerLayer(){
+    if(!window.map || !window.L) return null;
+    if(!window.__ATTI_MAV_LAYER){
+      window.__ATTI_MAV_LAYER=L.layerGroup().addTo(window.map);
+    }
+    return window.__ATTI_MAV_LAYER;
   }
-  async function runMavGraphQL(){
-    addMavPanel();
-    const status=document.getElementById('mavGraphqlStatus');
-    const query='query { __typename }';
-    let last='';
-    for(const url of MAV_GRAPHQL_URLS){
-      try{
-        const r=await postGraphQL(url,query);
-        last='HTTP '+r.status+' – '+r.text.slice(0,500);
-        if(r.status>=200 && r.status<300){
-          status.textContent='ELFOGADVA: HTTP '+r.status;
-          mavLog('POST elfogadva: '+url+' | '+r.text.slice(0,500));
-          return;
-        }
-        mavLog('HTTP '+r.status+' a végponton: '+url);
-      }catch(e){
-        last='HIBA – '+(e&&e.message?e.message:String(e));
-        mavLog(last+' | '+url);
+
+  function markerPopup(v){
+    const delay=v.nextStop && v.nextStop.arrivalDelay;
+    const trip=v.trip||{};
+    const sp=speedKmh(v.speed);
+    return `<div style="min-width:220px">
+      <b>🚆 MÁV / EMMA</b><br>
+      <b>JÁRAT:</b> ${txt(trip.domesticResTrainNumber||v.label)}<br>
+      <b>JÁRMŰ ID:</b> ${txt(v.vehicleId)}<br>
+      <b>LABEL:</b> ${txt(v.label)}<br>
+      <b>ELTÉRÉS:</b> ${delayText(delay)}<br>
+      <b>SEBESSÉG:</b> ${sp===null?'NINCS ADAT':sp.toFixed(1)+' km/h'}<br>
+      <b>TRIP:</b> ${txt(trip.gtfsId)}<br>
+      <b>GPS:</b> ${num(v.lat)?.toFixed(6)??'NINCS ADAT'}, ${num(v.lon)?.toFixed(6)??'NINCS ADAT'}<br>
+      <b>FORRÁS:</b> MÁV / EMMA GraphQL
+    </div>`;
+  }
+
+  function renderMavMarkers(vehicles){
+    const layer=ensureMarkerLayer();
+    if(!layer) return;
+    const alive=new Set();
+    for(const v of vehicles){
+      const lat=num(v.lat), lon=num(v.lon);
+      if(lat===null||lon===null) continue;
+      const id=String(v.vehicleId||`${lat},${lon}`);
+      alive.add(id);
+      let m=mavMarkers.get(id);
+      if(!m){
+        m=L.circleMarker([lat,lon],{
+          radius:7,
+          weight:2,
+          fillOpacity:.85,
+          opacity:.95
+        }).addTo(layer);
+        mavMarkers.set(id,m);
+      }else m.setLatLng([lat,lon]);
+      m.bindPopup(markerPopup(v));
+      m._mavData=v;
+    }
+    for(const [id,m] of mavMarkers){
+      if(!alive.has(id)){
+        try{layer.removeLayer(m)}catch(e){}
+        mavMarkers.delete(id);
       }
     }
-    status.textContent='MÁV GraphQL válasz: '+last;
-    mavLog('A BKK adatút változatlan maradt; MÁV GraphQL nem adott sikeres választ.');
   }
-  window.ATTIlaMavGraphQL={run:runMavGraphQL,tests:GYV_TESTS,urls:MAV_GRAPHQL_URLS};
-  document.addEventListener('DOMContentLoaded',()=>setTimeout(runMavGraphQL,1200));
+
+  function renderRegionalRows(vehicles){
+    const body=document.getElementById('regionalRealtimeBody');
+    if(!body) return;
+    if(!vehicles.length){
+      body.innerHTML='<tr><td colspan="7">NINCS ADAT</td></tr>';
+      return;
+    }
+    const rows=vehicles.slice(0,250).map(v=>{
+      const t=v.trip||{};
+      const d=v.nextStop?.arrivalDelay;
+      const sp=speedKmh(v.speed);
+      return `<tr>
+        <td>🟤 MÁV</td>
+        <td>${txt(t.domesticResTrainNumber||v.label)}</td>
+        <td>${txt(v.vehicleId)}</td>
+        <td>NINCS ADAT</td>
+        <td>NINCS ADAT</td>
+        <td>${txt(t.gtfsId)}</td>
+        <td>${delayText(d)}${sp===null?'':' • '+sp.toFixed(1)+' km/h'}</td>
+      </tr>`;
+    });
+    body.innerHTML=rows.join('');
+  }
+
+  async function runMavRealtime(){
+    addMavPanel();
+    setStatus('MÁV GraphQL: lekérés…');
+    let last='NINCS ADAT';
+    for(const url of MAV_GRAPHQL_URLS){
+      try{
+        const data=await post(url);
+        const vehicles=Array.isArray(data?.data?.vehiclePositions)?data.data.vehiclePositions:[];
+        lastGoodUrl=url;
+        lastVehicles=vehicles;
+        renderRegionalRows(vehicles);
+        renderMavMarkers(vehicles);
+        setStatus(`MÁV GraphQL: OK • ${vehicles.length.toLocaleString('hu-HU')} valós jármű • ${new Date().toLocaleTimeString('hu-HU')}`);
+        mavLog(`OK • ${vehicles.length} jármű • ${url}`);
+        return vehicles;
+      }catch(e){
+        last=e?.message||String(e);
+        mavLog(`${last} | ${url}`);
+      }
+    }
+    setStatus('MÁV GraphQL: HIBA – '+last);
+    mavLog('MÁV realtime nem adott sikeres választ. A BKK adatút változatlan.');
+    return [];
+  }
+
+  window.ATTIlaMavGraphQL={
+    run:runMavRealtime,
+    query:QUERY,
+    bbox:BBOX,
+    tests:GYV_TESTS,
+    urls:MAV_GRAPHQL_URLS,
+    get vehicles(){return lastVehicles.slice();},
+    get endpoint(){return lastGoodUrl||'NINCS ADAT';}
+  };
+
+  document.addEventListener('DOMContentLoaded',()=>{
+    setTimeout(()=>{
+      runMavRealtime();
+      setInterval(runMavRealtime,20000);
+    },1600);
+  });
 })();
 </script>
 </body>
