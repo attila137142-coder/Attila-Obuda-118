@@ -1337,7 +1337,7 @@ function initMap(){
 
 
   const osm=L.tileLayer(
-    "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
+    "https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",
     {maxZoom:19,attribution:"© OpenStreetMap"}
   ).addTo(map);
   let mapFallbackUsed=false;
@@ -7308,7 +7308,7 @@ document.addEventListener(
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ FIX39 – TISZTA ALAP + 4 HIÁNYZÓ PANEL JAVÍTÁSA indul."
+      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ FIX39 – TISZTA ALAP + 4 HIÁNYZÓ PANEL JAVÍTÁSA + TÉRKÉP JAVÍTÁS indul."
     );
 
 
@@ -7370,10 +7370,10 @@ function fixMapTiles(){
       if(layer instanceof L.TileLayer) hasTile=true;
     });
     if(!hasTile){
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{
         maxZoom:19, attribution:"© OpenStreetMap"
       }).addTo(window.map);
-      if(typeof logLine==="function") logLine("OpenStreetMap térképréteg OK.");
+      if(typeof logLine==="function") logLine("CARTO térképréteg OK.");
     }
   }catch(e){
     try{if(typeof logLine==="function") logLine("OpenStreetMap réteg HIBA: "+(e?.message||e));}catch(x){}
@@ -7486,7 +7486,7 @@ function fixMapTilesFinal(){
     let hasTile=false;
     map.eachLayer(function(layer){ if(layer instanceof L.TileLayer) hasTile=true; });
     if(!hasTile){
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
+      L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png",{maxZoom:19,attribution:"© OpenStreetMap"}).addTo(map);
     }
   }catch(e){
     try{ if(typeof logLine === "function") logLine("Térkép javítás HIBA: "+e.message); }catch(x){}
