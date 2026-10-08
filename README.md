@@ -560,7 +560,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 <div id="header">
 
   <div class="title">
-    🚍 ATTILA KÖZLEKEDÉS – BKK VADÁSZ FŐNÖK NEXT TESZT
+    🚍 ATTILA KÖZLEKEDÉS – BKK VADÁSZ FIX39
   </div>
 
   <div id="feedBadge" class="badge warn">
@@ -590,7 +590,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
     FEED TESZT
   </button>
 
-  <button id="fonokBtn" type="button">👑 FŐNÖK – TESZT</button>
+  <button id="fonokBtn" type="button">👑 FŐNÖK</button>
 
   <button id="gpsBtn">
     GPS
@@ -2361,7 +2361,9 @@ async function fetchTripUpdates(){
         */
         const readRealDelay = (part) => {
           if(!part || typeof part !== "object") return null;
-          if(!Object.prototype.hasOwnProperty.call(part,"delay")) return null;
+          /* protobufjs: csak akkor fogadjuk el, ha a delay mező ténylegesen
+             elérhető az érkezési/indulási objektumban. Nem gyártunk 0-t. */
+          if(part.delay === undefined || part.delay === null) return null;
           const n=Number(part.delay);
           return Number.isFinite(n) ? n : null;
         };
@@ -5950,37 +5952,78 @@ async function fetchWinRouteHistory(routeCode, plate){
   if(!routeCode || !plate) return null;
   const wanted=rtNorm(plate);
   const url="https://online.winmenetrend.hu/futar/history/lines/"+encodeURIComponent(routeCode)+"?date="+localDateYmd();
+
+  /*
+    FŐNÖK FIX – a WinMenetrend vonalszintű oldalán a valódi táblázat:
+    Kezdet | Vég | Forgalmi | Jármű | Jármű típus | Telephely.
+    Itt a Jármű oszlopot hasonlítjuk a BKK valódi rendszámához.
+    Nem az első sort vesszük ki, és nem nevezünk át más mezőt FORGALMI-nak.
+  */
+  const parseHistory = (html) => {
+    try{
+      const doc=new DOMParser().parseFromString(String(html||""),"text/html");
+      const norm=v=>wmCleanText(v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+      for(const table of [...doc.querySelectorAll("table")]){
+        const trs=[...table.querySelectorAll("tr")];
+        let header=null;
+        for(const tr of trs){
+          const cells=[...tr.querySelectorAll("th,td")].map(x=>wmCleanText(x.textContent));
+          const h=cells.map(norm);
+          if(h.includes("forgalmi") && (h.includes("jarmu") || h.includes("rendszam"))){
+            header=cells; break;
+          }
+        }
+        if(!header) continue;
+        const h=header.map(norm);
+        const fi=h.indexOf("forgalmi");
+        const ji=h.indexOf("jarmu")>=0?h.indexOf("jarmu"):h.indexOf("rendszam");
+        const ti=h.indexOf("jarmu tipus");
+        if(fi<0 || ji<0) continue;
+        for(const tr of trs){
+          if(tr.querySelectorAll("th").length) continue;
+          const c=[...tr.querySelectorAll("td")].map(x=>wmCleanText(x.textContent));
+          if(!c.length || !c[ji]) continue;
+          if(rtNorm(c[ji])!==wanted) continue;
+          return {
+            forgalmi: c[fi] || null,
+            vehicleType: ti>=0 ? (c[ti]||null) : null,
+            blockId:null,
+            blockVehicleNumber:c[ji]||null,
+            lowFloor:null
+          };
+        }
+      }
+    }catch(e){}
+    return null;
+  };
+
   try{
     const r=await fetch(url,{cache:"no-store"});
     if(r.ok){
       const t=await r.text();
-      /* FONTOS: vonalszintű oldalon NEM vehetjük az első sort.
-         Előbb mindig a pontos, valós szerelvényazonosítót keressük. */
+      const hit=parseHistory(t);
+      if(hit) return hit;
       const rows=wmExtractMarkdownRows(t);
-      const hit=rows.find(x=>rtNorm(x.plate)===wanted);
-      if(hit) return {forgalmi:hit.forgalmi||null,vehicleType:hit.vehicleType||null,blockId:null,blockVehicleNumber:null,lowFloor:null};
-      const f=wmExtractFields(t);
-      /* Csak akkor használjuk a címkés mezőket, ha az oldal jármű-specifikus
-         adatot adott; vonalszintű oldalon az első táblázatsor nem elfogadható. */
-      if(f && (f.forgalmi||f.vehicleType)){
-        const compact=String(t||"").replace(/\s+/g," ");
-        if(compact.toUpperCase().includes(String(plate).toUpperCase())) return f;
-      }
+      const hit2=rows.find(x=>rtNorm(x.plate)===wanted);
+      if(hit2) return {forgalmi:hit2.forgalmi||null,vehicleType:hit2.vehicleType||null,blockId:null,blockVehicleNumber:hit2.plate||null,lowFloor:null};
     }
   }catch(e){}
+
   try{
     const proxy="https://r.jina.ai/http://online.winmenetrend.hu/futar/history/lines/"+encodeURIComponent(routeCode)+"?date="+localDateYmd();
     const r=await fetch(proxy,{cache:"no-store"});
     if(r.ok){
       const t=await r.text();
+      const hit=parseHistory(t);
+      if(hit) return hit;
       const rows=wmExtractMarkdownRows(t);
-      const hit=rows.find(x=>rtNorm(x.plate)===rtNorm(plate));
-      if(hit) return {forgalmi:hit.forgalmi||null,vehicleType:hit.vehicleType||null,blockId:null,blockVehicleNumber:null,lowFloor:null};
+      const hit2=rows.find(x=>rtNorm(x.plate)===wanted);
+      if(hit2) return {forgalmi:hit2.forgalmi||null,vehicleType:hit2.vehicleType||null,blockId:null,blockVehicleNumber:hit2.plate||null,lowFloor:null};
     }
   }catch(e){}
+
   return null;
 }
-
 async function fetchWinRealtimePage(){
   const direct="https://online.winmenetrend.hu/futar/vehicles?more_info=1";
   try{
@@ -7445,7 +7488,7 @@ document.addEventListener(
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ FŐNÖK NEXT TESZT indul."
+      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ WINMENETREND KAPCSOLAT FIX36 MOBIL STABIL indul."
     );
 
 
@@ -7484,19 +7527,7 @@ document.addEventListener(
     */
 
     loadBkkGtfs();
-    updateWinRealtime().then(()=>{
-      setTimeout(()=>{
-        try{
-          logLine("👑 FŐNÖK NEXT: automatikus adatút-teszt indul a frissítés után.");
-          runFonok();
-        }catch(e){
-          logLine("👑 FŐNÖK NEXT HIBA: "+(e?.message||e));
-        }
-      },1200);
-    }).catch(e=>{
-      logLine("WinMenetrend frissítés HIBA: "+(e?.message||e));
-      setTimeout(()=>{try{runFonok();}catch(x){}},1200);
-    });
+    updateWinRealtime();
 
   }
 );
