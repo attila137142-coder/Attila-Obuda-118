@@ -6786,11 +6786,14 @@ async function runFonok(){
   }else{
     vp=await fonokRequest(VEHICLE_URL,"VehiclePositions");
     tu=await fonokRequest(TRIP_UPDATES_URL,"TripUpdates");
-    fu=await fonokRequest(FUTAR_URL,"FUTÁR");
+    /* API-LIMIT VÉDELEM: a FŐNÖK diagnosztika nem indít újabb FUTÁR-kérést.
+       A korábbi LIMIT_EXCEEDED válasz után a szolgáltatást nem terheljük tovább.
+       A normál alkalmazás FUTÁR-állapotát ettől függetlenül a saját betöltője kezeli. */
+    fu=null;
 
     rows.push(fonokRow("🌐 VehiclePositions HTTP",1,vp.ok?1:0,vp.ok?`OK ${vp.status}, ${vp.bytes.toLocaleString("hu-HU")} byte, ${vp.ms} ms`:`HTTP ${vp.status||"NINCS VÁLASZ"} | ${vp.detail}`,vp.ok?"fok":"ferr"));
     rows.push(fonokRow("⏱️ TripUpdates HTTP",1,tu.ok?1:0,tu.ok?`OK ${tu.status}, ${tu.bytes.toLocaleString("hu-HU")} byte, ${tu.ms} ms`:`HTTP ${tu.status||"NINCS VÁLASZ"} | ${tu.detail}`,tu.ok?"fok":"ferr"));
-    rows.push(fonokRow("🚍 FUTÁR HTTP",1,fu.ok?1:0,fu.ok?`OK ${fu.status}, ${fu.bytes.toLocaleString("hu-HU")} byte, ${fu.ms} ms`:`HTTP ${fu.status||"NINCS VÁLASZ"} | ${fu.detail}`,fu.ok?"fok":"ferr"));
+    rows.push(fonokRow("🚍 FUTÁR HTTP",0,0,"KÉRÉS KIHAGYVA – API-limit védelem: a FŐNÖK nem küld újabb FUTÁR-kérést.","fwarn"));
   }
 
   let vpCount=0,tuCount=0,delayCount=0,futarCount=0;
@@ -6822,12 +6825,12 @@ async function runFonok(){
   if(fu?.ok){
     try{ const j=JSON.parse(new TextDecoder().decode(fu.buffer)); const ex=extractFutarVehicles(j); futarCount=ex.length; }catch(e){}
   }
-  rows.push(fonokRow("🚍 FUTÁR → jármű rekord",fu?.ok?1:0,futarCount,fu?.ok?(futarCount?"valódi FUTÁR rekord":"válasz érkezett, de nem találtunk járműt"):"FUTÁR válasz nem érkezett",fu?.ok&&futarCount?"fok":"fwarn"));
+  rows.push(fonokRow("🚍 FUTÁR → jármű rekord",fu?.ok?1:0,futarCount,fu===null?"KÉRÉS KIHAGYVA – API-limit védelem":(fu?.ok?(futarCount?"valódi FUTÁR rekord":"válasz érkezett, de nem találtunk járműt"):"FUTÁR válasz nem érkezett"),fu?.ok&&futarCount?"fok":"fwarn"));
 
   const total=Array.isArray(vehicleData)?vehicleData.length:0;
   const count=k=>vehicleData.filter(v=>{const x=v?.[k]; return x!==null&&x!==undefined&&String(x).trim()!=="";}).length;
   const boolCount=k=>vehicleData.filter(v=>v?.[k]===true||v?.[k]===false).length;
-  const finiteCount=k=>vehicleData.filter(v=>Number.isFinite(Number(v?.[k]))).length;
+  const finiteCount=k=>vehicleData.filter(v=>{const x=v?.[k]; return x!==null&&x!==undefined&&String(x).trim()!==""&&Number.isFinite(Number(x));}).length;
   rows.push(fonokRow("📦 Jelenlegi járműobjektum",total,total,total?"memóriában lévő valódi járműobjektumok":"nincs járműobjektum",total?"fok":"fwarn"));
   rows.push(fonokRow("🚏 GTFS JÁRAT / routeId",total,count("routeId"),"hiányzó routeId vagy üres mező",count("routeId")===total?"fok":"fwarn"));
   rows.push(fonokRow("🚌 UTAS / routeShortName",total,count("routeShortName"),"GTFS route név hiányzik",count("routeShortName")===total?"fok":"fwarn"));
@@ -6839,7 +6842,8 @@ async function runFonok(){
   rows.push(fonokRow("🔢 FORGALMI",total,count("forgalmi"),"explicit forgalmi adat hiányzik",count("forgalmi")===total?"fok":"fwarn"));
   rows.push(fonokRow("💨 SEBESSÉG",total,finiteCount("speedKmh"),"nincs numerikus sebesség",finiteCount("speedKmh")===total?"fok":"fwarn"));
   rows.push(fonokRow("↔️ ELTÉRÉS",total,vehicleData.filter(v=>v?.delaySeconds!==null && v?.delaySeconds!==undefined && v?.delaySeconds!=="" && Number.isFinite(Number(v.delaySeconds))).length,"nincs hozzárendelt valódi TripUpdates delay",vehicleData.some(v=>v?.delaySeconds!==null && v?.delaySeconds!==undefined && v?.delaySeconds!=="" && Number.isFinite(Number(v.delaySeconds)))?"fok":"fwarn"));
-  rows.push(fonokRow("📍 GPS pozíció",total,vehicleData.filter(v=>Number.isFinite(Number(v?.lat))&&Number.isFinite(Number(v?.lon))).length,"hiányzó koordináta",vehicleData.length&&vehicleData.every(v=>Number.isFinite(Number(v?.lat))&&Number.isFinite(Number(v?.lon)))?"fok":"fwarn"));
+  const gpsCount=vehicleData.filter(v=>v?.lat!==null&&v?.lat!==undefined&&String(v.lat).trim()!==""&&v?.lon!==null&&v?.lon!==undefined&&String(v.lon).trim()!==""&&Number.isFinite(Number(v.lat))&&Number.isFinite(Number(v.lon))).length;
+  rows.push(fonokRow("📍 GPS pozíció",total,gpsCount,"hiányzó koordináta",vehicleData.length&&gpsCount===vehicleData.length?"fok":"fwarn"));
   rows.push(fonokRow("🚏 Legközelebbi GTFS megálló",total,vehicleData.filter(v=>v?.nearestStop).length,"nincs kiszámolt nearestStop",vehicleData.length&&vehicleData.every(v=>v?.nearestStop)?"fok":"fwarn"));
   rows.push(fonokRow("🖥️ Megjelenítési lista",total,document.querySelectorAll("#vehicleList .vehicleCard").length,"A különbség lehet szűrés vagy kártyakorlát (asztali 500 / telefon 80); ez nem jelenti az adat elvesztését.", "fmuted"));
 
