@@ -605,10 +605,19 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
   </button>
 
   <button id="modeToggle" type="button" aria-pressed="false">☀️ NAPPALI</button>
-  <button id="autoFixBackBtn" type="button" title="Vissza az előző oldalra">⬅ VISSZA</button>
+  <button id="autoFixBackBtn" type="button" title="Vissza az előző oldalra" style="display:inline-block!important;visibility:visible!important;opacity:1!important;position:relative;z-index:1000">⬅ VISSZA</button>
   <button id="autoFixRunBtn" type="button" title="Hibakeresés és biztonságos automatikus javítás">🛠 MINDENT KIJAVÍT</button>
 
 </div>
+
+<nav id="attilaExternalQuickLinks" aria-label="Külső közlekedési oldalak" style="display:flex;flex-wrap:wrap;gap:7px;padding:8px 10px;background:#0d1720;border-bottom:1px solid #344454;position:relative;z-index:500">
+  <strong style="align-self:center;color:#d9e8f4">KÜLSŐ OLDALAK:</strong>
+  <a href="https://online.winmenetrend.hu/futar/vehicles?more_info=2" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">FUTÁR JÁRMŰTÁBLA ↗</a>
+  <a href="https://online.winmenetrend.hu/futar/history/lines" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">FUTÁR TÖRTÉNETI VONALAK ↗</a>
+  <a href="https://online.winmenetrend.hu/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">WINMENETREND ↗</a>
+  <a href="https://bkk.hu/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK ↗</a>
+  <a href="https://go.bkk.hu/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK GO ↗</a>
+</nav>
 
 <div id="map"></div>
 
@@ -6829,16 +6838,16 @@ async function runFonok(){
   rows.push(fonokRow("♿ ALACSONYPADLÓS",total,boolCount("lowFloor"),"explicit lowFloor adat hiányzik",boolCount("lowFloor")===total?"fok":"fwarn"));
   rows.push(fonokRow("🔢 FORGALMI",total,count("forgalmi"),"explicit forgalmi adat hiányzik",count("forgalmi")===total?"fok":"fwarn"));
   rows.push(fonokRow("💨 SEBESSÉG",total,finiteCount("speedKmh"),"nincs numerikus sebesség",finiteCount("speedKmh")===total?"fok":"fwarn"));
-  rows.push(fonokRow("↔️ ELTÉRÉS",total,vehicleData.filter(v=>Number.isFinite(Number(v?.delaySeconds))).length,"nincs hozzárendelt valódi TripUpdates delay",vehicleData.some(v=>Number.isFinite(Number(v?.delaySeconds)))?"fok":"fwarn"));
+  rows.push(fonokRow("↔️ ELTÉRÉS",total,vehicleData.filter(v=>v?.delaySeconds!==null && v?.delaySeconds!==undefined && v?.delaySeconds!=="" && Number.isFinite(Number(v.delaySeconds))).length,"nincs hozzárendelt valódi TripUpdates delay",vehicleData.some(v=>v?.delaySeconds!==null && v?.delaySeconds!==undefined && v?.delaySeconds!=="" && Number.isFinite(Number(v.delaySeconds)))?"fok":"fwarn"));
   rows.push(fonokRow("📍 GPS pozíció",total,vehicleData.filter(v=>Number.isFinite(Number(v?.lat))&&Number.isFinite(Number(v?.lon))).length,"hiányzó koordináta",vehicleData.length&&vehicleData.every(v=>Number.isFinite(Number(v?.lat))&&Number.isFinite(Number(v?.lon)))?"fok":"fwarn"));
   rows.push(fonokRow("🚏 Legközelebbi GTFS megálló",total,vehicleData.filter(v=>v?.nearestStop).length,"nincs kiszámolt nearestStop",vehicleData.length&&vehicleData.every(v=>v?.nearestStop)?"fok":"fwarn"));
-  rows.push(fonokRow("🖥️ Megjelenítési lista",total,document.querySelectorAll("#vehicleList .vehicleCard").length,"kártyakorlát/szűrés is okozhat különbséget", "fmuted"));
+  rows.push(fonokRow("🖥️ Megjelenítési lista",total,document.querySelectorAll("#vehicleList .vehicleCard").length,"A különbség lehet szűrés vagy kártyakorlát (asztali 500 / telefon 80); ez nem jelenti az adat elvesztését.", "fmuted"));
 
   let first="NINCS HIBA – minden ellenőrzött pont továbbjutott.";
   if(!key) first="API-kulcs hiányzik.";
   else if(vp&&!vp.ok) first="VehiclePositions HTTP "+(vp.status||"hiba")+": "+vp.detail;
   else if(tu&&!tu.ok) first="TripUpdates HTTP "+(tu.status||"hiba")+": "+tu.detail;
-  else if(fu&&!fu.ok) first="FUTÁR HTTP "+(fu.status||"hiba")+": "+fu.detail;
+  else if(fu&&!fu.ok) first=(fu.status===400 && /limit exceeded/i.test(String(fu.detail||""))) ? "FUTÁR API-LIMIT (HTTP 400): a szerver korlátozta a kéréseket; várni kell, nem szabad újrakérni vagy megkerülni." : "FUTÁR HTTP "+(fu.status||"hiba")+": "+fu.detail;
   else if(total===0) first="Nincs jelenlegi BKK járműobjektum.";
 
   body.innerHTML=rows.join("");
@@ -8160,8 +8169,10 @@ window.extractFutarVehicles = function(json){
     t4log('TAKARÍTÁS 4 VÉGE');
   }
   window.__ATTILA_TAKARITAS_4__=runT4;
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(runT4,1500));
-  else setTimeout(runT4,1500);
+  /* FIX: a diagnosztikai keresztteszt NEM indul automatikusan oldalbetöltéskor.
+     A FUTÁR API limitálhat; a tesztet csak kifejezett felhasználói kérésre szabad futtatni. */
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>t4log('Automatikus hálózati teszt kihagyva – API-limit védelem.'));
+  else t4log('Automatikus hálózati teszt kihagyva – API-limit védelem.');
 })();
 </script>
 
