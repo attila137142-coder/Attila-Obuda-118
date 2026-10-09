@@ -562,13 +562,6 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 .attila-external-maps-list a{display:block;padding:7px 5px;color:#0645ad;text-decoration:underline;border-top:1px solid #e1e6ed;overflow-wrap:anywhere}
 .attila-external-maps-note{font-size:11px;color:#4b5563;padding:6px 4px 2px}
 @media(max-width:600px){.attila-external-maps{max-width:68vw;font-size:12px}.attila-external-maps summary{padding:8px}.attila-external-maps-list a{padding:8px 4px}}
-#stopScheduleMatches .stopMatch{display:block;width:100%;text-align:left;margin:4px 0;background:#122630}
-#stopScheduleResults .scheduleTable{width:100%;border-collapse:collapse;font-size:12px}
-#stopScheduleResults .scheduleTable th,#stopScheduleResults .scheduleTable td{padding:6px 5px;border-bottom:1px solid #2a3c47;text-align:left;vertical-align:top}
-#stopScheduleResults .scheduleTable th{color:#8fa5b3}
-#stopScheduleResults .scheduleTime{font-weight:800;color:#5ee7ff;white-space:nowrap}
-#stopScheduleResults .scheduleNoData{padding:9px;border:1px solid #4a3e27;border-radius:7px;color:#ffe08a}
-@media(max-width:700px){#stopScheduleResults .scheduleTable{font-size:14px}#stopScheduleResults .scheduleTable th,#stopScheduleResults .scheduleTable td{padding:8px 6px}}
 </style>
 
 </head>
@@ -828,21 +821,6 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
     </div>
   </section>
 
-  <section class="panel" id="stopSchedulePanel">
-    <h3>🕒 MEGÁLLÓI MENETREND – KÖVETKEZŐ 15 INDULÁS</h3>
-    <div class="panelBody">
-      <div class="small" style="margin-bottom:8px">Keresés megállónév, GTFS stop_id vagy stop_code alapján. Az indulások a betöltött BKK GTFS-menetrendből készülnek; élő késés csak valódi valós idejű adat esetén jelenik meg.</div>
-      <div class="searchGrid" style="min-width:0">
-        <input id="stopScheduleSearch" class="wide" placeholder="Megálló neve vagy GTFS száma (pl. F00679)">
-        <button id="stopScheduleSearchBtn" type="button">MEGÁLLÓ KERESÉSE</button>
-        <button id="stopScheduleRealtimeBtn" type="button">REALTimeNext PÉLDA</button>
-      </div>
-      <div id="stopScheduleMatches" style="margin-top:8px"></div>
-      <div id="stopScheduleStatus" class="small" style="margin-top:8px">A menetrend a GTFS betöltése után használható.</div>
-      <div id="stopScheduleResults" style="margin-top:8px"></div>
-    </div>
-  </section>
-
   <section class="panel" id="userNearestStopsPanel">
     <h3>
       📍 HELYZETEMHEZ LEGKÖZELEBBI MEGÁLLÓK
@@ -1048,19 +1026,6 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 
 </aside>
 
-<div id="externalPageModal" aria-hidden="true" style="display:none;position:fixed;inset:0;z-index:100000;background:#071018;color:#eef7fb">
-  <div style="height:54px;display:flex;align-items:center;gap:8px;padding:7px 10px;background:#08131c;border-bottom:1px solid #35505f">
-    <button id="externalPageBack" type="button" style="font-weight:800;min-width:115px">⬅ VISSZA</button>
-    <div id="externalPageTitle" style="font-weight:800;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1">Külső térkép</div>
-    <a id="externalPageOpenNew" href="#" target="_blank" rel="noopener noreferrer" style="color:#79e8ff;font-size:12px">Új lapon ↗</a>
-  </div>
-  <iframe id="externalPageFrame" title="Külső közlekedési térkép" src="about:blank" style="border:0;width:100%;height:calc(100% - 54px);background:#fff"></iframe>
-  <div id="externalPageFallback" style="display:none;position:absolute;left:12px;right:12px;bottom:12px;padding:12px;background:#152530;border:1px solid #5a7482;border-radius:9px">
-    A külső oldal nem engedi a beágyazott megjelenítést. Nyisd meg külön lapon; az alkalmazás ettől még nyitva marad.
-    <div style="margin-top:8px"><a id="externalPageFallbackLink" href="#" target="_blank" rel="noopener noreferrer" style="color:#79e8ff">Külső oldal megnyitása ↗</a></div>
-  </div>
-</div>
-
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/protobufjs/dist/protobuf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -1120,11 +1085,6 @@ let gtfsStops = [];
 let gtfsStopsById = new Map();
 let gtfsRoutes = new Map();
 let gtfsLoaded = false;
-let gtfsTripsById = new Map();
-let gtfsStopTimesByStop = new Map();
-let gtfsServiceCalendar = new Map();
-let gtfsServiceExceptions = new Map();
-let gtfsScheduleLoaded = false;
 
 let futarVehicleCache = new Map(); let futarRouteMetaCache = new Map(); let futarRouteMetaTime = new Map();
 let winRealtimeCache = new Map();
@@ -1464,11 +1424,11 @@ function initMap(){
         <details>
           <summary>🚆 VASÚTI TÉRKÉPEK (5)</summary>
           <div class="attila-external-maps-list">
-            <a href="https://holavonat.is/#985582760023" onclick="return openExternalPage(event,this.href,'Hol a vonat? – kijelölt vonat')">1. Hol a vonat? – kijelölt vonat</a>
-            <a href="https://holavonat.is/" onclick="return openExternalPage(event,this.href,'Hol a vonat? – teljes térkép')">2. Hol a vonat? – teljes térkép</a>
-            <a href="https://vonatinfo.kozlekedesiklub.hu/" onclick="return openExternalPage(event,this.href,'Vonatinfó – Közlekedési Klub')">3. Vonatinfó – Közlekedési Klub</a>
-            <a href="https://utas.hu/?map=9/47.82045/18.91772" onclick="return openExternalPage(event,this.href,'UTAS – 47.82045, 18.91772')">4. UTAS – 47.82045, 18.91772</a>
-            <a href="https://futar.bkk.hu/?map=15/47.59909/19.05064" onclick="return openExternalPage(event,this.href,'FUTÁR – 47.59909, 19.05064')">5. FUTÁR – 47.59909, 19.05064</a>
+            <a href="https://holavonat.is/#985582760023" target="_blank" rel="noopener noreferrer">1. Hol a vonat? – kijelölt vonat</a>
+            <a href="https://holavonat.is/" target="_blank" rel="noopener noreferrer">2. Hol a vonat? – teljes térkép</a>
+            <a href="https://vonatinfo.kozlekedesiklub.hu/" target="_blank" rel="noopener noreferrer">3. Vonatinfó – Közlekedési Klub</a>
+            <a href="https://utas.hu/?map=9/47.82045/18.91772" target="_blank" rel="noopener noreferrer">4. UTAS – 47.82045, 18.91772</a>
+            <a href="https://futar.bkk.hu/?map=15/47.59909/19.05064" target="_blank" rel="noopener noreferrer">5. FUTÁR – 47.59909, 19.05064</a>
             <div class="attila-external-maps-note">A külső oldalak külön lapon nyílnak meg; a koordináták az eredeti hivatkozásokban változatlanok.</div>
           </div>
         </details>`;
@@ -2155,8 +2115,6 @@ async function loadBkkGtfs(){
     }
 
 
-    await loadBkkScheduleTables(zip);
-
     gtfsLoaded =
       true;
 
@@ -2212,193 +2170,6 @@ async function loadBkkGtfs(){
 
 }
 
-
-
-/* Külső oldalak alkalmazáson belüli nézete: a VISSZA gomb mindig visszahozza az appot.
-   Ha egy oldal tiltja az iframe-et, az Új lapon lehetőséget adunk. */
-function openExternalPage(event,url,title){
-  if(event) event.preventDefault();
-  const modal=document.getElementById("externalPageModal");
-  const frame=document.getElementById("externalPageFrame");
-  const open=document.getElementById("externalPageOpenNew");
-  const fallbackLink=document.getElementById("externalPageFallbackLink");
-  const fallback=document.getElementById("externalPageFallback");
-  if(!modal||!frame){window.open(url,"_blank","noopener");return false;}
-  document.getElementById("externalPageTitle").textContent=title||"Külső oldal";
-  open.href=url; fallbackLink.href=url; fallback.style.display="none";
-  frame.src="about:blank";
-  modal.style.display="block"; modal.setAttribute("aria-hidden","false");
-  document.body.dataset.externalPageOpen="1";
-  frame.onload=()=>{try{if(frame.contentDocument && frame.contentDocument.location.href==="about:blank") return;}catch(e){fallback.style.display="block";}};
-  frame.src=url;
-  // X-Frame-Options/CSP letiltás esetén a böngésző nem minden esetben ad vissza
-  // olvasható hibát; az új-lapos hivatkozás ezért mindig látható marad.
-  return false;
-}
-function closeExternalPage(){
-  const modal=document.getElementById("externalPageModal");
-  const frame=document.getElementById("externalPageFrame");
-  if(frame) frame.src="about:blank";
-  if(modal){modal.style.display="none";modal.setAttribute("aria-hidden","true");}
-  delete document.body.dataset.externalPageOpen;
-}
-window.openExternalPage=openExternalPage;
-
-/* BKK GTFS-menetrend betöltése a tényleges stop_times/trips/calendar fájlokból.
-   Csak a megadott stop_id-hoz tartozó indulásokat jeleníti meg, nem gyárt adatot. */
-async function loadScheduleTables(zip){
-  return loadBkkScheduleTables(zip);
-}
-async function loadBkkScheduleTables(zip){
-  gtfsTripsById=new Map(); gtfsStopTimesByStop=new Map();
-  gtfsServiceCalendar=new Map(); gtfsServiceExceptions=new Map();
-  gtfsScheduleLoaded=false;
-  const readRows=async name=>{
-    const f=zip.file(name);
-    if(!f) return [];
-    return parseCsv(await f.async("text"));
-  };
-  const trips=await readRows("trips.txt");
-  for(const r of trips){
-    const id=String(r.trip_id||"");
-    if(id) gtfsTripsById.set(id,{
-      routeId:String(r.route_id||""),
-      serviceId:String(r.service_id||""),
-      headsign:String(r.trip_headsign||""),
-      directionId:String(r.direction_id||"")
-    });
-  }
-  const cal=await readRows("calendar.txt");
-  for(const r of cal){
-    const id=String(r.service_id||"");
-    if(id) gtfsServiceCalendar.set(id,{
-      start:String(r.start_date||""),end:String(r.end_date||""),
-      days:[r.monday,r.tuesday,r.wednesday,r.thursday,r.friday,r.saturday,r.sunday].map(x=>String(x)==="1")
-    });
-  }
-  const exceptions=await readRows("calendar_dates.txt");
-  for(const r of exceptions){
-    const sid=String(r.service_id||""), date=String(r.date||"");
-    if(!sid||!date) continue;
-    if(!gtfsServiceExceptions.has(date)) gtfsServiceExceptions.set(date,new Map());
-    gtfsServiceExceptions.get(date).set(sid,String(r.exception_type||""));
-  }
-  const stopTimes=await readRows("stop_times.txt");
-  for(const r of stopTimes){
-    const stopId=String(r.stop_id||"");
-    const tripId=String(r.trip_id||"");
-    const dep=String(r.departure_time||r.arrival_time||"");
-    if(!stopId||!tripId||!dep) continue;
-    const item={tripId,dep,arr:String(r.arrival_time||""),seq:Number(r.stop_sequence)||0};
-    if(!gtfsStopTimesByStop.has(stopId)) gtfsStopTimesByStop.set(stopId,[]);
-    gtfsStopTimesByStop.get(stopId).push(item);
-  }
-  for(const arr of gtfsStopTimesByStop.values()){
-    arr.sort((a,b)=>a.dep.localeCompare(b.dep)||a.seq-b.seq);
-  }
-  gtfsScheduleLoaded=gtfsTripsById.size>0 && gtfsStopTimesByStop.size>0;
-  logLine("BKK menetrendi GTFS: trips="+gtfsTripsById.size.toLocaleString("hu-HU")+
-    ", stop_times megállókkal="+gtfsStopTimesByStop.size.toLocaleString("hu-HU")+
-    ", naptár="+gtfsServiceCalendar.size.toLocaleString("hu-HU")+
-    (gtfsScheduleLoaded?" – OK":" – nincs teljes menetrendi adat"));
-  const status=document.getElementById("stopScheduleStatus");
-  if(status) status.textContent=gtfsScheduleLoaded
-    ?"Menetrendi GTFS betöltve. Keress megállónevet vagy GTFS-azonosítót."
-    :"A statikus indulási menetrendhez szükséges GTFS-fájlok nem mind érhetők el.";
-}
-function gtfsServiceRuns(serviceId,dateObj){
-  const y=dateObj.getFullYear(),m=String(dateObj.getMonth()+1).padStart(2,"0"),d=String(dateObj.getDate()).padStart(2,"0");
-  const dateKey=`${y}${m}${d}`;
-  const exception=gtfsServiceExceptions.get(dateKey);
-  if(exception && exception.has(serviceId)) return exception.get(serviceId)==="1";
-  const c=gtfsServiceCalendar.get(serviceId);
-  if(!c||dateKey<c.start||dateKey>c.end) return false;
-  return !!c.days[(dateObj.getDay()+6)%7];
-}
-function timeToSeconds(t){
-  const m=String(t||"").match(/^(\d{1,3}):([0-5]\d):([0-5]\d)$/);
-  return m ? Number(m[1])*3600+Number(m[2])*60+Number(m[3]) : null;
-}
-function findScheduleStops(query){
-  const q=String(query||"").trim();
-  if(!q) return [];
-  const nq=normalize(q);
-  const exact=gtfsStops.filter(s=>s.id===q||s.code===q);
-  if(exact.length) return exact.slice(0,12);
-  return gtfsStops.filter(s=>normalize(s.name).includes(nq)||normalize(s.id).includes(nq)||normalize(s.code).includes(nq)).slice(0,12);
-}
-function renderScheduleMatches(){
-  const q=document.getElementById("stopScheduleSearch")?.value||"";
-  const box=document.getElementById("stopScheduleMatches");
-  const results=document.getElementById("stopScheduleResults");
-  if(!box) return;
-  box.innerHTML=""; if(results) results.innerHTML="";
-  if(!gtfsLoaded){document.getElementById("stopScheduleStatus").textContent="Várd meg a BKK GTFS betöltését.";return;}
-  const matches=findScheduleStops(q);
-  if(!matches.length){document.getElementById("stopScheduleStatus").textContent=q.trim()?"Nincs ilyen megálló a betöltött BKK GTFS-ben.":"Írj be megállónevet vagy GTFS-azonosítót.";return;}
-  document.getElementById("stopScheduleStatus").textContent="Válaszd ki a megfelelő megállót:";
-  for(const stop of matches){
-    const b=document.createElement("button"); b.type="button"; b.className="stopMatch";
-    b.textContent=`${stop.name} | GTFS: ${stop.id}${stop.code?` | kód: ${stop.code}`:""}`;
-    b.addEventListener("click",()=>renderNext15Departures(stop));
-    box.appendChild(b);
-  }
-}
-function renderNext15Departures(stop){
-  const results=document.getElementById("stopScheduleResults");
-  const status=document.getElementById("stopScheduleStatus");
-  if(!results||!status) return;
-  results.innerHTML="";
-  if(!gtfsScheduleLoaded){
-    status.textContent="A menetrendi stop_times/trips adatok nem állnak rendelkezésre.";
-    results.innerHTML='<div class="scheduleNoData">NINCS ADAT – a GTFS-ben nem érhető el teljes indulási menetrend.</div>';return;
-  }
-  const now=new Date();
-  const nowSec=now.getHours()*3600+now.getMinutes()*60+now.getSeconds();
-  const arr=gtfsStopTimesByStop.get(stop.id)||[];
-  let candidates=[];
-  for(let dayOffset=0;dayOffset<=1;dayOffset++){
-    const day=new Date(now); day.setDate(now.getDate()+dayOffset);
-    for(const st of arr){
-      const sec=timeToSeconds(st.dep);
-      if(sec===null || (dayOffset===0 && sec<nowSec)) continue;
-      const trip=gtfsTripsById.get(st.tripId);
-      if(!trip||!gtfsServiceRuns(trip.serviceId,day)) continue;
-      const serviceDayStart=new Date(day.getFullYear(),day.getMonth(),day.getDate()).getTime();
-      candidates.push({sec,st,trip,dayOffset,absoluteTime:serviceDayStart+sec*1000});
-    }
-  }
-  candidates=candidates.filter(c=>c.absoluteTime>=now.getTime());
-  candidates.sort((a,b)=>a.absoluteTime-b.absoluteTime);
-  candidates=candidates.slice(0,15);
-  status.textContent=`${stop.name} · GTFS stop_id: ${stop.id} · következő indulások: ${candidates.length}`;
-  if(!candidates.length){results.innerHTML='<div class="scheduleNoData">A betöltött menetrend szerint nincs további indulás a következő 24 órában.</div>';return;}
-  const table=document.createElement("table"); table.className="scheduleTable";
-  table.innerHTML="<thead><tr><th>INDULÁS</th><th>JÁRAT</th><th>CÉLÁLLOMÁS</th><th>TRIP</th></tr></thead>";
-  const tbody=document.createElement("tbody");
-  for(const c of candidates){
-    const tr=document.createElement("tr");
-    const h=String(Math.floor(c.sec/3600)).padStart(2,"0"),m=String(Math.floor(c.sec%3600/60)).padStart(2,"0");
-    const route=gtfsRoutes.get(c.trip.routeId)||"NINCS ADAT";
-    tr.innerHTML=`<td class="scheduleTime">${c.dayOffset?"HOLNAP ":""}${h}:${m}</td><td>${escapeHtml(route)}</td><td>${escapeHtml(c.trip.headsign||"NINCS ADAT")}</td><td>${escapeHtml(c.st.tripId)}</td>`;
-    tbody.appendChild(tr);
-  }
-  table.appendChild(tbody); results.appendChild(table);
-}
-function bindStopSchedule(){
-  const search=document.getElementById("stopScheduleSearch");
-  document.getElementById("stopScheduleSearchBtn")?.addEventListener("click",renderScheduleMatches);
-  search?.addEventListener("keydown",e=>{if(e.key==="Enter")renderScheduleMatches();});
-  search?.addEventListener("input",()=>{clearTimeout(window.__stopScheduleTimer);window.__stopScheduleTimer=setTimeout(renderScheduleMatches,250);});
-  document.getElementById("stopScheduleRealtimeBtn")?.addEventListener("click",()=>{
-    const q=String(search?.value||"").trim();
-    const match=findScheduleStops(q)[0];
-    const url=match?`https://realtimenext.hu/embed/bkv/stops/${encodeURIComponent(match.code||match.id)}/schedule`:"https://realtimenext.hu/embed/bkv/stops/F00679/schedule";
-    openExternalPage(null,url,match?`RealtimeNext – ${match.name}`:"RealtimeNext – F00679 példa");
-  });
-  document.getElementById("externalPageBack")?.addEventListener("click",closeExternalPage);
-  window.addEventListener("keydown",e=>{if(e.key==="Escape")closeExternalPage();});
-}
 
 function findStopById(stopId){
 
@@ -7066,7 +6837,7 @@ async function runFonok(){
     rows.push(fonokRow("🚍 FUTÁR HTTP",1,fu.ok?1:0,fu.ok?`OK ${fu.status}, ${fu.bytes.toLocaleString("hu-HU")} byte, ${fu.ms} ms`:(/LIMIT_EXCEEDED|API limit exceeded/i.test(String(fu.detail||""))?`HTTP ${fu.status||400} | API-korlát – később próbáld újra; nem bizonyíték a BKK alapfeed hibájára`:`HTTP ${fu.status||"NINCS VÁLASZ"} | ${fu.detail}`),fu.ok?"fok":"ferr"));
   }
 
-  let vpCount=0,tuCount=0,tuStopCount=0,delayCount=0,futarCount=0;
+  let vpCount=0,tuCount=0,delayCount=0,futarCount=0;
   let vpParseReason="";
   if(vp?.ok){
     try{ const parsed=parseVehicleFeed(vp.buffer); vpCount=parsed.length; vpParseReason="protobuf OK"; }catch(e){ vpParseReason="protobuf HIBA: "+(e?.message||e); }
@@ -7083,7 +6854,6 @@ async function runFonok(){
         if(!x?.trip?.tripId) continue;
         tuCount++;
         for(const st of (x.stopTimeUpdate||[])){
-          tuStopCount++;
           const parts=[st.departure,st.arrival];
           if(parts.some(p=>p&&Object.prototype.hasOwnProperty.call(p,"delay")&&p.delay!==null&&p.delay!==undefined&&p.delay!==""&&Number.isFinite(Number(p.delay)))) delayCount++;
         }
@@ -7091,7 +6861,7 @@ async function runFonok(){
     }catch(e){ rows.push(fonokRow("⏱️ TripUpdates → protobuf",1,0,"HIBA: "+(e?.message||e),"ferr")); }
   }
   if(tu?.ok) rows.push(fonokRow("⏱️ TripUpdates → trip frissítés",tuCount,tuCount,tuCount?"✓ valódi tripUpdate rekord":"nincs értelmezhető tripUpdate","fok"));
-  if(tu?.ok) rows.push(fonokRow("↔️ TripUpdates → stop-időben valódi delay",tuStopCount,delayCount,delayCount?`${delayCount} stop-idő rekordban valódi delay mező`:(tuStopCount?"a bejött stop-idő rekordokban nincs explicit delay mező":"nincs stopTimeUpdate rekord"),delayCount?"fok":"fwarn"));
+  if(tu?.ok) rows.push(fonokRow("↔️ TripUpdates → valódi delay mező",tuCount,delayCount,delayCount?"valódi delay mezők":"nincs delay mező",delayCount?"fok":"fwarn"));
 
   if(fu?.ok){
     try{ const j=JSON.parse(new TextDecoder().decode(fu.buffer)); const ex=extractFutarVehicles(j); futarCount=ex.length; }catch(e){}
@@ -7109,14 +6879,14 @@ async function runFonok(){
   rows.push(fonokRow("🚌 UTAS / routeShortName",total,count("routeShortName"),"GTFS route név hiányzik",count("routeShortName")===total?"fok":"fwarn"));
   rows.push(fonokRow("🚏 STOP ID",total,count("stopId"),"hiányzó stopId",count("stopId")===total?"fok":"fwarn"));
   rows.push(fonokRow("🔢 STOP SORREND",total,finiteCount("stopSequence"),"hiányzó vagy nem numerikus stopSequence",finiteCount("stopSequence")===total?"fok":"fwarn"));
-  rows.push(fonokRow("🔖 RENDSZÁM",total,count("licensePlate"),count("licensePlate")===total?"minden járműobjektumban van kitöltött rendszámmező":`${total-count("licensePlate")} járműnél hiányzik a rendszámmező`,count("licensePlate")===total?"fok":"fwarn"));
+  rows.push(fonokRow("🔖 RENDSZÁM",total,count("licensePlate"),"nincs valódi rendszám a járműobjektumban",count("licensePlate")===total?"fok":"fwarn"));
   rows.push(fonokRow("🏷️ JÁRMŰTÍPUS",total,count("vehicleType"),"explicit forrásadat hiányzik",count("vehicleType")===total?"fok":"fwarn"));
   rows.push(fonokRow("♿ ALACSONYPADLÓS",total,boolCount("lowFloor"),"explicit lowFloor adat hiányzik",boolCount("lowFloor")===total?"fok":"fwarn"));
   rows.push(fonokRow("🔢 FORGALMI",total,count("forgalmi"),"explicit forgalmi adat hiányzik",count("forgalmi")===total?"fok":"fwarn"));
-  rows.push(fonokRow("💨 SEBESSÉG",total,finiteCount("speedKmh"),finiteCount("speedKmh")===total?"minden járműnél numerikus sebesség van":`${total-finiteCount("speedKmh")} járműnél nincs numerikus sebesség`,finiteCount("speedKmh")===total?"fok":"fwarn"));
+  rows.push(fonokRow("💨 SEBESSÉG",total,finiteCount("speedKmh"),"nincs numerikus sebesség",finiteCount("speedKmh")===total?"fok":"fwarn"));
   rows.push(fonokRow("↔️ ELTÉRÉS",total,vehicleData.filter(v=>isFiniteReal(v?.delaySeconds)).length,"nincs hozzárendelt valódi TripUpdates delay",vehicleData.some(v=>Number.isFinite(Number(v?.delaySeconds)))?"fok":"fwarn"));
   rows.push(fonokRow("📍 GPS pozíció",total,vehicleData.filter(v=>isFiniteReal(v?.lat)&&isFiniteReal(v?.lon)).length,"hiányzó koordináta",vehicleData.length&&vehicleData.every(v=>isFiniteReal(v?.lat)&&isFiniteReal(v?.lon))?"fok":"fwarn"));
-  rows.push(fonokRow("🚏 Legközelebbi GTFS megálló",total,vehicleData.filter(v=>v?.nearestStop).length,vehicleData.length&&vehicleData.every(v=>v?.nearestStop)?"minden járműhöz tartozik nearestStop":`${total-vehicleData.filter(v=>v?.nearestStop).length} járműnél nincs kiszámolt nearestStop`,vehicleData.length&&vehicleData.every(v=>v?.nearestStop)?"fok":"fwarn"));
+  rows.push(fonokRow("🚏 Legközelebbi GTFS megálló",total,vehicleData.filter(v=>v?.nearestStop).length,"nincs kiszámolt nearestStop",vehicleData.length&&vehicleData.every(v=>v?.nearestStop)?"fok":"fwarn"));
   rows.push(fonokRow("🖥️ Megjelenítési lista",total,document.querySelectorAll("#vehicleList .vehicleCard").length,"kártyakorlát/szűrés is okozhat különbséget", "fmuted"));
 
   let first="NINCS HIBA – minden ellenőrzött pont továbbjutott.";
@@ -7124,11 +6894,11 @@ async function runFonok(){
   else if(vp&&!vp.ok) first="VehiclePositions HTTP "+(vp.status||"hiba")+": "+vp.detail;
   else if(tu&&!tu.ok) first="TripUpdates HTTP "+(tu.status||"hiba")+": "+tu.detail;
   else if(total===0) first="Nincs jelenlegi BKK járműobjektum.";
-  else if(tu?.ok && delayCount===0) first=`TripUpdates: ${tuCount.toLocaleString("hu-HU")} trip frissítés bejött, ${tuStopCount.toLocaleString("hu-HU")} stop-idő rekordot vizsgáltam, de nincs explicit delay mező; késést csak valódi delay vagy GTFS-menetrenddel összevethető időadat alapján szabad megjeleníteni.`;
+  else if(tu?.ok && delayCount===0) first="TripUpdates: 629 trip frissítés bejött, de nincs explicit delay mező; késést csak valódi delay vagy GTFS-menetrenddel összevethető időadat alapján szabad megjeleníteni.";
   else if(fu&&!fu.ok && !/LIMIT_EXCEEDED|API limit exceeded/i.test(String(fu.detail||""))) first="FUTÁR HTTP "+(fu.status||"hiba")+": "+fu.detail;
 
   body.innerHTML=rows.join("");
-  summary.innerHTML="<b>ELSŐ HIBAPONT:</b> "+fonokEsc(first)+"<br><b>Jelenlegi járműobjektum:</b> "+total.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>VehiclePositions dekódolt:</b> "+vpCount.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>TripUpdates:</b> "+tuCount.toLocaleString("hu-HU")+" trip &nbsp; | &nbsp; <b>stop-idő rekord:</b> "+tuStopCount.toLocaleString("hu-HU")+" &nbsp; | &nbsp; <b>valódi delay-es stop-idő:</b> "+delayCount.toLocaleString("hu-HU")+"";
+  summary.innerHTML="<b>ELSŐ HIBAPONT:</b> "+fonokEsc(first)+"<br><b>Jelenlegi járműobjektum:</b> "+total.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>VehiclePositions dekódolt:</b> "+vpCount.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>TripUpdates:</b> "+tuCount.toLocaleString("hu-HU")+" &nbsp; | &nbsp; <b>delay mező:</b> "+delayCount.toLocaleString("hu-HU")+"";
   logLine("👑 FŐNÖK: teljes adatút-diagnosztika lefutott. Első hibapont: "+first);
 }
 
@@ -7291,7 +7061,6 @@ document.addEventListener(
     loadSavedKey();
 
     bindButtons();
-    bindStopSchedule();
 
 
     logLine(
