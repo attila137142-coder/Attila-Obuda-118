@@ -4268,13 +4268,30 @@ function matchFutarToVehicle(
 
 
 /* ============================================================
-   FUTÁR LEKÉRÉS
+   FUTÁR LEKÉRÉS – LIMIT- ÉS PÁRHUZAMOS KÉRÉSVÉDELEM
    ============================================================ */
+window.__ATTILA_FUTAR_BUSY__ = window.__ATTILA_FUTAR_BUSY__ || false;
+window.__ATTILA_FUTAR_BLOCKED_UNTIL__ = window.__ATTILA_FUTAR_BLOCKED_UNTIL__ || 0;
+window.__ATTILA_FUTAR_LIMIT_LOGGED__ = window.__ATTILA_FUTAR_LIMIT_LOGGED__ || false;
 
 async function loadFutarVehicles(
   fallbackMode=false
 ){
-
+  const now = Date.now();
+  if(now < Number(window.__ATTILA_FUTAR_BLOCKED_UNTIL__ || 0)){
+    const remain = Math.ceil((Number(window.__ATTILA_FUTAR_BLOCKED_UNTIL__) - now) / 60000);
+    const httpEl = $("futarHttp");
+    if(httpEl) httpEl.textContent = "LIMIT_EXCEEDED – várakozás (" + remain + " perc)";
+    if(!window.__ATTILA_FUTAR_LIMIT_LOGGED__){
+      logLine("FUTÁR: a korábbi API-limit miatt a lekérés szünetel. Nem küldünk újabb kérést; várakozás a tiltás lejártáig.");
+      window.__ATTILA_FUTAR_LIMIT_LOGGED__ = true;
+    }
+    return false;
+  }
+  if(window.__ATTILA_FUTAR_BUSY__){
+    logLine("FUTÁR: párhuzamos lekérés kihagyva – már fut egy kérés.");
+    return false;
+  }
   if(!getKey()){
 
     $("futarHttp").textContent =
@@ -4286,6 +4303,7 @@ async function loadFutarVehicles(
   }
 
 
+  window.__ATTILA_FUTAR_BUSY__ = true;
   try{
 
     const center =
@@ -4873,12 +4891,23 @@ async function loadFutarVehicles(
 
 
     safeRenderAll("FUTÁR");
-
+    window.__ATTILA_FUTAR_BUSY__ = false;
+    window.__ATTILA_FUTAR_LIMIT_LOGGED__ = false;
+    window.__ATTILA_FUTAR_BLOCKED_UNTIL__ = 0;
     return true;
 
 
   }catch(err){
-
+    window.__ATTILA_FUTAR_BUSY__ = false;
+    const futarErrorText = String(err?.message || err || "");
+    if(/LIMIT_EXCEEDED|API limit exceeded|HTTP\s*400/i.test(futarErrorText)){
+      // A szerver limitje után 15 percig nem próbálkozunk újra.
+      window.__ATTILA_FUTAR_BLOCKED_UNTIL__ = Date.now() + 15 * 60 * 1000;
+      window.__ATTILA_FUTAR_LIMIT_LOGGED__ = false;
+      const httpEl = $("futarHttp");
+      if(httpEl) httpEl.textContent = "LIMIT_EXCEEDED – 15 perc szünet";
+      logLine("FUTÁR API-limit észlelve (HTTP 400/LIMIT_EXCEEDED). Automatikus újrapróbálás tiltva 15 percre.");
+    }
     lastFutarFetchOK =
       false;
 
