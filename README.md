@@ -553,6 +553,17 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
   #githubPdfList,#pdfList{font-size:15px;min-width:650px;}
 }
 </style>
+
+<style id="attila-external-maps-style">
+.attila-external-maps{background:rgba(255,255,255,.96);color:#172033;border:1px solid #aab4c3;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.25);max-width:min(290px,76vw);font:13px/1.4 Arial,sans-serif}
+.attila-external-maps summary{cursor:pointer;list-style:none;font-weight:700;padding:9px 11px;white-space:nowrap}
+.attila-external-maps summary::-webkit-details-marker{display:none}
+.attila-external-maps-list{display:flex;flex-direction:column;gap:1px;padding:0 8px 8px;max-height:48vh;overflow:auto}
+.attila-external-maps-list a{display:block;padding:7px 5px;color:#0645ad;text-decoration:underline;border-top:1px solid #e1e6ed;overflow-wrap:anywhere}
+.attila-external-maps-note{font-size:11px;color:#4b5563;padding:6px 4px 2px}
+@media(max-width:600px){.attila-external-maps{max-width:68vw;font-size:12px}.attila-external-maps summary{padding:8px}.attila-external-maps-list a{padding:8px 4px}}
+</style>
+
 </head>
 
 <body>
@@ -1402,6 +1413,33 @@ function initMap(){
     logLine("MÁV vasúti térképréteg visszaállítva; a jobb felső rétegmenüből kapcsolható.");
   }catch(e){
     logLine("MÁV vasúti réteg HIBA: "+(e?.message||e));
+  }
+
+  /* KÜLSŐ VASÚTI TÉRKÉPEK: eredeti URL-ek és a felhasználó által megadott koordináták. */
+  try{
+    const externalMapsControl=L.control({position:"topright"});
+    externalMapsControl.onAdd=function(){
+      const box=L.DomUtil.create("div","leaflet-control attila-external-maps");
+      box.innerHTML=`
+        <details>
+          <summary>🚆 VASÚTI TÉRKÉPEK (5)</summary>
+          <div class="attila-external-maps-list">
+            <a href="https://holavonat.is/#985582760023" target="_blank" rel="noopener noreferrer">1. Hol a vonat? – kijelölt vonat</a>
+            <a href="https://holavonat.is/" target="_blank" rel="noopener noreferrer">2. Hol a vonat? – teljes térkép</a>
+            <a href="https://vonatinfo.kozlekedesiklub.hu/" target="_blank" rel="noopener noreferrer">3. Vonatinfó – Közlekedési Klub</a>
+            <a href="https://utas.hu/?map=9/47.82045/18.91772" target="_blank" rel="noopener noreferrer">4. UTAS – 47.82045, 18.91772</a>
+            <a href="https://futar.bkk.hu/?map=15/47.59909/19.05064" target="_blank" rel="noopener noreferrer">5. FUTÁR – 47.59909, 19.05064</a>
+            <div class="attila-external-maps-note">A külső oldalak külön lapon nyílnak meg; a koordináták az eredeti hivatkozásokban változatlanok.</div>
+          </div>
+        </details>`;
+      L.DomEvent.disableClickPropagation(box);
+      L.DomEvent.disableScrollPropagation(box);
+      return box;
+    };
+    externalMapsControl.addTo(map);
+    logLine("5 külső vasúti/közlekedési térképlink hozzáadva a térkép jobb felső sarkához.");
+  }catch(e){
+    logLine("Külső térképlinkek hozzáadása HIBA: "+(e?.message||e));
   }
 
   /* Korábban sikeres GPS-helyzet visszatöltése; csak valódi mentett pozíció. */
@@ -6799,7 +6837,7 @@ async function runFonok(){
     rows.push(fonokRow("🚍 FUTÁR HTTP",1,fu.ok?1:0,fu.ok?`OK ${fu.status}, ${fu.bytes.toLocaleString("hu-HU")} byte, ${fu.ms} ms`:(/LIMIT_EXCEEDED|API limit exceeded/i.test(String(fu.detail||""))?`HTTP ${fu.status||400} | API-korlát – később próbáld újra; nem bizonyíték a BKK alapfeed hibájára`:`HTTP ${fu.status||"NINCS VÁLASZ"} | ${fu.detail}`),fu.ok?"fok":"ferr"));
   }
 
-  let vpCount=0,tuCount=0,delayCount=0,futarCount=0;
+  let vpCount=0,tuCount=0,tuStopCount=0,delayCount=0,futarCount=0;
   let vpParseReason="";
   if(vp?.ok){
     try{ const parsed=parseVehicleFeed(vp.buffer); vpCount=parsed.length; vpParseReason="protobuf OK"; }catch(e){ vpParseReason="protobuf HIBA: "+(e?.message||e); }
@@ -6816,6 +6854,7 @@ async function runFonok(){
         if(!x?.trip?.tripId) continue;
         tuCount++;
         for(const st of (x.stopTimeUpdate||[])){
+          tuStopCount++;
           const parts=[st.departure,st.arrival];
           if(parts.some(p=>p&&Object.prototype.hasOwnProperty.call(p,"delay")&&p.delay!==null&&p.delay!==undefined&&p.delay!==""&&Number.isFinite(Number(p.delay)))) delayCount++;
         }
@@ -6823,7 +6862,7 @@ async function runFonok(){
     }catch(e){ rows.push(fonokRow("⏱️ TripUpdates → protobuf",1,0,"HIBA: "+(e?.message||e),"ferr")); }
   }
   if(tu?.ok) rows.push(fonokRow("⏱️ TripUpdates → trip frissítés",tuCount,tuCount,tuCount?"✓ valódi tripUpdate rekord":"nincs értelmezhető tripUpdate","fok"));
-  if(tu?.ok) rows.push(fonokRow("↔️ TripUpdates → valódi delay mező",tuCount,delayCount,delayCount?"valódi delay mezők":"nincs delay mező",delayCount?"fok":"fwarn"));
+  if(tu?.ok) rows.push(fonokRow("↔️ TripUpdates → stop-időben valódi delay",tuStopCount,delayCount,delayCount?`${delayCount} stop-idő rekordban valódi delay mező`:(tuStopCount?"a bejött stop-idő rekordokban nincs explicit delay mező":"nincs stopTimeUpdate rekord"),delayCount?"fok":"fwarn"));
 
   if(fu?.ok){
     try{ const j=JSON.parse(new TextDecoder().decode(fu.buffer)); const ex=extractFutarVehicles(j); futarCount=ex.length; }catch(e){}
@@ -6841,14 +6880,14 @@ async function runFonok(){
   rows.push(fonokRow("🚌 UTAS / routeShortName",total,count("routeShortName"),"GTFS route név hiányzik",count("routeShortName")===total?"fok":"fwarn"));
   rows.push(fonokRow("🚏 STOP ID",total,count("stopId"),"hiányzó stopId",count("stopId")===total?"fok":"fwarn"));
   rows.push(fonokRow("🔢 STOP SORREND",total,finiteCount("stopSequence"),"hiányzó vagy nem numerikus stopSequence",finiteCount("stopSequence")===total?"fok":"fwarn"));
-  rows.push(fonokRow("🔖 RENDSZÁM",total,count("licensePlate"),"nincs valódi rendszám a járműobjektumban",count("licensePlate")===total?"fok":"fwarn"));
+  rows.push(fonokRow("🔖 RENDSZÁM",total,count("licensePlate"),count("licensePlate")===total?"minden járműobjektumban van kitöltött rendszámmező":`${total-count("licensePlate")} járműnél hiányzik a rendszámmező`,count("licensePlate")===total?"fok":"fwarn"));
   rows.push(fonokRow("🏷️ JÁRMŰTÍPUS",total,count("vehicleType"),"explicit forrásadat hiányzik",count("vehicleType")===total?"fok":"fwarn"));
   rows.push(fonokRow("♿ ALACSONYPADLÓS",total,boolCount("lowFloor"),"explicit lowFloor adat hiányzik",boolCount("lowFloor")===total?"fok":"fwarn"));
   rows.push(fonokRow("🔢 FORGALMI",total,count("forgalmi"),"explicit forgalmi adat hiányzik",count("forgalmi")===total?"fok":"fwarn"));
-  rows.push(fonokRow("💨 SEBESSÉG",total,finiteCount("speedKmh"),"nincs numerikus sebesség",finiteCount("speedKmh")===total?"fok":"fwarn"));
+  rows.push(fonokRow("💨 SEBESSÉG",total,finiteCount("speedKmh"),finiteCount("speedKmh")===total?"minden járműnél numerikus sebesség van":`${total-finiteCount("speedKmh")} járműnél nincs numerikus sebesség`,finiteCount("speedKmh")===total?"fok":"fwarn"));
   rows.push(fonokRow("↔️ ELTÉRÉS",total,vehicleData.filter(v=>isFiniteReal(v?.delaySeconds)).length,"nincs hozzárendelt valódi TripUpdates delay",vehicleData.some(v=>Number.isFinite(Number(v?.delaySeconds)))?"fok":"fwarn"));
   rows.push(fonokRow("📍 GPS pozíció",total,vehicleData.filter(v=>isFiniteReal(v?.lat)&&isFiniteReal(v?.lon)).length,"hiányzó koordináta",vehicleData.length&&vehicleData.every(v=>isFiniteReal(v?.lat)&&isFiniteReal(v?.lon))?"fok":"fwarn"));
-  rows.push(fonokRow("🚏 Legközelebbi GTFS megálló",total,vehicleData.filter(v=>v?.nearestStop).length,"nincs kiszámolt nearestStop",vehicleData.length&&vehicleData.every(v=>v?.nearestStop)?"fok":"fwarn"));
+  rows.push(fonokRow("🚏 Legközelebbi GTFS megálló",total,vehicleData.filter(v=>v?.nearestStop).length,vehicleData.length&&vehicleData.every(v=>v?.nearestStop)?"minden járműhöz tartozik nearestStop":`${total-vehicleData.filter(v=>v?.nearestStop).length} járműnél nincs kiszámolt nearestStop`,vehicleData.length&&vehicleData.every(v=>v?.nearestStop)?"fok":"fwarn"));
   rows.push(fonokRow("🖥️ Megjelenítési lista",total,document.querySelectorAll("#vehicleList .vehicleCard").length,"kártyakorlát/szűrés is okozhat különbséget", "fmuted"));
 
   let first="NINCS HIBA – minden ellenőrzött pont továbbjutott.";
@@ -6856,11 +6895,11 @@ async function runFonok(){
   else if(vp&&!vp.ok) first="VehiclePositions HTTP "+(vp.status||"hiba")+": "+vp.detail;
   else if(tu&&!tu.ok) first="TripUpdates HTTP "+(tu.status||"hiba")+": "+tu.detail;
   else if(total===0) first="Nincs jelenlegi BKK járműobjektum.";
-  else if(tu?.ok && delayCount===0) first="TripUpdates: 629 trip frissítés bejött, de nincs explicit delay mező; késést csak valódi delay vagy GTFS-menetrenddel összevethető időadat alapján szabad megjeleníteni.";
+  else if(tu?.ok && delayCount===0) first=`TripUpdates: ${tuCount.toLocaleString("hu-HU")} trip frissítés bejött, ${tuStopCount.toLocaleString("hu-HU")} stop-idő rekordot vizsgáltam, de nincs explicit delay mező; késést csak valódi delay vagy GTFS-menetrenddel összevethető időadat alapján szabad megjeleníteni.`;
   else if(fu&&!fu.ok && !/LIMIT_EXCEEDED|API limit exceeded/i.test(String(fu.detail||""))) first="FUTÁR HTTP "+(fu.status||"hiba")+": "+fu.detail;
 
   body.innerHTML=rows.join("");
-  summary.innerHTML="<b>ELSŐ HIBAPONT:</b> "+fonokEsc(first)+"<br><b>Jelenlegi járműobjektum:</b> "+total.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>VehiclePositions dekódolt:</b> "+vpCount.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>TripUpdates:</b> "+tuCount.toLocaleString("hu-HU")+" &nbsp; | &nbsp; <b>delay mező:</b> "+delayCount.toLocaleString("hu-HU")+"";
+  summary.innerHTML="<b>ELSŐ HIBAPONT:</b> "+fonokEsc(first)+"<br><b>Jelenlegi járműobjektum:</b> "+total.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>VehiclePositions dekódolt:</b> "+vpCount.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>TripUpdates:</b> "+tuCount.toLocaleString("hu-HU")+" trip &nbsp; | &nbsp; <b>stop-idő rekord:</b> "+tuStopCount.toLocaleString("hu-HU")+" &nbsp; | &nbsp; <b>valódi delay-es stop-idő:</b> "+delayCount.toLocaleString("hu-HU")+"";
   logLine("👑 FŐNÖK: teljes adatút-diagnosztika lefutott. Első hibapont: "+first);
 }
 
