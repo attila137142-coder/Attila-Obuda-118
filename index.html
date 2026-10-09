@@ -554,8 +554,8 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 }
 
 /* MÁV vasúti térkép – a szelvény/vonali km jelölések és MÁV adatok legyenek jól olvashatók. */
-.mavRailLabel{font-weight:900;font-size:15px;line-height:1.2;letter-spacing:.15px;text-shadow:0 1px 2px rgba(255,255,255,.85),0 0 3px rgba(255,255,255,.85);}
-.mavRailKm{font-weight:900;font-size:15px;}
+.mavRailLabel{font-weight:1000;font-size:16px;line-height:1.2;letter-spacing:.2px;-webkit-text-stroke:.25px currentColor;text-shadow:0 0 2px #fff,0 0 4px #fff,1px 1px 0 #fff,-1px -1px 0 #fff;}
+.mavRailKm{font-weight:1000;font-size:16px;-webkit-text-stroke:.25px currentColor;text-shadow:0 0 3px #fff,0 0 5px #fff;}
 </style>
 </head>
 
@@ -8284,6 +8284,61 @@ window.extractFutarVehicles = function(json){
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init,{once:true}); else init();
 })();
 </script>
+
+
+<script id="attila-map-restore-module">
+(function(){
+ 'use strict';
+ const links=[
+  ['HOLAVONAT – élő vasúti térkép','https://holavonat.is/#985582760023'],
+  ['VONATINFO – vasúti térkép','https://vonatinfo.kozlekedesiklub.hu/'],
+  ['UTAS – közlekedési térkép','https://utas.hu/?map=9/47.82045/18.91772'],
+  ['FUTÁR – BKK járműtérkép','https://futar.bkk.hu/?map=15/47.59909/19.05064']
+ ];
+ function addControls(){
+  if(document.getElementById('attilaMapRestorePanel')) return;
+  const panel=document.createElement('section'); panel.id='attilaMapRestorePanel';
+  panel.style.cssText='position:fixed;z-index:1200;left:10px;top:82px;width:min(330px,calc(100vw - 20px));max-height:42vh;overflow:auto;background:#071721f2;color:#f0f8ff;border:1px solid #4a7187;border-radius:12px;padding:10px;box-shadow:0 4px 20px #0009;font:13px/1.35 Arial,sans-serif';
+  const title=document.createElement('div'); title.textContent='🗺️ TÉRKÉPEK – TELJES NÉZET'; title.style.cssText='font-weight:900;font-size:15px;margin-bottom:8px'; panel.appendChild(title);
+  const fs=document.createElement('button'); fs.type='button'; fs.textContent='⛶ SAJÁT VASÚTI / JÁRMŰTÉRKÉP – TELJES KÉPERNYŐ'; fs.style.cssText='display:block;width:100%;margin:5px 0;padding:9px;font-weight:800'; fs.addEventListener('click',toggleFullscreen); panel.appendChild(fs);
+  links.forEach(([label,url])=>{const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';a.textContent='↗ '+label;a.style.cssText='display:block;color:#b9e7ff;border:1px solid #34596b;border-radius:7px;padding:8px;margin:5px 0;text-decoration:none;font-weight:700';panel.appendChild(a)});
+  const note=document.createElement('div'); note.textContent='A külső térképek új böngészőlapban nyílnak meg. Ha egy külső oldal tiltja a beágyazást, ez a megbízható megnyitási mód.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
+  const close=document.createElement('button');close.type='button';close.textContent='Panel elrejtése';close.style.cssText='width:100%;margin-top:6px';close.addEventListener('click',()=>panel.remove());panel.appendChild(close);
+  document.body.appendChild(panel);
+  const map=document.getElementById('map');
+  if(map && !document.getElementById('attilaMapFullscreenBtn')){
+   const b=document.createElement('button');b.id='attilaMapFullscreenBtn';b.type='button';b.textContent='⛶ TELJES KÉPERNYŐ';b.style.cssText='position:fixed;right:12px;top:82px;z-index:1100;padding:10px 12px;font-weight:900;background:#123347;border:2px solid #67b9df;color:white;box-shadow:0 2px 10px #0008';b.addEventListener('click',toggleFullscreen);document.body.appendChild(b);
+  }
+ }
+ function toggleFullscreen(){
+  const map=document.getElementById('map'); if(!map)return;
+  const active=map.classList.toggle('attila-map-fullscreen');
+  if(active){map.dataset.oldZ=map.style.zIndex||'';map.style.cssText+=';position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;z-index:2000!important;border-radius:0!important';document.body.classList.add('attila-map-fullscreen-on');}
+  else {map.style.position='';map.style.inset='';map.style.width='';map.style.height='';map.style.zIndex='';map.style.borderRadius='';document.body.classList.remove('attila-map-fullscreen-on');}
+  const b=document.getElementById('attilaMapFullscreenBtn'); if(b)b.textContent=active?'✕ VISSZA A PANELHEZ':'⛶ TELJES KÉPERNYŐ';
+  const p=document.getElementById('attilaMapRestorePanel'); if(p)p.style.display=active?'none':'';
+  setTimeout(()=>{try{if(window.map && window.map.invalidateSize)window.map.invalidateSize({animate:false});}catch(e){}},120);
+ }
+ function start(){
+  addControls();
+  // Ask for a genuine GPS fix at startup. The existing updateGPS() creates/moves the 2 km circle.
+  try{if(typeof startGPS==='function') startGPS();}catch(e){}
+  // Restore the requested 2 km circle as soon as a real GPS fix exists; never invent coordinates.
+  const mapEl=document.getElementById('map');
+  if(mapEl && window.MutationObserver){
+   let attempts=0;const t=setInterval(()=>{attempts++;try{if(typeof myPos!=='undefined'&&myPos&&window.L&&typeof map!=='undefined'&&map){if(typeof myGpsRadiusCircle==='undefined'||!myGpsRadiusCircle){window._attilaGpsMapCentered=false; if(typeof updateGPS==='function'){} }clearInterval(t);}}catch(e){}if(attempts>20)clearInterval(t)},500);
+  }
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});else start();
+})();
+</script>
+<style>
+#map.attila-map-fullscreen{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;z-index:2000!important;border-radius:0!important}
+body.attila-map-fullscreen-on #header,body.attila-map-fullscreen-on #side,body.attila-map-fullscreen-on #attilaMapRestorePanel{display:none!important}
+body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top:10px!important;right:10px!important}
+#attilaMapRestorePanel a:focus,#attilaMapRestorePanel button:focus{outline:3px solid #ffd166;outline-offset:2px}
+@media(max-width:600px){#attilaMapRestorePanel{top:74px!important;max-height:36vh!important}#attilaMapFullscreenBtn{top:74px!important;right:8px!important;font-size:11px!important;padding:8px!important}}
+</style>
 
 </body>
 </html>
