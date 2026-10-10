@@ -556,6 +556,9 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 /* MÁV vasúti térkép – a szelvény/vonali km jelölések és MÁV adatok legyenek jól olvashatók. */
 .mavRailLabel{font-weight:1000;font-size:16px;line-height:1.2;letter-spacing:.2px;-webkit-text-stroke:.25px currentColor;text-shadow:0 0 2px #fff,0 0 4px #fff,1px 1px 0 #fff,-1px -1px 0 #fff;}
 .mavRailKm{font-weight:1000;font-size:16px;-webkit-text-stroke:.25px currentColor;text-shadow:0 0 3px #fff,0 0 5px #fff;}
+/* OpenRailwayMap alaprétege raszteres: a felirat betűvastagsága nem CSS-ből szerkeszthető,
+   ezért a térképcsempe kontrasztját növeljük, hogy a meglévő szelvény/km-jelölések jobban látszódjanak. */
+.leaflet-tile-pane{filter:contrast(1.16) saturate(1.06);}
 </style>
 </head>
 
@@ -612,11 +615,11 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 
 <nav id="attilaExternalQuickLinks" aria-label="Külső közlekedési oldalak" style="display:flex;flex-wrap:wrap;gap:7px;padding:8px 10px;background:#0d1720;border-bottom:1px solid #344454;position:relative;z-index:500">
   <strong style="align-self:center;color:#d9e8f4">KÜLSŐ OLDALAK:</strong>
-  <a href="https://online.winmenetrend.hu/futar/vehicles?more_info=2" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">FUTÁR JÁRMŰTÁBLA ↗</a>
-  <a href="https://online.winmenetrend.hu/futar/history/lines" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">FUTÁR TÖRTÉNETI VONALAK ↗</a>
-  <a href="https://online.winmenetrend.hu/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">WINMENETREND ↗</a>
-  <a href="https://bkk.hu/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK ↗</a>
-  <a href="https://go.bkk.hu/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK GO ↗</a>
+  <a href="https://online.winmenetrend.hu/futar/vehicles?more_info=2" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">FUTÁR JÁRMŰTÁBLA ↗</a>
+  <a href="https://online.winmenetrend.hu/futar/history/lines" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">FUTÁR TÖRTÉNETI VONALAK ↗</a>
+  <a href="https://online.winmenetrend.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">WINMENETREND ↗</a>
+  <a href="https://bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK ↗</a>
+  <a href="https://go.bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK GO ↗</a>
 </nav>
 
 <div id="map"></div>
@@ -5686,20 +5689,28 @@ function rtNorm(v){
   return String(v || "").toUpperCase().replace(/[^A-Z0-9ÁÉÍÓÖŐÚÜŰ]/g,"");
 }
 
+function rtParseLowFloor(value){
+  const v=String(value??"").trim().toLowerCase().normalize("NFD").replace(/[\\u0300-\\u036f]/g,"");
+  if(["igen","true","1","yes","alacsonypadlos","low floor","lowfloor"].includes(v)) return true;
+  if(["nem","false","0","no","nem alacsonypadlos","high floor"].includes(v)) return false;
+  return null;
+}
+
 function parseWinRealtimeText(text){
   const rows=[];
   const lines=String(text||"").split(String.fromCharCode(10));
   for(const line of lines){
     if(!line.includes("|")) continue;
     const c=line.split("|").map(x=>rtClean(x));
-    if(c.length<8) continue;
+    if(c.length<7) continue;
     if(c[0].toLowerCase()==="rendszám" || c[0].startsWith("---")) continue;
     const plate=c[0], route=c[1], forgalmi=c[2], trip=c[3], label=c[4], stop=c[5], type=c[6];
     if(!plate || !route || (!type && !label)) continue;
     let provider="MÁV";
     if(route.toLowerCase().startsWith("volan_")) provider="VOLÁN";
     else if(/^H[0-9]/i.test(route)) provider="MÁV-HÉV";
-    rows.push({provider,plate,route,forgalmi:forgalmi||null,trip:trip||null,label:label||null,stop:stop||null,vehicleType:type||null});
+    const lowFloorRaw=c[7]||"";
+    rows.push({provider,plate,route,forgalmi:forgalmi||null,trip:trip||null,label:label||null,stop:stop||null,vehicleType:type||null,lowFloor:rtParseLowFloor(lowFloorRaw)});
   }
   return rows;
 }
@@ -5728,8 +5739,7 @@ function parseWinRealtimeHtml(html){
         for(const tr of [...table.querySelectorAll("tr")]){
           const cells=[...tr.querySelectorAll("th,td")];
           const hs=cells.map(x=>rtClean(x.textContent));
-          if(findHeader(hs,["rendszám","rendszam"])>=0 &&
-             findHeader(hs,["jármű típus","jarmu tipus","járműtípus","jarmutípus"])>=0){
+          if(findHeader(hs,["rendszám","rendszam","license plate","plate"])>=0){
             headerCells=cells;
             break;
           }
@@ -5748,6 +5758,7 @@ function parseWinRealtimeHtml(html){
       const labelIdx=findHeader(heads,["viszonylat","label"]);
       const stopIdx=findHeader(heads,["megálló","megallo","stop"]);
       const vehicleIdIdx=findHeader(heads,["jármű id","jarmu id","vehicle id","vehicleid","id"]);
+      const lowFloorIdx=findHeader(heads,["alacsonypadlós","alacsonypadlos","low floor","lowfloor","alacsonypadlos-e"]);
 
       const out=[];
       const rows=[...table.querySelectorAll("tr")];
@@ -5771,7 +5782,8 @@ function parseWinRealtimeHtml(html){
           trip:tripIdx>=0?(c[tripIdx]||null):null,
           label:labelIdx>=0?(c[labelIdx]||null):null,
           stop:stopIdx>=0?(c[stopIdx]||null):null,
-          vehicleType:typeIdx>=0?(c[typeIdx]||null):null
+          vehicleType:typeIdx>=0?(c[typeIdx]||null):null,
+          lowFloor:lowFloorIdx>=0?rtParseLowFloor(c[lowFloorIdx]):null
         });
       }
       if(out.length) return out;
@@ -6098,6 +6110,9 @@ async function updateWinRealtime(){
     if(r.vehicleType){
       item.vehicleType =
         r.vehicleType;
+    }
+    if(r.lowFloor===true || r.lowFloor===false){
+      item.lowFloor=r.lowFloor;
     }
 
     if(
@@ -6536,9 +6551,10 @@ function renderVehicles(){
   if(mobile && matchedTotal > limit){
     const note=document.createElement("div");
     note.className="mobile-data-note";
-    note.textContent="Telefonos mód: "+limit+" járműkártya látható egyszerre. A teljes valódi járműállomány memóriában megmarad; járat- vagy rendszámkereséssel a kívánt jármű megjeleníthető.";
+    note.textContent="Telefonos mód: "+limit+" BKK járműkártya látható egyszerre. A teljes valódi járműállomány memóriában megmarad; járat- vagy rendszámkereséssel a kívánt jármű megjeleníthető.";
     list.appendChild(note);
   }
+  try{if(typeof window.renderMavVehicleCards==="function")window.renderMavVehicleCards(window.ATTIlaMavVehicles||[]);}catch(e){}
 }
 
 
@@ -7169,11 +7185,11 @@ window.wmFindLabeledValue=function(text,labels){
   return null;
 };
 
-function wmHome(){return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/lines" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">WINMENETREND KEZDŐOLDAL</a>';}
-function wm1(i){const p=String(i?.licensePlate||"").trim();if(!p)return '<span class="wmMissing">JÁRMŰTÖRTÉNET: NINCS ADAT</span>';return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/vehicles/'+encodeURIComponent(p)+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">JÁRMŰTÖRTÉNET</a>';}
-function wm2(i){const r=String(i?.routeShortName||"").trim(),f=String(i?.forgalmi||"").trim(),m=f.match(/^F(?:0*)?(\d+)$/i);if(!r||!m)return '<span class="wmMissing">FORGALMI / BLOKK: NINCS ADAT</span>';const lc=/^\d+$/.test(r)?r+"0":r;return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/lines/'+encodeURIComponent(lc)+'/'+encodeURIComponent(m[1])+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">FORGALMI / BLOKK</a>';}
-function wm3(i){const c=String(i?.winLineCode||"").trim().toUpperCase();if(!/^R[0-9]+$/.test(c))return '<span class="wmMissing">FORGALMI SZÁM / INDULÁSOK: NINCS ADAT</span>';return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/lines/'+encodeURIComponent(c)+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">FORGALMI SZÁM / INDULÁSOK</a>';}
-function wmExtra(i){const a=[];const b=String(i?.blockId||"").trim(),d=String(i?.tripId||"").trim();if(/^\d+$/.test(b))a.push('<a class="wmLink" href="https://online.winmenetrend.hu/budapest/latest/block/'+encodeURIComponent(b)+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">BLOKK '+escapeHtml(b)+'</a>');if(/^D[0-9]+$/i.test(d))a.push('<a class="wmLink" href="https://online.winmenetrend.hu/futar/trip/'+encodeURIComponent(d)+'?date='+localDateYmd()+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">MENET TÁBLA</a>');return a.length?a.join(" "):'';}
+function wmHome(){return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/lines" target="_self" rel="noopener noreferrer" onclick="event.stopPropagation()">WINMENETREND KEZDŐOLDAL</a>';}
+function wm1(i){const p=String(i?.licensePlate||"").trim();if(!p)return '<span class="wmMissing">JÁRMŰTÖRTÉNET: NINCS ADAT</span>';return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/vehicles/'+encodeURIComponent(p)+'?date='+localDateYmd()+'" target="_self" rel="noopener noreferrer" onclick="event.stopPropagation()">JÁRMŰTÖRTÉNET</a>';}
+function wm2(i){const r=String(i?.routeShortName||"").trim(),f=String(i?.forgalmi||"").trim(),m=f.match(/^F(?:0*)?(\d+)$/i);if(!r||!m)return '<span class="wmMissing">FORGALMI / BLOKK: NINCS ADAT</span>';const lc=/^\d+$/.test(r)?r+"0":r;return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/lines/'+encodeURIComponent(lc)+'/'+encodeURIComponent(m[1])+'?date='+localDateYmd()+'" target="_self" rel="noopener noreferrer" onclick="event.stopPropagation()">FORGALMI / BLOKK</a>';}
+function wm3(i){const c=String(i?.winLineCode||"").trim().toUpperCase();if(!/^R[0-9]+$/.test(c))return '<span class="wmMissing">FORGALMI SZÁM / INDULÁSOK: NINCS ADAT</span>';return '<a class="wmLink" href="https://online.winmenetrend.hu/futar/history/lines/'+encodeURIComponent(c)+'?date='+localDateYmd()+'" target="_self" rel="noopener noreferrer" onclick="event.stopPropagation()">FORGALMI SZÁM / INDULÁSOK</a>';}
+function wmExtra(i){const a=[];const b=String(i?.blockId||"").trim(),d=String(i?.tripId||"").trim();if(/^\d+$/.test(b))a.push('<a class="wmLink" href="https://online.winmenetrend.hu/budapest/latest/block/'+encodeURIComponent(b)+'?date='+localDateYmd()+'" target="_self" rel="noopener noreferrer" onclick="event.stopPropagation()">BLOKK '+escapeHtml(b)+'</a>');if(/^D[0-9]+$/i.test(d))a.push('<a class="wmLink" href="https://online.winmenetrend.hu/futar/trip/'+encodeURIComponent(d)+'?date='+localDateYmd()+'" target="_self" rel="noopener noreferrer" onclick="event.stopPropagation()">MENET TÁBLA</a>');return a.length?a.join(" "):'';}
 window.winMenetrendLinks = winMenetrendLinks;
 
 /* OKÉ gombok akkor is létrejönnek, ha a régi HTML-ben hiányoztak. */
@@ -8008,12 +8024,66 @@ window.extractFutarVehicles = function(json){
         }).join('') || '<div>NINCS ADAT</div>';
       }
       window.ATTIlaMavVehicles=arr;
+      try{renderMavVehiclesOnMap(arr);}catch(e){}
+      try{renderMavVehicleCards(arr);}catch(e){}
       return arr;
     }catch(e){
       if(st) st.textContent='MÁVPlusz: HIBA – '+(e?.message||e);
       if(out) out.innerHTML='<div>NINCS ADAT</div>';
       return [];
     }
+  }
+  function renderMavVehiclesOnMap(arr){
+    if(typeof map==="undefined"||!map||!window.L)return;
+    if(!window.__attilaMavLayer) window.__attilaMavLayer=window.L.layerGroup().addTo(map);
+    const layer=window.__attilaMavLayer;
+    layer.clearLayers();
+    (Array.isArray(arr)?arr:[]).forEach(v=>{
+      const lat=Number(v?.lat),lon=Number(v?.lon);
+      if(!Number.isFinite(lat)||!Number.isFinite(lon)) return;
+      const label=v?.label||v?.vehicleId||"MÁV";
+      const trip=v?.trip?.domesticResTrainNumber||v?.trip?.gtfsId||null;
+      const delayRaw=v?.nextStop?.arrivalDelay;
+      const delay=delayRaw===null||delayRaw===undefined||delayRaw===""?null:Number(delayRaw);
+      const delayText=Number.isFinite(delay)?(delay<0?"SIETÉS "+delay+" mp":delay>0?"KÉSÉS +"+delay+" mp":"PONTOS 0 mp"):"NINCS ADAT";
+      const popup='<div style="min-width:230px;color:#101820"><b>MÁV / VALÓS JÁRMŰ</b>'+
+        '<div>JÁRAT / LABEL: '+esc(label)+'</div>'+
+        '<div>MENET: '+esc(trip||"NINCS ADAT")+'</div>'+
+        '<div>ELTÉRÉS: '+esc(delayText)+'</div>'+
+        '<div>JÁRMŰTÍPUS: NINCS ADAT</div><div>ALACSONYPADLÓS: NINCS ADAT</div>'+
+        '<div>FORGALMI: NINCS ADAT</div>'+
+        '<div>GPS: '+lat.toFixed(6)+", "+lon.toFixed(6)+'</div></div>';
+      window.L.circleMarker([lat,lon],{radius:7,color:"#fff",weight:2,fillColor:"#b06cff",fillOpacity:.95})
+        .bindPopup(popup,{maxWidth:360}).addTo(layer);
+    });
+  }
+  function renderMavVehicleCards(arr){
+    const list=document.getElementById("vehicleList");
+    if(!list)return;
+    list.querySelectorAll(".attiMavVehicleCard").forEach(e=>e.remove());
+    (Array.isArray(arr)?arr:[]).slice(0,100).forEach(v=>{
+      const lat=Number(v?.lat),lon=Number(v?.lon);
+      if(!Number.isFinite(lat)||!Number.isFinite(lon))return;
+      const label=v?.label||v?.vehicleId||"MÁV";
+      const trip=v?.trip?.domesticResTrainNumber||v?.trip?.gtfsId||null;
+      const raw=v?.nextStop?.arrivalDelay;
+      const delay=raw===null||raw===undefined||raw===""?null:Number(raw);
+      const delayText=Number.isFinite(delay)?(delay<0?"SIETÉS "+delay+" mp":delay>0?"KÉSÉS +"+delay+" mp":"PONTOS 0 mp"):"NINCS ADAT";
+      const card=document.createElement("div");
+      card.className="vehicleCard attiMavVehicleCard";
+      card.style.borderColor="#8b61b5";
+      card.innerHTML='<div class="vehicleTop"><div class="vehicleTitle">🚆 '+esc(label)+'</div><div class="sourceTag">MÁV REALTIME</div></div>'+
+        '<div class="field"><b>JÁRAT / LABEL</b><span>'+esc(label)+'</span></div>'+
+        '<div class="field"><b>ELTÉRÉS</b><span>'+esc(delayText)+'</span></div>'+
+        '<div class="field"><b>JÁRMŰTÍPUS</b><span>NINCS ADAT</span></div>'+
+        '<div class="field"><b>ALACSONYPADLÓS</b><span>NINCS ADAT</span></div>'+
+        '<div class="field"><b>RENDSZÁM</b><span>NINCS ADAT</span></div>'+
+        '<div class="field"><b>FORGALMI</b><span>NINCS ADAT</span></div>'+
+        '<div class="field"><b>TRIP / MENET</b><span>'+esc(trip||"NINCS ADAT")+'</span></div>'+
+        '<div class="field"><b>GPS</b><span>'+lat.toFixed(6)+", "+lon.toFixed(6)+'</span></div>';
+      card.addEventListener("click",()=>{try{map.setView([lat,lon],Math.max(map.getZoom(),14));if(window.__attilaMavLayer)window.__attilaMavLayer.eachLayer(m=>{if(m.getLatLng&&m.getLatLng().lat===lat&&m.getLatLng().lng===lon)m.openPopup();});}catch(e){}});
+      list.appendChild(card);
+    });
   }
   function esc(x){return String(x??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
   function mount(){
@@ -8031,6 +8101,7 @@ window.extractFutarVehicles = function(json){
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',mount); else mount();
   window.loadMavRealtime=loadMav;
+  window.renderMavVehicleCards=renderMavVehicleCards;
 })();
 </script>
 <script>
@@ -8302,7 +8373,7 @@ window.extractFutarVehicles = function(json){
   const title=document.createElement('div'); title.textContent='🗺️ TÉRKÉPEK – TELJES NÉZET'; title.style.cssText='font-weight:900;font-size:15px;margin-bottom:8px'; panel.appendChild(title);
   const fs=document.createElement('button'); fs.type='button'; fs.textContent='⛶ SAJÁT VASÚTI / JÁRMŰTÉRKÉP – TELJES KÉPERNYŐ'; fs.style.cssText='display:block;width:100%;margin:5px 0;padding:9px;font-weight:800'; fs.addEventListener('click',toggleFullscreen); panel.appendChild(fs);
   links.forEach(([label,url])=>{const a=document.createElement('a');a.href=url;a.target='_self';a.rel='noopener noreferrer';a.textContent='↗ MEGNYITÁS – '+label;a.style.cssText='display:block;color:#b9e7ff;border:1px solid #34596b;border-radius:7px;padding:8px;margin:5px 0;text-decoration:none;font-weight:700';panel.appendChild(a)});
-  const note=document.createElement('div'); note.textContent='Mind a négy külső térkép ugyanebben a böngészőlapban nyílik meg, így a böngésző VISSZA gombjával visszatérhetsz az Attila Közlekedéshez. Külső oldalba saját VISSZA gombot nem lehet megbízhatóan beépíteni.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
+  const note=document.createElement('div'); note.textContent='A külső térképek és menetrendek ugyanebben a böngészőlapban nyílnak meg: a böngésző VISSZA gombja visszahoz az Attila Közlekedéshez. Külső szolgáltató oldalába az alkalmazás nem tud saját gombot beilleszteni. A saját vasúti és járműtérkép teljes nézetéhez használd a fenti gombot.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
   const back=document.createElement('button');back.type='button';back.textContent='↩ VISSZA AZ ATTILA KÖZLEKEDÉSHEZ';back.style.cssText='width:100%;margin-top:6px;padding:10px;font-weight:900;background:#17432f;border:1px solid #39d98a;color:#fff';back.addEventListener('click',()=>{if(window.history.length>1)window.history.back();else{panel.scrollIntoView({behavior:'smooth',block:'start'});}});panel.appendChild(back);
   const close=document.createElement('button');close.type='button';close.textContent='Panel elrejtése';close.style.cssText='width:100%;margin-top:6px';close.addEventListener('click',()=>panel.remove());panel.appendChild(close);
   document.body.appendChild(panel);
@@ -8318,7 +8389,7 @@ window.extractFutarVehicles = function(json){
   else {map.style.position='';map.style.inset='';map.style.width='';map.style.height='';map.style.zIndex='';map.style.borderRadius='';document.body.classList.remove('attila-map-fullscreen-on');}
   const b=document.getElementById('attilaMapFullscreenBtn'); if(b)b.textContent=active?'✕ VISSZA A PANELHEZ':'⛶ TELJES KÉPERNYŐ';
   const p=document.getElementById('attilaMapRestorePanel'); if(p)p.style.display=active?'none':'';
-  setTimeout(()=>{try{if(window.map && window.map.invalidateSize)window.map.invalidateSize({animate:false});}catch(e){}},120);
+  setTimeout(()=>{try{if(typeof map!=="undefined" && map && map.invalidateSize)map.invalidateSize({animate:false});}catch(e){}},180);
  }
  function start(){
   addControls();
