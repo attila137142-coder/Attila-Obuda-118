@@ -10,7 +10,7 @@
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – FIX8 NÉGY JÁRMŰADAT ADATÚT JAVÍTÁS</title>
+<title>ATTILA KÖZLEKEDÉS – FIX9 ELTÉRÉS MENETREND-CACHE JAVÍTÁS</title>
 
 <link
   rel="stylesheet"
@@ -567,7 +567,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 <div id="header">
 
   <div class="title">
-    🚍 ATTILA KÖZLEKEDÉS – BKK VADÁSZ FIX39 · FIX8 NÉGY ADATÚT
+    🚍 ATTILA KÖZLEKEDÉS – BKK VADÁSZ FIX39 · FIX9 ELTÉRÉS CACHE JAVÍTÁS
   </div>
 
   <div id="feedBadge" class="badge warn">
@@ -1948,7 +1948,7 @@ async function loadBkkGtfs(){
         buf
       );
 
-    // FIX8: a már letöltött hivatalos GTFS ZIP referenciáját megőrizzük.
+    // FIX9: a már letöltött hivatalos GTFS ZIP referenciáját megőrizzük.
     // Nem bontjuk ki automatikusan a nagy stop_times.txt fájlt, mert az
     // telefonon memória- és fagyásveszélyes lehet.
     window.__ATTILA_BKK_GTFS_ZIP__ = zip;
@@ -2367,39 +2367,56 @@ function attilaGtfsTimeSeconds(value){
 async function attilaLoadActiveSchedule(activeTripIds){
   const old=window.__ATTILA_ACTIVE_GTFS_SCHEDULE__;
   const now=Date.now();
-  if(old && old.map instanceof Map && now-old.at<600000) return old.map;
+  const wanted=new Set([...(activeTripIds instanceof Set ? activeTripIds : (activeTripIds||[]))].map(normalizeTripKey).filter(Boolean));
+  const fresh=old && old.map instanceof Map && now-Number(old.at||0)<600000;
+  const covered=fresh ? new Set(old.tripIds instanceof Set ? old.tripIds : []) : new Set();
+  const missing=fresh ? new Set([...wanted].filter(id=>!covered.has(id))) : wanted;
+  if(fresh && missing.size===0) return old.map;
+  /* A TripUpdates aktív trip-jei frissítésenként változnak. Ne adjuk vissza
+     vakon a korábbi menetrendtérképet: az új trip-ek hiányoznának belőle.
+     A teljes stop_times újraolvasását legfeljebb 2 percenként engedjük,
+     hogy a telefonos felület ne fagyjon le a gyakori frissítésektől. */
+  if(fresh && missing.size>0 && now-Number(old.lastExtendAt||old.at||0)<120000){
+    if(!old.missingLogAt || now-old.missingLogAt>120000){
+      logLine("ELTÉRÉS menetrend-cache: "+missing.size+" új aktív trip még nincs a gyorsítótárban; biztonságos újraolvasás 2 perces korláttal.");
+      old.missingLogAt=now;
+    }
+    return old.map;
+  }
   const zip=window.__ATTILA_BKK_GTFS_ZIP__;
   const file=zip && typeof zip.file==="function" ? zip.file("stop_times.txt") : null;
-  if(!file){logLine("ELTÉRÉS: a hivatalos GTFS stop_times.txt még nem elérhető; menetrendi összevetés nem végezhető.");return null;}
+  if(!file){logLine("ELTÉRÉS: a hivatalos GTFS stop_times.txt még nem elérhető; menetrendi összevetés nem végezhető.");return fresh ? old.map : null;}
   try{
     logLine("ELTÉRÉS: valódi TripUpdates időpontok összevetése a GTFS stop_times menetrenddel indul...");
     const text=await file.async("text");
     const firstEnd=text.indexOf("\n");
-    if(firstEnd<0) return null;
+    if(firstEnd<0) return fresh ? old.map : null;
     const heads=attilaCsvLine(text.slice(0,firstEnd).replace(/^\uFEFF/,""));
     const idx={trip:heads.indexOf("trip_id"),seq:heads.indexOf("stop_sequence"),stop:heads.indexOf("stop_id"),arr:heads.indexOf("arrival_time"),dep:heads.indexOf("departure_time")};
-    if(idx.trip<0 || idx.seq<0 || idx.stop<0 || idx.arr<0 || idx.dep<0){logLine("ELTÉRÉS: stop_times.txt fejléc nem tartalmazza a szükséges GTFS mezőket.");return null;}
-    const wanted=activeTripIds instanceof Set ? activeTripIds : new Set(activeTripIds||[]);
-    const map=new Map(); let pos=firstEnd+1, scanned=0, kept=0;
+    if(idx.trip<0 || idx.seq<0 || idx.stop<0 || idx.arr<0 || idx.dep<0){logLine("ELTÉRÉS: stop_times.txt fejléc nem tartalmazza a szükséges GTFS mezőket.");return fresh ? old.map : null;}
+    const target=fresh ? missing : wanted;
+    const map=fresh ? new Map(old.map) : new Map();
+    const foundTrips=new Set(); let pos=firstEnd+1, scanned=0, kept=0;
     while(pos<text.length){
       let end=text.indexOf("\n",pos); if(end<0) end=text.length;
       const line=text.slice(pos,end); pos=end+1; scanned++;
       if(line){
         const c=attilaCsvLine(line); const trip=normalizeTripKey(c[idx.trip]);
-        if(trip && wanted.has(trip)){
+        if(trip && target.has(trip)){
           const seq=String(c[idx.seq]||"").trim(), stop=String(c[idx.stop]||"").trim();
           const row={arrival:attilaGtfsTimeSeconds(c[idx.arr]),departure:attilaGtfsTimeSeconds(c[idx.dep]),stopId:stop,seq};
           if(seq) map.set(trip+"|seq|"+seq,row);
           if(stop) map.set(trip+"|stop|"+stop,row);
-          kept++;
+          foundTrips.add(trip); kept++;
         }
       }
       if(scanned%20000===0) await new Promise(resolve=>setTimeout(resolve,0));
     }
-    window.__ATTILA_ACTIVE_GTFS_SCHEDULE__={map,at:Date.now(),tripIds:new Set(wanted)};
-    logLine("ELTÉRÉS menetrendi forrás: "+scanned.toLocaleString("hu-HU")+" stop_times sor átvizsgálva; "+kept.toLocaleString("hu-HU")+" aktív trip-stop rekord egyezett.");
+    const allCovered=fresh ? new Set([...covered,...foundTrips]) : foundTrips;
+    window.__ATTILA_ACTIVE_GTFS_SCHEDULE__={map,at:now,lastExtendAt:now,tripIds:allCovered,missingLogAt:0};
+    logLine("ELTÉRÉS menetrendi forrás: "+scanned.toLocaleString("hu-HU")+" stop_times sor átvizsgálva; "+kept.toLocaleString("hu-HU")+" aktív trip-stop rekord egyezett; "+foundTrips.size+" trip menetrendje került a cache-be.");
     return map;
-  }catch(e){logLine("ELTÉRÉS menetrendi összevetés hiba: "+(e?.message||e));return null;}
+  }catch(e){logLine("ELTÉRÉS menetrendi összevetés hiba: "+(e?.message||e));return fresh ? old.map : null;}
 }
 
 function attilaServiceDateEpoch(startDate, seconds){
