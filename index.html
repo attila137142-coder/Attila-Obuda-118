@@ -10,7 +10,7 @@
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – BKK VADÁSZ REAL DATA FIX38 – TELEFON / KÖZLEKEDÉSI PANEL</title>
+<title>ATTILA KÖZLEKEDÉS – FIX6 NAVIGÁCIÓS JAVÍTÁS – KÜLSŐ TÉRKÉPEK VISSZA</title>
 
 <link
   rel="stylesheet"
@@ -964,7 +964,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 
     <div class="panelBody">
       <div class="small" style="margin-bottom:7px">
-        Valós, aktuálisan online járműadatok. A Pest megyei / elővárosi VOLÁN és MÁV járatok külön táblában jelennek meg. Hiányzó mező = NINCS ADAT.
+        Az élő VOLÁN/MÁV járművekhez olvasható, engedélyezett realtime adatforrás is szükséges. A GTFS ZIP önmagában megállókat és menetrendi adatokat ad, nem élő járműpozíciót. Ha a realtime forrás nem érhető el, a tábla NINCS ADAT értéket mutat; nem gyártunk járműadatot.
       </div>
       <div class="regionalWrap">
         <table class="regionalTable">
@@ -8301,8 +8301,9 @@ window.extractFutarVehicles = function(json){
   panel.style.cssText='position:fixed;z-index:1200;left:10px;top:82px;width:min(330px,calc(100vw - 20px));max-height:42vh;overflow:auto;background:#071721f2;color:#f0f8ff;border:1px solid #4a7187;border-radius:12px;padding:10px;box-shadow:0 4px 20px #0009;font:13px/1.35 Arial,sans-serif';
   const title=document.createElement('div'); title.textContent='🗺️ TÉRKÉPEK – TELJES NÉZET'; title.style.cssText='font-weight:900;font-size:15px;margin-bottom:8px'; panel.appendChild(title);
   const fs=document.createElement('button'); fs.type='button'; fs.textContent='⛶ SAJÁT VASÚTI / JÁRMŰTÉRKÉP – TELJES KÉPERNYŐ'; fs.style.cssText='display:block;width:100%;margin:5px 0;padding:9px;font-weight:800'; fs.addEventListener('click',toggleFullscreen); panel.appendChild(fs);
-  links.forEach(([label,url])=>{const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';a.textContent='↗ '+label;a.style.cssText='display:block;color:#b9e7ff;border:1px solid #34596b;border-radius:7px;padding:8px;margin:5px 0;text-decoration:none;font-weight:700';panel.appendChild(a)});
-  const note=document.createElement('div'); note.textContent='A külső térképek új böngészőlapban nyílnak meg. Ha egy külső oldal tiltja a beágyazást, ez a megbízható megnyitási mód.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
+  links.forEach(([label,url])=>{const a=document.createElement('a');a.href=url;a.target='_self';a.rel='noopener noreferrer';a.textContent='↗ MEGNYITÁS – '+label;a.style.cssText='display:block;color:#b9e7ff;border:1px solid #34596b;border-radius:7px;padding:8px;margin:5px 0;text-decoration:none;font-weight:700';panel.appendChild(a)});
+  const note=document.createElement('div'); note.textContent='Mind a négy külső térkép ugyanebben a böngészőlapban nyílik meg, így a böngésző VISSZA gombjával visszatérhetsz az Attila Közlekedéshez. Külső oldalba saját VISSZA gombot nem lehet megbízhatóan beépíteni.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
+  const back=document.createElement('button');back.type='button';back.textContent='↩ VISSZA AZ ATTILA KÖZLEKEDÉSHEZ';back.style.cssText='width:100%;margin-top:6px;padding:10px;font-weight:900;background:#17432f;border:1px solid #39d98a;color:#fff';back.addEventListener('click',()=>{if(window.history.length>1)window.history.back();else{panel.scrollIntoView({behavior:'smooth',block:'start'});}});panel.appendChild(back);
   const close=document.createElement('button');close.type='button';close.textContent='Panel elrejtése';close.style.cssText='width:100%;margin-top:6px';close.addEventListener('click',()=>panel.remove());panel.appendChild(close);
   document.body.appendChild(panel);
   const map=document.getElementById('map');
