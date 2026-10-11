@@ -558,7 +558,10 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 .mavRailKm{font-weight:1000;font-size:16px;-webkit-text-stroke:.25px currentColor;text-shadow:0 0 3px #fff,0 0 5px #fff;}
 /* OpenRailwayMap alaprétege raszteres: a felirat betűvastagsága nem CSS-ből szerkeszthető,
    ezért a térképcsempe kontrasztját növeljük, hogy a meglévő szelvény/km-jelölések jobban látszódjanak. */
-.leaflet-tile-pane{filter:contrast(1.16) saturate(1.06);}
+.leaflet-tile-pane{filter:contrast(1.28) saturate(1.08) brightness(1.035);}
+.leaflet-tile-pane .mavRailTileLayer{opacity:1!important}
+/* A saját, DOM-alapú MÁV km/szelvény feliratok vastagabbak és kontrasztosabbak. */
+.mavRailLabel,.mavRailKm{font-weight:900!important;-webkit-text-stroke:.35px currentColor!important;text-shadow:0 0 3px #fff,0 0 5px #fff,1px 1px 0 #fff,-1px -1px 0 #fff!important;}
 </style>
 </head>
 
@@ -567,7 +570,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 <div id="header">
 
   <div class="title">
-    🚍 ATTILA KÖZLEKEDÉS – BKK VADÁSZ FIX39 · FIX9 ELTÉRÉS CACHE JAVÍTÁS
+    🚍 ATTILA KÖZLEKEDÉS – BKK VADÁSZ FIX39 · FIX10 GPS / MÁV / 4 PANEL
   </div>
 
   <div id="feedBadge" class="badge warn">
@@ -620,6 +623,10 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
   <a href="https://online.winmenetrend.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">WINMENETREND ↗</a>
   <a href="https://bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK ↗</a>
   <a href="https://go.bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK GO ↗</a>
+  <a href="https://holavonat.is/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">HOL A VONAT? ↗</a>
+  <a href="https://vonatinfo.kozlekedesiklub.hu/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">VONATINFO ↗</a>
+  <a href="https://utas.hu/?map=9/47.82045/18.91772" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">UTAS TÉRKÉP ↗</a>
+  <a href="https://futar.bkk.hu/?map=15/47.59909/19.05064" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #55aaff;border-radius:8px;color:#d9f0ff">BKK FUTÁR ↗</a>
 </nav>
 
 <div id="map"></div>
@@ -1397,7 +1404,7 @@ function initMap(){
      továbbra is kizárólag valódi forrásból kerülhetnek a kártyákra/popupokra. */
   try{
     mavRailLayer=L.tileLayer("https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png",{
-      maxZoom:19,opacity:0.82,attribution:"© OpenRailwayMap / OpenStreetMap"
+      maxZoom:19,opacity:1,className:"mavRailTileLayer",attribution:"© OpenRailwayMap / OpenStreetMap"
     }).addTo(map);
   }catch(e){}
   let mapFallbackUsed=false;
@@ -4120,6 +4127,12 @@ function normalizeFutarVehicle(obj){
         "vehicle_model",
         "vehicleModelName",
         "vehicle_model_name",
+        "vehicleTypeDescription",
+        "vehicle_type_description",
+        "vehicleTypeText",
+        "vehicle_type_text",
+        "typeName",
+        "type_name",
         "modelName",
         "model_name",
         "model"
@@ -5888,18 +5901,18 @@ function parseWinRealtimeHtml(html){
       }
       const heads=headerCells.map(x=>rtClean(x.textContent));
       const plateIdx=findHeader(heads,["rendszám","rendszam","license plate","plate"]);
-      const typeIdx=findHeader(heads,["jármű típus","jarmu tipus","járműtípus","jarmutípus","vehicle type","vehicletype","típus","tipus"]);
+      const typeIdx=findHeader(heads,["jármű típus","jarmu tipus","járműtípus","jarmutípus","jármű típusa","jarmu tipusa","vehicle type","vehicletype","vehicle model","model name","típus","tipus"]);
       /* RENDSZÁM a kötelező azonosító. A JÁRMŰTÍPUS / FORGALMI oszlop hiánya
          nem dobhatja ki az egész valódi WinMenetrend-táblát. */
       if(plateIdx<0) continue;
 
       const routeIdx=findHeader(heads,["járat","jarat","route","route short name"]);
-      const forgalmiIdx=findHeader(heads,["forgalmi","forgalmi szám","forgalmi szam","forgalminumber"]);
+      const forgalmiIdx=findHeader(heads,["forgalmi","forgalmi szám","forgalmi szam","forgalmi azonosító","forgalmi azonosito","forgalmi number","forgalminumber"]);
       const tripIdx=findHeader(heads,["menet","trip","trip id","tripid"]);
       const labelIdx=findHeader(heads,["viszonylat","label"]);
       const stopIdx=findHeader(heads,["megálló","megallo","stop"]);
       const vehicleIdIdx=findHeader(heads,["jármű id","jarmu id","vehicle id","vehicleid","id"]);
-      const lowFloorIdx=findHeader(heads,["alacsonypadlós","alacsonypadlos","low floor","lowfloor","alacsonypadlos-e"]);
+      const lowFloorIdx=findHeader(heads,["alacsonypadlós","alacsonypadlos","alacsonypadlós-e","alacsonypadlos-e","alacsonypadlós jármű","alacsonypadlos jarmu","low floor","lowfloor","is low floor"]);
 
       const out=[];
       const rows=[...table.querySelectorAll("tr")];
@@ -7211,6 +7224,14 @@ document.addEventListener(
 
     logLine(
       "NINCS KITALÁLT JÁRMŰADAT."
+    );
+
+    logLine(
+      "FIX10: automatikus GPS-indítás; első valódi GPS-fixnél 2 km-es kör és középre igazítás."
+    );
+
+    logLine(
+      "FIX10: MÁV/OpenRailwayMap réteg erősebb kontraszttal; külső vasúti és FUTÁR referenciák külön lapon nyílnak meg."
     );
 
 
