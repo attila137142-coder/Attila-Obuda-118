@@ -437,6 +437,14 @@ select:focus{
 .fwarn{color:var(--yellow);font-weight:700;}
 .fmuted{color:var(--muted);}
 #fonokSummary{margin-top:8px;padding:8px;border-radius:8px;background:#09131b;line-height:1.45;}
+.fonokTop5{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);}
+.fonokTop5 h4{margin:10px 0 6px;color:#d8d1ff;font-size:14px;}
+.fonokTop5 p{margin:4px 0 8px;font-size:12px;line-height:1.4;}
+.fonokTop5 .fonokWrap{max-height:32vh;}
+.fonokTop5 .fonokTable th,.fonokTop5 .fonokTable td{text-align:left;}
+.fonokTop5 .fonokTable td:nth-child(1),.fonokTop5 .fonokTable td:nth-child(4){white-space:nowrap;}
+.fonokScore{font-weight:800;color:var(--green);}
+.fonokFields{font-size:11px;line-height:1.45;min-width:160px;}
 </style>
 
 <style>
@@ -645,6 +653,14 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
           <tbody id="fonokBody"></tbody>
         </table>
       </div>
+      <section id="fonokTop5" class="fonokTop5">
+        <h4>🏆 TOP 5 – LEGTÖBB VALÓDI PANELADATOT ADÓ JÁRMŰ</h4>
+        <p class="fmuted">A lista a jelenlegi járműobjektumokból készül. Csak tényleges érték számít; a hiányzó adat nem kap pontot.</p>
+        <div class="fonokWrap"><table class="fonokTable"><thead><tr><th>#</th><th>VONAL</th><th>RENDSZÁM / JÁRMŰAZONOSÍTÓ</th><th>ADATFORRÁS</th><th>VALÓDI MEZŐK</th><th>MEGJÖTT MEZŐK</th></tr></thead><tbody id="fonokTopVehicles"><tr><td colspan="6">A FŐNÖK futtatása után jelenik meg.</td></tr></tbody></table></div>
+        <h4>🚌 TOP 5 – LEGJOBB ADATKITÖLTÖTTSÉGŰ VONAL</h4>
+        <p class="fmuted">A vonalak rangsora a vizsgált járművek négy mezőjének átlagos kitöltöttségi arányán alapul; a vizsgált járművek számát is mutatja.</p>
+        <div class="fonokWrap"><table class="fonokTable"><thead><tr><th>#</th><th>VONAL</th><th>JÁRMŰ</th><th>MEZŐKITÖLTÖTTSÉG</th><th>ELTÉRÉS / TÍPUS / ALACSONYPADLÓS / FORGALMI</th></tr></thead><tbody id="fonokTopRoutes"><tr><td colspan="5">A FŐNÖK futtatása után jelenik meg.</td></tr></tbody></table></div>
+      </section>
     </div>
   </section>
 
@@ -6962,6 +6978,58 @@ async function fonokRequest(url,label){
   }
 }
 
+function fonokFieldState(v){
+  const hasText=x=>x!==null&&x!==undefined&&String(x).trim()!==""&&!/^NINCS ADAT$/i.test(String(x).trim());
+  const delay=v?.delaySeconds!==null&&v?.delaySeconds!==undefined&&v?.delaySeconds!==""&&Number.isFinite(Number(v.delaySeconds));
+  const type=hasText(v?.vehicleType);
+  const low=v?.lowFloor===true||v?.lowFloor===false;
+  const forgalmi=hasText(v?.forgalmi);
+  const fields=[];
+  if(delay) fields.push("ELTÉRÉS");
+  if(type) fields.push("JÁRMŰTÍPUS");
+  if(low) fields.push("ALACSONYPADLÓS: "+(v.lowFloor?"IGEN":"NEM"));
+  if(forgalmi) fields.push("FORGALMI");
+  return {delay,type,low,forgalmi,fields,score:fields.length};
+}
+function fonokVehicleLabel(v){
+  const plate=String(v?.licensePlate??"").trim();
+  const id=String(v?.vehicleId??"").trim();
+  const label=String(v?.label??"").trim();
+  const parts=[];
+  parts.push("Rendszám: "+(plate||"NINCS ADAT"));
+  if(id) parts.push("Járműazonosító: "+id);
+  if(label && label!==plate && label!==id) parts.push("Label: "+label);
+  return parts.join(" | ");
+}
+function renderFonokTop5(){
+  const vehiclesBody=document.getElementById("fonokTopVehicles");
+  const routesBody=document.getElementById("fonokTopRoutes");
+  if(!vehiclesBody||!routesBody) return;
+  const data=Array.isArray(vehicleData)?vehicleData:[];
+  if(!data.length){
+    vehiclesBody.innerHTML='<tr><td colspan="6">NINCS ADAT – még nincs jármű a memóriában.</td></tr>';
+    routesBody.innerHTML='<tr><td colspan="5">NINCS ADAT – még nincs jármű a memóriában.</td></tr>';
+    return;
+  }
+  const entries=data.map(v=>({v,state:fonokFieldState(v),route:String(v?.routeShortName??"").trim()||String(v?.routeId??"").trim()||"NINCS ADAT",identity:fonokVehicleLabel(v)}));
+  entries.sort((a,b)=>b.state.score-a.state.score || a.route.localeCompare(b.route,"hu") || a.identity.localeCompare(b.identity,"hu"));
+  const top=entries.slice(0,5);
+  vehiclesBody.innerHTML=top.map((x,i)=>{
+    const fields=x.state.fields.length?x.state.fields.map(fonokEsc).join(" · "):"NINCS ADAT A NÉGY MEZŐBEN";
+    const source=String(x.v?.source??x.v?.provider??"").trim()||"NINCS ADAT";
+    return `<tr><td>${i+1}</td><td>${fonokEsc(x.route)}</td><td>${fonokEsc(x.identity)}</td><td>${fonokEsc(source)}</td><td class="fonokScore">${x.state.score}/4</td><td class="fonokFields">${fields}</td></tr>`;
+  }).join("");
+  const grouped=new Map();
+  for(const x of entries){
+    if(x.route==="NINCS ADAT") continue;
+    if(!grouped.has(x.route)) grouped.set(x.route,{route:x.route,count:0,total:0,delay:0,type:0,low:0,forgalmi:0});
+    const g=grouped.get(x.route); g.count++; g.total+=x.state.score;
+    if(x.state.delay)g.delay++; if(x.state.type)g.type++; if(x.state.low)g.low++; if(x.state.forgalmi)g.forgalmi++;
+  }
+  const ranked=[...grouped.values()].map(g=>({...g,pct:g.count?g.total/(g.count*4)*100:0})).sort((a,b)=>b.pct-a.pct || b.count-a.count || a.route.localeCompare(b.route,"hu")).slice(0,5);
+  routesBody.innerHTML=ranked.length?ranked.map((g,i)=>`<tr><td>${i+1}</td><td>${fonokEsc(g.route)}</td><td>${g.count}</td><td class="fonokScore">${g.pct.toLocaleString("hu-HU",{maximumFractionDigits:1})}% (${g.total}/${g.count*4})</td><td class="fonokFields">ELTÉRÉS ${g.delay}/${g.count} · TÍPUS ${g.type}/${g.count} · ALACSONYPADLÓS ${g.low}/${g.count} · FORGALMI ${g.forgalmi}/${g.count}</td></tr>`).join(""):'<tr><td colspan="5">NINCS ADAT – egyetlen járműhöz sincs azonosítható vonal.</td></tr>';
+}
+
 async function runFonok(){
   const body=$("fonokBody");
   const summary=$("fonokSummary");
@@ -7052,7 +7120,9 @@ async function runFonok(){
   else if(total===0) first="Nincs jelenlegi BKK járműobjektum.";
 
   body.innerHTML=rows.join("");
+  renderFonokTop5();
   summary.innerHTML="<b>ELSŐ HIBAPONT:</b> "+fonokEsc(first)+"<br><b>Jelenlegi járműobjektum:</b> "+total.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>VehiclePositions dekódolt:</b> "+vpCount.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>TripUpdates:</b> "+tuCount.toLocaleString("hu-HU")+" &nbsp; | &nbsp; <b>delay mező:</b> "+delayCount.toLocaleString("hu-HU")+" &nbsp; | &nbsp; <b>valódi event.time:</b> "+realEventTimeCount.toLocaleString("hu-HU")+"";
+  logLine("👑 FŐNÖK: TOP 5 jármű és TOP 5 vonal a jelenlegi valós járműadatokból rendezve.");
   logLine("👑 FŐNÖK: teljes adatút-diagnosztika lefutott. Első hibapont: "+first);
 }
 
