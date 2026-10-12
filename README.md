@@ -632,7 +632,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
   <a href="https://online.winmenetrend.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">WINMENETREND ↗</a>
   <a href="https://bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK ↗</a>
   <a href="https://go.bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK GO ↗</a>
-  <a href="https://holavonat.is/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">HOL A VONAT? ↗</a>
+  <a href="https://holavonat.is/#985582760023" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">HOL A VONAT? ↗</a>
   <a href="https://vonatinfo.kozlekedesiklub.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">VONATINFO ↗</a>
   <a href="https://utas.hu/?map=9/47.82045/18.91772" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">UTAS TÉRKÉP ↗</a>
   <a href="https://futar.bkk.hu/?map=15/47.59909/19.05064" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #55aaff;border-radius:8px;color:#d9f0ff">BKK FUTÁR ↗</a>
@@ -8690,7 +8690,7 @@ window.extractFutarVehicles = function(json){
   const title=document.createElement('div'); title.textContent='🗺️ TÉRKÉPEK – TELJES NÉZET'; title.style.cssText='font-weight:900;font-size:15px;margin-bottom:8px'; panel.appendChild(title);
   const fs=document.createElement('button'); fs.type='button'; fs.textContent='⛶ SAJÁT VASÚTI / JÁRMŰTÉRKÉP – TELJES KÉPERNYŐ'; fs.style.cssText='display:block;width:100%;margin:5px 0;padding:9px;font-weight:800'; fs.addEventListener('click',toggleFullscreen); panel.appendChild(fs);
   links.forEach(([label,url])=>{const a=document.createElement('a');a.href=url;a.target='_self';a.rel='noopener noreferrer';a.textContent='↗ MEGNYITÁS – '+label; a.addEventListener('click',()=>{window.__attilaExternalMapOpenedAt=Date.now();});a.style.cssText='display:block;color:#b9e7ff;border:1px solid #34596b;border-radius:7px;padding:8px;margin:5px 0;text-decoration:none;font-weight:700';panel.appendChild(a)});
-  const note=document.createElement('div'); note.textContent='A külső térképek külön böngészőlapon nyílnak meg, így ez az Attila Közlekedés-lap nyitva marad. A külső szolgáltató saját oldalába biztonsági okból nem illeszthető be idegen VISSZA gomb; visszatéréshez válts vissza erre a lapra. A saját térkép teljes nézetéhez használd a fenti gombot.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
+  const note=document.createElement('div'); note.textContent='A külső oldalak ugyanabban a lapon nyílnak meg. Visszatéréshez használd a böngésző VISSZA gombját vagy az alkalmazás ⬅ VISSZA gombját, ha az oldal előzményei ezt lehetővé teszik. A külső szolgáltató saját oldalába nem illeszthető be idegen gomb. A saját térkép teljes nézetéhez használd a fenti gombot.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
   const back=document.createElement('button');back.type='button';back.textContent='↩ VISSZA / ATTILA KÖZLEKEDÉS LAPJA';back.style.cssText='width:100%;margin-top:6px;padding:10px;font-weight:900;background:#17432f;border:1px solid #39d98a;color:#fff';back.addEventListener('click',()=>{try{window.focus();panel.scrollIntoView({behavior:'smooth',block:'start'});window.scrollTo({top:0,behavior:'smooth'});}catch(e){panel.scrollIntoView({block:'start'});}});panel.appendChild(back);
   const close=document.createElement('button');close.type='button';close.textContent='Panel elrejtése';close.style.cssText='width:100%;margin-top:6px';close.addEventListener('click',()=>panel.remove());panel.appendChild(close);
   document.body.appendChild(panel);
@@ -8900,6 +8900,105 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
     window.addEventListener('resize',()=>{ if(done) setTimeout(()=>{try{const m=(typeof map!=='undefined'&&map)?map:window.map;m&&m.invalidateSize&&m.invalidateSize({animate:false});}catch(e){}},100); });
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start,{once:true}); else start();
+})();
+</script>
+
+
+
+<!-- FIX17: iPhone XR mobilpanel + pontos külső URL-ek + panelnyitó -->
+<style id="attila-fix17-iphone-xr">
+  @media (max-width: 700px) {
+    html, body { width:100%!important; min-width:0!important; max-width:100%!important; overflow-x:hidden!important; }
+    body { height:auto!important; min-height:100%!important; overflow-y:auto!important; }
+    #header { position:sticky!important; top:0!important; left:auto!important; right:auto!important; width:100%!important; min-height:0!important; padding:7px!important; gap:6px!important; z-index:1400!important; }
+    #header .title { width:100%!important; white-space:normal!important; font-size:16px!important; line-height:1.2!important; }
+    #header .badge { white-space:normal!important; font-size:11px!important; padding:5px 7px!important; }
+    #header button { min-height:40px!important; max-width:100%!important; font-size:13px!important; padding:8px!important; }
+    #apiKey { width:min(58vw,230px)!important; min-width:0!important; max-width:100%!important; }
+    #attilaExternalQuickLinks { display:flex!important; flex-wrap:nowrap!important; overflow-x:auto!important; max-width:100vw!important; white-space:nowrap!important; -webkit-overflow-scrolling:touch; padding:6px!important; gap:6px!important; }
+    #attilaExternalQuickLinks > * { flex:0 0 auto!important; }
+    #map { position:relative!important; top:auto!important; left:auto!important; right:auto!important; bottom:auto!important; display:block!important; width:100%!important; max-width:100vw!important; height:44vh!important; min-height:240px!important; max-height:430px!important; }
+    #side { position:fixed!important; top:0!important; right:0!important; bottom:0!important; left:auto!important; width:min(94vw,460px)!important; max-width:94vw!important; height:100dvh!important; max-height:100dvh!important; min-width:0!important; overflow-x:hidden!important; overflow-y:auto!important; -webkit-overflow-scrolling:touch!important; padding:58px 9px 24px!important; border-left:2px solid #55aaff!important; z-index:3001!important; transform:translateX(105%)!important; visibility:hidden!important; transition:transform .22s ease,visibility .22s ease!important; box-shadow:-12px 0 30px #0009!important; }
+    body.attila-fix17-side-open #side { transform:translateX(0)!important; visibility:visible!important; }
+    #side > * { width:100%!important; max-width:100%!important; min-width:0!important; box-sizing:border-box!important; }
+    #side .panel, #side .panelBody, #side #fonokPanel, #side #attiMavRealtimePanel, #side #nearbyVehiclesPanel { width:100%!important; max-width:100%!important; min-width:0!important; box-sizing:border-box!important; }
+    #side .panelBody { overflow-x:auto!important; -webkit-overflow-scrolling:touch!important; }
+    #side .row, #side .searchGrid, #side .controls, #side .radiusGrid, #side #vehicleList, #side .vehicleCard, #side .field, #side .regionalWrap, #side .log, #side #githubPdfList, #side #pdfList { width:100%!important; min-width:0!important; max-width:100%!important; box-sizing:border-box!important; }
+    #side .row { flex-wrap:wrap!important; gap:7px!important; }
+    #side .searchGrid, #side .controls { display:flex!important; flex-wrap:wrap!important; gap:7px!important; }
+    #side .searchGrid > *, #side .controls > * { min-width:0!important; max-width:100%!important; flex:1 1 120px!important; }
+    #side .radiusGrid { display:grid!important; grid-template-columns:repeat(2,minmax(0,1fr))!important; gap:6px!important; }
+    #side #vehicleList { contain:none!important; }
+    #side .vehicleCard { width:100%!important; overflow:hidden!important; overflow-wrap:anywhere!important; padding:9px!important; }
+    #side .vehicleTop { flex-wrap:wrap!important; gap:6px!important; }
+    #side .field { display:flex!important; flex-wrap:wrap!important; align-items:flex-start!important; gap:3px 7px!important; padding:5px 0!important; white-space:normal!important; }
+    #side .field b { flex:0 0 39%!important; width:auto!important; min-width:0!important; max-width:39%!important; overflow-wrap:anywhere!important; font-size:13px!important; }
+    #side .field span { flex:1 1 55%!important; min-width:0!important; max-width:61%!important; overflow-wrap:anywhere!important; white-space:normal!important; font-size:14px!important; line-height:1.25!important; }
+    #side .regionalWrap, #side #githubPdfList, #side #pdfList, #side .log, #side .fonokWrap { max-width:100%!important; overflow:auto!important; -webkit-overflow-scrolling:touch!important; }
+    #side .regionalTable, #side .fonokTable { min-width:540px!important; }
+    #side input, #side select, #side button { max-width:100%!important; }
+    #attilaMapRestorePanel { left:6px!important; top:6px!important; width:min(270px,72vw)!important; max-height:31vh!important; padding:7px!important; z-index:1200!important; }
+    #attilaMapFullscreenBtn { top:7px!important; right:7px!important; font-size:11px!important; padding:7px!important; z-index:1250!important; }
+    #attilaFix17PanelToggle { position:fixed!important; right:10px!important; bottom:12px!important; z-index:2900!important; display:block!important; min-height:46px!important; padding:11px 14px!important; border:2px solid #63d7ff!important; border-radius:999px!important; background:#07354a!important; color:#fff!important; font-weight:900!important; box-shadow:0 3px 16px #0009!important; }
+    #attilaFix17PanelClose { position:fixed!important; top:8px!important; right:8px!important; z-index:3100!important; min-height:42px!important; padding:9px 12px!important; border:2px solid #63d7ff!important; background:#07354a!important; color:#fff!important; font-weight:900!important; border-radius:10px!important; }
+    #attilaFix17Backdrop { position:fixed!important; inset:0!important; z-index:3000!important; background:rgba(0,0,0,.52)!important; display:none!important; }
+    body.attila-fix17-side-open #attilaFix17Backdrop { display:block!important; }
+  }
+  @media (min-width:701px) {
+    #attilaFix17PanelToggle,#attilaFix17PanelClose,#attilaFix17Backdrop { display:none!important; }
+  }
+</style>
+<script id="attila-fix17-iphone-xr-links">
+(function(){
+  'use strict';
+  const exactLinks = {
+    'holavonat.is': 'https://holavonat.is/#985582760023',
+    'vonatinfo.kozlekedesiklub.hu': 'https://vonatinfo.kozlekedesiklub.hu/',
+    'utas.hu': 'https://utas.hu/?map=9/47.82045/18.91772',
+    'futar.bkk.hu': 'https://futar.bkk.hu/?map=15/47.59909/19.05064'
+  };
+  function normalizeLinks(){
+    document.querySelectorAll('a[href]').forEach(a=>{
+      try{
+        const u=new URL(a.href,location.href), host=u.hostname.toLowerCase();
+        const match=Object.keys(exactLinks).find(h=>host===h||host.endsWith('.'+h));
+        if(match){if(a.href!==exactLinks[match])a.href=exactLinks[match];if(a.target!=='_self')a.target='_self';if(a.rel!=='noopener')a.rel='noopener';}
+        else if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){if(a.target!=='_self')a.target='_self';if(a.rel!=='noopener')a.rel='noopener';}
+      }catch(e){}
+    });
+    const nav=document.getElementById('attilaExternalQuickLinks');
+    if(nav){
+      const a=[...nav.querySelectorAll('a')].find(x=>/HOL A VONAT/i.test(x.textContent));
+      if(a){if(a.href!==exactLinks['holavonat.is'])a.href=exactLinks['holavonat.is'];if(a.target!=='_self')a.target='_self';}
+    }
+  }
+  function addMobilePanelControls(){
+    if(!document.getElementById('side'))return;
+    if(!document.getElementById('attilaFix17PanelToggle')){
+      const b=document.createElement('button');b.id='attilaFix17PanelToggle';b.type='button';b.textContent='☰ PANELEK';b.setAttribute('aria-expanded','false');
+      b.addEventListener('click',()=>setOpen(!document.body.classList.contains('attila-fix17-side-open')));document.body.appendChild(b);
+    }
+    if(!document.getElementById('attilaFix17Backdrop')){
+      const bg=document.createElement('div');bg.id='attilaFix17Backdrop';bg.addEventListener('click',()=>setOpen(false));document.body.appendChild(bg);
+    }
+    if(!document.getElementById('attilaFix17PanelClose')){
+      const c=document.createElement('button');c.id='attilaFix17PanelClose';c.type='button';c.textContent='✕ PANELEK BEZÁRÁSA';c.addEventListener('click',()=>setOpen(false));document.body.appendChild(c);
+    }
+    function setOpen(open){
+      document.body.classList.toggle('attila-fix17-side-open',open);
+      const b=document.getElementById('attilaFix17PanelToggle');if(b)b.setAttribute('aria-expanded',String(open));
+      const c=document.getElementById('attilaFix17PanelClose');if(c)c.style.display=open?'block':'none';
+    }
+    const close=document.getElementById('attilaFix17PanelClose');if(close)close.style.display='none';
+    // The external URL buttons and the existing in-app BACK button remain intact.
+    window.addEventListener('keydown',e=>{if(e.key==='Escape')setOpen(false);});
+    window.addEventListener('resize',()=>{if(window.innerWidth>700)setOpen(false);});
+  }
+  function init(){normalizeLinks();addMobilePanelControls();}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+  // Repair links added later by the app's dynamic vehicle-card renderers.
+  const obs=new MutationObserver(()=>normalizeLinks());
+  if(document.documentElement)obs.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['href']});
 })();
 </script>
 
