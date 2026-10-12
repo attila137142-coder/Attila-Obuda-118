@@ -233,6 +233,7 @@ select:focus{
   margin-top:6px;
 }
 
+.regionModeBtn.active{background:#14527a!important;border-color:#55c5ff!important;box-shadow:0 0 0 2px #55c5ff33}
 .radiusGrid button.active{
   border-color:#5ee7ff;
   box-shadow:0 0 0 1px #5ee7ff inset;
@@ -578,7 +579,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 <div id="header">
 
   <div class="title">
-    🚍 ATTILA KÖZLEKEDÉS – BKK VADÁSZ FIX39 · FIX10 GPS / MÁV / 4 PANEL
+    🚍 ATTILA KÖZLEKEDÉS – FIX13 · III. KERÜLET TÉRSÉGI JÁRMŰKERESÉS / GPS / MÁV / 4 PANEL
   </div>
 
   <div id="feedBadge" class="badge warn">
@@ -971,11 +972,18 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 
       </div>
 
+      <div class="small" style="margin-top:12px;font-weight:800">KÜLÖN TERÜLETI KERESÉS</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <button id="obudaRegionBtn" class="regionModeBtn" type="button" style="border:1px solid #43b5ff;background:#102536;color:#e4f5ff;border-radius:8px;padding:9px 12px;font-weight:800">III. KERÜLET TÉRSÉGE</button>
+        <button id="allBudapestRegionBtn" class="regionModeBtn" type="button" style="border:1px solid #526579;background:#18242c;color:#fff;border-radius:8px;padding:9px 12px">TELJES FEED</button>
+      </div>
+      <div id="regionSearchNote" class="small" style="margin-top:6px">A területi mód a GPS-sugártól független. A III. kerületi térség első körben egy 7 km-es, Óbuda központú lefedő kör; ez szándékosan tágabb a pontos közigazgatási határnál.</div>
+
       <div
         class="small"
         style="margin-top:7px"
       >
-        Kombinálható: univerzális + járat + rendszám/forgalmi + GPS-sugár.
+        Kombinálható: univerzális + járat + rendszám/forgalmi + GPS-sugár. A területi mód külön szűrő.
       </div>
 
     </div>
@@ -1131,6 +1139,11 @@ let tripDelaySeqMap = new Map();
 let tripDelayTripMap = new Map();
 
 let radiusMode = Infinity;
+// A III. kerületi térség külön szűrője nem függ a felhasználó GPS-étől.
+let regionMode = "all";
+let obudaCoverageCircle = null;
+const OBUDA_REGION_CENTER = {lat:47.5700, lon:19.0400};
+const OBUDA_COVERAGE_RADIUS_KM = 7; // lefedő kör, nem pontos közigazgatási határ
 
 let lastVehicleFetchOK = false;
 let lastFutarFetchOK = false;
@@ -5547,7 +5560,16 @@ function matchesFilters(
   }
 
 
+  if(regionMode === "obuda") {
+    const lat = Number(item.lat);
+    const lon = Number(item.lon);
+    if(!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+    const d = distanceKm({lat,lon},{lat:OBUDA_REGION_CENTER.lat,lon:OBUDA_REGION_CENTER.lon});
+    if(!Number.isFinite(d) || d > OBUDA_COVERAGE_RADIUS_KM) return false;
+  }
+
   if(
+    regionMode !== "obuda" &&
     Number.isFinite(
       radiusMode
     )
@@ -5602,13 +5624,40 @@ function applyFilters(){
 }
 
 
+function setVehicleRegion(mode){
+  regionMode = mode === "obuda" ? "obuda" : "all";
+  const obudaBtn = $("obudaRegionBtn");
+  const allBtn = $("allBudapestRegionBtn");
+  if(obudaBtn) obudaBtn.classList.toggle("active", regionMode === "obuda");
+  if(allBtn) allBtn.classList.toggle("active", regionMode === "all");
+  if(map && regionMode === "obuda") {
+    map.setView([OBUDA_REGION_CENTER.lat, OBUDA_REGION_CENTER.lon], 12, {animate:true});
+    if(!obudaCoverageCircle) {
+      obudaCoverageCircle = L.circle([OBUDA_REGION_CENTER.lat, OBUDA_REGION_CENTER.lon], {
+        radius: OBUDA_COVERAGE_RADIUS_KM * 1000, color:"#36b7ff", weight:2, dashArray:"7 6", fillColor:"#36b7ff", fillOpacity:0.06, interactive:false
+      }).addTo(map);
+    } else { obudaCoverageCircle.addTo(map); }
+    const note = $("regionSearchNote");
+    if(note) note.textContent = "III. kerület térségi keresés aktív: a GPS-től független, 7 km-es Óbuda-központú lefedő körben lévő járművek. A kör a teljes kerület lefedésére szolgáló közelítés, a kerülethatáron kívüli járműveket is tartalmazhat.";
+  } else {
+    if(obudaCoverageCircle && map) map.removeLayer(obudaCoverageCircle);
+    const note = $("regionSearchNote");
+    if(note) note.textContent = "Teljes feed mód: a területi szűrő kikapcsolva. A járművek megjelenítését a többi keresési feltétel és a GPS-sugár szűrheti.";
+  }
+  applyFilters();
+}
+
 function setRadius(
   mode
 ){
+  if(regionMode === "obuda") setVehicleRegion("all");
 
   radiusMode =
     mode;
 
+
+  if($("obudaRegionBtn")) $("obudaRegionBtn").addEventListener("click", ()=>setVehicleRegion("obuda"));
+  if($("allBudapestRegionBtn")) $("allBudapestRegionBtn").addEventListener("click", ()=>setVehicleRegion("all"));
 
   document
     .querySelectorAll(
