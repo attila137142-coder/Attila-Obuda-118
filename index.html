@@ -632,10 +632,10 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
   <a href="https://online.winmenetrend.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">WINMENETREND ↗</a>
   <a href="https://bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK ↗</a>
   <a href="https://go.bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK GO ↗</a>
-  <a href="https://holavonat.is/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">HOL A VONAT? ↗</a>
-  <a href="https://vonatinfo.kozlekedesiklub.hu/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">VONATINFO ↗</a>
-  <a href="https://utas.hu/?map=9/47.82045/18.91772" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">UTAS TÉRKÉP ↗</a>
-  <a href="https://futar.bkk.hu/?map=15/47.59909/19.05064" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #55aaff;border-radius:8px;color:#d9f0ff">BKK FUTÁR ↗</a>
+  <a href="https://holavonat.is/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">HOL A VONAT? ↗</a>
+  <a href="https://vonatinfo.kozlekedesiklub.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">VONATINFO ↗</a>
+  <a href="https://utas.hu/?map=9/47.82045/18.91772" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">UTAS TÉRKÉP ↗</a>
+  <a href="https://futar.bkk.hu/?map=15/47.59909/19.05064" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #55aaff;border-radius:8px;color:#d9f0ff">BKK FUTÁR ↗</a>
 </nav>
 
 <div id="map"></div>
@@ -884,7 +884,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
         <button id="loadGithubPdfLibraryBtn" type="button">📚 KÖZÖS TÁR FRISSÍTÉSE</button>
-        <a id="openGithubPdfFolderBtn" href="https://github.com/attila137142-coder/Attila-Obuda-118/tree/main/KOZOS_TARHELY" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;padding:8px 11px;border:1px solid #536b7a;border-radius:8px;background:#18242c;color:#fff;text-decoration:none">GITHUB MAPPÁK</a>
+        <a id="openGithubPdfFolderBtn" href="https://github.com/attila137142-coder/Attila-Obuda-118/tree/main/KOZOS_TARHELY" target="_self" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;padding:8px 11px;border:1px solid #536b7a;border-radius:8px;background:#18242c;color:#fff;text-decoration:none">GITHUB MAPPÁK</a>
       </div>
       <div id="githubPdfList" style="margin-top:8px"></div>
       <div id="githubPdfStatus" class="small" style="margin-top:7px">Közös tár: még nincs frissítve.</div>
@@ -6644,7 +6644,7 @@ function winMenetrendLinks(item){
   const stopId=String(item?.stopId||'').trim();
   const stopName=String(item?.stopName||item?.nearestStop?.name||item?.stop||'').trim();
   const links=[];
-  const add=(label,url)=>links.push('<a class="wmLink" href="'+url+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">'+label+'</a>');
+  const add=(label,url)=>links.push('<a class="wmLink" href="'+url+'" target="_self" rel="noopener noreferrer" onclick="event.stopPropagation()">'+label+'</a>');
 
   /* A már meglévő két alaplink megmarad. */
   if(plate) add('JÁRMŰTÖRTÉNET','https://online.winmenetrend.hu/futar/history/vehicles/'+encodeURIComponent(plate)+'?date='+localDateYmd());
@@ -7779,7 +7779,7 @@ window.extractFutarVehicles = function(json){
       if(x.category!==current){current=x.category;html+="<div style='margin-top:10px;padding:7px 6px;background:#18242c;border-radius:7px;font-weight:800'>"+esc(current)+"</div>";}
       html+="<div style='padding:7px 6px;border-top:1px solid #263744;display:flex;gap:7px;align-items:center;justify-content:space-between;flex-wrap:wrap'>"
         +"<span>📄 <b>"+esc(x.name)+"</b> <span class='small'>· "+(Number(x.size||0)/1024/1024).toFixed(2)+" MB</span></span>"
-        +"<a href='"+esc(x.url)+"' target='_blank' rel='noopener' style='display:inline-flex;align-items:center;justify-content:center;padding:7px 10px;border:1px solid #536b7a;border-radius:8px;background:#18242c;color:#fff;text-decoration:none'>MEGNYITÁS</a>"
+        +"<a href='"+esc(x.url)+"' target='_self' rel='noopener' style='display:inline-flex;align-items:center;justify-content:center;padding:7px 10px;border:1px solid #536b7a;border-radius:8px;background:#18242c;color:#fff;text-decoration:none'>MEGNYITÁS</a>"
         +"</div>";
     }
     el.innerHTML=html;
@@ -8623,9 +8623,9 @@ window.extractFutarVehicles = function(json){
   function fixExternalLinks(){
     let n=0;
     document.querySelectorAll('a[href]').forEach(a=>{
-      try { const u=new URL(a.href,location.href); if(/^https?:$/.test(u.protocol) && u.origin!==location.origin && !a.hasAttribute('download')) { if(a.target!=='_blank'){a.target='_blank';n++;} a.rel='noopener noreferrer'; } } catch(e){}
+      try { const u=new URL(a.href,location.href); if(/^https?:$/.test(u.protocol) && u.origin!==location.origin && !a.hasAttribute('download')) { if(a.target!=='_self'){a.target='_self';n++;} a.rel='noopener noreferrer'; } } catch(e){}
     });
-    if(n) report('Külső hivatkozások új lapon nyitásra állítva: '+n+'.');
+    if(n) report('Külső hivatkozások ugyanabban a lapon nyílnak meg; a böngésző VISSZA gombja visszahozza az alkalmazást.');
     else report('Külső hivatkozások ellenőrizve; a szerver által visszautasított kapcsolatot a böngészőből nem lehet felülírni.');
   }
   function bindBack(){
@@ -8689,7 +8689,7 @@ window.extractFutarVehicles = function(json){
   panel.style.cssText='position:fixed;z-index:1200;left:10px;top:82px;width:min(330px,calc(100vw - 20px));max-height:42vh;overflow:auto;background:#071721f2;color:#f0f8ff;border:1px solid #4a7187;border-radius:12px;padding:10px;box-shadow:0 4px 20px #0009;font:13px/1.35 Arial,sans-serif';
   const title=document.createElement('div'); title.textContent='🗺️ TÉRKÉPEK – TELJES NÉZET'; title.style.cssText='font-weight:900;font-size:15px;margin-bottom:8px'; panel.appendChild(title);
   const fs=document.createElement('button'); fs.type='button'; fs.textContent='⛶ SAJÁT VASÚTI / JÁRMŰTÉRKÉP – TELJES KÉPERNYŐ'; fs.style.cssText='display:block;width:100%;margin:5px 0;padding:9px;font-weight:800'; fs.addEventListener('click',toggleFullscreen); panel.appendChild(fs);
-  links.forEach(([label,url])=>{const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';a.textContent='↗ MEGNYITÁS – '+label; a.addEventListener('click',()=>{window.__attilaExternalMapOpenedAt=Date.now();});a.style.cssText='display:block;color:#b9e7ff;border:1px solid #34596b;border-radius:7px;padding:8px;margin:5px 0;text-decoration:none;font-weight:700';panel.appendChild(a)});
+  links.forEach(([label,url])=>{const a=document.createElement('a');a.href=url;a.target='_self';a.rel='noopener noreferrer';a.textContent='↗ MEGNYITÁS – '+label; a.addEventListener('click',()=>{window.__attilaExternalMapOpenedAt=Date.now();});a.style.cssText='display:block;color:#b9e7ff;border:1px solid #34596b;border-radius:7px;padding:8px;margin:5px 0;text-decoration:none;font-weight:700';panel.appendChild(a)});
   const note=document.createElement('div'); note.textContent='A külső térképek külön böngészőlapon nyílnak meg, így ez az Attila Közlekedés-lap nyitva marad. A külső szolgáltató saját oldalába biztonsági okból nem illeszthető be idegen VISSZA gomb; visszatéréshez válts vissza erre a lapra. A saját térkép teljes nézetéhez használd a fenti gombot.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
   const back=document.createElement('button');back.type='button';back.textContent='↩ VISSZA / ATTILA KÖZLEKEDÉS LAPJA';back.style.cssText='width:100%;margin-top:6px;padding:10px;font-weight:900;background:#17432f;border:1px solid #39d98a;color:#fff';back.addEventListener('click',()=>{try{window.focus();panel.scrollIntoView({behavior:'smooth',block:'start'});window.scrollTo({top:0,behavior:'smooth'});}catch(e){panel.scrollIntoView({block:'start'});}});panel.appendChild(back);
   const close=document.createElement('button');close.type='button';close.textContent='Panel elrejtése';close.style.cssText='width:100%;margin-top:6px';close.addEventListener('click',()=>panel.remove());panel.appendChild(close);
@@ -8738,7 +8738,7 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
       try{
         var u=new URL(a.href,location.href);
         if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){
-          a.target='_blank'; a.rel='noopener noreferrer';
+          a.target='_self'; a.rel='noopener noreferrer';
         }
       }catch(e){}
     });
@@ -8747,7 +8747,7 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
   document.addEventListener('click',function(e){
     var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
     if(!a)return;
-    try{var u=new URL(a.href,location.href);if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){a.target='_blank';a.rel='noopener noreferrer';}}catch(err){}
+    try{var u=new URL(a.href,location.href);if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){a.target='_self';a.rel='noopener noreferrer';}}catch(err){}
   },true);
 })();
 </script>
@@ -8826,6 +8826,80 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
     try{if(typeof logLine==='function')logLine('FIX15: 2 km-en belüli mozgójármű-lista elindult; csak valódi GPS-koordinátás rekordokat mutat.');}catch(e){}
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+})();
+</script>
+
+
+<style id="attila-fix16-mobile-layout">
+/* FIX16 – valódi mobilos tördelés: a panelek a telefon szélességét használják,
+   a táblázatok/vezérlősorok pedig csak saját területükön görgethetők. */
+@media (max-width:700px){
+  html, body { width:100%; max-width:100%; overflow-x:hidden!important; }
+  body { min-width:0!important; }
+  #header { width:100%!important; box-sizing:border-box!important; flex-wrap:wrap!important; }
+  #header > * { max-width:100%; box-sizing:border-box; }
+  #map { width:100%!important; max-width:100vw!important; box-sizing:border-box!important; }
+  #side { width:100%!important; max-width:100vw!important; min-width:0!important; box-sizing:border-box!important;
+          overflow-x:hidden!important; overflow-y:visible!important; padding:8px!important; }
+  #side > * { width:100%!important; max-width:100%!important; min-width:0!important; box-sizing:border-box!important; }
+  .panel, .panelBody, #fonokPanel, #attiMavRealtimePanel, #attilaMapRestorePanel,
+  #autoFixReport, #nearbyVehiclesPanel { width:100%; max-width:100%; min-width:0!important; box-sizing:border-box!important; }
+  .panelBody { overflow-x:hidden; }
+  .row, .searchGrid, .controls, .radiusGrid, #vehicleList, .vehicleCard,
+  .field, .regionalWrap, .log, #githubPdfList, #pdfList {
+    min-width:0!important; max-width:100%!important; box-sizing:border-box!important;
+  }
+  .row { flex-wrap:wrap!important; }
+  .searchGrid, .controls { display:flex!important; flex-wrap:wrap!important; gap:7px!important; }
+  .searchGrid > *, .controls > * { min-width:0!important; max-width:100%!important; flex:1 1 140px; box-sizing:border-box!important; }
+  .radiusGrid { grid-template-columns:repeat(2,minmax(0,1fr))!important; gap:6px!important; }
+  #vehicleList { width:100%!important; contain:initial!important; }
+  .vehicleCard { width:100%!important; overflow-wrap:anywhere; }
+  .field { display:flex!important; align-items:flex-start!important; flex-wrap:wrap!important; gap:4px 8px!important; }
+  .field b { min-width:0!important; flex:0 0 42%; max-width:42%; overflow-wrap:anywhere; }
+  .field span { min-width:0!important; flex:1 1 48%; max-width:58%; overflow-wrap:anywhere; white-space:normal!important; }
+  .regionalWrap, #githubPdfList, #pdfList, .log { overflow-x:auto!important; -webkit-overflow-scrolling:touch; }
+  .regionalTable { min-width:620px; }
+  #attilaMapRestorePanel { left:8px!important; right:8px!important; width:auto!important; max-width:none!important; top:8px!important; max-height:42vh!important; }
+  #attilaMapFullscreenBtn { top:8px!important; right:8px!important; max-width:48vw; white-space:normal; }
+  #attiMavRealtimeRows { max-width:100%; overflow-x:auto; overflow-wrap:anywhere; }
+}
+@media (min-width:701px){
+  #vehicleList { min-width:0; }
+}
+</style>
+<script id="attila-fix16-gps-map-start">
+/* FIX16 – amikor valódi GPS koordináta megérkezik, a saját térkép mérete és nézete frissüljön.
+   Nem használunk kitalált koordinátát, és nem módosítjuk a jármű-adatokat. */
+(function(){
+  'use strict';
+  let done=false;
+  function centerOnRealGps(){
+    try{
+      const m=(typeof map!=='undefined'&&map)?map:window.map;
+      const p=(typeof myPos!=='undefined'&&myPos)?myPos:null;
+      if(!m||!p||!window.L||!Number.isFinite(Number(p.lat))||!Number.isFinite(Number(p.lon))) return false;
+      if(typeof m.invalidateSize==='function') m.invalidateSize({animate:false});
+      const lat=Number(p.lat),lon=Number(p.lon);
+      if(typeof myGpsRadiusCircle!=='undefined'&&myGpsRadiusCircle&&typeof myGpsRadiusCircle.getBounds==='function'){
+        m.fitBounds(myGpsRadiusCircle.getBounds(),{padding:[18,18],maxZoom:14,animate:false});
+      } else {
+        m.setView([lat,lon],13,{animate:false});
+      }
+      done=true;
+      return true;
+    }catch(e){return false;}
+  }
+  function start(){
+    // Retry only briefly while the actual geolocation watch supplies a real position.
+    let n=0;
+    const timer=setInterval(()=>{
+      n++;
+      if(centerOnRealGps()||n>=40) clearInterval(timer);
+    },500);
+    window.addEventListener('resize',()=>{ if(done) setTimeout(()=>{try{const m=(typeof map!=='undefined'&&map)?map:window.map;m&&m.invalidateSize&&m.invalidateSize({animate:false});}catch(e){}},100); });
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start,{once:true}); else start();
 })();
 </script>
 
