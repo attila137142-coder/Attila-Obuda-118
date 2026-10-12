@@ -10,7 +10,7 @@
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – FIX9 ELTÉRÉS MENETREND-CACHE JAVÍTÁS</title>
+<title>ATTILA KÖZLEKEDÉS – FIX12 FŐNÖK TOP5 EGYSÉGES SZÁMLÁLÓ</title>
 
 <link
   rel="stylesheet"
@@ -233,6 +233,7 @@ select:focus{
   margin-top:6px;
 }
 
+.regionModeBtn.active{background:#14527a!important;border-color:#55c5ff!important;box-shadow:0 0 0 2px #55c5ff33}
 .radiusGrid button.active{
   border-color:#5ee7ff;
   box-shadow:0 0 0 1px #5ee7ff inset;
@@ -437,6 +438,14 @@ select:focus{
 .fwarn{color:var(--yellow);font-weight:700;}
 .fmuted{color:var(--muted);}
 #fonokSummary{margin-top:8px;padding:8px;border-radius:8px;background:#09131b;line-height:1.45;}
+.fonokTop5{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);}
+.fonokTop5 h4{margin:10px 0 6px;color:#d8d1ff;font-size:14px;}
+.fonokTop5 p{margin:4px 0 8px;font-size:12px;line-height:1.4;}
+.fonokTop5 .fonokWrap{max-height:32vh;}
+.fonokTop5 .fonokTable th,.fonokTop5 .fonokTable td{text-align:left;}
+.fonokTop5 .fonokTable td:nth-child(1),.fonokTop5 .fonokTable td:nth-child(4){white-space:nowrap;}
+.fonokScore{font-weight:800;color:var(--green);}
+.fonokFields{font-size:11px;line-height:1.45;min-width:160px;}
 </style>
 
 <style>
@@ -558,7 +567,10 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 .mavRailKm{font-weight:1000;font-size:16px;-webkit-text-stroke:.25px currentColor;text-shadow:0 0 3px #fff,0 0 5px #fff;}
 /* OpenRailwayMap alaprétege raszteres: a felirat betűvastagsága nem CSS-ből szerkeszthető,
    ezért a térképcsempe kontrasztját növeljük, hogy a meglévő szelvény/km-jelölések jobban látszódjanak. */
-.leaflet-tile-pane{filter:contrast(1.16) saturate(1.06);}
+.leaflet-tile-pane{filter:contrast(1.28) saturate(1.08) brightness(1.035);}
+.leaflet-tile-pane .mavRailTileLayer{opacity:1!important}
+/* A saját, DOM-alapú MÁV km/szelvény feliratok vastagabbak és kontrasztosabbak. */
+.mavRailLabel,.mavRailKm{font-weight:900!important;-webkit-text-stroke:.35px currentColor!important;text-shadow:0 0 3px #fff,0 0 5px #fff,1px 1px 0 #fff,-1px -1px 0 #fff!important;}
 </style>
 </head>
 
@@ -567,7 +579,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 <div id="header">
 
   <div class="title">
-    🚍 ATTILA KÖZLEKEDÉS – BKK VADÁSZ FIX39 · FIX9 ELTÉRÉS CACHE JAVÍTÁS
+    🚍 ATTILA KÖZLEKEDÉS – FIX13 · III. KERÜLET TÉRSÉGI JÁRMŰKERESÉS / GPS / MÁV / 4 PANEL
   </div>
 
   <div id="feedBadge" class="badge warn">
@@ -620,6 +632,10 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
   <a href="https://online.winmenetrend.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">WINMENETREND ↗</a>
   <a href="https://bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK ↗</a>
   <a href="https://go.bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK GO ↗</a>
+  <a href="https://holavonat.is/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">HOL A VONAT? ↗</a>
+  <a href="https://vonatinfo.kozlekedesiklub.hu/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">VONATINFO ↗</a>
+  <a href="https://utas.hu/?map=9/47.82045/18.91772" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">UTAS TÉRKÉP ↗</a>
+  <a href="https://futar.bkk.hu/?map=15/47.59909/19.05064" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #55aaff;border-radius:8px;color:#d9f0ff">BKK FUTÁR ↗</a>
 </nav>
 
 <div id="map"></div>
@@ -638,6 +654,14 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
           <tbody id="fonokBody"></tbody>
         </table>
       </div>
+      <section id="fonokTop5" class="fonokTop5">
+        <h4>🏆 TOP 5 – LEGTÖBB VALÓDI PANELADATOT ADÓ JÁRMŰ</h4>
+        <p class="fmuted">A lista a jelenlegi járműobjektumokból készül. Csak tényleges érték számít; a hiányzó adat nem kap pontot.</p>
+        <div class="fonokWrap"><table class="fonokTable"><thead><tr><th>#</th><th>VONAL</th><th>RENDSZÁM / JÁRMŰAZONOSÍTÓ</th><th>ADATFORRÁS</th><th>VALÓDI MEZŐK</th><th>MEGJÖTT MEZŐK</th></tr></thead><tbody id="fonokTopVehicles"><tr><td colspan="6">A FŐNÖK futtatása után jelenik meg.</td></tr></tbody></table></div>
+        <h4>🚌 TOP 5 – LEGJOBB ADATKITÖLTÖTTSÉGŰ VONAL</h4>
+        <p class="fmuted">A vonalak rangsora a vizsgált járművek négy mezőjének átlagos kitöltöttségi arányán alapul; a vizsgált járművek számát is mutatja.</p>
+        <div class="fonokWrap"><table class="fonokTable"><thead><tr><th>#</th><th>VONAL</th><th>JÁRMŰ</th><th>MEZŐKITÖLTÖTTSÉG</th><th>ELTÉRÉS / TÍPUS / ALACSONYPADLÓS / FORGALMI</th></tr></thead><tbody id="fonokTopRoutes"><tr><td colspan="5">A FŐNÖK futtatása után jelenik meg.</td></tr></tbody></table></div>
+      </section>
     </div>
   </section>
 
@@ -948,11 +972,18 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 
       </div>
 
+      <div class="small" style="margin-top:12px;font-weight:800">KÜLÖN TERÜLETI KERESÉS</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px">
+        <button id="obudaRegionBtn" class="regionModeBtn" type="button" style="border:1px solid #43b5ff;background:#102536;color:#e4f5ff;border-radius:8px;padding:9px 12px;font-weight:800">III. KERÜLET TÉRSÉGE</button>
+        <button id="allBudapestRegionBtn" class="regionModeBtn" type="button" style="border:1px solid #526579;background:#18242c;color:#fff;border-radius:8px;padding:9px 12px">TELJES FEED</button>
+      </div>
+      <div id="regionSearchNote" class="small" style="margin-top:6px">A területi mód a GPS-sugártól független. A III. kerületi térség első körben egy 7 km-es, Óbuda központú lefedő kör; ez szándékosan tágabb a pontos közigazgatási határnál.</div>
+
       <div
         class="small"
         style="margin-top:7px"
       >
-        Kombinálható: univerzális + járat + rendszám/forgalmi + GPS-sugár.
+        Kombinálható: univerzális + járat + rendszám/forgalmi + GPS-sugár. A területi mód külön szűrő.
       </div>
 
     </div>
@@ -1108,6 +1139,11 @@ let tripDelaySeqMap = new Map();
 let tripDelayTripMap = new Map();
 
 let radiusMode = Infinity;
+// A III. kerületi térség külön szűrője nem függ a felhasználó GPS-étől.
+let regionMode = "all";
+let obudaCoverageCircle = null;
+const OBUDA_REGION_CENTER = {lat:47.5700, lon:19.0400};
+const OBUDA_COVERAGE_RADIUS_KM = 7; // lefedő kör, nem pontos közigazgatási határ
 
 let lastVehicleFetchOK = false;
 let lastFutarFetchOK = false;
@@ -1397,7 +1433,7 @@ function initMap(){
      továbbra is kizárólag valódi forrásból kerülhetnek a kártyákra/popupokra. */
   try{
     mavRailLayer=L.tileLayer("https://{s}.tiles.openrailwaymap.org/standard/{z}/{x}/{y}.png",{
-      maxZoom:19,opacity:0.82,attribution:"© OpenRailwayMap / OpenStreetMap"
+      maxZoom:19,opacity:1,className:"mavRailTileLayer",attribution:"© OpenRailwayMap / OpenStreetMap"
     }).addTo(map);
   }catch(e){}
   let mapFallbackUsed=false;
@@ -4120,6 +4156,12 @@ function normalizeFutarVehicle(obj){
         "vehicle_model",
         "vehicleModelName",
         "vehicle_model_name",
+        "vehicleTypeDescription",
+        "vehicle_type_description",
+        "vehicleTypeText",
+        "vehicle_type_text",
+        "typeName",
+        "type_name",
         "modelName",
         "model_name",
         "model"
@@ -5518,7 +5560,16 @@ function matchesFilters(
   }
 
 
+  if(regionMode === "obuda") {
+    const lat = Number(item.lat);
+    const lon = Number(item.lon);
+    if(!Number.isFinite(lat) || !Number.isFinite(lon)) return false;
+    const d = distanceKm({lat,lon},{lat:OBUDA_REGION_CENTER.lat,lon:OBUDA_REGION_CENTER.lon});
+    if(!Number.isFinite(d) || d > OBUDA_COVERAGE_RADIUS_KM) return false;
+  }
+
   if(
+    regionMode !== "obuda" &&
     Number.isFinite(
       radiusMode
     )
@@ -5573,13 +5624,40 @@ function applyFilters(){
 }
 
 
+function setVehicleRegion(mode){
+  regionMode = mode === "obuda" ? "obuda" : "all";
+  const obudaBtn = $("obudaRegionBtn");
+  const allBtn = $("allBudapestRegionBtn");
+  if(obudaBtn) obudaBtn.classList.toggle("active", regionMode === "obuda");
+  if(allBtn) allBtn.classList.toggle("active", regionMode === "all");
+  if(map && regionMode === "obuda") {
+    map.setView([OBUDA_REGION_CENTER.lat, OBUDA_REGION_CENTER.lon], 12, {animate:true});
+    if(!obudaCoverageCircle) {
+      obudaCoverageCircle = L.circle([OBUDA_REGION_CENTER.lat, OBUDA_REGION_CENTER.lon], {
+        radius: OBUDA_COVERAGE_RADIUS_KM * 1000, color:"#36b7ff", weight:2, dashArray:"7 6", fillColor:"#36b7ff", fillOpacity:0.06, interactive:false
+      }).addTo(map);
+    } else { obudaCoverageCircle.addTo(map); }
+    const note = $("regionSearchNote");
+    if(note) note.textContent = "III. kerület térségi keresés aktív: a GPS-től független, 7 km-es Óbuda-központú lefedő körben lévő járművek. A kör a teljes kerület lefedésére szolgáló közelítés, a kerülethatáron kívüli járműveket is tartalmazhat.";
+  } else {
+    if(obudaCoverageCircle && map) map.removeLayer(obudaCoverageCircle);
+    const note = $("regionSearchNote");
+    if(note) note.textContent = "Teljes feed mód: a területi szűrő kikapcsolva. A járművek megjelenítését a többi keresési feltétel és a GPS-sugár szűrheti.";
+  }
+  applyFilters();
+}
+
 function setRadius(
   mode
 ){
+  if(regionMode === "obuda") setVehicleRegion("all");
 
   radiusMode =
     mode;
 
+
+  if($("obudaRegionBtn")) $("obudaRegionBtn").addEventListener("click", ()=>setVehicleRegion("obuda"));
+  if($("allBudapestRegionBtn")) $("allBudapestRegionBtn").addEventListener("click", ()=>setVehicleRegion("all"));
 
   document
     .querySelectorAll(
@@ -5888,18 +5966,18 @@ function parseWinRealtimeHtml(html){
       }
       const heads=headerCells.map(x=>rtClean(x.textContent));
       const plateIdx=findHeader(heads,["rendszám","rendszam","license plate","plate"]);
-      const typeIdx=findHeader(heads,["jármű típus","jarmu tipus","járműtípus","jarmutípus","vehicle type","vehicletype","típus","tipus"]);
+      const typeIdx=findHeader(heads,["jármű típus","jarmu tipus","járműtípus","jarmutípus","jármű típusa","jarmu tipusa","vehicle type","vehicletype","vehicle model","model name","típus","tipus"]);
       /* RENDSZÁM a kötelező azonosító. A JÁRMŰTÍPUS / FORGALMI oszlop hiánya
          nem dobhatja ki az egész valódi WinMenetrend-táblát. */
       if(plateIdx<0) continue;
 
       const routeIdx=findHeader(heads,["járat","jarat","route","route short name"]);
-      const forgalmiIdx=findHeader(heads,["forgalmi","forgalmi szám","forgalmi szam","forgalminumber"]);
+      const forgalmiIdx=findHeader(heads,["forgalmi","forgalmi szám","forgalmi szam","forgalmi azonosító","forgalmi azonosito","forgalmi number","forgalminumber"]);
       const tripIdx=findHeader(heads,["menet","trip","trip id","tripid"]);
       const labelIdx=findHeader(heads,["viszonylat","label"]);
       const stopIdx=findHeader(heads,["megálló","megallo","stop"]);
       const vehicleIdIdx=findHeader(heads,["jármű id","jarmu id","vehicle id","vehicleid","id"]);
-      const lowFloorIdx=findHeader(heads,["alacsonypadlós","alacsonypadlos","low floor","lowfloor","alacsonypadlos-e"]);
+      const lowFloorIdx=findHeader(heads,["alacsonypadlós","alacsonypadlos","alacsonypadlós-e","alacsonypadlos-e","alacsonypadlós jármű","alacsonypadlos jarmu","low floor","lowfloor","is low floor"]);
 
       const out=[];
       const rows=[...table.querySelectorAll("tr")];
@@ -6949,6 +7027,58 @@ async function fonokRequest(url,label){
   }
 }
 
+function fonokFieldState(v){
+  const hasText=x=>x!==null&&x!==undefined&&String(x).trim()!==""&&!/^NINCS ADAT$/i.test(String(x).trim());
+  const delay=v?.delaySeconds!==null&&v?.delaySeconds!==undefined&&v?.delaySeconds!==""&&Number.isFinite(Number(v.delaySeconds));
+  const type=hasText(v?.vehicleType);
+  const low=v?.lowFloor===true||v?.lowFloor===false;
+  const forgalmi=hasText(v?.forgalmi);
+  const fields=[];
+  if(delay) fields.push("ELTÉRÉS");
+  if(type) fields.push("JÁRMŰTÍPUS");
+  if(low) fields.push("ALACSONYPADLÓS: "+(v.lowFloor?"IGEN":"NEM"));
+  if(forgalmi) fields.push("FORGALMI");
+  return {delay,type,low,forgalmi,fields,score:fields.length};
+}
+function fonokVehicleLabel(v){
+  const plate=String(v?.licensePlate??"").trim();
+  const id=String(v?.vehicleId??"").trim();
+  const label=String(v?.label??"").trim();
+  const parts=[];
+  parts.push("Rendszám: "+(plate||"NINCS ADAT"));
+  if(id) parts.push("Járműazonosító: "+id);
+  if(label && label!==plate && label!==id) parts.push("Label: "+label);
+  return parts.join(" | ");
+}
+function renderFonokTop5(){
+  const vehiclesBody=document.getElementById("fonokTopVehicles");
+  const routesBody=document.getElementById("fonokTopRoutes");
+  if(!vehiclesBody||!routesBody) return;
+  const data=Array.isArray(vehicleData)?vehicleData:[];
+  if(!data.length){
+    vehiclesBody.innerHTML='<tr><td colspan="6">NINCS ADAT – még nincs jármű a memóriában.</td></tr>';
+    routesBody.innerHTML='<tr><td colspan="5">NINCS ADAT – még nincs jármű a memóriában.</td></tr>';
+    return;
+  }
+  const entries=data.map(v=>({v,state:fonokFieldState(v),route:String(v?.routeShortName??"").trim()||String(v?.routeId??"").trim()||"NINCS ADAT",identity:fonokVehicleLabel(v)}));
+  entries.sort((a,b)=>b.state.score-a.state.score || a.route.localeCompare(b.route,"hu") || a.identity.localeCompare(b.identity,"hu"));
+  const top=entries.slice(0,5);
+  vehiclesBody.innerHTML=top.map((x,i)=>{
+    const fields=x.state.fields.length?x.state.fields.map(fonokEsc).join(" · "):"NINCS ADAT A NÉGY MEZŐBEN";
+    const source=String(x.v?.source??x.v?.provider??"").trim()||"NINCS ADAT";
+    return `<tr><td>${i+1}</td><td>${fonokEsc(x.route)}</td><td>${fonokEsc(x.identity)}</td><td>${fonokEsc(source)}</td><td class="fonokScore">${x.state.score}/4</td><td class="fonokFields">${fields}</td></tr>`;
+  }).join("");
+  const grouped=new Map();
+  for(const x of entries){
+    if(x.route==="NINCS ADAT") continue;
+    if(!grouped.has(x.route)) grouped.set(x.route,{route:x.route,count:0,total:0,delay:0,type:0,low:0,forgalmi:0});
+    const g=grouped.get(x.route); g.count++; g.total+=x.state.score;
+    if(x.state.delay)g.delay++; if(x.state.type)g.type++; if(x.state.low)g.low++; if(x.state.forgalmi)g.forgalmi++;
+  }
+  const ranked=[...grouped.values()].map(g=>({...g,pct:g.count?g.total/(g.count*4)*100:0})).sort((a,b)=>b.pct-a.pct || b.count-a.count || a.route.localeCompare(b.route,"hu")).slice(0,5);
+  routesBody.innerHTML=ranked.length?ranked.map((g,i)=>`<tr><td>${i+1}</td><td>${fonokEsc(g.route)}</td><td>${g.count}</td><td class="fonokScore">${g.pct.toLocaleString("hu-HU",{maximumFractionDigits:1})}% (${g.total}/${g.count*4})</td><td class="fonokFields">ELTÉRÉS ${g.delay}/${g.count} · TÍPUS ${g.type}/${g.count} · ALACSONYPADLÓS ${g.low}/${g.count} · FORGALMI ${g.forgalmi}/${g.count}</td></tr>`).join(""):'<tr><td colspan="5">NINCS ADAT – egyetlen járműhöz sincs azonosítható vonal.</td></tr>';
+}
+
 async function runFonok(){
   const body=$("fonokBody");
   const summary=$("fonokSummary");
@@ -7039,7 +7169,9 @@ async function runFonok(){
   else if(total===0) first="Nincs jelenlegi BKK járműobjektum.";
 
   body.innerHTML=rows.join("");
+  renderFonokTop5();
   summary.innerHTML="<b>ELSŐ HIBAPONT:</b> "+fonokEsc(first)+"<br><b>Jelenlegi járműobjektum:</b> "+total.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>VehiclePositions dekódolt:</b> "+vpCount.toLocaleString("hu-HU")+" db &nbsp; | &nbsp; <b>TripUpdates:</b> "+tuCount.toLocaleString("hu-HU")+" &nbsp; | &nbsp; <b>delay mező:</b> "+delayCount.toLocaleString("hu-HU")+" &nbsp; | &nbsp; <b>valódi event.time:</b> "+realEventTimeCount.toLocaleString("hu-HU")+"";
+  logLine("👑 FŐNÖK: TOP 5 jármű és TOP 5 vonal a jelenlegi valós járműadatokból rendezve.");
   logLine("👑 FŐNÖK: teljes adatút-diagnosztika lefutott. Első hibapont: "+first);
 }
 
@@ -7211,6 +7343,14 @@ document.addEventListener(
 
     logLine(
       "NINCS KITALÁLT JÁRMŰADAT."
+    );
+
+    logLine(
+      "FIX10: automatikus GPS-indítás; első valódi GPS-fixnél 2 km-es kör és középre igazítás."
+    );
+
+    logLine(
+      "FIX10: MÁV/OpenRailwayMap réteg erősebb kontraszttal; külső vasúti és FUTÁR referenciák külön lapon nyílnak meg."
     );
 
 
@@ -8485,7 +8625,25 @@ window.extractFutarVehicles = function(json){
     try { const m=(typeof map!=='undefined' && map)?map:window.map; if(m && typeof m.setView==='function' && typeof m.eachLayer==='function') report('OK: Leaflet térkép API él.'); else report('FIGYELEM: a térkép még nem kész vagy nem Leaflet Map.'); } catch(e){report('Térkép-ellenőrzési hiba: '+(e.message||e));}
     try { if(typeof vehicleData!=='undefined' && Array.isArray(vehicleData)) report('Járműadatlista: '+vehicleData.length+' rekord a memóriában; ez önmagában nem bizonyítja az adat frissességét.'); } catch(e){}
     report('Ellenőrzés kész. Fontos: ez a gomb szerkezeti hibákat és a négy mező adatútját vizsgálja; hiányzó forrásadatot nem gyárt és nem jelöl hamisan kijavítottnak.');
-    try { if(typeof vehicleData!=='undefined' && Array.isArray(vehicleData)) { const n=k=>vehicleData.filter(v=>v&&v[k]!==null&&v[k]!==undefined&&String(v[k]).trim()!=='').length; const lf=vehicleData.filter(v=>v&&(v.lowFloor===true||v.lowFloor===false)).length; report('4 MEZŐ ÁLLAPOT: ELTÉRÉS '+n('delaySeconds')+'/'+vehicleData.length+' | JÁRMŰTÍPUS '+n('vehicleType')+'/'+vehicleData.length+' | ALACSONYPADLÓS '+lf+'/'+vehicleData.length+' | FORGALMI '+n('forgalmi')+'/'+vehicleData.length+'.'); } } catch(e) {}
+    try {
+      if(typeof vehicleData!=='undefined' && Array.isArray(vehicleData)) {
+        // FIX12: ugyanaz a mező-érvényességi szabály, mint a TOP5 táblázatban.
+        // A számlálás közvetlenül a jelenlegi memóriabeli járműlistából történik.
+        const list=vehicleData;
+        const hasText=x=>x!==null&&x!==undefined&&String(x).trim()!==''&&!/^NINCS ADAT$/i.test(String(x).trim());
+        const validDelay=v=>v?.delaySeconds!==null&&v?.delaySeconds!==undefined&&v?.delaySeconds!==''&&Number.isFinite(Number(v.delaySeconds));
+        const validType=v=>hasText(v?.vehicleType);
+        const validLow=v=>v?.lowFloor===true||v?.lowFloor===false;
+        const validForgalmi=v=>hasText(v?.forgalmi);
+        const d=list.filter(validDelay).length;
+        const t=list.filter(validType).length;
+        const l=list.filter(validLow).length;
+        const f=list.filter(validForgalmi).length;
+        // Frissítsük ugyanebből a pillanatnyi listából a TOP5-öt is, hogy ne maradjon régi táblázat.
+        try { if(typeof renderFonokTop5==='function') renderFonokTop5(); } catch(e) {}
+        report('4 MEZŐ ÁLLAPOT (EGYSÉGES, AKTUÁLIS LISTA): ELTÉRÉS '+d+'/'+list.length+' ('+(list.length?(d/list.length*100).toFixed(1):'0.0')+'%) | JÁRMŰTÍPUS '+t+'/'+list.length+' ('+(list.length?(t/list.length*100).toFixed(1):'0.0')+'%) | ALACSONYPADLÓS '+l+'/'+list.length+' ('+(list.length?(l/list.length*100).toFixed(1):'0.0')+'%) | FORGALMI '+f+'/'+list.length+' ('+(list.length?(f/list.length*100).toFixed(1):'0.0')+'%).');
+      }
+    } catch(e) { report('4 MEZŐ ÁLLAPOT számítási hiba: '+(e?.message||e)); }
   }
   function init(){
     ensureReport(); bindBack(); addStopSearchIfMissing(); bindStopSearch();
