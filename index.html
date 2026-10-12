@@ -858,7 +858,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
     </h3>
     <div class="panelBody">
       <div class="small" style="margin-bottom:8px">
-        A saját GPS-helyzethez külön keresi a legközelebbi BKV/BKK, VOLÁN és MÁV megállót. A távolság légvonalban, méterben értendő.
+        A saját GPS-helyzethez szolgáltatónként az 5 legközelebbi BKV/BKK, VOLÁN és MÁV megállót mutatja, légvonalbeli távolság szerint növekvő sorrendben. Csak betöltött, valódi megállóadat szerepelhet.
       </div>
       <div id="userNearestStops" class="small">GPS-helyzet szükséges.</div>
     </div>
@@ -7664,10 +7664,11 @@ window.extractFutarVehicles = function(json){
       if(typeof logLine==="function") logLine(commonProviders[key].name+" GTFS HIBA: "+e.message);
     }
   }
-  function rowHTML(p,s,dist){
+  function rowHTML(p,s,dist,rank){
     const code=s.code?" | stop_code: "+escapeHtml(s.code):"";
-    const d=Number.isFinite(dist)?Math.round(dist).toLocaleString("hu-HU")+" m":"NINCS ADAT";
-    return '<div style="padding:8px 6px;border-top:1px solid rgba(128,128,128,.25)">'+p.icon+' <b>'+p.name+'</b> — '+escapeHtml(s.name||"NINCS ADAT")+'<br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+code+' • '+d+' légvonalban</span></div>';
+    const d=Number.isFinite(dist)?(dist>=1000?(dist/1000).toLocaleString("hu-HU",{minimumFractionDigits:2,maximumFractionDigits:2})+" km":Math.round(dist).toLocaleString("hu-HU")+" m"):"NINCS ADAT";
+    const n=Number.isFinite(rank)?'<span style="display:inline-flex;align-items:center;justify-content:center;min-width:23px;height:23px;border-radius:50%;background:#263d4c;color:#fff;font-weight:900;margin-right:5px">'+rank+'</span>':'';
+    return '<div style="padding:8px 6px;border-top:1px solid rgba(128,128,128,.25)">'+n+p.icon+' <b>'+p.name+'</b> — '+escapeHtml(s.name||"NINCS ADAT")+'<br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+code+' • <b>'+d+'</b> légvonalban</span></div>';
   }
   function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[m]));}
   function renderNearest(){
@@ -7677,10 +7678,15 @@ window.extractFutarVehicles = function(json){
     const out=[];
     for(const key of ["BKV","VOLAN","MAV"]){
       const p=commonProviders[key];
-      if(!p.loaded||!p.stops.length){out.push('<div style="padding:7px 0;border-top:1px solid rgba(128,128,128,.2)">'+p.icon+' <b>'+p.name+'</b>: NINCS ADAT</div>');continue;}
-      let best=null,bestD=Infinity;
-      for(const s of p.stops){const d=haversineM(g.lat,g.lon,s.lat,s.lon);if(d<bestD){bestD=d;best=s;}}
-      out.push(rowHTML(p,best,bestD));
+      if(!p.loaded||!p.stops.length){out.push('<section style="padding:9px 0;border-top:1px solid rgba(128,128,128,.25)"><div style="font-weight:900;margin-bottom:5px">'+p.icon+' '+p.name+' — NINCS ADAT</div><div class="small">Ehhez a szolgáltatóhoz még nincs betöltve használható, koordinátás megállólista.</div></section>');continue;}
+      const seen=new Set();
+      const ranked=p.stops.map(s=>({s,d:haversineM(g.lat,g.lon,s.lat,s.lon)}))
+        .filter(x=>Number.isFinite(x.d)&&Number.isFinite(x.s.lat)&&Number.isFinite(x.s.lon))
+        .sort((a,b)=>a.d-b.d)
+        .filter(x=>{const k=String(x.s.id||'')+'|'+String(x.s.lat)+'|'+String(x.s.lon);if(seen.has(k))return false;seen.add(k);return true;})
+        .slice(0,5);
+      out.push('<section style="margin-top:9px;border:1px solid rgba(128,128,128,.28);border-radius:9px;padding:7px"><div style="font-weight:900;padding:3px 0 6px">'+p.icon+' '+p.name+' — LEGKÖZELEBBI '+ranked.length+' MEGÁLLÓ</div>'+
+        (ranked.length?ranked.map((x,i)=>rowHTML(p,x.s,x.d,i+1)).join(''):'<div class="small">NINCS ADAT – nincs koordinátás megálló.</div>')+'</section>');
     }
     el.innerHTML=out.join("");
   }
@@ -8710,6 +8716,29 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
 #attilaMapRestorePanel a:focus,#attilaMapRestorePanel button:focus{outline:3px solid #ffd166;outline-offset:2px}
 @media(max-width:600px){#attilaMapRestorePanel{top:74px!important;max-height:36vh!important}#attilaMapFullscreenBtn{top:74px!important;right:8px!important;font-size:11px!important;padding:8px!important}}
 </style>
+
+
+<script id="attila-external-links-new-tab-fix14">
+(function(){
+  'use strict';
+  function prepare(){
+    document.querySelectorAll('a[href]').forEach(function(a){
+      try{
+        var u=new URL(a.href,location.href);
+        if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){
+          a.target='_blank'; a.rel='noopener noreferrer';
+        }
+      }catch(e){}
+    });
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',prepare,{once:true});else prepare();
+  document.addEventListener('click',function(e){
+    var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+    if(!a)return;
+    try{var u=new URL(a.href,location.href);if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){a.target='_blank';a.rel='noopener noreferrer';}}catch(err){}
+  },true);
+})();
+</script>
 
 </body>
 </html>
