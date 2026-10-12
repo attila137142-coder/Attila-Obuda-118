@@ -864,6 +864,18 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
     </div>
   </section>
 
+  <section class="panel" id="nearbyMovingVehiclesPanel">
+    <h3>📡 2 KM-EN BELÜLI MOZGÓ JÁRMŰVEK</h3>
+    <div class="panelBody">
+      <div class="small" style="margin-bottom:8px">A GPS-helyzettől légvonalban legfeljebb 2,00 km-re lévő, ténylegesen beérkezett járműpozíciók. Távolság szerint növekvő sorrendben. Csak koordinátával rendelkező, valódi rekord jelenik meg; hiányzó mező = NINCS ADAT.</div>
+      <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
+        <button id="nearbyVehiclesRefresh" type="button">🔄 LISTA FRISSÍTÉSE</button>
+        <span id="nearbyVehiclesStatus" class="small">GPS-helyzetre és élő járműadatokra vár.</span>
+      </div>
+      <div id="nearbyVehiclesList" class="small">NINCS ADAT</div>
+    </div>
+  </section>
+
   <section class="panel" id="pdfLibraryPanel">
     <h3>📚 KÖZÖS TÁR – FORGALMI / INDÍTÁSI PDF-EK</h3>
     <div class="panelBody">
@@ -8283,7 +8295,7 @@ window.extractFutarVehicles = function(json){
 (function(){
   const MAV_API='/api/mav-realtime';
   const QUERY=`query VehiclePositions($swLat:Float!,$swLon:Float!,$neLat:Float!,$neLon:Float!){
-    vehiclePositions(swLat:$swLat,swLon:$swLon,neLat:$neLat,neLon:$neLon,modes:[RAIL,RAIL_REPLACEMENT_BUS,SUBURBAN_RAILWAY,TRAMTRAIN]){
+    vehiclePositions(swLat:$swLat,swLon:$swLon,neLat:$neLat,neLon:$neLon,modes:[BUS,RAIL,RAIL_REPLACEMENT_BUS,SUBURBAN_RAILWAY,TRAMTRAIN]){
       vehicleId label lat lon heading lastUpdated speed
       trip { gtfsId domesticResTrainNumber }
       nextStop { arrivalDelay }
@@ -8677,9 +8689,9 @@ window.extractFutarVehicles = function(json){
   panel.style.cssText='position:fixed;z-index:1200;left:10px;top:82px;width:min(330px,calc(100vw - 20px));max-height:42vh;overflow:auto;background:#071721f2;color:#f0f8ff;border:1px solid #4a7187;border-radius:12px;padding:10px;box-shadow:0 4px 20px #0009;font:13px/1.35 Arial,sans-serif';
   const title=document.createElement('div'); title.textContent='🗺️ TÉRKÉPEK – TELJES NÉZET'; title.style.cssText='font-weight:900;font-size:15px;margin-bottom:8px'; panel.appendChild(title);
   const fs=document.createElement('button'); fs.type='button'; fs.textContent='⛶ SAJÁT VASÚTI / JÁRMŰTÉRKÉP – TELJES KÉPERNYŐ'; fs.style.cssText='display:block;width:100%;margin:5px 0;padding:9px;font-weight:800'; fs.addEventListener('click',toggleFullscreen); panel.appendChild(fs);
-  links.forEach(([label,url])=>{const a=document.createElement('a');a.href=url;a.target='_self';a.rel='noopener noreferrer';a.textContent='↗ MEGNYITÁS – '+label;a.style.cssText='display:block;color:#b9e7ff;border:1px solid #34596b;border-radius:7px;padding:8px;margin:5px 0;text-decoration:none;font-weight:700';panel.appendChild(a)});
-  const note=document.createElement('div'); note.textContent='A külső térképek és menetrendek ugyanebben a böngészőlapban nyílnak meg: a böngésző VISSZA gombja visszahoz az Attila Közlekedéshez. Külső szolgáltató oldalába az alkalmazás nem tud saját gombot beilleszteni. A saját vasúti és járműtérkép teljes nézetéhez használd a fenti gombot.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
-  const back=document.createElement('button');back.type='button';back.textContent='↩ VISSZA AZ ATTILA KÖZLEKEDÉSHEZ';back.style.cssText='width:100%;margin-top:6px;padding:10px;font-weight:900;background:#17432f;border:1px solid #39d98a;color:#fff';back.addEventListener('click',()=>{if(window.history.length>1)window.history.back();else{panel.scrollIntoView({behavior:'smooth',block:'start'});}});panel.appendChild(back);
+  links.forEach(([label,url])=>{const a=document.createElement('a');a.href=url;a.target='_blank';a.rel='noopener noreferrer';a.textContent='↗ MEGNYITÁS – '+label; a.addEventListener('click',()=>{window.__attilaExternalMapOpenedAt=Date.now();});a.style.cssText='display:block;color:#b9e7ff;border:1px solid #34596b;border-radius:7px;padding:8px;margin:5px 0;text-decoration:none;font-weight:700';panel.appendChild(a)});
+  const note=document.createElement('div'); note.textContent='A külső térképek külön böngészőlapon nyílnak meg, így ez az Attila Közlekedés-lap nyitva marad. A külső szolgáltató saját oldalába biztonsági okból nem illeszthető be idegen VISSZA gomb; visszatéréshez válts vissza erre a lapra. A saját térkép teljes nézetéhez használd a fenti gombot.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
+  const back=document.createElement('button');back.type='button';back.textContent='↩ VISSZA / ATTILA KÖZLEKEDÉS LAPJA';back.style.cssText='width:100%;margin-top:6px;padding:10px;font-weight:900;background:#17432f;border:1px solid #39d98a;color:#fff';back.addEventListener('click',()=>{try{window.focus();panel.scrollIntoView({behavior:'smooth',block:'start'});window.scrollTo({top:0,behavior:'smooth'});}catch(e){panel.scrollIntoView({block:'start'});}});panel.appendChild(back);
   const close=document.createElement('button');close.type='button';close.textContent='Panel elrejtése';close.style.cssText='width:100%;margin-top:6px';close.addEventListener('click',()=>panel.remove());panel.appendChild(close);
   document.body.appendChild(panel);
   const map=document.getElementById('map');
@@ -8737,6 +8749,83 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
     if(!a)return;
     try{var u=new URL(a.href,location.href);if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){a.target='_blank';a.rel='noopener noreferrer';}}catch(err){}
   },true);
+})();
+</script>
+
+
+<script id="attila-nearby-moving-vehicles-fix15">
+/* FIX15 – GPS körüli, 2 km-en belüli VALÓS mozgó járművek.
+   Csak az elérhető BKK/MÁV/VOLÁN rekordokból és valódi koordinátákból dolgozik. */
+(function(){
+  'use strict';
+  const $=id=>document.getElementById(id);
+  const esc=v=>String(v===null||v===undefined||String(v).trim()===''?'NINCS ADAT':v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const num=v=>{if(v===null||v===undefined||String(v).trim()==='')return NaN;const n=Number(v);return Number.isFinite(n)?n:NaN;};
+  function getGps(){
+    const lat=num($('gpsLat')?.textContent),lon=num($('gpsLon')?.textContent);
+    if(Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180)return {lat,lon};
+    if(typeof myPos!=='undefined'&&myPos){const a=num(myPos.lat),b=num(myPos.lon??myPos.lng);if(Number.isFinite(a)&&Number.isFinite(b))return {lat:a,lon:b};}
+    return null;
+  }
+  function distKm(a,b){const R=6371,p1=a.lat*Math.PI/180,p2=b.lat*Math.PI/180,dp=(b.lat-a.lat)*Math.PI/180,dl=(b.lon-a.lon)*Math.PI/180;const h=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(Math.max(0,1-h)));}
+  function val(...xs){for(const x of xs){if(x!==null&&x!==undefined&&String(x).trim()!=='')return x;}return 'NINCS ADAT';}
+  function allVehicles(){
+    const out=[],seen=new Set();
+    function add(provider,raw){
+      if(!raw||typeof raw!=='object')return;
+      const pos=raw.position||raw.location||raw.vehicle?.position||raw.vehicle?.location||raw;
+      const lat=num(pos.lat??pos.latitude??raw.lat??raw.latitude),lon=num(pos.lon??pos.lng??pos.longitude??raw.lon??raw.lng??raw.longitude);
+      if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)return;
+      const route=val(raw.routeShortName,raw.route,raw.routeName,raw.trip?.routeShortName,raw.trip?.routeId,raw.routeId);
+      const label=val(raw.label,raw.vehicleLabel,raw.licensePlate,raw.licencePlate,raw.vehicleId,raw.id,route);
+      const trip=val(raw.tripId,raw.trip?.gtfsId,raw.trip?.domesticResTrainNumber,raw.trip?.tripId,raw.trip);
+      const id=val(raw.vehicleId,raw.id,raw.licensePlate,raw.licencePlate,label);
+      const key=provider+'|'+String(id)+'|'+lat.toFixed(5)+'|'+lon.toFixed(5);
+      if(seen.has(key))return;seen.add(key);
+      let delay=raw.delaySeconds;
+      if(delay===undefined||delay===null||delay==='') delay=raw.nextStop?.arrivalDelay;
+      let delayText='NINCS ADAT';
+      const d=num(delay);if(Number.isFinite(d))delayText=d<0?'SIETÉS '+Math.abs(d)+' mp':d>0?'KÉSÉS +'+d+' mp':'PONTOS 0 mp';
+      out.push({provider,lat,lon,dist:NaN,route,label,plate:val(raw.licensePlate,raw.licencePlate,raw.plate),trip,vehicleType:val(raw.vehicleType,raw.vehicle_type),forgalmi:val(raw.forgalmi),delayText,speed:val(raw.speed,raw.speedKmh),heading:val(raw.heading,bearingLabel(raw.bearing)),stop:val(raw.nearestStop?.name,raw.stopName,raw.stop),updated:val(raw.lastUpdated,raw.timestamp)});
+    }
+    try{if(typeof vehicleData!=='undefined'&&Array.isArray(vehicleData))vehicleData.forEach(v=>add('BKK/BKV',v));}catch(e){}
+    try{if(Array.isArray(window.ATTIlaMavVehicles))window.ATTIlaMavVehicles.forEach(v=>add('EMMA (vasút/busz)',v));}catch(e){}
+    try{if(Array.isArray(regionalRealtimeRows))regionalRealtimeRows.forEach(v=>add(val(v.provider,'VOLÁN/MÁV'),v));}catch(e){}
+    try{if(Array.isArray(window.ATTIlaVolanVehicles))window.ATTIlaVolanVehicles.forEach(v=>add('VOLÁN',v));}catch(e){}
+    return out;
+  }
+  function bearingLabel(v){const n=num(v);return Number.isFinite(n)?n+'°':'NINCS ADAT';}
+  function render(){
+    const status=$('nearbyVehiclesStatus'),list=$('nearbyVehiclesList');if(!status||!list)return;
+    const gps=getGps();
+    if(!gps){status.textContent='GPS nincs érvényes koordinátával.';list.innerHTML='<div>GPS-helyzet szükséges. Nyomd meg a GPS gombot.</div>';return;}
+    const all=allVehicles();
+    const ranked=all.map(v=>({...v,dist:distKm(gps,{lat:v.lat,lon:v.lon})})).filter(v=>Number.isFinite(v.dist)&&v.dist<=2).sort((a,b)=>a.dist-b.dist);
+    status.textContent='GPS: '+gps.lat.toFixed(5)+', '+gps.lon.toFixed(5)+' • betöltött koordinátás járművek: '+all.length+' • 2 km-en belül: '+ranked.length+' • légvonalban';
+    if(!ranked.length){list.innerHTML='<div style="padding:10px;border:1px solid rgba(128,128,128,.3);border-radius:8px">NINCS ADAT – a jelenleg betöltött járműforrásokban nincs koordinátás jármű 2 km-en belül. Ez nem bizonyítja, hogy a környéken nincs jármű; a feed elérhetősége és a GPS pontossága is számít.</div>';return;}
+    list.innerHTML=ranked.map((v,i)=>{
+      const km=v.dist.toLocaleString('hu-HU',{minimumFractionDigits:3,maximumFractionDigits:3})+' km';
+      const coord=v.lat.toFixed(6)+', '+v.lon.toFixed(6);
+      return '<article style="margin:8px 0;padding:10px;border:1px solid rgba(128,128,128,.35);border-left:4px solid '+(v.provider==='BKK/BKV'?'#2694e8':v.provider==='EMMA (vasút/busz)'?'#b17adf':'#e69a38')+';border-radius:9px">'+
+      '<div style="font-weight:900;font-size:14px">'+(i+1)+'. '+esc(v.provider)+' — '+esc(v.route)+'</div>'+ 
+      '<div><b>Távolság:</b> '+km+' légvonalban</div>'+ 
+      '<div><b>JÁRAT / LABEL:</b> '+esc(v.label)+'</div>'+ 
+      '<div><b>RENDSZÁM:</b> '+esc(v.plate)+'</div>'+ 
+      '<div><b>TRIP / MENET:</b> '+esc(v.trip)+'</div>'+ 
+      '<div><b>JÁRMŰTÍPUS:</b> '+esc(v.vehicleType)+' • <b>FORGALMI:</b> '+esc(v.forgalmi)+'</div>'+ 
+      '<div><b>ELTÉRÉS:</b> '+esc(v.delayText)+' • <b>SEBESSÉG:</b> '+esc(v.speed)+'</div>'+ 
+      '<div><b>MEGÁLLÓ:</b> '+esc(v.stop)+'</div>'+ 
+      '<div><b>GPS:</b> '+coord+' • <b>IRÁNY:</b> '+esc(v.heading)+'</div>'+ 
+      '<div style="margin-top:5px"><button type="button" data-nearby-lat="'+v.lat+'" data-nearby-lon="'+v.lon+'">📍 MUTASD A SAJÁT TÉRKÉPEN</button></div></article>';
+    }).join('');
+    list.querySelectorAll('[data-nearby-lat]').forEach(b=>b.addEventListener('click',()=>{const lat=num(b.dataset.nearbyLat),lon=num(b.dataset.nearbyLon);try{if(typeof map!=='undefined'&&map){map.setView([lat,lon],Math.max(map.getZoom(),15));if(window.__attilaMavLayer)window.__attilaMavLayer.eachLayer(m=>{if(m.getLatLng&&Math.abs(m.getLatLng().lat-lat)<0.00001&&Math.abs(m.getLatLng().lng-lon)<0.00001&&m.openPopup)m.openPopup();});}else window.scrollTo({top:0,behavior:'smooth'});}catch(e){}}));
+  }
+  function boot(){
+    $('nearbyVehiclesRefresh')?.addEventListener('click',async()=>{try{if(typeof window.loadMavRealtime==='function')await window.loadMavRealtime();}catch(e){}render();});
+    render();setInterval(render,3000);
+    try{if(typeof logLine==='function')logLine('FIX15: 2 km-en belüli mozgójármű-lista elindult; csak valódi GPS-koordinátás rekordokat mutat.');}catch(e){}
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
 })();
 </script>
 
