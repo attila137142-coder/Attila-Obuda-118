@@ -10,7 +10,7 @@
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – FIX9 ELTÉRÉS MENETREND-CACHE JAVÍTÁS</title>
+<title>ATTILA KÖZLEKEDÉS – FIX12 FŐNÖK TOP5 EGYSÉGES SZÁMLÁLÓ</title>
 
 <link
   rel="stylesheet"
@@ -8576,7 +8576,25 @@ window.extractFutarVehicles = function(json){
     try { const m=(typeof map!=='undefined' && map)?map:window.map; if(m && typeof m.setView==='function' && typeof m.eachLayer==='function') report('OK: Leaflet térkép API él.'); else report('FIGYELEM: a térkép még nem kész vagy nem Leaflet Map.'); } catch(e){report('Térkép-ellenőrzési hiba: '+(e.message||e));}
     try { if(typeof vehicleData!=='undefined' && Array.isArray(vehicleData)) report('Járműadatlista: '+vehicleData.length+' rekord a memóriában; ez önmagában nem bizonyítja az adat frissességét.'); } catch(e){}
     report('Ellenőrzés kész. Fontos: ez a gomb szerkezeti hibákat és a négy mező adatútját vizsgálja; hiányzó forrásadatot nem gyárt és nem jelöl hamisan kijavítottnak.');
-    try { if(typeof vehicleData!=='undefined' && Array.isArray(vehicleData)) { const n=k=>vehicleData.filter(v=>v&&v[k]!==null&&v[k]!==undefined&&String(v[k]).trim()!=='').length; const lf=vehicleData.filter(v=>v&&(v.lowFloor===true||v.lowFloor===false)).length; report('4 MEZŐ ÁLLAPOT: ELTÉRÉS '+n('delaySeconds')+'/'+vehicleData.length+' | JÁRMŰTÍPUS '+n('vehicleType')+'/'+vehicleData.length+' | ALACSONYPADLÓS '+lf+'/'+vehicleData.length+' | FORGALMI '+n('forgalmi')+'/'+vehicleData.length+'.'); } } catch(e) {}
+    try {
+      if(typeof vehicleData!=='undefined' && Array.isArray(vehicleData)) {
+        // FIX12: ugyanaz a mező-érvényességi szabály, mint a TOP5 táblázatban.
+        // A számlálás közvetlenül a jelenlegi memóriabeli járműlistából történik.
+        const list=vehicleData;
+        const hasText=x=>x!==null&&x!==undefined&&String(x).trim()!==''&&!/^NINCS ADAT$/i.test(String(x).trim());
+        const validDelay=v=>v?.delaySeconds!==null&&v?.delaySeconds!==undefined&&v?.delaySeconds!==''&&Number.isFinite(Number(v.delaySeconds));
+        const validType=v=>hasText(v?.vehicleType);
+        const validLow=v=>v?.lowFloor===true||v?.lowFloor===false;
+        const validForgalmi=v=>hasText(v?.forgalmi);
+        const d=list.filter(validDelay).length;
+        const t=list.filter(validType).length;
+        const l=list.filter(validLow).length;
+        const f=list.filter(validForgalmi).length;
+        // Frissítsük ugyanebből a pillanatnyi listából a TOP5-öt is, hogy ne maradjon régi táblázat.
+        try { if(typeof renderFonokTop5==='function') renderFonokTop5(); } catch(e) {}
+        report('4 MEZŐ ÁLLAPOT (EGYSÉGES, AKTUÁLIS LISTA): ELTÉRÉS '+d+'/'+list.length+' ('+(list.length?(d/list.length*100).toFixed(1):'0.0')+'%) | JÁRMŰTÍPUS '+t+'/'+list.length+' ('+(list.length?(t/list.length*100).toFixed(1):'0.0')+'%) | ALACSONYPADLÓS '+l+'/'+list.length+' ('+(list.length?(l/list.length*100).toFixed(1):'0.0')+'%) | FORGALMI '+f+'/'+list.length+' ('+(list.length?(f/list.length*100).toFixed(1):'0.0')+'%).');
+      }
+    } catch(e) { report('4 MEZŐ ÁLLAPOT számítási hiba: '+(e?.message||e)); }
   }
   function init(){
     ensureReport(); bindBack(); addStopSearchIfMissing(); bindStopSearch();
