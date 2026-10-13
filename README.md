@@ -1,4 +1,4 @@
-⬇️ ATTILA KÖZLEKEDÉS – FIX15 · ELTÉRÉS ADATÚT JAVÍTÁS ÉS DIAGNOSZTIKA
+ATTILA KÖZLEKEDÉS – FIX13 · 10–10–10
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -11,7 +11,7 @@
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – FIX13 KINÉZETI JAVÍTÁS</title>
+<title>ATTILA KÖZLEKEDÉS – FIX12 FŐNÖK TOP5 EGYSÉGES SZÁMLÁLÓ</title>
 
 <link
   rel="stylesheet"
@@ -859,7 +859,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
     </h3>
     <div class="panelBody">
       <div class="small" style="margin-bottom:8px">
-        A saját GPS-helyzethez külön keresi a legközelebbi BKV/BKK, VOLÁN és MÁV megállót. A távolság légvonalban, méterben értendő.
+        A saját GPS-helyzethez szolgáltatónként az 5 legközelebbi BKV/BKK, VOLÁN és MÁV megállót mutatja, légvonalbeli távolság szerint növekvő sorrendben. Csak betöltött, valódi megállóadat szerepelhet.
       </div>
       <div id="userNearestStops" class="small">GPS-helyzet szükséges.</div>
     </div>
@@ -2465,38 +2465,6 @@ function attilaServiceDateEpoch(startDate, seconds){
   return Math.floor(midnight/1000)+seconds;
 }
 
-/* Ha a TripDescriptor nem küld start_date-t, a valós event.time és a GTFS
-   stop_times alapján próbáljuk meghatározni a szolgálati napot. Csak akkor
-   fogadjuk el, ha a legközelebbi, pontos trip+stop/sequence menetrendi idő
-   legfeljebb 6 órára van az előrejelzéstől; különben NINCS ADAT marad. */
-function attilaDeriveDelayFromEvent(ev, sched){
-  if(!ev || !sched || !Number.isFinite(ev.eventTime)) return null;
-  const scheduledSeconds=sched[ev.eventKind];
-  if(!Number.isFinite(scheduledSeconds)) return null;
-  const start=String(ev.startDate||"").trim();
-  if(/^\d{8}$/.test(start)){
-    const epoch=attilaServiceDateEpoch(start,scheduledSeconds);
-    if(epoch===null) return null;
-    const delay=Math.round(ev.eventTime-epoch);
-    return Math.abs(delay)<=21600 ? delay : null;
-  }
-  const eventDate=new Date(ev.eventTime*1000);
-  if(!Number.isFinite(eventDate.getTime())) return null;
-  const base=new Date(eventDate.getFullYear(),eventDate.getMonth(),eventDate.getDate());
-  let best=null;
-  for(const offset of [-1,0,1]){
-    const d=new Date(base.getFullYear(),base.getMonth(),base.getDate()+offset);
-    const y=String(d.getFullYear()).padStart(4,"0");
-    const m=String(d.getMonth()+1).padStart(2,"0");
-    const day=String(d.getDate()).padStart(2,"0");
-    const epoch=attilaServiceDateEpoch(y+m+day,scheduledSeconds);
-    if(epoch===null) continue;
-    const delay=Math.round(ev.eventTime-epoch);
-    if(Math.abs(delay)<=21600 && (best===null || Math.abs(delay)<Math.abs(best))) best=delay;
-  }
-  return best;
-}
-
 async function fetchTripUpdates(){
   if(!getKey()){
     lastTripFetchOK=false;
@@ -2604,14 +2572,15 @@ async function fetchTripUpdates(){
 
     if(pendingTimeEvents.length){
       const schedule=await attilaLoadActiveSchedule(activeTripIds);
-      let scheduleMatchCount=0, scheduleMissCount=0, uncalculableCount=0;
       if(schedule){
         for(const ev of pendingTimeEvents){
           const sched=(ev.seq && schedule.get(ev.tripId+"|seq|"+ev.seq)) || (ev.stopId && schedule.get(ev.tripId+"|stop|"+ev.stopId));
-          if(!sched){scheduleMissCount++;continue;}
-          scheduleMatchCount++;
-          const derived=attilaDeriveDelayFromEvent(ev,sched);
-          if(!Number.isFinite(derived)){uncalculableCount++;continue;}
+          if(!sched) continue;
+          const scheduledSeconds=sched[ev.eventKind];
+          const scheduledEpoch=attilaServiceDateEpoch(ev.startDate,scheduledSeconds);
+          if(scheduledEpoch===null) continue;
+          const derived=Math.round(ev.eventTime-scheduledEpoch);
+          if(!Number.isFinite(derived)) continue;
           derivedDelayCount++;
           const seqNum=ev.seq!==""?Number(ev.seq):null;
           if(ev.seq) mapDelay.set(ev.tripId+"|seq|"+ev.seq,derived);
@@ -2625,11 +2594,6 @@ async function fetchTripUpdates(){
             if(ev.seq) vehicleSeqDelay.set(key+"|seq|"+ev.seq,derived);
           }
         }
-      }else{
-        logLine("ELTÉRÉS adatút HIBA: a TripUpdates tartalmaz event.time értéket, de a GTFS stop_times menetrend nem érhető el; eltérés nem számítható biztonságosan.");
-      }
-      if(schedule){
-        logLine("ELTÉRÉS adatút ellenőrzés: event.time="+pendingTimeEvents.length+" | pontos trip+stop/sequence menetrendi találat="+scheduleMatchCount+" | menetrendi találat nélkül="+scheduleMissCount+" | dátum/idő vagy ±6 órás biztonsági ellenőrzés miatt elutasítva="+uncalculableCount+" | kiszámított eltérés="+derivedDelayCount+".");
       }
     }
 
@@ -2669,30 +2633,73 @@ function resolveVehicleDelay(item){
   const itemSeq=Number.isFinite(item.stopSequence)?Number(item.stopSequence):null;
   const itemStop=String(item.stopId||"").trim();
 
-  // Csak pontos trip + stop/sequence egyezés fogadható el; közeli sequence nem elég.
-  if(tripId && itemStop){
-    const exact=tripDelayMap.get(tripId+"|stop|"+itemStop);
-    if(Number.isFinite(exact)) return exact;
-  }
+  /* Csak tényleges TripUpdates delay érték. Hiányzó adat = null. */
   if(tripId && itemSeq!==null){
     const exact=tripDelayMap.get(tripId+"|seq|"+String(itemSeq));
     if(Number.isFinite(exact)) return exact;
   }
+  if(tripId && itemStop){
+    const exact=tripDelayMap.get(tripId+"|stop|"+itemStop);
+    if(Number.isFinite(exact)) return exact;
+  }
 
-  // Vehicle-kulcs csak akkor használható, ha a TripUpdates ténylegesen közölte.
+  if(tripId && itemSeq!==null){
+    const arr=tripDelaySeqMap.get(tripId);
+    if(Array.isArray(arr)&&arr.length){
+      let best=null,bestDiff=Infinity;
+      for(const x of arr){
+        if(!Number.isFinite(x.seq)) continue;
+        const diff=Math.abs(x.seq-itemSeq);
+        if(diff<bestDiff){bestDiff=diff;best=x;}
+      }
+      if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
+    }
+  }
+
   const directKeys=[];
   if(item.vehicleId) directKeys.push("id|"+normalizeId(item.vehicleId));
   if(item.label) directKeys.push("label|"+normalizeId(item.label));
   if(item.licensePlate) directKeys.push("plate|"+normalizeId(item.licensePlate));
+
   for(const key of directKeys){
+    if(itemSeq!==null){
+      const bySeq=tripDelayVehicleSeqMap.get(key+"|seq|"+String(itemSeq));
+      if(Number.isFinite(bySeq)) return bySeq;
+    }
+    const arr=tripDelayVehicleMap.get(key);
+    if(!Array.isArray(arr)||!arr.length) continue;
+
     if(itemStop){
-      const arr=tripDelayVehicleMap.get(key)||[];
-      const hits=arr.filter(x=>x.stopId===itemStop && Number.isFinite(x.delay));
-      if(hits.length===1) return hits[0].delay;
+      const byStop=arr.find(x=>x.stopId===itemStop&&Number.isFinite(x.delay));
+      if(byStop) return byStop.delay;
     }
     if(itemSeq!==null){
-      const v=tripDelayVehicleSeqMap.get(key+"|seq|"+String(itemSeq));
-      if(Number.isFinite(v)) return v;
+      let best=null,bestDiff=Infinity;
+      for(const x of arr){
+        if(!Number.isFinite(x.seq)) continue;
+        const diff=Math.abs(x.seq-itemSeq);
+        if(diff<bestDiff){bestDiff=diff;best=x;}
+      }
+      if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
+    }
+  }
+
+  if(tripId){
+    const arr=tripDelayTripMap.get(tripId);
+    if(Array.isArray(arr)&&arr.length){
+      if(itemStop){
+        const byStop=arr.find(x=>x.stopId===itemStop&&Number.isFinite(x.delay));
+        if(byStop) return byStop.delay;
+      }
+      if(itemSeq!==null){
+        let best=null,bestDiff=Infinity;
+        for(const x of arr){
+          if(!Number.isFinite(x.seq)) continue;
+          const diff=Math.abs(x.seq-itemSeq);
+          if(diff<bestDiff){bestDiff=diff;best=x;}
+        }
+        if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
+      }
     }
   }
   return null;
@@ -5858,7 +5865,9 @@ function sourceLabel(
 
 function buildPopup(item){
   const delay=delayHTML(item.delaySeconds);
-  const lowFloor = explicitLowFloorLabel(item.lowFloor);
+  const lowFloor = item.lowFloor === null || item.lowFloor === undefined
+    ? "NINCS ADAT"
+    : (item.lowFloor === true || String(item.lowFloor).toLowerCase()==="true" || String(item.lowFloor)==="1" ? "IGEN" : "NEM");
   return `
     <div class="popup">
       <div class="pf"><b>JÁRAT</b><span>${escapeHtml(routeDisplay(item))}</span></div>
@@ -5898,13 +5907,6 @@ function rtClean(v){
 
 function rtNorm(v){
   return String(v || "").toUpperCase().replace(/[^A-Z0-9ÁÉÍÓÖŐÚÜŰ]/g,"");
-}
-
-function explicitLowFloorLabel(value){
-  if(value===true) return "IGEN";
-  if(value===false) return "NEM";
-  const parsed=rtParseLowFloor(value);
-  return parsed===true ? "IGEN" : parsed===false ? "NEM" : "NINCS ADAT";
 }
 
 function rtParseLowFloor(value){
@@ -6052,7 +6054,7 @@ async function fetchWinRouteHistory(routeCode, plate){
       const rows=wmExtractMarkdownRows(t);
       const hit=rows.find(x=>rtNorm(x.plate)===wanted);
       if(hit) return {forgalmi:hit.forgalmi||null,vehicleType:hit.vehicleType||null,blockId:null,blockVehicleNumber:null,lowFloor:null};
-      const f=wmExtractFields(t,plate);
+      const f=wmExtractFields(t);
       /* Csak akkor használjuk a címkés mezőket, ha az oldal jármű-specifikus
          adatot adott; vonalszintű oldalon az első táblázatsor nem elfogadható. */
       if(f && (f.forgalmi||f.vehicleType)){
@@ -6144,7 +6146,7 @@ async function fetchWinRealtimeExact(plate){
   return null;
 }
 
-async function fetchWinDetailPage(url, expectedPlate){
+async function fetchWinDetailPage(url){
   if(winDetailCache.has(url)) return winDetailCache.get(url);
   let html="";
   try{
@@ -6159,7 +6161,7 @@ async function fetchWinDetailPage(url, expectedPlate){
       if(r.ok) html=await r.text();
     }catch(e){}
   }
-  const f=html?wmExtractFields(html,expectedPlate):null;
+  const f=html?wmExtractFields(html):null;
   winDetailCache.set(url,f||null);
   return f||null;
 }
@@ -6204,7 +6206,7 @@ async function enrichOneVehicleFromWin(item){
   }
 
   for(const u of urls){
-    const f=await fetchWinDetailPage(u,plate);
+    const f=await fetchWinDetailPage(u);
     if(!f) continue;
     if(f.forgalmi && !item.forgalmi){ item.forgalmi=f.forgalmi; got=true; }
     if(f.vehicleType && !item.vehicleType){ item.vehicleType=f.vehicleType; got=true; }
@@ -6246,9 +6248,10 @@ async function updateWinRealtime(){
       String(r.plate || "").toUpperCase().replace(/[\s-]/g, "").trim();
 
     if(plateKey){
-      const plateRows=winRealtimeCache.get(plateKey)||[];
-      plateRows.push(r);
-      winRealtimeCache.set(plateKey,plateRows);
+      winRealtimeCache.set(
+        plateKey,
+        r
+      );
     }
 
     const vehicleKey =
@@ -6298,14 +6301,11 @@ async function updateWinRealtime(){
 
     /* 1. RENDSZÁM – szóköz/kötőjel nélkül is ugyanaz */
     const plateKey = String(item.licensePlate || "").toUpperCase().replace(/[\s-]/g, "").trim();
-    const exactPlateRows = plateKey ? (winRealtimeCache.get(plateKey)||[]) : [];
-    let r = exactPlateRows.length===1 ? exactPlateRows[0] : null;
-    let exactVehicleMatch = !!r;
+    let r = plateKey ? winRealtimeCache.get(plateKey) : null;
 
     /* 2. vehicleId – csak explicit valódi mezőből */
     if(!r && item.vehicleId && window.winRealtimeVehicleCache){
-      r = window.winRealtimeVehicleCache.get(rtNorm(String(item.vehicleId).trim().replace(/^BKK_/i,""))) || null;
-      exactVehicleMatch = !!r;
+      r = window.winRealtimeVehicleCache.get(String(item.vehicleId).trim().replace(/^BKK_/i,""));
     }
 
     /* 3. TRIP – csak egyértelmű találat.
@@ -6328,15 +6328,16 @@ async function updateWinRealtime(){
 
     /* Csak a WinMenetrend valódi,
        explicit FORGALMI / JÁRMŰTÍPUS mezője kerül át. */
-    // A TRIP önmagában nem járműazonosító: a négy panelmezőhöz rendszám/vehicleId kell.
-    if(exactVehicleMatch && r.forgalmi && !item.forgalmi){
-      item.forgalmi = r.forgalmi;
+    if(r.forgalmi){
+      item.forgalmi =
+        r.forgalmi;
     }
 
-    if(exactVehicleMatch && r.vehicleType && !item.vehicleType){
-      item.vehicleType = r.vehicleType;
+    if(r.vehicleType){
+      item.vehicleType =
+        r.vehicleType;
     }
-    if(exactVehicleMatch && (r.lowFloor===true || r.lowFloor===false) && (item.lowFloor===null || item.lowFloor===undefined)){
+    if(r.lowFloor===true || r.lowFloor===false){
       item.lowFloor=r.lowFloor;
     }
 
@@ -6386,13 +6387,6 @@ async function updateWinRealtime(){
   const countField=k=>vehicleData.filter(v=>v && v[k]!==null && v[k]!==undefined && String(v[k]).trim()!=="").length;
   const lowCount=vehicleData.filter(v=>v?.lowFloor===true || v?.lowFloor===false).length;
   logLine("WinMenetrend forrásrekord: "+rows.length+" | rendszám-egyezés: "+enriched+" | FORGALMI: "+countField("forgalmi")+" | JÁRMŰTÍPUS: "+countField("vehicleType")+" | ALACSONYPADLÓS explicit érték: "+lowCount+".");
-  logLine("FŐNÖK adatút-ellenőrzés: WinMenetrend BEJÖTT="+rows.length+
-    " | egyedi rendszám-egyezés="+enriched+
-    " | FORGALMI továbbment="+countField("forgalmi")+
-    " | JÁRMŰTÍPUS továbbment="+countField("vehicleType")+
-    " | ALACSONYPADLÓS explicit továbbment="+lowCount+
-    " | ELTÉRÉS TripUpdates pontos illesztés="+vehicleData.filter(v=>Number.isFinite(v?.delaySeconds)).length+
-    ". Ismeretlen adat nem lesz NEM/0 értékké alakítva.");
   if(enriched || detailEnriched){
     logLine("WinMenetrend illesztve: "+(enriched+detailEnriched).toLocaleString("hu-HU")+" jármű.");
     safeRenderAll("WinMenetrend FIX8");
@@ -6519,14 +6513,10 @@ function wmExtractLowFloor(text){
   return null;
 }
 
-function wmExtractFields(html, expectedPlate){
+function wmExtractFields(html){
   const parser = new DOMParser();
   const doc = parser.parseFromString(String(html || ""), "text/html");
   const text = doc.body ? (doc.body.innerText || doc.body.textContent || "") : "";
-  const normPlate = v => rtNorm(v);
-  if(expectedPlate && (!normPlate(text).includes(normPlate(expectedPlate)))){
-    return {forgalmi:null,vehicleType:null,blockId:null,blockVehicleNumber:null,lowFloor:null};
-  }
 
   const result = {
     forgalmi: wmFindLabeledValue(text,["Forgalmi szám","Forgalmi szam","Forgalmi"]),
@@ -6584,18 +6574,19 @@ function wmExtractFields(html, expectedPlate){
     if(!headerRow) continue;
     const hn=header.map(norm);
     const fi=hn.indexOf("forgalmi");
+    const vi=hn.indexOf("viszonylat")>=0 ? hn.indexOf("viszonylat") : hn.indexOf("jarat");
     const ti=hn.indexOf("jarmu tipus");
     const li=hn.indexOf("alacsonypadlos");
-    const pi=hn.findIndex(x=>["rendszam","license plate","plate","jarmu","vehicle"].includes(x));
-    // Táblázatos értéket csak a keresett rendszámot tartalmazó sorból olvasunk.
-    if(!expectedPlate || pi<0) continue;
     for(const tr of trs){
       if(tr===headerRow || tr.querySelector("th")) continue;
       const c=[...tr.querySelectorAll("td")].map(x=>wmCleanText(x.textContent));
-      if(!c.length || normPlate(c[pi])!==normPlate(expectedPlate)) continue;
+      if(!c.length) continue;
       if(!result.forgalmi && fi>=0 && c[fi]) result.forgalmi=c[fi];
       if(!result.vehicleType && ti>=0 && c[ti]) result.vehicleType=c[ti];
-      if(result.lowFloor===null && li>=0 && c[li]) result.lowFloor=rtParseLowFloor(c[li]);
+      if(result.lowFloor===null && li>=0 && c[li]){
+        if(/^(igen|yes|true|1)$/i.test(c[li])) result.lowFloor=true;
+        else if(/^(nem|no|false|0)$/i.test(c[li])) result.lowFloor=false;
+      }
     }
   }
 
@@ -6608,12 +6599,11 @@ function wmExtractFields(html, expectedPlate){
     const m=text.match(/Jármű\s*típus\s*:?\s*([^\n|<]+?)(?=\s+(?:Telephely|Forgalmi|Dátum|Block|Blokk|Jármű#)|\s*$)/i);
     if(m) result.vehicleType=wmCleanText(m[1]);
   }
-  if(expectedPlate && (!result.forgalmi || !result.vehicleType)){
+  if(!result.forgalmi || !result.vehicleType){
     const rows=wmExtractMarkdownRows(text);
-    const hit=rows.find(row=>normPlate(row.plate)===normPlate(expectedPlate));
-    if(hit){
-      if(!result.forgalmi) result.forgalmi=hit.forgalmi||null;
-      if(!result.vehicleType) result.vehicleType=hit.vehicleType||null;
+    if(rows.length){
+      if(!result.forgalmi) result.forgalmi=rows[0].forgalmi||null;
+      if(!result.vehicleType) result.vehicleType=rows[0].vehicleType||null;
     }
   }
   return result;
@@ -6696,7 +6686,10 @@ function vehicleCard(
   const card = document.createElement("div");
   card.className = "vehicleCard";
 
-  const lowFloor = explicitLowFloorLabel(item.lowFloor);
+  const lowFloor =
+    item.lowFloor === null || item.lowFloor === undefined
+      ? "NINCS ADAT"
+      : (item.lowFloor === true || String(item.lowFloor).toLowerCase() === "true" || String(item.lowFloor) === "1" ? "IGEN" : "NEM");
 
   card.innerHTML = `
     <div class="vehicleTop">
@@ -7672,10 +7665,11 @@ window.extractFutarVehicles = function(json){
       if(typeof logLine==="function") logLine(commonProviders[key].name+" GTFS HIBA: "+e.message);
     }
   }
-  function rowHTML(p,s,dist){
+  function rowHTML(p,s,dist,rank){
     const code=s.code?" | stop_code: "+escapeHtml(s.code):"";
-    const d=Number.isFinite(dist)?Math.round(dist).toLocaleString("hu-HU")+" m":"NINCS ADAT";
-    return '<div style="padding:8px 6px;border-top:1px solid rgba(128,128,128,.25)">'+p.icon+' <b>'+p.name+'</b> — '+escapeHtml(s.name||"NINCS ADAT")+'<br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+code+' • '+d+' légvonalban</span></div>';
+    const d=Number.isFinite(dist)?(dist>=1000?(dist/1000).toLocaleString("hu-HU",{minimumFractionDigits:2,maximumFractionDigits:2})+" km":Math.round(dist).toLocaleString("hu-HU")+" m"):"NINCS ADAT";
+    const n=Number.isFinite(rank)?'<span style="display:inline-flex;align-items:center;justify-content:center;min-width:23px;height:23px;border-radius:50%;background:#263d4c;color:#fff;font-weight:900;margin-right:5px">'+rank+'</span>':'';
+    return '<div style="padding:8px 6px;border-top:1px solid rgba(128,128,128,.25)">'+n+p.icon+' <b>'+p.name+'</b> — '+escapeHtml(s.name||"NINCS ADAT")+'<br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+code+' • <b>'+d+'</b> légvonalban</span></div>';
   }
   function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[m]));}
   function renderNearest(){
@@ -7685,10 +7679,15 @@ window.extractFutarVehicles = function(json){
     const out=[];
     for(const key of ["BKV","VOLAN","MAV"]){
       const p=commonProviders[key];
-      if(!p.loaded||!p.stops.length){out.push('<div style="padding:7px 0;border-top:1px solid rgba(128,128,128,.2)">'+p.icon+' <b>'+p.name+'</b>: NINCS ADAT</div>');continue;}
-      let best=null,bestD=Infinity;
-      for(const s of p.stops){const d=haversineM(g.lat,g.lon,s.lat,s.lon);if(d<bestD){bestD=d;best=s;}}
-      out.push(rowHTML(p,best,bestD));
+      if(!p.loaded||!p.stops.length){out.push('<section style="padding:9px 0;border-top:1px solid rgba(128,128,128,.25)"><div style="font-weight:900;margin-bottom:5px">'+p.icon+' '+p.name+' — NINCS ADAT</div><div class="small">Ehhez a szolgáltatóhoz még nincs betöltve használható, koordinátás megállólista.</div></section>');continue;}
+      const seen=new Set();
+      const ranked=p.stops.map(s=>({s,d:haversineM(g.lat,g.lon,s.lat,s.lon)}))
+        .filter(x=>Number.isFinite(x.d)&&Number.isFinite(x.s.lat)&&Number.isFinite(x.s.lon))
+        .sort((a,b)=>a.d-b.d)
+        .filter(x=>{const k=String(x.s.id||'')+'|'+String(x.s.lat)+'|'+String(x.s.lon);if(seen.has(k))return false;seen.add(k);return true;})
+        .slice(0,10);
+      out.push('<section style="margin-top:9px;border:1px solid rgba(128,128,128,.28);border-radius:9px;padding:7px"><div style="font-weight:900;padding:3px 0 6px">'+p.icon+' '+p.name+' — 10 LEGKÖZELEBBI MEGÁLLÓ (TÁVOLSÁG SZERINT)</div>'+
+        (ranked.length?ranked.map((x,i)=>rowHTML(p,x.s,x.d,i+1)).join(''):'<div class="small">NINCS ADAT – nincs koordinátás megálló.</div>')+'</section>');
     }
     el.innerHTML=out.join("");
   }
@@ -8719,130 +8718,28 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
 @media(max-width:600px){#attilaMapRestorePanel{top:74px!important;max-height:36vh!important}#attilaMapFullscreenBtn{top:74px!important;right:8px!important;font-size:11px!important;padding:8px!important}}
 </style>
 
-<style id="fix13-mobile-appearance-override">
-/* FIX13 KINÉZETI JAVÍTÁS – mobilon nincs 520–900 px-es kényszerített szélesség.
-   Csak megjelenítés; a járműadatok feldolgozását nem módosítja. */
-@media (max-width: 700px) {
-  html, body {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    height: auto !important;
-    min-height: 100% !important;
-    overflow-x: hidden !important;
-    overflow-y: auto !important;
+
+<script id="attila-external-links-new-tab-fix14">
+(function(){
+  'use strict';
+  function prepare(){
+    document.querySelectorAll('a[href]').forEach(function(a){
+      try{
+        var u=new URL(a.href,location.href);
+        if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){
+          a.target='_blank'; a.rel='noopener noreferrer';
+        }
+      }catch(e){}
+    });
   }
-  #header {
-    position: relative !important;
-    inset: auto !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    display: flex !important;
-    flex-wrap: wrap !important;
-    align-items: center !important;
-    gap: 7px !important;
-    padding: 10px !important;
-  }
-  .title {
-    width: 100% !important;
-    max-width: 100% !important;
-    white-space: normal !important;
-    overflow-wrap: anywhere !important;
-    font-size: 18px !important;
-    line-height: 1.2 !important;
-  }
-  #header .badge { white-space: normal !important; max-width: 100% !important; }
-  #header button { min-height: 42px; max-width: 100%; white-space: normal; }
-  #apiKey { width: min(100%, 280px) !important; min-width: 0 !important; max-width: 100% !important; }
-  #map {
-    position: relative !important;
-    inset: auto !important;
-    display: block !important;
-    width: 100% !important;
-    max-width: 100% !important;
-    height: 38vh !important;
-    min-height: 260px !important;
-    max-height: 460px !important;
-  }
-  #side {
-    position: relative !important;
-    inset: auto !important;
-    display: block !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    height: auto !important;
-    max-height: none !important;
-    overflow: visible !important;
-    padding: 8px !important;
-    border-left: 0 !important;
-  }
-  #side > *, .panel, .panelBody, #nearbyMovingVehiclesPanel,
-  #nearbyVehiclesList, #vehicleList, #fonokSummary {
-    box-sizing: border-box !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-  }
-  .panel { margin: 0 0 10px !important; }
-  .panel h3 { font-size: 17px !important; line-height: 1.25 !important; overflow-wrap: anywhere; }
-  .panelBody { padding: 10px !important; }
-  .row, .searchGrid, .controls, .radiusGrid, .log,
-  #githubPdfList, #pdfList {
-    box-sizing: border-box !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-  }
-  .row { display: flex !important; flex-wrap: wrap !important; gap: 4px 10px !important; align-items: flex-start; }
-  .k { flex: 0 0 38% !important; min-width: 0 !important; max-width: 38% !important; overflow-wrap: anywhere; }
-  .v { flex: 1 1 55% !important; min-width: 0 !important; max-width: 62% !important; overflow-wrap: anywhere; word-break: break-word; }
-  .searchGrid { display: grid !important; grid-template-columns: minmax(0, 1fr) !important; gap: 8px !important; }
-  .searchGrid input, .searchGrid button, .controls button, .radiusGrid button,
-  input, select, button { max-width: 100% !important; min-width: 0; overflow-wrap: anywhere; }
-  .searchGrid input, .controls button, .radiusGrid button { min-height: 42px; }
-  .controls, .radiusGrid { display: flex !important; flex-wrap: wrap !important; gap: 7px !important; }
-  .radiusGrid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
-  .radiusGrid > *, .controls > * { flex: 1 1 42% !important; }
-  #vehicleList { contain: none !important; overflow: visible !important; }
-  .vehicleCard {
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    padding: 10px !important;
-    overflow: hidden !important;
-  }
-  .vehicleTop { display: flex !important; flex-wrap: wrap !important; align-items: flex-start !important; }
-  .vehicleTitle { min-width: 0 !important; max-width: 100% !important; overflow-wrap: anywhere; }
-  .sourceTag { white-space: normal !important; max-width: 100% !important; }
-  .field {
-    display: grid !important;
-    grid-template-columns: minmax(94px, 38%) minmax(0, 1fr) !important;
-    gap: 7px !important;
-    width: 100% !important;
-    min-width: 0 !important;
-    max-width: 100% !important;
-    font-size: 15px !important;
-    padding: 7px 0 !important;
-    align-items: start !important;
-  }
-  .field b { min-width: 0 !important; width: auto !important; font-size: 14px !important; overflow-wrap: anywhere; }
-  .field span { min-width: 0 !important; width: auto !important; font-size: 15px !important; line-height: 1.3 !important; overflow-wrap: anywhere; word-break: break-word; }
-  .delay-red, .delay-blue, .delay-green { font-size: 17px !important; }
-  .regionalWrap { width: 100% !important; min-width: 0 !important; max-width: 100% !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
-  .regionalTable { min-width: 620px; }
-  .log { white-space: pre-wrap !important; overflow-wrap: anywhere !important; overflow-x: auto !important; }
-  .popup { min-width: 0 !important; max-width: calc(100vw - 54px) !important; overflow-wrap: anywhere; }
-  .popup .pf { display: grid !important; grid-template-columns: minmax(80px, 38%) minmax(0, 1fr) !important; gap: 6px !important; }
-  .popup .pf b { min-width: 0 !important; }
-  #attilaMapRestorePanel { width: min(330px, calc(100vw - 20px)) !important; max-width: calc(100vw - 20px) !important; }
-}
-@media (min-width: 701px) and (max-width: 900px) {
-  #side { width: 100% !important; max-width: 100% !important; }
-  #side > * { max-width: 100%; }
-}
-</style>
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',prepare,{once:true});else prepare();
+  document.addEventListener('click',function(e){
+    var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
+    if(!a)return;
+    try{var u=new URL(a.href,location.href);if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){a.target='_blank';a.rel='noopener noreferrer';}}catch(err){}
+  },true);
+})();
+</script>
 
 </body>
 </html>
