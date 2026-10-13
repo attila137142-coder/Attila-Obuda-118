@@ -1,4 +1,3 @@
-ATTILA KÖZLEKEDÉS – FIX14 · NÉGY ADATÚT JAVÍTÁS teljes HTML-fájlja
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -2465,6 +2464,38 @@ function attilaServiceDateEpoch(startDate, seconds){
   return Math.floor(midnight/1000)+seconds;
 }
 
+/* Ha a TripDescriptor nem küld start_date-t, a valós event.time és a GTFS
+   stop_times alapján próbáljuk meghatározni a szolgálati napot. Csak akkor
+   fogadjuk el, ha a legközelebbi, pontos trip+stop/sequence menetrendi idő
+   legfeljebb 6 órára van az előrejelzéstől; különben NINCS ADAT marad. */
+function attilaDeriveDelayFromEvent(ev, sched){
+  if(!ev || !sched || !Number.isFinite(ev.eventTime)) return null;
+  const scheduledSeconds=sched[ev.eventKind];
+  if(!Number.isFinite(scheduledSeconds)) return null;
+  const start=String(ev.startDate||"").trim();
+  if(/^\d{8}$/.test(start)){
+    const epoch=attilaServiceDateEpoch(start,scheduledSeconds);
+    if(epoch===null) return null;
+    const delay=Math.round(ev.eventTime-epoch);
+    return Math.abs(delay)<=21600 ? delay : null;
+  }
+  const eventDate=new Date(ev.eventTime*1000);
+  if(!Number.isFinite(eventDate.getTime())) return null;
+  const base=new Date(eventDate.getFullYear(),eventDate.getMonth(),eventDate.getDate());
+  let best=null;
+  for(const offset of [-1,0,1]){
+    const d=new Date(base.getFullYear(),base.getMonth(),base.getDate()+offset);
+    const y=String(d.getFullYear()).padStart(4,"0");
+    const m=String(d.getMonth()+1).padStart(2,"0");
+    const day=String(d.getDate()).padStart(2,"0");
+    const epoch=attilaServiceDateEpoch(y+m+day,scheduledSeconds);
+    if(epoch===null) continue;
+    const delay=Math.round(ev.eventTime-epoch);
+    if(Math.abs(delay)<=21600 && (best===null || Math.abs(delay)<Math.abs(best))) best=delay;
+  }
+  return best;
+}
+
 async function fetchTripUpdates(){
   if(!getKey()){
     lastTripFetchOK=false;
@@ -2572,15 +2603,14 @@ async function fetchTripUpdates(){
 
     if(pendingTimeEvents.length){
       const schedule=await attilaLoadActiveSchedule(activeTripIds);
+      let scheduleMatchCount=0, scheduleMissCount=0, uncalculableCount=0;
       if(schedule){
         for(const ev of pendingTimeEvents){
           const sched=(ev.seq && schedule.get(ev.tripId+"|seq|"+ev.seq)) || (ev.stopId && schedule.get(ev.tripId+"|stop|"+ev.stopId));
-          if(!sched) continue;
-          const scheduledSeconds=sched[ev.eventKind];
-          const scheduledEpoch=attilaServiceDateEpoch(ev.startDate,scheduledSeconds);
-          if(scheduledEpoch===null) continue;
-          const derived=Math.round(ev.eventTime-scheduledEpoch);
-          if(!Number.isFinite(derived)) continue;
+          if(!sched){scheduleMissCount++;continue;}
+          scheduleMatchCount++;
+          const derived=attilaDeriveDelayFromEvent(ev,sched);
+          if(!Number.isFinite(derived)){uncalculableCount++;continue;}
           derivedDelayCount++;
           const seqNum=ev.seq!==""?Number(ev.seq):null;
           if(ev.seq) mapDelay.set(ev.tripId+"|seq|"+ev.seq,derived);
@@ -2594,6 +2624,11 @@ async function fetchTripUpdates(){
             if(ev.seq) vehicleSeqDelay.set(key+"|seq|"+ev.seq,derived);
           }
         }
+      }else{
+        logLine("ELTÉRÉS adatút HIBA: a TripUpdates tartalmaz event.time értéket, de a GTFS stop_times menetrend nem érhető el; eltérés nem számítható biztonságosan.");
+      }
+      if(schedule){
+        logLine("ELTÉRÉS adatút ellenőrzés: event.time="+pendingTimeEvents.length+" | pontos trip+stop/sequence menetrendi találat="+scheduleMatchCount+" | menetrendi találat nélkül="+scheduleMissCount+" | dátum/idő vagy ±6 órás biztonsági ellenőrzés miatt elutasítva="+uncalculableCount+" | kiszámított eltérés="+derivedDelayCount+".");
       }
     }
 
