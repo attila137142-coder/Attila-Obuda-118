@@ -10,7 +10,7 @@
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – FIX12 FŐNÖK TOP5 EGYSÉGES SZÁMLÁLÓ</title>
+<title>ATTILA KÖZLEKEDÉS – FIX13 KINÉZETI JAVÍTÁS</title>
 
 <link
   rel="stylesheet"
@@ -632,10 +632,10 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
   <a href="https://online.winmenetrend.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">WINMENETREND ↗</a>
   <a href="https://bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK ↗</a>
   <a href="https://go.bkk.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #526579;border-radius:8px;color:#d9f0ff">BKK GO ↗</a>
-  <a href="https://holavonat.is/#985582760023" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">HOL A VONAT? ↗</a>
-  <a href="https://vonatinfo.kozlekedesiklub.hu/" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">VONATINFO ↗</a>
-  <a href="https://utas.hu/?map=9/47.82045/18.91772" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">UTAS TÉRKÉP ↗</a>
-  <a href="https://futar.bkk.hu/?map=15/47.59909/19.05064" target="_self" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #55aaff;border-radius:8px;color:#d9f0ff">BKK FUTÁR ↗</a>
+  <a href="https://holavonat.is/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">HOL A VONAT? ↗</a>
+  <a href="https://vonatinfo.kozlekedesiklub.hu/" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">VONATINFO ↗</a>
+  <a href="https://utas.hu/?map=9/47.82045/18.91772" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #c98cff;border-radius:8px;color:#f0dcff">UTAS TÉRKÉP ↗</a>
+  <a href="https://futar.bkk.hu/?map=15/47.59909/19.05064" target="_blank" rel="noopener noreferrer" style="display:inline-block;padding:7px 10px;border:1px solid #55aaff;border-radius:8px;color:#d9f0ff">BKK FUTÁR ↗</a>
 </nav>
 
 <div id="map"></div>
@@ -858,21 +858,9 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
     </h3>
     <div class="panelBody">
       <div class="small" style="margin-bottom:8px">
-        A saját GPS-helyzethez szolgáltatónként az 5 legközelebbi BKV/BKK, VOLÁN és MÁV megállót mutatja, légvonalbeli távolság szerint növekvő sorrendben. Csak betöltött, valódi megállóadat szerepelhet.
+        A saját GPS-helyzethez külön keresi a legközelebbi BKV/BKK, VOLÁN és MÁV megállót. A távolság légvonalban, méterben értendő.
       </div>
       <div id="userNearestStops" class="small">GPS-helyzet szükséges.</div>
-    </div>
-  </section>
-
-  <section class="panel" id="nearbyMovingVehiclesPanel">
-    <h3>📡 2 KM-EN BELÜLI MOZGÓ JÁRMŰVEK</h3>
-    <div class="panelBody">
-      <div class="small" style="margin-bottom:8px">A GPS-helyzettől légvonalban legfeljebb 2,00 km-re lévő, ténylegesen beérkezett járműpozíciók. Távolság szerint növekvő sorrendben. Csak koordinátával rendelkező, valódi rekord jelenik meg; hiányzó mező = NINCS ADAT.</div>
-      <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;margin-bottom:8px">
-        <button id="nearbyVehiclesRefresh" type="button">🔄 LISTA FRISSÍTÉSE</button>
-        <span id="nearbyVehiclesStatus" class="small">GPS-helyzetre és élő járműadatokra vár.</span>
-      </div>
-      <div id="nearbyVehiclesList" class="small">NINCS ADAT</div>
     </div>
   </section>
 
@@ -884,7 +872,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
       </div>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
         <button id="loadGithubPdfLibraryBtn" type="button">📚 KÖZÖS TÁR FRISSÍTÉSE</button>
-        <a id="openGithubPdfFolderBtn" href="https://github.com/attila137142-coder/Attila-Obuda-118/tree/main/KOZOS_TARHELY" target="_self" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;padding:8px 11px;border:1px solid #536b7a;border-radius:8px;background:#18242c;color:#fff;text-decoration:none">GITHUB MAPPÁK</a>
+        <a id="openGithubPdfFolderBtn" href="https://github.com/attila137142-coder/Attila-Obuda-118/tree/main/KOZOS_TARHELY" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;padding:8px 11px;border:1px solid #536b7a;border-radius:8px;background:#18242c;color:#fff;text-decoration:none">GITHUB MAPPÁK</a>
       </div>
       <div id="githubPdfList" style="margin-top:8px"></div>
       <div id="githubPdfStatus" class="small" style="margin-top:7px">Közös tár: még nincs frissítve.</div>
@@ -2644,73 +2632,30 @@ function resolveVehicleDelay(item){
   const itemSeq=Number.isFinite(item.stopSequence)?Number(item.stopSequence):null;
   const itemStop=String(item.stopId||"").trim();
 
-  /* Csak tényleges TripUpdates delay érték. Hiányzó adat = null. */
-  if(tripId && itemSeq!==null){
-    const exact=tripDelayMap.get(tripId+"|seq|"+String(itemSeq));
-    if(Number.isFinite(exact)) return exact;
-  }
+  // Csak pontos trip + stop/sequence egyezés fogadható el; közeli sequence nem elég.
   if(tripId && itemStop){
     const exact=tripDelayMap.get(tripId+"|stop|"+itemStop);
     if(Number.isFinite(exact)) return exact;
   }
-
   if(tripId && itemSeq!==null){
-    const arr=tripDelaySeqMap.get(tripId);
-    if(Array.isArray(arr)&&arr.length){
-      let best=null,bestDiff=Infinity;
-      for(const x of arr){
-        if(!Number.isFinite(x.seq)) continue;
-        const diff=Math.abs(x.seq-itemSeq);
-        if(diff<bestDiff){bestDiff=diff;best=x;}
-      }
-      if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
-    }
+    const exact=tripDelayMap.get(tripId+"|seq|"+String(itemSeq));
+    if(Number.isFinite(exact)) return exact;
   }
 
+  // Vehicle-kulcs csak akkor használható, ha a TripUpdates ténylegesen közölte.
   const directKeys=[];
   if(item.vehicleId) directKeys.push("id|"+normalizeId(item.vehicleId));
   if(item.label) directKeys.push("label|"+normalizeId(item.label));
   if(item.licensePlate) directKeys.push("plate|"+normalizeId(item.licensePlate));
-
   for(const key of directKeys){
-    if(itemSeq!==null){
-      const bySeq=tripDelayVehicleSeqMap.get(key+"|seq|"+String(itemSeq));
-      if(Number.isFinite(bySeq)) return bySeq;
-    }
-    const arr=tripDelayVehicleMap.get(key);
-    if(!Array.isArray(arr)||!arr.length) continue;
-
     if(itemStop){
-      const byStop=arr.find(x=>x.stopId===itemStop&&Number.isFinite(x.delay));
-      if(byStop) return byStop.delay;
+      const arr=tripDelayVehicleMap.get(key)||[];
+      const hits=arr.filter(x=>x.stopId===itemStop && Number.isFinite(x.delay));
+      if(hits.length===1) return hits[0].delay;
     }
     if(itemSeq!==null){
-      let best=null,bestDiff=Infinity;
-      for(const x of arr){
-        if(!Number.isFinite(x.seq)) continue;
-        const diff=Math.abs(x.seq-itemSeq);
-        if(diff<bestDiff){bestDiff=diff;best=x;}
-      }
-      if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
-    }
-  }
-
-  if(tripId){
-    const arr=tripDelayTripMap.get(tripId);
-    if(Array.isArray(arr)&&arr.length){
-      if(itemStop){
-        const byStop=arr.find(x=>x.stopId===itemStop&&Number.isFinite(x.delay));
-        if(byStop) return byStop.delay;
-      }
-      if(itemSeq!==null){
-        let best=null,bestDiff=Infinity;
-        for(const x of arr){
-          if(!Number.isFinite(x.seq)) continue;
-          const diff=Math.abs(x.seq-itemSeq);
-          if(diff<bestDiff){bestDiff=diff;best=x;}
-        }
-        if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
-      }
+      const v=tripDelayVehicleSeqMap.get(key+"|seq|"+String(itemSeq));
+      if(Number.isFinite(v)) return v;
     }
   }
   return null;
@@ -5876,9 +5821,7 @@ function sourceLabel(
 
 function buildPopup(item){
   const delay=delayHTML(item.delaySeconds);
-  const lowFloor = item.lowFloor === null || item.lowFloor === undefined
-    ? "NINCS ADAT"
-    : (item.lowFloor === true || String(item.lowFloor).toLowerCase()==="true" || String(item.lowFloor)==="1" ? "IGEN" : "NEM");
+  const lowFloor = explicitLowFloorLabel(item.lowFloor);
   return `
     <div class="popup">
       <div class="pf"><b>JÁRAT</b><span>${escapeHtml(routeDisplay(item))}</span></div>
@@ -5918,6 +5861,13 @@ function rtClean(v){
 
 function rtNorm(v){
   return String(v || "").toUpperCase().replace(/[^A-Z0-9ÁÉÍÓÖŐÚÜŰ]/g,"");
+}
+
+function explicitLowFloorLabel(value){
+  if(value===true) return "IGEN";
+  if(value===false) return "NEM";
+  const parsed=rtParseLowFloor(value);
+  return parsed===true ? "IGEN" : parsed===false ? "NEM" : "NINCS ADAT";
 }
 
 function rtParseLowFloor(value){
@@ -6065,7 +6015,7 @@ async function fetchWinRouteHistory(routeCode, plate){
       const rows=wmExtractMarkdownRows(t);
       const hit=rows.find(x=>rtNorm(x.plate)===wanted);
       if(hit) return {forgalmi:hit.forgalmi||null,vehicleType:hit.vehicleType||null,blockId:null,blockVehicleNumber:null,lowFloor:null};
-      const f=wmExtractFields(t);
+      const f=wmExtractFields(t,plate);
       /* Csak akkor használjuk a címkés mezőket, ha az oldal jármű-specifikus
          adatot adott; vonalszintű oldalon az első táblázatsor nem elfogadható. */
       if(f && (f.forgalmi||f.vehicleType)){
@@ -6157,7 +6107,7 @@ async function fetchWinRealtimeExact(plate){
   return null;
 }
 
-async function fetchWinDetailPage(url){
+async function fetchWinDetailPage(url, expectedPlate){
   if(winDetailCache.has(url)) return winDetailCache.get(url);
   let html="";
   try{
@@ -6172,7 +6122,7 @@ async function fetchWinDetailPage(url){
       if(r.ok) html=await r.text();
     }catch(e){}
   }
-  const f=html?wmExtractFields(html):null;
+  const f=html?wmExtractFields(html,expectedPlate):null;
   winDetailCache.set(url,f||null);
   return f||null;
 }
@@ -6217,7 +6167,7 @@ async function enrichOneVehicleFromWin(item){
   }
 
   for(const u of urls){
-    const f=await fetchWinDetailPage(u);
+    const f=await fetchWinDetailPage(u,plate);
     if(!f) continue;
     if(f.forgalmi && !item.forgalmi){ item.forgalmi=f.forgalmi; got=true; }
     if(f.vehicleType && !item.vehicleType){ item.vehicleType=f.vehicleType; got=true; }
@@ -6259,10 +6209,9 @@ async function updateWinRealtime(){
       String(r.plate || "").toUpperCase().replace(/[\s-]/g, "").trim();
 
     if(plateKey){
-      winRealtimeCache.set(
-        plateKey,
-        r
-      );
+      const plateRows=winRealtimeCache.get(plateKey)||[];
+      plateRows.push(r);
+      winRealtimeCache.set(plateKey,plateRows);
     }
 
     const vehicleKey =
@@ -6312,11 +6261,14 @@ async function updateWinRealtime(){
 
     /* 1. RENDSZÁM – szóköz/kötőjel nélkül is ugyanaz */
     const plateKey = String(item.licensePlate || "").toUpperCase().replace(/[\s-]/g, "").trim();
-    let r = plateKey ? winRealtimeCache.get(plateKey) : null;
+    const exactPlateRows = plateKey ? (winRealtimeCache.get(plateKey)||[]) : [];
+    let r = exactPlateRows.length===1 ? exactPlateRows[0] : null;
+    let exactVehicleMatch = !!r;
 
     /* 2. vehicleId – csak explicit valódi mezőből */
     if(!r && item.vehicleId && window.winRealtimeVehicleCache){
-      r = window.winRealtimeVehicleCache.get(String(item.vehicleId).trim().replace(/^BKK_/i,""));
+      r = window.winRealtimeVehicleCache.get(rtNorm(String(item.vehicleId).trim().replace(/^BKK_/i,""))) || null;
+      exactVehicleMatch = !!r;
     }
 
     /* 3. TRIP – csak egyértelmű találat.
@@ -6339,16 +6291,15 @@ async function updateWinRealtime(){
 
     /* Csak a WinMenetrend valódi,
        explicit FORGALMI / JÁRMŰTÍPUS mezője kerül át. */
-    if(r.forgalmi){
-      item.forgalmi =
-        r.forgalmi;
+    // A TRIP önmagában nem járműazonosító: a négy panelmezőhöz rendszám/vehicleId kell.
+    if(exactVehicleMatch && r.forgalmi && !item.forgalmi){
+      item.forgalmi = r.forgalmi;
     }
 
-    if(r.vehicleType){
-      item.vehicleType =
-        r.vehicleType;
+    if(exactVehicleMatch && r.vehicleType && !item.vehicleType){
+      item.vehicleType = r.vehicleType;
     }
-    if(r.lowFloor===true || r.lowFloor===false){
+    if(exactVehicleMatch && (r.lowFloor===true || r.lowFloor===false) && (item.lowFloor===null || item.lowFloor===undefined)){
       item.lowFloor=r.lowFloor;
     }
 
@@ -6398,6 +6349,13 @@ async function updateWinRealtime(){
   const countField=k=>vehicleData.filter(v=>v && v[k]!==null && v[k]!==undefined && String(v[k]).trim()!=="").length;
   const lowCount=vehicleData.filter(v=>v?.lowFloor===true || v?.lowFloor===false).length;
   logLine("WinMenetrend forrásrekord: "+rows.length+" | rendszám-egyezés: "+enriched+" | FORGALMI: "+countField("forgalmi")+" | JÁRMŰTÍPUS: "+countField("vehicleType")+" | ALACSONYPADLÓS explicit érték: "+lowCount+".");
+  logLine("FŐNÖK adatút-ellenőrzés: WinMenetrend BEJÖTT="+rows.length+
+    " | egyedi rendszám-egyezés="+enriched+
+    " | FORGALMI továbbment="+countField("forgalmi")+
+    " | JÁRMŰTÍPUS továbbment="+countField("vehicleType")+
+    " | ALACSONYPADLÓS explicit továbbment="+lowCount+
+    " | ELTÉRÉS TripUpdates pontos illesztés="+vehicleData.filter(v=>Number.isFinite(v?.delaySeconds)).length+
+    ". Ismeretlen adat nem lesz NEM/0 értékké alakítva.");
   if(enriched || detailEnriched){
     logLine("WinMenetrend illesztve: "+(enriched+detailEnriched).toLocaleString("hu-HU")+" jármű.");
     safeRenderAll("WinMenetrend FIX8");
@@ -6524,10 +6482,14 @@ function wmExtractLowFloor(text){
   return null;
 }
 
-function wmExtractFields(html){
+function wmExtractFields(html, expectedPlate){
   const parser = new DOMParser();
   const doc = parser.parseFromString(String(html || ""), "text/html");
   const text = doc.body ? (doc.body.innerText || doc.body.textContent || "") : "";
+  const normPlate = v => rtNorm(v);
+  if(expectedPlate && (!normPlate(text).includes(normPlate(expectedPlate)))){
+    return {forgalmi:null,vehicleType:null,blockId:null,blockVehicleNumber:null,lowFloor:null};
+  }
 
   const result = {
     forgalmi: wmFindLabeledValue(text,["Forgalmi szám","Forgalmi szam","Forgalmi"]),
@@ -6585,19 +6547,18 @@ function wmExtractFields(html){
     if(!headerRow) continue;
     const hn=header.map(norm);
     const fi=hn.indexOf("forgalmi");
-    const vi=hn.indexOf("viszonylat")>=0 ? hn.indexOf("viszonylat") : hn.indexOf("jarat");
     const ti=hn.indexOf("jarmu tipus");
     const li=hn.indexOf("alacsonypadlos");
+    const pi=hn.findIndex(x=>["rendszam","license plate","plate","jarmu","vehicle"].includes(x));
+    // Táblázatos értéket csak a keresett rendszámot tartalmazó sorból olvasunk.
+    if(!expectedPlate || pi<0) continue;
     for(const tr of trs){
       if(tr===headerRow || tr.querySelector("th")) continue;
       const c=[...tr.querySelectorAll("td")].map(x=>wmCleanText(x.textContent));
-      if(!c.length) continue;
+      if(!c.length || normPlate(c[pi])!==normPlate(expectedPlate)) continue;
       if(!result.forgalmi && fi>=0 && c[fi]) result.forgalmi=c[fi];
       if(!result.vehicleType && ti>=0 && c[ti]) result.vehicleType=c[ti];
-      if(result.lowFloor===null && li>=0 && c[li]){
-        if(/^(igen|yes|true|1)$/i.test(c[li])) result.lowFloor=true;
-        else if(/^(nem|no|false|0)$/i.test(c[li])) result.lowFloor=false;
-      }
+      if(result.lowFloor===null && li>=0 && c[li]) result.lowFloor=rtParseLowFloor(c[li]);
     }
   }
 
@@ -6610,11 +6571,12 @@ function wmExtractFields(html){
     const m=text.match(/Jármű\s*típus\s*:?\s*([^\n|<]+?)(?=\s+(?:Telephely|Forgalmi|Dátum|Block|Blokk|Jármű#)|\s*$)/i);
     if(m) result.vehicleType=wmCleanText(m[1]);
   }
-  if(!result.forgalmi || !result.vehicleType){
+  if(expectedPlate && (!result.forgalmi || !result.vehicleType)){
     const rows=wmExtractMarkdownRows(text);
-    if(rows.length){
-      if(!result.forgalmi) result.forgalmi=rows[0].forgalmi||null;
-      if(!result.vehicleType) result.vehicleType=rows[0].vehicleType||null;
+    const hit=rows.find(row=>normPlate(row.plate)===normPlate(expectedPlate));
+    if(hit){
+      if(!result.forgalmi) result.forgalmi=hit.forgalmi||null;
+      if(!result.vehicleType) result.vehicleType=hit.vehicleType||null;
     }
   }
   return result;
@@ -6644,7 +6606,7 @@ function winMenetrendLinks(item){
   const stopId=String(item?.stopId||'').trim();
   const stopName=String(item?.stopName||item?.nearestStop?.name||item?.stop||'').trim();
   const links=[];
-  const add=(label,url)=>links.push('<a class="wmLink" href="'+url+'" target="_self" rel="noopener noreferrer" onclick="event.stopPropagation()">'+label+'</a>');
+  const add=(label,url)=>links.push('<a class="wmLink" href="'+url+'" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()">'+label+'</a>');
 
   /* A már meglévő két alaplink megmarad. */
   if(plate) add('JÁRMŰTÖRTÉNET','https://online.winmenetrend.hu/futar/history/vehicles/'+encodeURIComponent(plate)+'?date='+localDateYmd());
@@ -6697,10 +6659,7 @@ function vehicleCard(
   const card = document.createElement("div");
   card.className = "vehicleCard";
 
-  const lowFloor =
-    item.lowFloor === null || item.lowFloor === undefined
-      ? "NINCS ADAT"
-      : (item.lowFloor === true || String(item.lowFloor).toLowerCase() === "true" || String(item.lowFloor) === "1" ? "IGEN" : "NEM");
+  const lowFloor = explicitLowFloorLabel(item.lowFloor);
 
   card.innerHTML = `
     <div class="vehicleTop">
@@ -7676,11 +7635,10 @@ window.extractFutarVehicles = function(json){
       if(typeof logLine==="function") logLine(commonProviders[key].name+" GTFS HIBA: "+e.message);
     }
   }
-  function rowHTML(p,s,dist,rank){
+  function rowHTML(p,s,dist){
     const code=s.code?" | stop_code: "+escapeHtml(s.code):"";
-    const d=Number.isFinite(dist)?(dist>=1000?(dist/1000).toLocaleString("hu-HU",{minimumFractionDigits:2,maximumFractionDigits:2})+" km":Math.round(dist).toLocaleString("hu-HU")+" m"):"NINCS ADAT";
-    const n=Number.isFinite(rank)?'<span style="display:inline-flex;align-items:center;justify-content:center;min-width:23px;height:23px;border-radius:50%;background:#263d4c;color:#fff;font-weight:900;margin-right:5px">'+rank+'</span>':'';
-    return '<div style="padding:8px 6px;border-top:1px solid rgba(128,128,128,.25)">'+n+p.icon+' <b>'+p.name+'</b> — '+escapeHtml(s.name||"NINCS ADAT")+'<br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+code+' • <b>'+d+'</b> légvonalban</span></div>';
+    const d=Number.isFinite(dist)?Math.round(dist).toLocaleString("hu-HU")+" m":"NINCS ADAT";
+    return '<div style="padding:8px 6px;border-top:1px solid rgba(128,128,128,.25)">'+p.icon+' <b>'+p.name+'</b> — '+escapeHtml(s.name||"NINCS ADAT")+'<br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+code+' • '+d+' légvonalban</span></div>';
   }
   function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[m]));}
   function renderNearest(){
@@ -7690,15 +7648,10 @@ window.extractFutarVehicles = function(json){
     const out=[];
     for(const key of ["BKV","VOLAN","MAV"]){
       const p=commonProviders[key];
-      if(!p.loaded||!p.stops.length){out.push('<section style="padding:9px 0;border-top:1px solid rgba(128,128,128,.25)"><div style="font-weight:900;margin-bottom:5px">'+p.icon+' '+p.name+' — NINCS ADAT</div><div class="small">Ehhez a szolgáltatóhoz még nincs betöltve használható, koordinátás megállólista.</div></section>');continue;}
-      const seen=new Set();
-      const ranked=p.stops.map(s=>({s,d:haversineM(g.lat,g.lon,s.lat,s.lon)}))
-        .filter(x=>Number.isFinite(x.d)&&Number.isFinite(x.s.lat)&&Number.isFinite(x.s.lon))
-        .sort((a,b)=>a.d-b.d)
-        .filter(x=>{const k=String(x.s.id||'')+'|'+String(x.s.lat)+'|'+String(x.s.lon);if(seen.has(k))return false;seen.add(k);return true;})
-        .slice(0,5);
-      out.push('<section style="margin-top:9px;border:1px solid rgba(128,128,128,.28);border-radius:9px;padding:7px"><div style="font-weight:900;padding:3px 0 6px">'+p.icon+' '+p.name+' — LEGKÖZELEBBI '+ranked.length+' MEGÁLLÓ</div>'+
-        (ranked.length?ranked.map((x,i)=>rowHTML(p,x.s,x.d,i+1)).join(''):'<div class="small">NINCS ADAT – nincs koordinátás megálló.</div>')+'</section>');
+      if(!p.loaded||!p.stops.length){out.push('<div style="padding:7px 0;border-top:1px solid rgba(128,128,128,.2)">'+p.icon+' <b>'+p.name+'</b>: NINCS ADAT</div>');continue;}
+      let best=null,bestD=Infinity;
+      for(const s of p.stops){const d=haversineM(g.lat,g.lon,s.lat,s.lon);if(d<bestD){bestD=d;best=s;}}
+      out.push(rowHTML(p,best,bestD));
     }
     el.innerHTML=out.join("");
   }
@@ -7779,7 +7732,7 @@ window.extractFutarVehicles = function(json){
       if(x.category!==current){current=x.category;html+="<div style='margin-top:10px;padding:7px 6px;background:#18242c;border-radius:7px;font-weight:800'>"+esc(current)+"</div>";}
       html+="<div style='padding:7px 6px;border-top:1px solid #263744;display:flex;gap:7px;align-items:center;justify-content:space-between;flex-wrap:wrap'>"
         +"<span>📄 <b>"+esc(x.name)+"</b> <span class='small'>· "+(Number(x.size||0)/1024/1024).toFixed(2)+" MB</span></span>"
-        +"<a href='"+esc(x.url)+"' target='_self' rel='noopener' style='display:inline-flex;align-items:center;justify-content:center;padding:7px 10px;border:1px solid #536b7a;border-radius:8px;background:#18242c;color:#fff;text-decoration:none'>MEGNYITÁS</a>"
+        +"<a href='"+esc(x.url)+"' target='_blank' rel='noopener' style='display:inline-flex;align-items:center;justify-content:center;padding:7px 10px;border:1px solid #536b7a;border-radius:8px;background:#18242c;color:#fff;text-decoration:none'>MEGNYITÁS</a>"
         +"</div>";
     }
     el.innerHTML=html;
@@ -8295,7 +8248,7 @@ window.extractFutarVehicles = function(json){
 (function(){
   const MAV_API='/api/mav-realtime';
   const QUERY=`query VehiclePositions($swLat:Float!,$swLon:Float!,$neLat:Float!,$neLon:Float!){
-    vehiclePositions(swLat:$swLat,swLon:$swLon,neLat:$neLat,neLon:$neLon,modes:[BUS,RAIL,RAIL_REPLACEMENT_BUS,SUBURBAN_RAILWAY,TRAMTRAIN]){
+    vehiclePositions(swLat:$swLat,swLon:$swLon,neLat:$neLat,neLon:$neLon,modes:[RAIL,RAIL_REPLACEMENT_BUS,SUBURBAN_RAILWAY,TRAMTRAIN]){
       vehicleId label lat lon heading lastUpdated speed
       trip { gtfsId domesticResTrainNumber }
       nextStop { arrivalDelay }
@@ -8623,9 +8576,9 @@ window.extractFutarVehicles = function(json){
   function fixExternalLinks(){
     let n=0;
     document.querySelectorAll('a[href]').forEach(a=>{
-      try { const u=new URL(a.href,location.href); if(/^https?:$/.test(u.protocol) && u.origin!==location.origin && !a.hasAttribute('download')) { if(a.target!=='_self'){a.target='_self';n++;} a.rel='noopener noreferrer'; } } catch(e){}
+      try { const u=new URL(a.href,location.href); if(/^https?:$/.test(u.protocol) && u.origin!==location.origin && !a.hasAttribute('download')) { if(a.target!=='_blank'){a.target='_blank';n++;} a.rel='noopener noreferrer'; } } catch(e){}
     });
-    if(n) report('Külső hivatkozások ugyanabban a lapon nyílnak meg; a böngésző VISSZA gombja visszahozza az alkalmazást.');
+    if(n) report('Külső hivatkozások új lapon nyitásra állítva: '+n+'.');
     else report('Külső hivatkozások ellenőrizve; a szerver által visszautasított kapcsolatot a böngészőből nem lehet felülírni.');
   }
   function bindBack(){
@@ -8689,9 +8642,9 @@ window.extractFutarVehicles = function(json){
   panel.style.cssText='position:fixed;z-index:1200;left:10px;top:82px;width:min(330px,calc(100vw - 20px));max-height:42vh;overflow:auto;background:#071721f2;color:#f0f8ff;border:1px solid #4a7187;border-radius:12px;padding:10px;box-shadow:0 4px 20px #0009;font:13px/1.35 Arial,sans-serif';
   const title=document.createElement('div'); title.textContent='🗺️ TÉRKÉPEK – TELJES NÉZET'; title.style.cssText='font-weight:900;font-size:15px;margin-bottom:8px'; panel.appendChild(title);
   const fs=document.createElement('button'); fs.type='button'; fs.textContent='⛶ SAJÁT VASÚTI / JÁRMŰTÉRKÉP – TELJES KÉPERNYŐ'; fs.style.cssText='display:block;width:100%;margin:5px 0;padding:9px;font-weight:800'; fs.addEventListener('click',toggleFullscreen); panel.appendChild(fs);
-  links.forEach(([label,url])=>{const a=document.createElement('a');a.href=url;a.target='_self';a.rel='noopener noreferrer';a.textContent='↗ MEGNYITÁS – '+label; a.addEventListener('click',()=>{window.__attilaExternalMapOpenedAt=Date.now();});a.style.cssText='display:block;color:#b9e7ff;border:1px solid #34596b;border-radius:7px;padding:8px;margin:5px 0;text-decoration:none;font-weight:700';panel.appendChild(a)});
-  const note=document.createElement('div'); note.textContent='A külső oldalak ugyanabban a lapon nyílnak meg. Visszatéréshez használd a böngésző VISSZA gombját vagy az alkalmazás ⬅ VISSZA gombját, ha az oldal előzményei ezt lehetővé teszik. A külső szolgáltató saját oldalába nem illeszthető be idegen gomb. A saját térkép teljes nézetéhez használd a fenti gombot.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
-  const back=document.createElement('button');back.type='button';back.textContent='↩ VISSZA / ATTILA KÖZLEKEDÉS LAPJA';back.style.cssText='width:100%;margin-top:6px;padding:10px;font-weight:900;background:#17432f;border:1px solid #39d98a;color:#fff';back.addEventListener('click',()=>{try{window.focus();panel.scrollIntoView({behavior:'smooth',block:'start'});window.scrollTo({top:0,behavior:'smooth'});}catch(e){panel.scrollIntoView({block:'start'});}});panel.appendChild(back);
+  links.forEach(([label,url])=>{const a=document.createElement('a');a.href=url;a.target='_self';a.rel='noopener noreferrer';a.textContent='↗ MEGNYITÁS – '+label;a.style.cssText='display:block;color:#b9e7ff;border:1px solid #34596b;border-radius:7px;padding:8px;margin:5px 0;text-decoration:none;font-weight:700';panel.appendChild(a)});
+  const note=document.createElement('div'); note.textContent='A külső térképek és menetrendek ugyanebben a böngészőlapban nyílnak meg: a böngésző VISSZA gombja visszahoz az Attila Közlekedéshez. Külső szolgáltató oldalába az alkalmazás nem tud saját gombot beilleszteni. A saját vasúti és járműtérkép teljes nézetéhez használd a fenti gombot.'; note.style.cssText='color:#a8bdc9;font-size:11px;margin-top:7px';panel.appendChild(note);
+  const back=document.createElement('button');back.type='button';back.textContent='↩ VISSZA AZ ATTILA KÖZLEKEDÉSHEZ';back.style.cssText='width:100%;margin-top:6px;padding:10px;font-weight:900;background:#17432f;border:1px solid #39d98a;color:#fff';back.addEventListener('click',()=>{if(window.history.length>1)window.history.back();else{panel.scrollIntoView({behavior:'smooth',block:'start'});}});panel.appendChild(back);
   const close=document.createElement('button');close.type='button';close.textContent='Panel elrejtése';close.style.cssText='width:100%;margin-top:6px';close.addEventListener('click',()=>panel.remove());panel.appendChild(close);
   document.body.appendChild(panel);
   const map=document.getElementById('map');
@@ -8729,278 +8682,130 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
 @media(max-width:600px){#attilaMapRestorePanel{top:74px!important;max-height:36vh!important}#attilaMapFullscreenBtn{top:74px!important;right:8px!important;font-size:11px!important;padding:8px!important}}
 </style>
 
-
-<script id="attila-external-links-new-tab-fix14">
-(function(){
-  'use strict';
-  function prepare(){
-    document.querySelectorAll('a[href]').forEach(function(a){
-      try{
-        var u=new URL(a.href,location.href);
-        if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){
-          a.target='_self'; a.rel='noopener noreferrer';
-        }
-      }catch(e){}
-    });
+<style id="fix13-mobile-appearance-override">
+/* FIX13 KINÉZETI JAVÍTÁS – mobilon nincs 520–900 px-es kényszerített szélesség.
+   Csak megjelenítés; a járműadatok feldolgozását nem módosítja. */
+@media (max-width: 700px) {
+  html, body {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow-x: hidden !important;
+    overflow-y: auto !important;
   }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',prepare,{once:true});else prepare();
-  document.addEventListener('click',function(e){
-    var a=e.target&&e.target.closest?e.target.closest('a[href]'):null;
-    if(!a)return;
-    try{var u=new URL(a.href,location.href);if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){a.target='_self';a.rel='noopener noreferrer';}}catch(err){}
-  },true);
-})();
-</script>
-
-
-<script id="attila-nearby-moving-vehicles-fix15">
-/* FIX15 – GPS körüli, 2 km-en belüli VALÓS mozgó járművek.
-   Csak az elérhető BKK/MÁV/VOLÁN rekordokból és valódi koordinátákból dolgozik. */
-(function(){
-  'use strict';
-  const $=id=>document.getElementById(id);
-  const esc=v=>String(v===null||v===undefined||String(v).trim()===''?'NINCS ADAT':v).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const num=v=>{if(v===null||v===undefined||String(v).trim()==='')return NaN;const n=Number(v);return Number.isFinite(n)?n:NaN;};
-  function getGps(){
-    const lat=num($('gpsLat')?.textContent),lon=num($('gpsLon')?.textContent);
-    if(Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180)return {lat,lon};
-    if(typeof myPos!=='undefined'&&myPos){const a=num(myPos.lat),b=num(myPos.lon??myPos.lng);if(Number.isFinite(a)&&Number.isFinite(b))return {lat:a,lon:b};}
-    return null;
+  #header {
+    position: relative !important;
+    inset: auto !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    display: flex !important;
+    flex-wrap: wrap !important;
+    align-items: center !important;
+    gap: 7px !important;
+    padding: 10px !important;
   }
-  function distKm(a,b){const R=6371,p1=a.lat*Math.PI/180,p2=b.lat*Math.PI/180,dp=(b.lat-a.lat)*Math.PI/180,dl=(b.lon-a.lon)*Math.PI/180;const h=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return 2*R*Math.atan2(Math.sqrt(h),Math.sqrt(Math.max(0,1-h)));}
-  function val(...xs){for(const x of xs){if(x!==null&&x!==undefined&&String(x).trim()!=='')return x;}return 'NINCS ADAT';}
-  function allVehicles(){
-    const out=[],seen=new Set();
-    function add(provider,raw){
-      if(!raw||typeof raw!=='object')return;
-      const pos=raw.position||raw.location||raw.vehicle?.position||raw.vehicle?.location||raw;
-      const lat=num(pos.lat??pos.latitude??raw.lat??raw.latitude),lon=num(pos.lon??pos.lng??pos.longitude??raw.lon??raw.lng??raw.longitude);
-      if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)return;
-      const route=val(raw.routeShortName,raw.route,raw.routeName,raw.trip?.routeShortName,raw.trip?.routeId,raw.routeId);
-      const label=val(raw.label,raw.vehicleLabel,raw.licensePlate,raw.licencePlate,raw.vehicleId,raw.id,route);
-      const trip=val(raw.tripId,raw.trip?.gtfsId,raw.trip?.domesticResTrainNumber,raw.trip?.tripId,raw.trip);
-      const id=val(raw.vehicleId,raw.id,raw.licensePlate,raw.licencePlate,label);
-      const key=provider+'|'+String(id)+'|'+lat.toFixed(5)+'|'+lon.toFixed(5);
-      if(seen.has(key))return;seen.add(key);
-      let delay=raw.delaySeconds;
-      if(delay===undefined||delay===null||delay==='') delay=raw.nextStop?.arrivalDelay;
-      let delayText='NINCS ADAT';
-      const d=num(delay);if(Number.isFinite(d))delayText=d<0?'SIETÉS '+Math.abs(d)+' mp':d>0?'KÉSÉS +'+d+' mp':'PONTOS 0 mp';
-      out.push({provider,lat,lon,dist:NaN,route,label,plate:val(raw.licensePlate,raw.licencePlate,raw.plate),trip,vehicleType:val(raw.vehicleType,raw.vehicle_type),forgalmi:val(raw.forgalmi),delayText,speed:val(raw.speed,raw.speedKmh),heading:val(raw.heading,bearingLabel(raw.bearing)),stop:val(raw.nearestStop?.name,raw.stopName,raw.stop),updated:val(raw.lastUpdated,raw.timestamp)});
-    }
-    try{if(typeof vehicleData!=='undefined'&&Array.isArray(vehicleData))vehicleData.forEach(v=>add('BKK/BKV',v));}catch(e){}
-    try{if(Array.isArray(window.ATTIlaMavVehicles))window.ATTIlaMavVehicles.forEach(v=>add('EMMA (vasút/busz)',v));}catch(e){}
-    try{if(Array.isArray(regionalRealtimeRows))regionalRealtimeRows.forEach(v=>add(val(v.provider,'VOLÁN/MÁV'),v));}catch(e){}
-    try{if(Array.isArray(window.ATTIlaVolanVehicles))window.ATTIlaVolanVehicles.forEach(v=>add('VOLÁN',v));}catch(e){}
-    return out;
+  .title {
+    width: 100% !important;
+    max-width: 100% !important;
+    white-space: normal !important;
+    overflow-wrap: anywhere !important;
+    font-size: 18px !important;
+    line-height: 1.2 !important;
   }
-  function bearingLabel(v){const n=num(v);return Number.isFinite(n)?n+'°':'NINCS ADAT';}
-  function render(){
-    const status=$('nearbyVehiclesStatus'),list=$('nearbyVehiclesList');if(!status||!list)return;
-    const gps=getGps();
-    if(!gps){status.textContent='GPS nincs érvényes koordinátával.';list.innerHTML='<div>GPS-helyzet szükséges. Nyomd meg a GPS gombot.</div>';return;}
-    const all=allVehicles();
-    const ranked=all.map(v=>({...v,dist:distKm(gps,{lat:v.lat,lon:v.lon})})).filter(v=>Number.isFinite(v.dist)&&v.dist<=2).sort((a,b)=>a.dist-b.dist);
-    status.textContent='GPS: '+gps.lat.toFixed(5)+', '+gps.lon.toFixed(5)+' • betöltött koordinátás járművek: '+all.length+' • 2 km-en belül: '+ranked.length+' • légvonalban';
-    if(!ranked.length){list.innerHTML='<div style="padding:10px;border:1px solid rgba(128,128,128,.3);border-radius:8px">NINCS ADAT – a jelenleg betöltött járműforrásokban nincs koordinátás jármű 2 km-en belül. Ez nem bizonyítja, hogy a környéken nincs jármű; a feed elérhetősége és a GPS pontossága is számít.</div>';return;}
-    list.innerHTML=ranked.map((v,i)=>{
-      const km=v.dist.toLocaleString('hu-HU',{minimumFractionDigits:3,maximumFractionDigits:3})+' km';
-      const coord=v.lat.toFixed(6)+', '+v.lon.toFixed(6);
-      return '<article style="margin:8px 0;padding:10px;border:1px solid rgba(128,128,128,.35);border-left:4px solid '+(v.provider==='BKK/BKV'?'#2694e8':v.provider==='EMMA (vasút/busz)'?'#b17adf':'#e69a38')+';border-radius:9px">'+
-      '<div style="font-weight:900;font-size:14px">'+(i+1)+'. '+esc(v.provider)+' — '+esc(v.route)+'</div>'+ 
-      '<div><b>Távolság:</b> '+km+' légvonalban</div>'+ 
-      '<div><b>JÁRAT / LABEL:</b> '+esc(v.label)+'</div>'+ 
-      '<div><b>RENDSZÁM:</b> '+esc(v.plate)+'</div>'+ 
-      '<div><b>TRIP / MENET:</b> '+esc(v.trip)+'</div>'+ 
-      '<div><b>JÁRMŰTÍPUS:</b> '+esc(v.vehicleType)+' • <b>FORGALMI:</b> '+esc(v.forgalmi)+'</div>'+ 
-      '<div><b>ELTÉRÉS:</b> '+esc(v.delayText)+' • <b>SEBESSÉG:</b> '+esc(v.speed)+'</div>'+ 
-      '<div><b>MEGÁLLÓ:</b> '+esc(v.stop)+'</div>'+ 
-      '<div><b>GPS:</b> '+coord+' • <b>IRÁNY:</b> '+esc(v.heading)+'</div>'+ 
-      '<div style="margin-top:5px"><button type="button" data-nearby-lat="'+v.lat+'" data-nearby-lon="'+v.lon+'">📍 MUTASD A SAJÁT TÉRKÉPEN</button></div></article>';
-    }).join('');
-    list.querySelectorAll('[data-nearby-lat]').forEach(b=>b.addEventListener('click',()=>{const lat=num(b.dataset.nearbyLat),lon=num(b.dataset.nearbyLon);try{if(typeof map!=='undefined'&&map){map.setView([lat,lon],Math.max(map.getZoom(),15));if(window.__attilaMavLayer)window.__attilaMavLayer.eachLayer(m=>{if(m.getLatLng&&Math.abs(m.getLatLng().lat-lat)<0.00001&&Math.abs(m.getLatLng().lng-lon)<0.00001&&m.openPopup)m.openPopup();});}else window.scrollTo({top:0,behavior:'smooth'});}catch(e){}}));
+  #header .badge { white-space: normal !important; max-width: 100% !important; }
+  #header button { min-height: 42px; max-width: 100%; white-space: normal; }
+  #apiKey { width: min(100%, 280px) !important; min-width: 0 !important; max-width: 100% !important; }
+  #map {
+    position: relative !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: 38vh !important;
+    min-height: 260px !important;
+    max-height: 460px !important;
   }
-  function boot(){
-    $('nearbyVehiclesRefresh')?.addEventListener('click',async()=>{try{if(typeof window.loadMavRealtime==='function')await window.loadMavRealtime();}catch(e){}render();});
-    render();setInterval(render,3000);
-    try{if(typeof logLine==='function')logLine('FIX15: 2 km-en belüli mozgójármű-lista elindult; csak valódi GPS-koordinátás rekordokat mutat.');}catch(e){}
+  #side {
+    position: relative !important;
+    inset: auto !important;
+    display: block !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 8px !important;
+    border-left: 0 !important;
   }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
-})();
-</script>
-
-
-<style id="attila-fix16-mobile-layout">
-/* FIX16 – valódi mobilos tördelés: a panelek a telefon szélességét használják,
-   a táblázatok/vezérlősorok pedig csak saját területükön görgethetők. */
-@media (max-width:700px){
-  html, body { width:100%; max-width:100%; overflow-x:hidden!important; }
-  body { min-width:0!important; }
-  #header { width:100%!important; box-sizing:border-box!important; flex-wrap:wrap!important; }
-  #header > * { max-width:100%; box-sizing:border-box; }
-  #map { width:100%!important; max-width:100vw!important; box-sizing:border-box!important; }
-  #side { width:100%!important; max-width:100vw!important; min-width:0!important; box-sizing:border-box!important;
-          overflow-x:hidden!important; overflow-y:visible!important; padding:8px!important; }
-  #side > * { width:100%!important; max-width:100%!important; min-width:0!important; box-sizing:border-box!important; }
-  .panel, .panelBody, #fonokPanel, #attiMavRealtimePanel, #attilaMapRestorePanel,
-  #autoFixReport, #nearbyVehiclesPanel { width:100%; max-width:100%; min-width:0!important; box-sizing:border-box!important; }
-  .panelBody { overflow-x:hidden; }
-  .row, .searchGrid, .controls, .radiusGrid, #vehicleList, .vehicleCard,
-  .field, .regionalWrap, .log, #githubPdfList, #pdfList {
-    min-width:0!important; max-width:100%!important; box-sizing:border-box!important;
+  #side > *, .panel, .panelBody, #nearbyMovingVehiclesPanel,
+  #nearbyVehiclesList, #vehicleList, #fonokSummary {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
   }
-  .row { flex-wrap:wrap!important; }
-  .searchGrid, .controls { display:flex!important; flex-wrap:wrap!important; gap:7px!important; }
-  .searchGrid > *, .controls > * { min-width:0!important; max-width:100%!important; flex:1 1 140px; box-sizing:border-box!important; }
-  .radiusGrid { grid-template-columns:repeat(2,minmax(0,1fr))!important; gap:6px!important; }
-  #vehicleList { width:100%!important; contain:initial!important; }
-  .vehicleCard { width:100%!important; overflow-wrap:anywhere; }
-  .field { display:flex!important; align-items:flex-start!important; flex-wrap:wrap!important; gap:4px 8px!important; }
-  .field b { min-width:0!important; flex:0 0 42%; max-width:42%; overflow-wrap:anywhere; }
-  .field span { min-width:0!important; flex:1 1 48%; max-width:58%; overflow-wrap:anywhere; white-space:normal!important; }
-  .regionalWrap, #githubPdfList, #pdfList, .log { overflow-x:auto!important; -webkit-overflow-scrolling:touch; }
-  .regionalTable { min-width:620px; }
-  #attilaMapRestorePanel { left:8px!important; right:8px!important; width:auto!important; max-width:none!important; top:8px!important; max-height:42vh!important; }
-  #attilaMapFullscreenBtn { top:8px!important; right:8px!important; max-width:48vw; white-space:normal; }
-  #attiMavRealtimeRows { max-width:100%; overflow-x:auto; overflow-wrap:anywhere; }
+  .panel { margin: 0 0 10px !important; }
+  .panel h3 { font-size: 17px !important; line-height: 1.25 !important; overflow-wrap: anywhere; }
+  .panelBody { padding: 10px !important; }
+  .row, .searchGrid, .controls, .radiusGrid, .log,
+  #githubPdfList, #pdfList {
+    box-sizing: border-box !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+  }
+  .row { display: flex !important; flex-wrap: wrap !important; gap: 4px 10px !important; align-items: flex-start; }
+  .k { flex: 0 0 38% !important; min-width: 0 !important; max-width: 38% !important; overflow-wrap: anywhere; }
+  .v { flex: 1 1 55% !important; min-width: 0 !important; max-width: 62% !important; overflow-wrap: anywhere; word-break: break-word; }
+  .searchGrid { display: grid !important; grid-template-columns: minmax(0, 1fr) !important; gap: 8px !important; }
+  .searchGrid input, .searchGrid button, .controls button, .radiusGrid button,
+  input, select, button { max-width: 100% !important; min-width: 0; overflow-wrap: anywhere; }
+  .searchGrid input, .controls button, .radiusGrid button { min-height: 42px; }
+  .controls, .radiusGrid { display: flex !important; flex-wrap: wrap !important; gap: 7px !important; }
+  .radiusGrid { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .radiusGrid > *, .controls > * { flex: 1 1 42% !important; }
+  #vehicleList { contain: none !important; overflow: visible !important; }
+  .vehicleCard {
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    padding: 10px !important;
+    overflow: hidden !important;
+  }
+  .vehicleTop { display: flex !important; flex-wrap: wrap !important; align-items: flex-start !important; }
+  .vehicleTitle { min-width: 0 !important; max-width: 100% !important; overflow-wrap: anywhere; }
+  .sourceTag { white-space: normal !important; max-width: 100% !important; }
+  .field {
+    display: grid !important;
+    grid-template-columns: minmax(94px, 38%) minmax(0, 1fr) !important;
+    gap: 7px !important;
+    width: 100% !important;
+    min-width: 0 !important;
+    max-width: 100% !important;
+    font-size: 15px !important;
+    padding: 7px 0 !important;
+    align-items: start !important;
+  }
+  .field b { min-width: 0 !important; width: auto !important; font-size: 14px !important; overflow-wrap: anywhere; }
+  .field span { min-width: 0 !important; width: auto !important; font-size: 15px !important; line-height: 1.3 !important; overflow-wrap: anywhere; word-break: break-word; }
+  .delay-red, .delay-blue, .delay-green { font-size: 17px !important; }
+  .regionalWrap { width: 100% !important; min-width: 0 !important; max-width: 100% !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch; }
+  .regionalTable { min-width: 620px; }
+  .log { white-space: pre-wrap !important; overflow-wrap: anywhere !important; overflow-x: auto !important; }
+  .popup { min-width: 0 !important; max-width: calc(100vw - 54px) !important; overflow-wrap: anywhere; }
+  .popup .pf { display: grid !important; grid-template-columns: minmax(80px, 38%) minmax(0, 1fr) !important; gap: 6px !important; }
+  .popup .pf b { min-width: 0 !important; }
+  #attilaMapRestorePanel { width: min(330px, calc(100vw - 20px)) !important; max-width: calc(100vw - 20px) !important; }
 }
-@media (min-width:701px){
-  #vehicleList { min-width:0; }
+@media (min-width: 701px) and (max-width: 900px) {
+  #side { width: 100% !important; max-width: 100% !important; }
+  #side > * { max-width: 100%; }
 }
 </style>
-<script id="attila-fix16-gps-map-start">
-/* FIX16 – amikor valódi GPS koordináta megérkezik, a saját térkép mérete és nézete frissüljön.
-   Nem használunk kitalált koordinátát, és nem módosítjuk a jármű-adatokat. */
-(function(){
-  'use strict';
-  let done=false;
-  function centerOnRealGps(){
-    try{
-      const m=(typeof map!=='undefined'&&map)?map:window.map;
-      const p=(typeof myPos!=='undefined'&&myPos)?myPos:null;
-      if(!m||!p||!window.L||!Number.isFinite(Number(p.lat))||!Number.isFinite(Number(p.lon))) return false;
-      if(typeof m.invalidateSize==='function') m.invalidateSize({animate:false});
-      const lat=Number(p.lat),lon=Number(p.lon);
-      if(typeof myGpsRadiusCircle!=='undefined'&&myGpsRadiusCircle&&typeof myGpsRadiusCircle.getBounds==='function'){
-        m.fitBounds(myGpsRadiusCircle.getBounds(),{padding:[18,18],maxZoom:14,animate:false});
-      } else {
-        m.setView([lat,lon],13,{animate:false});
-      }
-      done=true;
-      return true;
-    }catch(e){return false;}
-  }
-  function start(){
-    // Retry only briefly while the actual geolocation watch supplies a real position.
-    let n=0;
-    const timer=setInterval(()=>{
-      n++;
-      if(centerOnRealGps()||n>=40) clearInterval(timer);
-    },500);
-    window.addEventListener('resize',()=>{ if(done) setTimeout(()=>{try{const m=(typeof map!=='undefined'&&map)?map:window.map;m&&m.invalidateSize&&m.invalidateSize({animate:false});}catch(e){}},100); });
-  }
-  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',start,{once:true}); else start();
-})();
-</script>
-
-
-
-<!-- FIX17: iPhone XR mobilpanel + pontos külső URL-ek + panelnyitó -->
-<style id="attila-fix17-iphone-xr">
-  @media (max-width: 700px) {
-    html, body { width:100%!important; min-width:0!important; max-width:100%!important; overflow-x:hidden!important; }
-    body { height:auto!important; min-height:100%!important; overflow-y:auto!important; }
-    #header { position:sticky!important; top:0!important; left:auto!important; right:auto!important; width:100%!important; min-height:0!important; padding:7px!important; gap:6px!important; z-index:1400!important; }
-    #header .title { width:100%!important; white-space:normal!important; font-size:16px!important; line-height:1.2!important; }
-    #header .badge { white-space:normal!important; font-size:11px!important; padding:5px 7px!important; }
-    #header button { min-height:40px!important; max-width:100%!important; font-size:13px!important; padding:8px!important; }
-    #apiKey { width:min(58vw,230px)!important; min-width:0!important; max-width:100%!important; }
-    #attilaExternalQuickLinks { display:flex!important; flex-wrap:nowrap!important; overflow-x:auto!important; max-width:100vw!important; white-space:nowrap!important; -webkit-overflow-scrolling:touch; padding:6px!important; gap:6px!important; }
-    #attilaExternalQuickLinks > * { flex:0 0 auto!important; }
-    #map { position:relative!important; top:auto!important; left:auto!important; right:auto!important; bottom:auto!important; display:block!important; width:100%!important; max-width:100vw!important; height:44vh!important; min-height:240px!important; max-height:430px!important; }
-    #side { position:fixed!important; top:0!important; right:0!important; bottom:0!important; left:auto!important; width:min(94vw,460px)!important; max-width:94vw!important; height:100dvh!important; max-height:100dvh!important; min-width:0!important; overflow-x:hidden!important; overflow-y:auto!important; -webkit-overflow-scrolling:touch!important; padding:58px 9px 24px!important; border-left:2px solid #55aaff!important; z-index:3001!important; transform:translateX(105%)!important; visibility:hidden!important; transition:transform .22s ease,visibility .22s ease!important; box-shadow:-12px 0 30px #0009!important; }
-    body.attila-fix17-side-open #side { transform:translateX(0)!important; visibility:visible!important; }
-    #side > * { width:100%!important; max-width:100%!important; min-width:0!important; box-sizing:border-box!important; }
-    #side .panel, #side .panelBody, #side #fonokPanel, #side #attiMavRealtimePanel, #side #nearbyVehiclesPanel { width:100%!important; max-width:100%!important; min-width:0!important; box-sizing:border-box!important; }
-    #side .panelBody { overflow-x:auto!important; -webkit-overflow-scrolling:touch!important; }
-    #side .row, #side .searchGrid, #side .controls, #side .radiusGrid, #side #vehicleList, #side .vehicleCard, #side .field, #side .regionalWrap, #side .log, #side #githubPdfList, #side #pdfList { width:100%!important; min-width:0!important; max-width:100%!important; box-sizing:border-box!important; }
-    #side .row { flex-wrap:wrap!important; gap:7px!important; }
-    #side .searchGrid, #side .controls { display:flex!important; flex-wrap:wrap!important; gap:7px!important; }
-    #side .searchGrid > *, #side .controls > * { min-width:0!important; max-width:100%!important; flex:1 1 120px!important; }
-    #side .radiusGrid { display:grid!important; grid-template-columns:repeat(2,minmax(0,1fr))!important; gap:6px!important; }
-    #side #vehicleList { contain:none!important; }
-    #side .vehicleCard { width:100%!important; overflow:hidden!important; overflow-wrap:anywhere!important; padding:9px!important; }
-    #side .vehicleTop { flex-wrap:wrap!important; gap:6px!important; }
-    #side .field { display:flex!important; flex-wrap:wrap!important; align-items:flex-start!important; gap:3px 7px!important; padding:5px 0!important; white-space:normal!important; }
-    #side .field b { flex:0 0 39%!important; width:auto!important; min-width:0!important; max-width:39%!important; overflow-wrap:anywhere!important; font-size:13px!important; }
-    #side .field span { flex:1 1 55%!important; min-width:0!important; max-width:61%!important; overflow-wrap:anywhere!important; white-space:normal!important; font-size:14px!important; line-height:1.25!important; }
-    #side .regionalWrap, #side #githubPdfList, #side #pdfList, #side .log, #side .fonokWrap { max-width:100%!important; overflow:auto!important; -webkit-overflow-scrolling:touch!important; }
-    #side .regionalTable, #side .fonokTable { min-width:540px!important; }
-    #side input, #side select, #side button { max-width:100%!important; }
-    #attilaMapRestorePanel { left:6px!important; top:6px!important; width:min(270px,72vw)!important; max-height:31vh!important; padding:7px!important; z-index:1200!important; }
-    #attilaMapFullscreenBtn { top:7px!important; right:7px!important; font-size:11px!important; padding:7px!important; z-index:1250!important; }
-    #attilaFix17PanelToggle { position:fixed!important; right:10px!important; bottom:12px!important; z-index:2900!important; display:block!important; min-height:46px!important; padding:11px 14px!important; border:2px solid #63d7ff!important; border-radius:999px!important; background:#07354a!important; color:#fff!important; font-weight:900!important; box-shadow:0 3px 16px #0009!important; }
-    #attilaFix17PanelClose { position:fixed!important; top:8px!important; right:8px!important; z-index:3100!important; min-height:42px!important; padding:9px 12px!important; border:2px solid #63d7ff!important; background:#07354a!important; color:#fff!important; font-weight:900!important; border-radius:10px!important; }
-    #attilaFix17Backdrop { position:fixed!important; inset:0!important; z-index:3000!important; background:rgba(0,0,0,.52)!important; display:none!important; }
-    body.attila-fix17-side-open #attilaFix17Backdrop { display:block!important; }
-  }
-  @media (min-width:701px) {
-    #attilaFix17PanelToggle,#attilaFix17PanelClose,#attilaFix17Backdrop { display:none!important; }
-  }
-</style>
-<script id="attila-fix17-iphone-xr-links">
-(function(){
-  'use strict';
-  const exactLinks = {
-    'holavonat.is': 'https://holavonat.is/#985582760023',
-    'vonatinfo.kozlekedesiklub.hu': 'https://vonatinfo.kozlekedesiklub.hu/',
-    'utas.hu': 'https://utas.hu/?map=9/47.82045/18.91772',
-    'futar.bkk.hu': 'https://futar.bkk.hu/?map=15/47.59909/19.05064'
-  };
-  function normalizeLinks(){
-    document.querySelectorAll('a[href]').forEach(a=>{
-      try{
-        const u=new URL(a.href,location.href), host=u.hostname.toLowerCase();
-        const match=Object.keys(exactLinks).find(h=>host===h||host.endsWith('.'+h));
-        if(match){if(a.href!==exactLinks[match])a.href=exactLinks[match];if(a.target!=='_self')a.target='_self';if(a.rel!=='noopener')a.rel='noopener';}
-        else if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){if(a.target!=='_self')a.target='_self';if(a.rel!=='noopener')a.rel='noopener';}
-      }catch(e){}
-    });
-    const nav=document.getElementById('attilaExternalQuickLinks');
-    if(nav){
-      const a=[...nav.querySelectorAll('a')].find(x=>/HOL A VONAT/i.test(x.textContent));
-      if(a){if(a.href!==exactLinks['holavonat.is'])a.href=exactLinks['holavonat.is'];if(a.target!=='_self')a.target='_self';}
-    }
-  }
-  function addMobilePanelControls(){
-    if(!document.getElementById('side'))return;
-    if(!document.getElementById('attilaFix17PanelToggle')){
-      const b=document.createElement('button');b.id='attilaFix17PanelToggle';b.type='button';b.textContent='☰ PANELEK';b.setAttribute('aria-expanded','false');
-      b.addEventListener('click',()=>setOpen(!document.body.classList.contains('attila-fix17-side-open')));document.body.appendChild(b);
-    }
-    if(!document.getElementById('attilaFix17Backdrop')){
-      const bg=document.createElement('div');bg.id='attilaFix17Backdrop';bg.addEventListener('click',()=>setOpen(false));document.body.appendChild(bg);
-    }
-    if(!document.getElementById('attilaFix17PanelClose')){
-      const c=document.createElement('button');c.id='attilaFix17PanelClose';c.type='button';c.textContent='✕ PANELEK BEZÁRÁSA';c.addEventListener('click',()=>setOpen(false));document.body.appendChild(c);
-    }
-    function setOpen(open){
-      document.body.classList.toggle('attila-fix17-side-open',open);
-      const b=document.getElementById('attilaFix17PanelToggle');if(b)b.setAttribute('aria-expanded',String(open));
-      const c=document.getElementById('attilaFix17PanelClose');if(c)c.style.display=open?'block':'none';
-    }
-    const close=document.getElementById('attilaFix17PanelClose');if(close)close.style.display='none';
-    // The external URL buttons and the existing in-app BACK button remain intact.
-    window.addEventListener('keydown',e=>{if(e.key==='Escape')setOpen(false);});
-    window.addEventListener('resize',()=>{if(window.innerWidth>700)setOpen(false);});
-  }
-  function init(){normalizeLinks();addMobilePanelControls();}
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
-  // Repair links added later by the app's dynamic vehicle-card renderers.
-  const obs=new MutationObserver(()=>normalizeLinks());
-  if(document.documentElement)obs.observe(document.documentElement,{childList:true,subtree:true,attributes:true,attributeFilter:['href']});
-})();
-</script>
 
 </body>
 </html>
