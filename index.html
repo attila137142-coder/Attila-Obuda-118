@@ -1,3 +1,4 @@
+ATTILA KÖZLEKEDÉS – FIX14 · NÉGY ADATÚT JAVÍTÁS teljes HTML-fájlja
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -2632,73 +2633,30 @@ function resolveVehicleDelay(item){
   const itemSeq=Number.isFinite(item.stopSequence)?Number(item.stopSequence):null;
   const itemStop=String(item.stopId||"").trim();
 
-  /* Csak tényleges TripUpdates delay érték. Hiányzó adat = null. */
-  if(tripId && itemSeq!==null){
-    const exact=tripDelayMap.get(tripId+"|seq|"+String(itemSeq));
-    if(Number.isFinite(exact)) return exact;
-  }
+  // Csak pontos trip + stop/sequence egyezés fogadható el; közeli sequence nem elég.
   if(tripId && itemStop){
     const exact=tripDelayMap.get(tripId+"|stop|"+itemStop);
     if(Number.isFinite(exact)) return exact;
   }
-
   if(tripId && itemSeq!==null){
-    const arr=tripDelaySeqMap.get(tripId);
-    if(Array.isArray(arr)&&arr.length){
-      let best=null,bestDiff=Infinity;
-      for(const x of arr){
-        if(!Number.isFinite(x.seq)) continue;
-        const diff=Math.abs(x.seq-itemSeq);
-        if(diff<bestDiff){bestDiff=diff;best=x;}
-      }
-      if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
-    }
+    const exact=tripDelayMap.get(tripId+"|seq|"+String(itemSeq));
+    if(Number.isFinite(exact)) return exact;
   }
 
+  // Vehicle-kulcs csak akkor használható, ha a TripUpdates ténylegesen közölte.
   const directKeys=[];
   if(item.vehicleId) directKeys.push("id|"+normalizeId(item.vehicleId));
   if(item.label) directKeys.push("label|"+normalizeId(item.label));
   if(item.licensePlate) directKeys.push("plate|"+normalizeId(item.licensePlate));
-
   for(const key of directKeys){
-    if(itemSeq!==null){
-      const bySeq=tripDelayVehicleSeqMap.get(key+"|seq|"+String(itemSeq));
-      if(Number.isFinite(bySeq)) return bySeq;
-    }
-    const arr=tripDelayVehicleMap.get(key);
-    if(!Array.isArray(arr)||!arr.length) continue;
-
     if(itemStop){
-      const byStop=arr.find(x=>x.stopId===itemStop&&Number.isFinite(x.delay));
-      if(byStop) return byStop.delay;
+      const arr=tripDelayVehicleMap.get(key)||[];
+      const hits=arr.filter(x=>x.stopId===itemStop && Number.isFinite(x.delay));
+      if(hits.length===1) return hits[0].delay;
     }
     if(itemSeq!==null){
-      let best=null,bestDiff=Infinity;
-      for(const x of arr){
-        if(!Number.isFinite(x.seq)) continue;
-        const diff=Math.abs(x.seq-itemSeq);
-        if(diff<bestDiff){bestDiff=diff;best=x;}
-      }
-      if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
-    }
-  }
-
-  if(tripId){
-    const arr=tripDelayTripMap.get(tripId);
-    if(Array.isArray(arr)&&arr.length){
-      if(itemStop){
-        const byStop=arr.find(x=>x.stopId===itemStop&&Number.isFinite(x.delay));
-        if(byStop) return byStop.delay;
-      }
-      if(itemSeq!==null){
-        let best=null,bestDiff=Infinity;
-        for(const x of arr){
-          if(!Number.isFinite(x.seq)) continue;
-          const diff=Math.abs(x.seq-itemSeq);
-          if(diff<bestDiff){bestDiff=diff;best=x;}
-        }
-        if(best&&bestDiff<=3&&Number.isFinite(best.delay)) return best.delay;
-      }
+      const v=tripDelayVehicleSeqMap.get(key+"|seq|"+String(itemSeq));
+      if(Number.isFinite(v)) return v;
     }
   }
   return null;
@@ -5864,9 +5822,7 @@ function sourceLabel(
 
 function buildPopup(item){
   const delay=delayHTML(item.delaySeconds);
-  const lowFloor = item.lowFloor === null || item.lowFloor === undefined
-    ? "NINCS ADAT"
-    : (item.lowFloor === true || String(item.lowFloor).toLowerCase()==="true" || String(item.lowFloor)==="1" ? "IGEN" : "NEM");
+  const lowFloor = explicitLowFloorLabel(item.lowFloor);
   return `
     <div class="popup">
       <div class="pf"><b>JÁRAT</b><span>${escapeHtml(routeDisplay(item))}</span></div>
@@ -5906,6 +5862,13 @@ function rtClean(v){
 
 function rtNorm(v){
   return String(v || "").toUpperCase().replace(/[^A-Z0-9ÁÉÍÓÖŐÚÜŰ]/g,"");
+}
+
+function explicitLowFloorLabel(value){
+  if(value===true) return "IGEN";
+  if(value===false) return "NEM";
+  const parsed=rtParseLowFloor(value);
+  return parsed===true ? "IGEN" : parsed===false ? "NEM" : "NINCS ADAT";
 }
 
 function rtParseLowFloor(value){
@@ -6053,7 +6016,7 @@ async function fetchWinRouteHistory(routeCode, plate){
       const rows=wmExtractMarkdownRows(t);
       const hit=rows.find(x=>rtNorm(x.plate)===wanted);
       if(hit) return {forgalmi:hit.forgalmi||null,vehicleType:hit.vehicleType||null,blockId:null,blockVehicleNumber:null,lowFloor:null};
-      const f=wmExtractFields(t);
+      const f=wmExtractFields(t,plate);
       /* Csak akkor használjuk a címkés mezőket, ha az oldal jármű-specifikus
          adatot adott; vonalszintű oldalon az első táblázatsor nem elfogadható. */
       if(f && (f.forgalmi||f.vehicleType)){
@@ -6145,7 +6108,7 @@ async function fetchWinRealtimeExact(plate){
   return null;
 }
 
-async function fetchWinDetailPage(url){
+async function fetchWinDetailPage(url, expectedPlate){
   if(winDetailCache.has(url)) return winDetailCache.get(url);
   let html="";
   try{
@@ -6160,7 +6123,7 @@ async function fetchWinDetailPage(url){
       if(r.ok) html=await r.text();
     }catch(e){}
   }
-  const f=html?wmExtractFields(html):null;
+  const f=html?wmExtractFields(html,expectedPlate):null;
   winDetailCache.set(url,f||null);
   return f||null;
 }
@@ -6205,7 +6168,7 @@ async function enrichOneVehicleFromWin(item){
   }
 
   for(const u of urls){
-    const f=await fetchWinDetailPage(u);
+    const f=await fetchWinDetailPage(u,plate);
     if(!f) continue;
     if(f.forgalmi && !item.forgalmi){ item.forgalmi=f.forgalmi; got=true; }
     if(f.vehicleType && !item.vehicleType){ item.vehicleType=f.vehicleType; got=true; }
@@ -6247,10 +6210,9 @@ async function updateWinRealtime(){
       String(r.plate || "").toUpperCase().replace(/[\s-]/g, "").trim();
 
     if(plateKey){
-      winRealtimeCache.set(
-        plateKey,
-        r
-      );
+      const plateRows=winRealtimeCache.get(plateKey)||[];
+      plateRows.push(r);
+      winRealtimeCache.set(plateKey,plateRows);
     }
 
     const vehicleKey =
@@ -6300,11 +6262,14 @@ async function updateWinRealtime(){
 
     /* 1. RENDSZÁM – szóköz/kötőjel nélkül is ugyanaz */
     const plateKey = String(item.licensePlate || "").toUpperCase().replace(/[\s-]/g, "").trim();
-    let r = plateKey ? winRealtimeCache.get(plateKey) : null;
+    const exactPlateRows = plateKey ? (winRealtimeCache.get(plateKey)||[]) : [];
+    let r = exactPlateRows.length===1 ? exactPlateRows[0] : null;
+    let exactVehicleMatch = !!r;
 
     /* 2. vehicleId – csak explicit valódi mezőből */
     if(!r && item.vehicleId && window.winRealtimeVehicleCache){
-      r = window.winRealtimeVehicleCache.get(String(item.vehicleId).trim().replace(/^BKK_/i,""));
+      r = window.winRealtimeVehicleCache.get(rtNorm(String(item.vehicleId).trim().replace(/^BKK_/i,""))) || null;
+      exactVehicleMatch = !!r;
     }
 
     /* 3. TRIP – csak egyértelmű találat.
@@ -6327,16 +6292,15 @@ async function updateWinRealtime(){
 
     /* Csak a WinMenetrend valódi,
        explicit FORGALMI / JÁRMŰTÍPUS mezője kerül át. */
-    if(r.forgalmi){
-      item.forgalmi =
-        r.forgalmi;
+    // A TRIP önmagában nem járműazonosító: a négy panelmezőhöz rendszám/vehicleId kell.
+    if(exactVehicleMatch && r.forgalmi && !item.forgalmi){
+      item.forgalmi = r.forgalmi;
     }
 
-    if(r.vehicleType){
-      item.vehicleType =
-        r.vehicleType;
+    if(exactVehicleMatch && r.vehicleType && !item.vehicleType){
+      item.vehicleType = r.vehicleType;
     }
-    if(r.lowFloor===true || r.lowFloor===false){
+    if(exactVehicleMatch && (r.lowFloor===true || r.lowFloor===false) && (item.lowFloor===null || item.lowFloor===undefined)){
       item.lowFloor=r.lowFloor;
     }
 
@@ -6386,6 +6350,13 @@ async function updateWinRealtime(){
   const countField=k=>vehicleData.filter(v=>v && v[k]!==null && v[k]!==undefined && String(v[k]).trim()!=="").length;
   const lowCount=vehicleData.filter(v=>v?.lowFloor===true || v?.lowFloor===false).length;
   logLine("WinMenetrend forrásrekord: "+rows.length+" | rendszám-egyezés: "+enriched+" | FORGALMI: "+countField("forgalmi")+" | JÁRMŰTÍPUS: "+countField("vehicleType")+" | ALACSONYPADLÓS explicit érték: "+lowCount+".");
+  logLine("FŐNÖK adatút-ellenőrzés: WinMenetrend BEJÖTT="+rows.length+
+    " | egyedi rendszám-egyezés="+enriched+
+    " | FORGALMI továbbment="+countField("forgalmi")+
+    " | JÁRMŰTÍPUS továbbment="+countField("vehicleType")+
+    " | ALACSONYPADLÓS explicit továbbment="+lowCount+
+    " | ELTÉRÉS TripUpdates pontos illesztés="+vehicleData.filter(v=>Number.isFinite(v?.delaySeconds)).length+
+    ". Ismeretlen adat nem lesz NEM/0 értékké alakítva.");
   if(enriched || detailEnriched){
     logLine("WinMenetrend illesztve: "+(enriched+detailEnriched).toLocaleString("hu-HU")+" jármű.");
     safeRenderAll("WinMenetrend FIX8");
@@ -6512,10 +6483,14 @@ function wmExtractLowFloor(text){
   return null;
 }
 
-function wmExtractFields(html){
+function wmExtractFields(html, expectedPlate){
   const parser = new DOMParser();
   const doc = parser.parseFromString(String(html || ""), "text/html");
   const text = doc.body ? (doc.body.innerText || doc.body.textContent || "") : "";
+  const normPlate = v => rtNorm(v);
+  if(expectedPlate && (!normPlate(text).includes(normPlate(expectedPlate)))){
+    return {forgalmi:null,vehicleType:null,blockId:null,blockVehicleNumber:null,lowFloor:null};
+  }
 
   const result = {
     forgalmi: wmFindLabeledValue(text,["Forgalmi szám","Forgalmi szam","Forgalmi"]),
@@ -6573,19 +6548,18 @@ function wmExtractFields(html){
     if(!headerRow) continue;
     const hn=header.map(norm);
     const fi=hn.indexOf("forgalmi");
-    const vi=hn.indexOf("viszonylat")>=0 ? hn.indexOf("viszonylat") : hn.indexOf("jarat");
     const ti=hn.indexOf("jarmu tipus");
     const li=hn.indexOf("alacsonypadlos");
+    const pi=hn.findIndex(x=>["rendszam","license plate","plate","jarmu","vehicle"].includes(x));
+    // Táblázatos értéket csak a keresett rendszámot tartalmazó sorból olvasunk.
+    if(!expectedPlate || pi<0) continue;
     for(const tr of trs){
       if(tr===headerRow || tr.querySelector("th")) continue;
       const c=[...tr.querySelectorAll("td")].map(x=>wmCleanText(x.textContent));
-      if(!c.length) continue;
+      if(!c.length || normPlate(c[pi])!==normPlate(expectedPlate)) continue;
       if(!result.forgalmi && fi>=0 && c[fi]) result.forgalmi=c[fi];
       if(!result.vehicleType && ti>=0 && c[ti]) result.vehicleType=c[ti];
-      if(result.lowFloor===null && li>=0 && c[li]){
-        if(/^(igen|yes|true|1)$/i.test(c[li])) result.lowFloor=true;
-        else if(/^(nem|no|false|0)$/i.test(c[li])) result.lowFloor=false;
-      }
+      if(result.lowFloor===null && li>=0 && c[li]) result.lowFloor=rtParseLowFloor(c[li]);
     }
   }
 
@@ -6598,11 +6572,12 @@ function wmExtractFields(html){
     const m=text.match(/Jármű\s*típus\s*:?\s*([^\n|<]+?)(?=\s+(?:Telephely|Forgalmi|Dátum|Block|Blokk|Jármű#)|\s*$)/i);
     if(m) result.vehicleType=wmCleanText(m[1]);
   }
-  if(!result.forgalmi || !result.vehicleType){
+  if(expectedPlate && (!result.forgalmi || !result.vehicleType)){
     const rows=wmExtractMarkdownRows(text);
-    if(rows.length){
-      if(!result.forgalmi) result.forgalmi=rows[0].forgalmi||null;
-      if(!result.vehicleType) result.vehicleType=rows[0].vehicleType||null;
+    const hit=rows.find(row=>normPlate(row.plate)===normPlate(expectedPlate));
+    if(hit){
+      if(!result.forgalmi) result.forgalmi=hit.forgalmi||null;
+      if(!result.vehicleType) result.vehicleType=hit.vehicleType||null;
     }
   }
   return result;
@@ -6685,10 +6660,7 @@ function vehicleCard(
   const card = document.createElement("div");
   card.className = "vehicleCard";
 
-  const lowFloor =
-    item.lowFloor === null || item.lowFloor === undefined
-      ? "NINCS ADAT"
-      : (item.lowFloor === true || String(item.lowFloor).toLowerCase() === "true" || String(item.lowFloor) === "1" ? "IGEN" : "NEM");
+  const lowFloor = explicitLowFloorLabel(item.lowFloor);
 
   card.innerHTML = `
     <div class="vehicleTop">
