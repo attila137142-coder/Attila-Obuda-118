@@ -1,4 +1,4 @@
-ATTILA KÖZLEKEDÉS – FIX13 · 10–10–10
+FIX13 – MOBIL KINÉZET JAVÍTÁS
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -8738,6 +8738,68 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
     if(!a)return;
     try{var u=new URL(a.href,location.href);if(/^https?:$/.test(u.protocol)&&u.origin!==location.origin&&!a.hasAttribute('download')){a.target='_blank';a.rel='noopener noreferrer';}}catch(err){}
   },true);
+})();
+</script>
+
+
+<style id="attila-mobile-layout-repair">
+/* KIZÁRÓLAG megjelenítés és panelkezelés – adatlekérési logika változatlan. */
+@media (max-width:700px){
+  html,body{width:100%;max-width:100%;overflow-x:hidden!important;}
+  #header{z-index:1300;position:relative!important;width:100%;box-sizing:border-box;}
+  #map{width:100%!important;height:58vh!important;min-height:320px!important;max-height:none!important;box-sizing:border-box;}
+  #side{width:100%!important;max-width:100%!important;box-sizing:border-box;overflow-x:hidden!important;overflow-y:visible!important;}
+  #side > *{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box;}
+  #side .panel,#side section.panel{width:100%!important;max-width:100%!important;min-width:0!important;box-sizing:border-box;}
+  #vehicleList{min-width:0!important;width:100%!important;max-width:100%!important;overflow-x:auto!important;}
+  .vehicle-card,.vehicleCard{max-width:100%;box-sizing:border-box;}
+  #attilaMapRestorePanel{left:8px!important;right:8px!important;top:76px!important;width:auto!important;max-width:none!important;max-height:48vh!important;z-index:4000!important;}
+  #attilaMapFullscreenBtn{top:76px!important;right:8px!important;z-index:3900!important;}
+  .attila-mobile-panel-fullscreen{position:fixed!important;inset:0!important;width:100vw!important;height:100dvh!important;max-width:none!important;max-height:none!important;overflow:auto!important;z-index:5000!important;margin:0!important;border-radius:0!important;padding:12px!important;box-sizing:border-box!important;background:var(--panel,#0d1820)!important;-webkit-overflow-scrolling:touch;}
+  .attila-mobile-panel-fullscreen .panelBody{overflow:visible!important;}
+  .attila-mobile-panel-fullscreen .fonokWrap{max-height:55dvh!important;}
+  .attila-mobile-panel-fullscreen .vehicleCard{min-width:0!important;}
+  .attila-mobile-panel-fullscreen .attila-panel-fullscreen-toggle{position:sticky;top:0;z-index:10;float:right;}
+  #attilaMobileMenuRestore{position:fixed;left:8px;top:8px;z-index:6000;padding:10px 12px;border:2px solid #67b9df;border-radius:10px;background:#123347;color:#fff;font-weight:900;box-shadow:0 2px 12px #0009;}
+}
+.attila-panel-fullscreen-toggle{display:inline-block;margin:5px 4px 5px 0;padding:7px 9px;font-weight:800;border:1px solid #5793ad;border-radius:7px;background:#123347;color:#fff;}
+#attilaMapRestorePanel[hidden]{display:none!important;}
+</style>
+<script id="attila-mobile-layout-repair-script">
+(function(){
+ 'use strict';
+ function setup(){
+  var menu=document.getElementById('attilaMapRestorePanel');
+  if(menu){
+   // A térképmenü nem indulhat nagy, középre kerülő takarópanelként telefonon.
+   if(window.matchMedia && window.matchMedia('(max-width:700px)').matches){menu.style.display='none';}
+   var restore=document.getElementById('attilaMobileMenuRestore');
+   if(!restore){restore=document.createElement('button');restore.id='attilaMobileMenuRestore';restore.type='button';restore.textContent='🗺 TÉRKÉPMENÜ';restore.setAttribute('aria-label','Térképek menü megnyitása');document.body.appendChild(restore);}
+   restore.onclick=function(){var m=document.getElementById('attilaMapRestorePanel');if(!m)return;m.style.display=(m.style.display==='none'||getComputedStyle(m).display==='none')?'block':'none';};
+   // A régi törlő eseményt a capture fázisban megállítjuk: a menü csak elrejtődik,
+   // ezért a külön TÉRKÉPMENÜ gombbal bármikor újra megnyitható.
+   menu.addEventListener('click',function(ev){var b=ev.target&&ev.target.closest?ev.target.closest('button'):null;if(b&&(b.textContent||'').toLowerCase().includes('panel elrejtése')){ev.preventDefault();ev.stopPropagation();ev.stopImmediatePropagation();menu.style.display='none';}},true);
+   menu.querySelectorAll('button').forEach(function(b){if((b.textContent||'').toLowerCase().includes('panel elrejtése'))b.textContent='Panel összecsukása';});
+  }
+  // Teljes képernyős megnyitó minden fő panelhez, adatlogika érintése nélkül.
+  document.querySelectorAll('#side .panel').forEach(function(panel){
+   if(panel.dataset.attilaFsBound==='1')return;panel.dataset.attilaFsBound='1';
+   var h=panel.querySelector('h3');if(!h)return;
+   var b=document.createElement('button');b.type='button';b.className='attila-panel-fullscreen-toggle';b.textContent='⛶ PANEL TELJES KÉPERNYŐ';
+   b.onclick=function(){
+    var active=panel.classList.toggle('attila-mobile-panel-fullscreen');
+    document.body.style.overflow=active?'hidden':'';
+    b.textContent=active?'✕ VISSZA A TELJES LISTÁHOZ':'⛶ PANEL TELJES KÉPERNYŐ';
+    if(active){panel.style.display='block';panel.scrollTop=0;}
+   };
+   h.appendChild(b);
+  });
+  // Képernyőméret változásakor se maradjon beragadt, keskeny elrendezés.
+  window.addEventListener('resize',function(){
+   if(window.matchMedia('(min-width:701px)').matches){document.querySelectorAll('.attila-mobile-panel-fullscreen').forEach(function(p){p.classList.remove('attila-mobile-panel-fullscreen');});document.body.style.overflow='';}
+  });
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',setup,{once:true});else setup();
 })();
 </script>
 
