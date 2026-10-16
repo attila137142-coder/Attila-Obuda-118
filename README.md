@@ -1,5 +1,4 @@
-ATTILA KÖZLEKEDÉS – KÖZÖS MEGÁLLÓKERESŐ
-BKV/BKK + VOLÁN + MÁV · indulások · járműadatok
+FIX14   Adatút-diagnosztika és eltéréskezelés javítása ·  2026.10.16  8914  SOROS HTLM
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -2092,6 +2091,9 @@ async function loadBkkGtfs(){
               r.stop_code || ""
             ),
 
+          parentId: String(r.parent_station || ""),
+          locationType: String(r.location_type || ""),
+
           desc:
             String(
               r.stop_desc || ""
@@ -2492,13 +2494,36 @@ async function attilaLoadActiveSchedule(activeTripIds){
   }catch(e){logLine("ELTÉRÉS menetrendi összevetés hiba: "+(e?.message||e));return fresh ? old.map : null;}
 }
 
-function attilaServiceDateEpoch(startDate, seconds){
+function attilaServiceDateEpoch(startDate, seconds, eventTime){
+  if(!Number.isFinite(Number(seconds))) return null;
+  const sec=Number(seconds);
   const d=String(startDate||"").trim();
-  if(!/^\d{8}$/.test(d) || !Number.isFinite(seconds)) return null;
-  const y=Number(d.slice(0,4)), m=Number(d.slice(4,6)), day=Number(d.slice(6,8));
-  const midnight=new Date(y,m-1,day,0,0,0,0).getTime();
-  if(!Number.isFinite(midnight)) return null;
-  return Math.floor(midnight/1000)+seconds;
+  if(/^\\d{8}$/.test(d)){
+    const y=Number(d.slice(0,4)), m=Number(d.slice(4,6)), day=Number(d.slice(6,8));
+    const midnight=new Date(y,m-1,day,0,0,0,0).getTime();
+    if(!Number.isFinite(midnight)) return null;
+    return Math.floor(midnight/1000)+sec;
+  }
+  /*
+    Egyes GTFS-RT TripUpdate rekordokból hiányzik a trip.start_date.
+    Ilyenkor a stop_times önmagában nem mondja meg a szolgálati napot.
+    Csak valódi event.time mellett próbálunk dátumot illeszteni: a helyi
+    mai nap éjfele körüli +/- 2 napból a legközelebbi menetrendi időt
+    választjuk, és csak 12 órán belüli különbségnél fogadjuk el.
+    Ezzel az éjszakai, 24:00 utáni GTFS-idők is kezelhetők, de nem
+    gyártunk eltérést egy bizonytalan, távoli párosításból.
+  */
+  const actual=Number(eventTime);
+  if(!Number.isFinite(actual)||actual<=0) return null;
+  const now=new Date();
+  const base=Math.floor(new Date(now.getFullYear(),now.getMonth(),now.getDate(),0,0,0,0).getTime()/1000);
+  let best=null, bestDiff=Infinity;
+  for(let offset=-2;offset<=2;offset++){
+    const candidate=base+offset*86400+sec;
+    const diff=Math.abs(actual-candidate);
+    if(diff<bestDiff){best=candidate;bestDiff=diff;}
+  }
+  return bestDiff<=12*3600 ? best : null;
 }
 
 async function fetchTripUpdates(){
@@ -2613,7 +2638,7 @@ async function fetchTripUpdates(){
           const sched=(ev.seq && schedule.get(ev.tripId+"|seq|"+ev.seq)) || (ev.stopId && schedule.get(ev.tripId+"|stop|"+ev.stopId));
           if(!sched) continue;
           const scheduledSeconds=sched[ev.eventKind];
-          const scheduledEpoch=attilaServiceDateEpoch(ev.startDate,scheduledSeconds);
+          const scheduledEpoch=attilaServiceDateEpoch(ev.startDate,scheduledSeconds,ev.eventTime);
           if(scheduledEpoch===null) continue;
           const derived=Math.round(ev.eventTime-scheduledEpoch);
           if(!Number.isFinite(derived)) continue;
@@ -7146,7 +7171,7 @@ async function runFonok(){
     rows.push(fonokRow("🚍 FUTÁR HTTP",0,0,"KÉRÉS KIHAGYVA – API-limit védelem: a FŐNÖK nem küld újabb FUTÁR-kérést.","fwarn"));
   }
 
-  let vpCount=0,tuCount=0,delayCount=0,realEventTimeCount=0,futarCount=0;
+  let vpCount=0,tuCount=0,stopUpdateCount=0,delayCount=0,realEventTimeCount=0,futarCount=0;
   let vpParseReason="";
   if(vp?.ok){
     try{ const parsed=parseVehicleFeed(vp.buffer); vpCount=parsed.length; vpParseReason="protobuf OK"; }catch(e){ vpParseReason="protobuf HIBA: "+(e?.message||e); }
@@ -7163,16 +7188,17 @@ async function runFonok(){
         if(!x?.trip?.tripId) continue;
         tuCount++;
         for(const st of (x.stopTimeUpdate||[])){
+          stopUpdateCount++;
           const parts=[st.departure,st.arrival];
-          if(parts.some(p=>p&&Object.prototype.hasOwnProperty.call(p,"delay")&&Number.isFinite(Number(p.delay)))) delayCount++;
-          if(parts.some(p=>p&&Object.prototype.hasOwnProperty.call(p,"time")&&Number.isFinite(Number(p.time))&&Number(p.time)>0)) realEventTimeCount++;
+          if(parts.some(p=>p&&Object.prototype.hasOwnProperty.call(p,"delay")&&p.delay!==null&&p.delay!==undefined&&Number.isFinite(Number(p.delay)))) delayCount++;
+          if(parts.some(p=>p&&Object.prototype.hasOwnProperty.call(p,"time")&&p.time!==null&&p.time!==undefined&&Number.isFinite(Number(p.time))&&Number(p.time)>0)) realEventTimeCount++;
         }
       }
     }catch(e){ rows.push(fonokRow("⏱️ TripUpdates → protobuf",1,0,"HIBA: "+(e?.message||e),"ferr")); }
   }
   if(tu?.ok) rows.push(fonokRow("⏱️ TripUpdates → trip frissítés",tuCount,tuCount,tuCount?"✓ valódi tripUpdate rekord":"nincs értelmezhető tripUpdate","fok"));
-  if(tu?.ok) rows.push(fonokRow("↔️ TripUpdates → valódi delay mező",tuCount,delayCount,delayCount?"valódi delay mezők":"a feedben nem találtunk delay mezőt",delayCount?"fok":"fwarn"));
-  if(tu?.ok) rows.push(fonokRow("🕒 TripUpdates → valódi arrival/departure.time",tuCount,realEventTimeCount,realEventTimeCount?"valódi előrejelzett időpont van; menetrenddel összevethető":"előrejelzett időpont sincs",realEventTimeCount?"fwarn":"fwarn"));
+  if(tu?.ok) rows.push(fonokRow("↔️ TripUpdates → valódi delay mező",stopUpdateCount,delayCount,delayCount?"delay mezőt tartalmazó stopTimeUpdate rekordok":"a feedben nem találtunk delay mezőt",delayCount?"fok":"fwarn"));
+  if(tu?.ok) rows.push(fonokRow("🕒 TripUpdates → valódi arrival/departure.time",stopUpdateCount,realEventTimeCount,realEventTimeCount?"valódi előrejelzett időponttal rendelkező stopTimeUpdate rekordok; menetrenddel összevethetők":"előrejelzett időpont sincs",realEventTimeCount?"fwarn":"fwarn"));
 
   if(fu?.ok){
     try{ const j=JSON.parse(new TextDecoder().decode(fu.buffer)); const ex=extractFutarVehicles(j); futarCount=ex.length; }catch(e){}
@@ -7180,7 +7206,7 @@ async function runFonok(){
   rows.push(fonokRow("🚍 FUTÁR → jármű rekord",fu?.ok?1:0,futarCount,fu===null?"KÉRÉS KIHAGYVA – API-limit védelem":(fu?.ok?(futarCount?"valódi FUTÁR rekord":"válasz érkezett, de nem találtunk járműt"):"FUTÁR válasz nem érkezett"),fu?.ok&&futarCount?"fok":"fwarn"));
 
   const total=Array.isArray(vehicleData)?vehicleData.length:0;
-  const count=k=>vehicleData.filter(v=>{const x=v?.[k]; return x!==null&&x!==undefined&&String(x).trim()!=="";}).length;
+  const count=k=>vehicleData.filter(v=>{const x=v?.[k]; const t=String(x??"").trim(); return !!t&&!/^NINCS ADAT$/i.test(t);}).length;
   const boolCount=k=>vehicleData.filter(v=>v?.[k]===true||v?.[k]===false).length;
   const finiteCount=k=>vehicleData.filter(v=>{const x=v?.[k]; return x!==null&&x!==undefined&&String(x).trim()!==""&&Number.isFinite(Number(x));}).length;
   rows.push(fonokRow("📦 Jelenlegi járműobjektum",total,total,total?"memóriában lévő valódi járműobjektumok":"nincs járműobjektum",total?"fok":"fwarn"));
@@ -7205,6 +7231,17 @@ async function runFonok(){
   else if(tu&&!tu.ok) first="TripUpdates HTTP "+(tu.status||"hiba")+": "+tu.detail;
   else if(fu&&!fu.ok) first=(fu.status===400 && /limit exceeded/i.test(String(fu.detail||""))) ? "FUTÁR API-LIMIT (HTTP 400): a szerver korlátozta a kéréseket; várni kell, nem szabad újrakérni vagy megkerülni." : "FUTÁR HTTP "+(fu.status||"hiba")+": "+fu.detail;
   else if(total===0) first="Nincs jelenlegi BKK járműobjektum.";
+  else {
+    const delayN=vehicleData.filter(v=>v?.delaySeconds!==null&&v?.delaySeconds!==undefined&&v?.delaySeconds!==""&&Number.isFinite(Number(v.delaySeconds))).length;
+    const typeN=count("vehicleType"), lowN=boolCount("lowFloor"), forgalmiN=count("forgalmi");
+    const routeN=count("routeId"), stopN=count("stopId");
+    if(delayN<total) first="HIÁNYZÓ ADATKITÖLTÉS: ELTÉRÉS "+delayN+"/"+total+" járműhöz rendelve; a valódi event.time és a menetrendi stop_times párosítását kell ellenőrizni.";
+    else if(typeN<total) first="HIÁNYZÓ ADATKITÖLTÉS: JÁRMŰTÍPUS "+typeN+"/"+total+"; explicit forrás/illesztés szükséges.";
+    else if(lowN<total) first="HIÁNYZÓ ADATKITÖLTÉS: ALACSONYPADLÓS "+lowN+"/"+total+"; explicit forrás/illesztés szükséges.";
+    else if(forgalmiN<total) first="HIÁNYZÓ ADATKITÖLTÉS: FORGALMI "+forgalmiN+"/"+total+"; explicit forrás/illesztés szükséges.";
+    else if(routeN<total) first="HIÁNYZÓ ADATKITÖLTÉS: routeId "+routeN+"/"+total+".";
+    else if(stopN<total) first="HIÁNYZÓ ADATKITÖLTÉS: stopId "+stopN+"/"+total+".";
+  }
 
   body.innerHTML=rows.join("");
   renderFonokTop5();
@@ -7646,18 +7683,18 @@ window.extractFutarVehicles = function(json){
 (function(){
   "use strict";
   const commonProviders = {
-    BKV: {name:"BKV/BKK", icon:"🔵", stops:[], loaded:true, zip:null, scheduleCache:new Map(), tripMap:null, routeMap:null},
-    VOLAN: {name:"VOLÁN", icon:"🟠", stops:[], loaded:false, zip:null, scheduleCache:new Map(), tripMap:null, routeMap:null},
-    MAV: {name:"MÁV", icon:"🟤", stops:[], loaded:false, zip:null, scheduleCache:new Map(), tripMap:null, routeMap:null}
+    BKV: {name:"BKV/BKK", icon:"🔵", stops:[], loaded:true, zip:null, scheduleCache:new Map(), tripMap:null, routeMap:null, stopTimesText:null, stopTimesPromise:null},
+    VOLAN: {name:"VOLÁN", icon:"🟠", stops:[], loaded:false, zip:null, scheduleCache:new Map(), tripMap:null, routeMap:null, stopTimesText:null, stopTimesPromise:null},
+    MAV: {name:"MÁV", icon:"🟤", stops:[], loaded:false, zip:null, scheduleCache:new Map(), tripMap:null, routeMap:null, stopTimesText:null, stopTimesPromise:null}
   };
   function norm(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[-–—_.,;:/()]/g," ").replace(/\s+/g," ").trim();}
   function haversineM(a,b,c,d){const R=6371000,p1=a*Math.PI/180,p2=c*Math.PI/180,dp=(c-a)*Math.PI/180,dl=(d-b)*Math.PI/180;const x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
   function gps(){const lat=parseFloat(document.getElementById("gpsLat")?.textContent),lon=parseFloat(document.getElementById("gpsLon")?.textContent);return Number.isFinite(lat)&&Number.isFinite(lon)?{lat,lon}:null;}
-  function stopFromRow(r){const lat=parseFloat(r.stop_lat),lon=parseFloat(r.stop_lon);if(!Number.isFinite(lat)||!Number.isFinite(lon))return null;return{id:String(r.stop_id||""),name:String(r.stop_name||""),code:String(r.stop_code||""),lat,lon};}
+  function stopFromRow(r){const lat=parseFloat(r.stop_lat),lon=parseFloat(r.stop_lon);if(!Number.isFinite(lat)||!Number.isFinite(lon))return null;return{id:String(r.stop_id||""),name:String(r.stop_name||""),code:String(r.stop_code||""),parentId:String(r.parent_station||""),locationType:String(r.location_type||""),lat,lon};}
   function updateStatus(){const e=document.getElementById("commonStopStatus");if(!e)return;e.textContent="BKV/BKK: "+(commonProviders.BKV.stops.length?commonProviders.BKV.stops.length.toLocaleString("hu-HU")+" megálló":"nincs")+" • VOLÁN: "+(commonProviders.VOLAN.loaded?commonProviders.VOLAN.stops.length.toLocaleString("hu-HU")+" megálló":"nincs betöltött GTFS")+" • MÁV: "+(commonProviders.MAV.loaded?commonProviders.MAV.stops.length.toLocaleString("hu-HU")+" megálló":"nincs betöltött GTFS");}
   let lastBkkSource=null,lastBkkLength=-1,lastNearestGpsKey="";
-  function syncBkk(){let changed=false;try{const src=Array.isArray(gtfsStops)?gtfsStops:null;const len=src?src.length:0;if(src&&(src!==lastBkkSource||len!==lastBkkLength)){commonProviders.BKV.stops=src.map(s=>({id:String(s.id||""),name:String(s.name||""),code:String(s.code||""),lat:+s.lat,lon:+s.lon})).filter(s=>Number.isFinite(s.lat)&&Number.isFinite(s.lon));lastBkkSource=src;lastBkkLength=len;changed=true;}const z=window.__ATTILA_BKK_GTFS_ZIP__;if(z&&commonProviders.BKV.zip!==z){commonProviders.BKV.zip=z;commonProviders.BKV.scheduleCache.clear();commonProviders.BKV.tripMap=null;commonProviders.BKV.routeMap=null;changed=true;}}catch(e){}const g=gps(),gk=g?(g.lat.toFixed(4)+","+g.lon.toFixed(4)):"NO_GPS";if(changed||gk!==lastNearestGpsKey){lastNearestGpsKey=gk;updateStatus();renderNearest();}}
-  async function loadProvider(file,key){if(!file)return;const p=commonProviders[key];try{const zip=await JSZip.loadAsync(await file.arrayBuffer());const f=zip.file("stops.txt")||Object.values(zip.files).find(x=>!x.dir&&/\/stops\.txt$/i.test(x.name));if(!f)throw new Error("stops.txt hiányzik");const rows=parseCsv(await f.async("text"));const stops=rows.map(stopFromRow).filter(Boolean);if(!stops.length)throw new Error("nincs koordinátás megálló");p.stops=stops;p.loaded=true;p.zip=zip;p.scheduleCache.clear();p.tripMap=null;p.routeMap=null;updateStatus();renderNearest();runSearch();if(typeof logLine==="function")logLine(p.name+" GTFS: "+stops.length.toLocaleString("hu-HU")+" megálló betöltve; menetrendi fájlok csak megállóválasztáskor kerülnek feldolgozásra.");}catch(e){p.loaded=false;p.stops=[];p.zip=null;updateStatus();if(typeof logLine==="function")logLine(p.name+" GTFS HIBA: "+e.message);}}
+  function syncBkk(){let changed=false;try{const src=Array.isArray(gtfsStops)?gtfsStops:null;const len=src?src.length:0;if(src&&(src!==lastBkkSource||len!==lastBkkLength)){commonProviders.BKV.stops=src.map(s=>({id:String(s.id||""),name:String(s.name||""),code:String(s.code||""),parentId:String(s.parentId||""),locationType:String(s.locationType||""),lat:+s.lat,lon:+s.lon})).filter(s=>Number.isFinite(s.lat)&&Number.isFinite(s.lon));lastBkkSource=src;lastBkkLength=len;changed=true;}const z=window.__ATTILA_BKK_GTFS_ZIP__;if(z&&commonProviders.BKV.zip!==z){commonProviders.BKV.zip=z;commonProviders.BKV.scheduleCache.clear();commonProviders.BKV.tripMap=null;commonProviders.BKV.routeMap=null;changed=true;}}catch(e){}const g=gps(),gk=g?(g.lat.toFixed(4)+","+g.lon.toFixed(4)):"NO_GPS";if(changed||gk!==lastNearestGpsKey){lastNearestGpsKey=gk;updateStatus();renderNearest();}}
+  async function loadProvider(file,key){if(!file)return;const p=commonProviders[key];try{const zip=await JSZip.loadAsync(await file.arrayBuffer());const f=zip.file("stops.txt")||Object.values(zip.files).find(x=>!x.dir&&/\/stops\.txt$/i.test(x.name));if(!f)throw new Error("stops.txt hiányzik");const rows=parseCsv(await f.async("text"));const stops=rows.map(stopFromRow).filter(Boolean);if(!stops.length)throw new Error("nincs koordinátás megálló");p.stops=stops;p.loaded=true;p.zip=zip;p.scheduleCache.clear();p.tripMap=null;p.routeMap=null;p.stopTimesText=null;p.stopTimesPromise=null;updateStatus();renderNearest();runSearch();if(typeof logLine==="function")logLine(p.name+" GTFS: "+stops.length.toLocaleString("hu-HU")+" megálló betöltve; menetrendi fájlok csak megállóválasztáskor kerülnek feldolgozásra.");}catch(e){p.loaded=false;p.stops=[];p.zip=null;updateStatus();if(typeof logLine==="function")logLine(p.name+" GTFS HIBA: "+e.message);}}
   function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[m]));}
   function fmtDist(d){return Number.isFinite(d)?(d>=1000?(d/1000).toLocaleString("hu-HU",{minimumFractionDigits:2,maximumFractionDigits:2})+" km":Math.round(d).toLocaleString("hu-HU")+" m"):"NINCS ADAT";}
   function rowHTML(p,s,dist,rank){const code=s.code?" | stop_code: "+escapeHtml(s.code):"";const n=Number.isFinite(rank)?'<span style="display:inline-flex;align-items:center;justify-content:center;min-width:23px;height:23px;border-radius:50%;background:#263d4c;color:#fff;font-weight:900;margin-right:5px">'+rank+'</span>':'';return '<div style="padding:8px 6px;border-top:1px solid rgba(128,128,128,.25)">'+n+p.icon+' <b>'+escapeHtml(p.name)+" — "+escapeHtml(s.name||"NINCS ADAT")+'</b><br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+code+' • <b>'+fmtDist(dist)+'</b> légvonalban</span><br><button type="button" class="commonStopDepartBtn" data-provider="'+p.key+'" data-stop="'+escapeHtml(s.id)+'" style="margin-top:6px;padding:7px 10px">INDULÁSOK + JÁRMŰADATOK</button></div>';}
@@ -7670,12 +7707,45 @@ window.extractFutarVehicles = function(json){
   function csvHeaders(line){return csvLine(String(line||"").replace(/^\uFEFF/,"")).map(x=>x.trim());}
   async function loadTripAndRouteMaps(p,wantedTrips){const [tr,rr]=await Promise.all([zipText(p.zip,"trips.txt"),p.routeMap?Promise.resolve(null):zipText(p.zip,"routes.txt")]);if(!tr)throw new Error("A GTFS ZIP-ből hiányzik a trips.txt; menetrendi járatazonosító nem oldható fel.");if(!p.tripMap)p.tripMap=new Map();const thEnd=tr.indexOf("\n"),th=csvHeaders(thEnd>=0?tr.slice(0,thEnd):tr),ti={trip:th.indexOf("trip_id"),route:th.indexOf("route_id"),head:th.indexOf("trip_headsign"),service:th.indexOf("service_id")};if(ti.trip<0||ti.route<0)throw new Error("A trips.txt szükséges oszlopai hiányoznak.");const wanted=new Set(wantedTrips);let pos=thEnd+1,scanned=0;while(pos>0&&pos<tr.length){const e=tr.indexOf("\n",pos),line=tr.slice(pos,e<0?tr.length:e).replace(/\r$/,"");if(line){const c=csvLine(line),id=c[ti.trip];if(wanted.has(id))p.tripMap.set(id,{routeId:c[ti.route]||"",headsign:ti.head>=0?(c[ti.head]||""):"",serviceId:ti.service>=0?(c[ti.service]||""):""});}scanned++;if(scanned%12000===0)await new Promise(resolve=>setTimeout(resolve,0));if(e<0)break;pos=e+1;}if(rr){const re=rr.indexOf("\n"),rh=csvHeaders(re>=0?rr.slice(0,re):rr),ri={id:rh.indexOf("route_id"),short:rh.indexOf("route_short_name"),long:rh.indexOf("route_long_name"),type:rh.indexOf("route_type")};const routes=new Map();let rp=re+1;while(rp>0&&rp<rr.length){const e=rr.indexOf("\n",rp),line=rr.slice(rp,e<0?rr.length:e).replace(/\r$/,"");if(line){const c=csvLine(line),id=c[ri.id];if(id)routes.set(id,{short:ri.short>=0?(c[ri.short]||""):"",long:ri.long>=0?(c[ri.long]||""):"",type:ri.type>=0?(c[ri.type]||""):""});}if(e<0)break;rp=e+1;}p.routeMap=routes;}return p.tripMap;}
   async function activeServiceIds(p){const [calText,excText]=await Promise.all([zipText(p.zip,"calendar.txt"),zipText(p.zip,"calendar_dates.txt")]);if(!calText&&!excText)throw new Error("A GTFS-ből hiányzik a calendar.txt és a calendar_dates.txt is; nem ellenőrizhető, hogy a járat ma közlekedik-e.");const d=new Date(),date=String(d.getFullYear())+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0"),weekday=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][d.getDay()],active=new Set();if(calText){for(const r of parseCsv(calText)){const start=String(r.start_date||""),end=String(r.end_date||"");if(start<=date&&date<=end&&String(r[weekday]||"")==="1"&&r.service_id)active.add(String(r.service_id));}}if(excText){for(const r of parseCsv(excText)){if(String(r.date||"")!==date||!r.service_id)continue;if(String(r.exception_type)==="1")active.add(String(r.service_id));else if(String(r.exception_type)==="2")active.delete(String(r.service_id));}}return active;}
-  async function getDepartures(p,s){const cached=p.scheduleCache.get(String(s.id)),nowMs=Date.now(),now=new Date(),nowSec=now.getHours()*3600+now.getMinutes()*60;if(cached&&nowMs-cached.at<60000)return cached.rows.filter(d=>timeSeconds(d.departure)>=nowSec-60).slice(0,30);const stopTimes=await zipText(p.zip,"stop_times.txt");if(!stopTimes)throw new Error("A GTFS ZIP-ből hiányzik a stop_times.txt; valódi indulási idő nem állapítható meg.");const firstEnd=stopTimes.indexOf("\n"),heads=csvHeaders(firstEnd>=0?stopTimes.slice(0,firstEnd):stopTimes),idx={trip:heads.indexOf("trip_id"),stop:heads.indexOf("stop_id"),seq:heads.indexOf("stop_sequence"),arr:heads.indexOf("arrival_time"),dep:heads.indexOf("departure_time")};if(idx.trip<0||idx.stop<0||idx.dep<0)throw new Error("stop_times.txt fejlécből hiányzik a trip_id, stop_id vagy departure_time.");const matched=[];let pos=firstEnd+1,scanned=0;while(pos>0&&pos<stopTimes.length){const e=stopTimes.indexOf("\n",pos),line=stopTimes.slice(pos,e<0?stopTimes.length:e).replace(/\r$/,"");if(line){const c=csvLine(line);if(String(c[idx.stop]||"")===String(s.id)){const dep=String(c[idx.dep]||((idx.arr>=0)?c[idx.arr]:"")||"");if(Number.isFinite(timeSeconds(dep)))matched.push({tripId:String(c[idx.trip]||""),seq:idx.seq>=0?String(c[idx.seq]||""):"",departure:dep,arrival:idx.arr>=0?String(c[idx.arr]||""):""});}}scanned++;if(scanned%12000===0)await new Promise(resolve=>setTimeout(resolve,0));if(e<0)break;pos=e+1;}const wanted=new Set(matched.map(x=>x.tripId).filter(Boolean));await loadTripAndRouteMaps(p,wanted);const active=await activeServiceIds(p);const result=matched.map(x=>{const trip=p.tripMap.get(x.tripId)||{},route=(p.routeMap||new Map()).get(String(trip.routeId||""))||{};return{...x,routeId:String(trip.routeId||""),serviceId:String(trip.serviceId||""),headsign:trip.headsign||"",routeShort:route.short||"",routeLong:route.long||""};}).filter(x=>timeSeconds(x.departure)>=nowSec-60&&active.has(x.serviceId)).sort((a,b)=>timeSeconds(a.departure)-timeSeconds(b.departure));p.scheduleCache.set(String(s.id),{at:nowMs,rows:result});return result.slice(0,30);}
+  async function getDepartures(p,s){
+    const nowMs=Date.now(),now=new Date(),nowSec=now.getHours()*3600+now.getMinutes()*60;
+    const cached=p.scheduleCache.get(String(s.id));
+    if(cached&&nowMs-cached.at<60000)return cached.rows.filter(d=>timeSeconds(d.departure)>=nowSec-60).slice(0,30);
+    if(!p.stopTimesText){
+      if(!p.stopTimesPromise){
+        p.stopTimesPromise=zipText(p.zip,"stop_times.txt").then(t=>{if(!t)throw new Error("A GTFS ZIP-ből hiányzik a stop_times.txt; valódi indulási idő nem állapítható meg.");p.stopTimesText=t;return t;}).finally(()=>{p.stopTimesPromise=null;});
+      }
+      await p.stopTimesPromise;
+    }
+    const stopTimes=p.stopTimesText;
+    const firstEnd=stopTimes.indexOf("\n"),heads=csvHeaders(firstEnd>=0?stopTimes.slice(0,firstEnd):stopTimes),idx={trip:heads.indexOf("trip_id"),stop:heads.indexOf("stop_id"),seq:heads.indexOf("stop_sequence"),arr:heads.indexOf("arrival_time"),dep:heads.indexOf("departure_time")};
+    if(idx.trip<0||idx.stop<0||idx.dep<0)throw new Error("stop_times.txt fejlécből hiányzik a trip_id, stop_id vagy departure_time.");
+    // A kiválasztott megállóhoz a peronokat/gyermekmegállókat is hozzávesszük.
+    const targetIds=new Set([String(s.id)]);
+    if(s.parentId)for(const x of p.stops)if(String(x.parentId||"")===String(s.parentId))targetIds.add(String(x.id));
+    for(const x of p.stops)if(String(x.parentId||"")===String(s.id))targetIds.add(String(x.id));
+    const stopNames=new Map(p.stops.map(x=>[String(x.id),String(x.name||"")]));
+    const matched=[];let pos=firstEnd+1,scanned=0;
+    while(pos>0&&pos<stopTimes.length){
+      const e=stopTimes.indexOf("\n",pos),line=stopTimes.slice(pos,e<0?stopTimes.length:e).replace(/\r$/,"" );
+      if(line){const c=csvLine(line),sid=String(c[idx.stop]||"");if(targetIds.has(sid)){const dep=String(c[idx.dep]||((idx.arr>=0)?c[idx.arr]:"")||"");if(Number.isFinite(timeSeconds(dep)))matched.push({tripId:String(c[idx.trip]||""),seq:idx.seq>=0?String(c[idx.seq]||""):"",departure:dep,arrival:idx.arr>=0?String(c[idx.arr]||""):"",boardingStopId:sid,boardingStopName:stopNames.get(sid)||s.name||""});}}
+      scanned++;if(scanned%8000===0)await new Promise(resolve=>setTimeout(resolve,0));if(e<0)break;pos=e+1;
+    }
+    const wanted=new Set(matched.map(x=>x.tripId).filter(Boolean));
+    if(!matched.length){p.scheduleCache.set(String(s.id),{at:nowMs,rows:[]});return[];}
+    await loadTripAndRouteMaps(p,wanted);const active=await activeServiceIds(p);
+    const expanded=matched.map(x=>{const trip=p.tripMap.get(x.tripId)||{},route=(p.routeMap||new Map()).get(String(trip.routeId||""))||{};return{...x,routeId:String(trip.routeId||""),serviceId:String(trip.serviceId||""),headsign:trip.headsign||"",routeShort:route.short||"",routeLong:route.long||""};});
+    const nowAndLater=expanded.filter(x=>timeSeconds(x.departure)>=nowSec-60);
+    const activeToday=nowAndLater.filter(x=>active.has(x.serviceId));
+    if(nowAndLater.length&&!activeToday.length){const today=new Date().toLocaleDateString("hu-HU");throw new Error("A stop_times.txt tartalmaz ehhez a megállóhoz indulási időket, de a GTFS naptára szerint ezekhez ma ("+today+") nincs aktív járat. Ez lehet lejárt/eltérő dátumú GTFS vagy eltérő service_id; nem jelölöm ezeket mai indulásként.");}
+    const result=activeToday.sort((a,b)=>timeSeconds(a.departure)-timeSeconds(b.departure));
+    p.scheduleCache.set(String(s.id),{at:nowMs,rows:result});return result.slice(0,30);
+  }
   function matchingVehicles(p,s,dep){if(p!==commonProviders.BKV)return[];const vs=Array.isArray(vehicleData)?vehicleData:[];if(!dep.tripId)return[];return vs.filter(v=>String(v.tripId||v.trip_id||"")===dep.tripId).slice(0,8);}
   function vehicleHtml(v){const vals=[['JÁRAT',v.routeShortName||v.routeId],['JÁRMŰ',v.licensePlate||v.label||v.vehicleId],['MEGÁLLÓ',v.nearestStop?.name||v.stopName],['ELTÉRÉS',v.delayText||v.delaySeconds],['JÁRMŰTÍPUS',v.vehicleType],['ALACSONYPADLÓS',v.lowFloor],['FORGALMI',v.forgalmi]];return '<div style="margin:6px 0;padding:8px;border-left:3px solid #2787b9;background:rgba(90,140,170,.10)">'+vals.map(([k,val])=>'<div><b>'+escapeHtml(k)+':</b> '+escapeHtml(val===undefined||val===null||val===""?"NINCS ADAT":String(val))+'</div>').join('')+'</div>';}
-  async function showDepartures(key,stopId){const p=commonProviders[key],box=document.getElementById("commonStopDepartures");if(!p||!box)return;const s=p.stops.find(x=>String(x.id)===String(stopId));if(!s)return;p.key=key;box.innerHTML='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><div class="small" style="margin-top:6px">GTFS: '+escapeHtml(s.id)+' • Menetrendi indulások betöltése…</div></section>';box.scrollIntoView?.({behavior:"smooth",block:"nearest"});try{if(!p.zip&&key==="BKV")p.zip=window.__ATTILA_BKK_GTFS_ZIP__||null;if(!p.zip)throw new Error("Ehhez a szolgáltatóhoz nincs betöltött GTFS ZIP.");const deps=await getDepartures(p,s);if(!deps.length){box.innerHTML='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><p class="small">A betöltött GTFS-ben nincs a jelenlegi időponttól kezdődő, ehhez a megállóhoz tartozó indulás, vagy a menetrendi fájl nem tartalmazza ezt a megállót.</p><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></section>';return;}const now=new Date(),date=now.toLocaleDateString("hu-HU");let html='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></div><div class="small" style="margin:5px 0 8px">GTFS stop_id: '+escapeHtml(s.id)+' • '+date+' • MENETRENDI időpontok (nem automatikusan élő adatok)</div>';for(const d of deps){const route=d.routeShort||d.routeLong||d.routeId||"JÁRATAZONOSÍTÓ NINCS ADAT";const live=matchingVehicles(p,s,d);html+='<div style="border-top:1px solid rgba(128,128,128,.25);padding:8px 0"><div style="font-size:1.05em;font-weight:900">'+timeLabel(d.departure)+' — '+escapeHtml(route)+'</div><div class="small">Célállomás: '+escapeHtml(d.headsign||"NINCS ADAT")+' • trip_id: '+escapeHtml(d.tripId||"NINCS ADAT")+'</div>';if(live.length){html+='<div style="margin-top:5px;font-weight:800;color:#39b7ff">EGYEZŐ BKK JÁRMŰADAT – csak a ténylegesen illeszkedő mezők</div>'+live.map(vehicleHtml).join("");}else if(p===commonProviders.BKV){html+='<div class="small" style="margin-top:4px">Ehhez az induláshoz nem találtam biztosan illeszthető élő járműadatot.</div>';}else{html+='<div class="small" style="margin-top:4px">Élő járműadat ehhez a szolgáltatóhoz nincs csatlakoztatva; a fenti időpont a GTFS-menetrendből származik.</div>';}html+='</div>';}html+='<div class="small" style="margin-top:8px">Legfeljebb 30 következő menetrendi indulás. A késés/valós indulás csak megbízható realtime egyezés esetén jelezhető.</div></section>';box.innerHTML=html;}catch(e){box.innerHTML='<section style="border:1px solid #9b6438;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><p class="small">MENETREND NEM ELÉRHETŐ: '+escapeHtml(e.message||e)+'</p><p class="small">Ellenőrizd, hogy a feltöltött GTFS ZIP tartalmazza-e a stops.txt, trips.txt, routes.txt és stop_times.txt fájlokat.</p><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></section>';}}
+  async function showDepartures(key,stopId){const p=commonProviders[key],box=document.getElementById("commonStopDepartures");if(!p||!box)return;const s=p.stops.find(x=>String(x.id)===String(stopId));if(!s)return;p.key=key;box.innerHTML='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><div class="small" style="margin-top:6px">GTFS: '+escapeHtml(s.id)+' • Menetrendi indulások betöltése…</div></section>';try{if(!p.zip&&key==="BKV")p.zip=window.__ATTILA_BKK_GTFS_ZIP__||null;if(!p.zip)throw new Error("Ehhez a szolgáltatóhoz nincs betöltött GTFS ZIP.");const deps=await getDepartures(p,s);if(!deps.length){box.innerHTML='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><p class="small">NINCS MEGJELENÍTHETŐ INDULÁS. A keresés megállót talált, de ez még nem bizonyítja, hogy az indulási fájl és a mai közlekedési naptár is megfelelő. Ellenőrizendő: stop_times.txt, trips.txt, routes.txt, calendar.txt / calendar_dates.txt, stop_id egyezés és mai service_id.</p><p class="small">GTFS stop_id: '+escapeHtml(s.id)+' · szolgáltató: '+escapeHtml(p.name)+' · dátum: '+new Date().toLocaleDateString('hu-HU')+'. A program nem helyettesíti ezt kitalált indulással.</p><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></section>';return;}const now=new Date(),date=now.toLocaleDateString("hu-HU");let html='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></div><div class="small" style="margin:5px 0 8px">GTFS stop_id: '+escapeHtml(s.id)+' • '+date+' • MENETRENDI időpontok (nem automatikusan élő adatok)</div>';for(const d of deps){const route=d.routeShort||d.routeLong||d.routeId||"JÁRATAZONOSÍTÓ NINCS ADAT";const live=matchingVehicles(p,s,d);html+='<div style="border-top:1px solid rgba(128,128,128,.25);padding:8px 0"><div style="font-size:1.05em;font-weight:900">'+timeLabel(d.departure)+' — '+escapeHtml(route)+'</div><div class="small">Célállomás: '+escapeHtml(d.headsign||"NINCS ADAT")+' • trip_id: '+escapeHtml(d.tripId||"NINCS ADAT")+'</div>';if(live.length){html+='<div style="margin-top:5px;font-weight:800;color:#39b7ff">EGYEZŐ BKK JÁRMŰADAT – csak a ténylegesen illeszkedő mezők</div>'+live.map(vehicleHtml).join("");}else if(p===commonProviders.BKV){html+='<div class="small" style="margin-top:4px">Ehhez az induláshoz nem találtam biztosan illeszthető élő járműadatot.</div>';}else{html+='<div class="small" style="margin-top:4px">Élő járműadat ehhez a szolgáltatóhoz nincs csatlakoztatva; a fenti időpont a GTFS-menetrendből származik.</div>';}html+='</div>';}html+='<div class="small" style="margin-top:8px">Legfeljebb 30 következő menetrendi indulás. A késés/valós indulás csak megbízható realtime egyezés esetén jelezhető.</div></section>';box.innerHTML=html;}catch(e){box.innerHTML='<section style="border:1px solid #9b6438;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><p class="small">MENETREND NEM ELÉRHETŐ: '+escapeHtml(e.message||e)+'</p><p class="small">Ellenőrizd, hogy a feltöltött GTFS ZIP tartalmazza-e a stops.txt, trips.txt, routes.txt és stop_times.txt fájlokat.</p><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></section>';}}
   window.loadCommonTransitProvider=loadProvider;window.commonTransitStopSearch=runSearch;window.commonTransitNearest=renderNearest;
-  document.addEventListener("click",e=>{const b=e.target.closest?.(".commonStopDepartBtn");if(b){showDepartures(b.dataset.provider,b.dataset.stop);return;}if(e.target.id==="closeCommonDepartures"){const box=document.getElementById("commonStopDepartures");if(box)box.innerHTML="";}});
+  document.addEventListener("click",e=>{const b=e.target.closest?.(".commonStopDepartBtn");if(b){e.preventDefault();e.stopPropagation();showDepartures(b.dataset.provider,b.dataset.stop);return;}if(e.target.id==="closeCommonDepartures"){const box=document.getElementById("commonStopDepartures");if(box)box.innerHTML="";}});
   document.addEventListener("DOMContentLoaded",()=>{const vf=document.getElementById("volanGtfsFile"),mf=document.getElementById("mavGtfsFile");vf?.addEventListener("change",e=>loadProvider(e.target.files?.[0],"VOLAN"));mf?.addEventListener("change",e=>loadProvider(e.target.files?.[0],"MAV"));document.getElementById("commonStopSearchBtn")?.addEventListener("click",runSearch);document.getElementById("commonStopSearch")?.addEventListener("input",()=>{clearTimeout(window.__commonStopTimer);window.__commonStopTimer=setTimeout(runSearch,180);});syncBkk();setInterval(syncBkk,3000);});
 })();
 </script>
@@ -8119,7 +8189,7 @@ window.extractFutarVehicles = function(json){
          BKK járműállomány sorban megkapja az esélyt, miközben az iPhone-t nem
          terheljük több száz egyidejű kéréssel. */
       if(!window.fix35BatchCursor) window.fix35BatchCursor=0;
-      const batchSize = window.innerWidth <= 700 ? 0 : 4;
+      const batchSize = window.innerWidth <= 700 ? 1 : 4;
       const batch=[];
       for(let k=0;k<rest.length && batch.length<batchSize;k++){
         const idx=(window.fix35BatchCursor+k)%rest.length;
@@ -8783,28 +8853,54 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
  function weatherText(code){const c=Number(code);if(c===0)return 'Derült';if(c===1)return 'Többnyire derült';if(c===2)return 'Részben felhős';if(c===3)return 'Borult';if([45,48].includes(c))return 'Köd';if([51,53,55].includes(c))return 'Szitálás';if([56,57].includes(c))return 'Ónos szitálás';if([61,63,65].includes(c))return 'Eső';if([66,67].includes(c))return 'Ónos eső';if([71,73,75,77].includes(c))return 'Hó';if([80,81,82].includes(c))return 'Zápor';if([85,86].includes(c))return 'Hózápor';if([95,96,99].includes(c))return 'Zivatar';return 'NINCS ADAT';}
  function fmt(v,unit,digits=0){const n=Number(v);return Number.isFinite(n)?n.toLocaleString('hu-HU',{maximumFractionDigits:digits})+unit:'NINCS ADAT';}
  function tile(label,value,unit,digits=0){return '<div class="attila-weather-tile"><span>'+label+'</span><strong>'+fmt(value,unit,digits)+'</strong></div>';}
+ function hourlyWindow(data){
+  const h=data&&data.hourly;if(!h||!Array.isArray(h.time)||!Array.isArray(h.temperature_2m))return [];
+  let idx=-1;const current=data.current&&data.current.time;
+  if(current){idx=h.time.indexOf(current);if(idx<0){let best=Infinity;for(let i=0;i<h.time.length;i++){const diff=Math.abs(new Date(h.time[i]).getTime()-new Date(current).getTime());if(Number.isFinite(diff)&&diff<best){best=diff;idx=i;}}}}
+  if(idx<0){const now=Date.now();for(let i=0;i<h.time.length;i++){const t=new Date(h.time[i]).getTime();if(t<=now)idx=i;}}
+  if(idx<0)return [];
+  const start=Math.max(0,idx-23),out=[];
+  for(let i=start;i<=idx;i++){const value=Number(h.temperature_2m[i]);if(Number.isFinite(value))out.push({value,time:String(h.time[i]||'NINCS ADAT')});}
+  return out;
+ }
+ function minmax(arr){const a=arr.filter(x=>x&&Number.isFinite(Number(x.value)));if(!a.length)return null;let lo=a[0],hi=a[0];for(const x of a){if(Number(x.value)<Number(lo.value))lo=x;if(Number(x.value)>Number(hi.value))hi=x;}return{min:Number(lo.value),max:Number(hi.value),minTime:lo.time,maxTime:hi.time,count:a.length};}
+ function safeWeatherText(v){return String(v??'NINCS ADAT').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+ function timeLocalLabel(v,tz){if(!v)return 'NINCS ADAT';return safeWeatherText(v.replace('T',' '))+(tz?' ('+safeWeatherText(tz)+')':'');}
+ async function getJson(url,timeoutMs=16000){const controller=typeof AbortController!=='undefined'?new AbortController():null;const timer=controller?setTimeout(()=>controller.abort(),timeoutMs):null;let res;try{res=await fetch(url,{cache:'no-store',signal:controller?controller.signal:undefined});}finally{if(timer)clearTimeout(timer);}if(!res.ok)throw new Error('HTTP '+res.status);return await res.json();}
  async function loadWeather(force){
   if(busy)return;const loc=locationNow();
   if(!force&&lastLoadedAt&&Date.now()-lastLoadedAt<10*60*1000&&lastWeatherKey===loc.key)return;
-  busy=true;$('attilaWeatherLocation').textContent=loc.label+' · '+loc.lat.toFixed(5)+', '+loc.lon.toFixed(5);setStatus('Valós időjárási adatok lekérése…');
+  busy=true;$('attilaWeatherLocation').textContent=loc.label+' · GPS/helykoordináta: '+loc.lat.toFixed(5)+', '+loc.lon.toFixed(5);setStatus('Helyi és országos, elmúlt 24 órás adatok lekérése…');
   $('attilaWeatherContent').innerHTML='<div class="attila-weather-muted">Kapcsolódás az időjárási adatforráshoz…</div>';
   try{
-   const url='https://api.open-meteo.com/v1/forecast?latitude='+encodeURIComponent(loc.lat)+'&longitude='+encodeURIComponent(loc.lon)+'&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&forecast_days=1&timezone=auto';
-   const controller=typeof AbortController!=='undefined'?new AbortController():null;const timer=controller?setTimeout(()=>controller.abort(),12000):null;
-   let res;try{res=await fetch(url,{cache:'no-store',signal:controller?controller.signal:undefined});}finally{if(timer)clearTimeout(timer);}
-   if(!res.ok)throw new Error('HTTP '+res.status);
-   const data=await res.json();if(!data||!data.current||!data.daily)throw new Error('Hiányos időjárási válasz');
-   const c=data.current,d=data.daily;
-   const day=(v)=>Array.isArray(v)?v[0]:undefined;
+   const base='https://api.open-meteo.com/v1/forecast?latitude='+encodeURIComponent(loc.lat)+'&longitude='+encodeURIComponent(loc.lon)+'&current=temperature_2m,relative_humidity_2m,apparent_temperature,is_day,precipitation,weather_code,cloud_cover,pressure_msl,wind_speed_10m,wind_direction_10m&hourly=temperature_2m&daily=temperature_2m_max,temperature_2m_min,precipitation_probability_max,sunrise,sunset&past_days=1&forecast_days=1&timezone=auto';
+   const data=await getJson(base);if(!data||!data.current||!data.daily)throw new Error('Hiányos helyi időjárási válasz');
+   const c=data.current,d=data.daily,day=v=>Array.isArray(v)?v[0]:undefined;
+   const local24=minmax(hourlyWindow(data));
+   // Több magyarországi modellrácspont: országos összehasonlítás, nem hivatalos mérőállomási rangsor.
+   const points=[['Budapest',47.4979,19.0402],['Debrecen',47.5316,21.6273],['Szeged',46.2530,20.1414],['Pécs',46.0727,18.2323],['Győr',47.6875,17.6504],['Miskolc',48.1035,20.7784],['Szombathely',47.2307,16.6218],['Kecskemét',46.8964,19.6897],['Nyíregyháza',47.9554,21.7167],['Zalaegerszeg',46.8417,16.8416]];
+   let country24=null, countryStatus='Országos összehasonlítás: betöltés…';
+   try{
+    const lats=points.map(p=>p[1]).join(','),lons=points.map(p=>p[2]).join(',');
+    const national=await getJson('https://api.open-meteo.com/v1/forecast?latitude='+encodeURIComponent(lats)+'&longitude='+encodeURIComponent(lons)+'&current=temperature_2m&hourly=temperature_2m&past_days=1&forecast_days=1&timezone=Europe%2FBudapest',20000);
+    const rows=Array.isArray(national)?national:[national];const extremes=[];
+    rows.forEach((row,i)=>{const mm=minmax(hourlyWindow(row));if(mm)extremes.push({place:points[i]?.[0]||('Modellpont '+(i+1)),...mm});});
+    if(extremes.length){const lo=extremes.reduce((a,b)=>b.min<a.min?b:a),hi=extremes.reduce((a,b)=>b.max>a.max?b:a);country24={min:lo.min,max:hi.max,minPlace:lo.place,maxPlace:hi.place,minTime:lo.minTime,maxTime:hi.maxTime,count:extremes.length};}
+    countryStatus=country24?extremes.length+' magyarországi modellpontból számítva':'NINCS ADAT – az országos összehasonlítás nem érkezett meg';
+   }catch(e){countryStatus='NINCS ADAT – az országos összehasonlítás most nem érhető el';}
    const summary=weatherText(c.weather_code);
-   const html='<div class="attila-weather-summary">'+summary+' · '+fmt(c.temperature_2m,' °C',1)+'</div><div class="attila-weather-main">'+
-    tile('HŐÉRZET',c.apparent_temperature,' °C',1)+tile('PÁRATARTALOM',c.relative_humidity_2m,' %')+
-    tile('NAPI MINIMUM',day(d.temperature_2m_min),' °C',1)+tile('NAPI MAXIMUM',day(d.temperature_2m_max),' °C',1)+
+   const localTiles=local24?tile('ELMÚLT 24 ÓRA · HELYI MINIMUM',local24.min,' °C',1)+'<div class="attila-weather-muted" style="padding:0 4px 8px">Hely: '+safeWeatherText(loc.label)+' · időpont: '+timeLocalLabel(local24.minTime,data.timezone)+'</div>'+tile('ELMÚLT 24 ÓRA · HELYI MAXIMUM',local24.max,' °C',1)+'<div class="attila-weather-muted" style="padding:0 4px 8px">Hely: '+safeWeatherText(loc.label)+' · időpont: '+timeLocalLabel(local24.maxTime,data.timezone)+'</div>':tile('ELMÚLT 24 ÓRA · HELYI MIN–MAX','NINCS ADAT','');
+   const nationalTiles=country24?tile('ELMÚLT 24 ÓRA · ORSZÁGOS MODELL-MINIMUM',country24.min,' °C',1)+'<div class="attila-weather-muted" style="padding:0 4px 8px">Hely: '+safeWeatherText(country24.minPlace)+' · időpont: '+timeLocalLabel(country24.minTime,'Europe/Budapest')+'</div>'+tile('ELMÚLT 24 ÓRA · ORSZÁGOS MODELL-MAXIMUM',country24.max,' °C',1)+'<div class="attila-weather-muted" style="padding:0 4px 8px">Hely: '+safeWeatherText(country24.maxPlace)+' · időpont: '+timeLocalLabel(country24.maxTime,'Europe/Budapest')+'</div>':tile('ELMÚLT 24 ÓRA · ORSZÁGOS MIN–MAX','NINCS ADAT','');
+   const html='<div class="attila-weather-summary">'+summary+' · '+fmt(c.temperature_2m,' °C',1)+'</div>'+ 
+    '<div class="attila-weather-muted" style="margin-bottom:8px"><b>MÉRÉSI HELY:</b> '+loc.label+'<br><b>Koordináta:</b> '+loc.lat.toFixed(5)+', '+loc.lon.toFixed(5)+'<br><b>Modell rácspontja:</b> '+fmt(data.latitude,'°',4)+', '+fmt(data.longitude,'°',4)+' · magasság: '+fmt(data.elevation,' m')+'<br><b>Fizikai mérőtorony / hivatalos mérőállomás:</b> NINCS ADAT – az Open-Meteo ezen a válaszon nem ad meg konkrét állomásnevet vagy toronyhelyet.</div>'+ 
+    '<div class="attila-weather-main">'+tile('HŐÉRZET',c.apparent_temperature,' °C',1)+tile('PÁRATARTALOM',c.relative_humidity_2m,' %')+
+    tile('MAI MINIMUM',day(d.temperature_2m_min),' °C',1)+tile('MAI MAXIMUM',day(d.temperature_2m_max),' °C',1)+
     tile('SZÉLSEBESSÉG',c.wind_speed_10m,' km/h',1)+tile('CSAPADÉK',c.precipitation,' mm',1)+
     tile('FELHŐZET',c.cloud_cover,' %')+tile('CSAPADÉK ESÉLYE',day(d.precipitation_probability_max),' %')+
-    '</div><div class="attila-weather-muted" style="margin-top:10px">Légnyomás: '+fmt(c.pressure_msl,' hPa')+' · Szélirány: '+fmt(c.wind_direction_10m,'°')+'<br>Napkelte: '+(day(d.sunrise)||'NINCS ADAT')+' · Napnyugta: '+(day(d.sunset)||'NINCS ADAT')+'<br>Adat időpontja: '+(c.time||'NINCS ADAT')+' ('+(data.timezone||'helyi idő')+')</div>';
-   $('attilaWeatherContent').innerHTML=html;lastLoadedAt=Date.now();lastWeatherKey=loc.key;setStatus('Friss időjárási válasz megérkezett. Forrás: Open-Meteo.',false);
-  }catch(e){setStatus('Az időjárás most nem tölthető be: '+(e&&e.name==='AbortError'?'időtúllépés':(e.message||'kapcsolati hiba'))+'. Ellenőrizd az internetkapcsolatot, majd próbáld újra.',true);$('attilaWeatherContent').innerHTML='<div class="attila-weather-muted">NINCS ADAT – nem jelenítünk meg kitalált hőmérsékletet vagy előrejelzést.</div>';}
+    '</div><h3 style="margin:14px 0 6px;font-size:16px">📍 ELMÚLT 24 ÓRA – HELYI MINIMUM / MAXIMUM</h3><div class="attila-weather-main">'+localTiles+'</div><h3 style="margin:14px 0 6px;font-size:16px">🇭🇺 ELMÚLT 24 ÓRA – ORSZÁGOS ÖSSZEHASONLÍTÁS</h3><div class="attila-weather-main">'+nationalTiles+'</div><div class="attila-weather-muted" style="margin-top:6px">'+countryStatus+'. Ezek Open-Meteo modellrácspontokból számított értékek, nem hivatalos országos mérőállomási rekordok.</div>'+ 
+    '<div class="attila-weather-muted" style="margin-top:10px">Légnyomás: '+fmt(c.pressure_msl,' hPa')+' · Szélirány: '+fmt(c.wind_direction_10m,'°')+'<br>Napkelte: '+(day(d.sunrise)||'NINCS ADAT')+' · Napnyugta: '+(day(d.sunset)||'NINCS ADAT')+'<br>Adat időpontja: '+(c.time||'NINCS ADAT')+' ('+(data.timezone||'helyi idő')+')<br>Forrás: Open-Meteo Forecast API · elmúlt 24 órás hőmérséklet órás adatokból.</div>';
+   $('attilaWeatherContent').innerHTML=html;lastLoadedAt=Date.now();lastWeatherKey=loc.key;setStatus('Helyi időjárás frissült. Az elmúlt 24 órás helyi és országos modelladatok megjelenítve, ahol elérhetők.',false);
+  }catch(e){setStatus('Az időjárás most nem tölthető be: '+(e&&e.name==='AbortError'?'időtúllépés':(e.message||'kapcsolati hiba'))+'. Ellenőrizd az internetkapcsolatot, majd próbáld újra.',true);$('attilaWeatherContent').innerHTML='<div class="attila-weather-muted">NINCS ADAT – nem jelenítünk meg kitalált hőmérsékletet vagy előrejelzést.</div>'}
   finally{busy=false;}
  }
  toggle.addEventListener('click',()=>panel.hidden?openPanel():closePanel());
