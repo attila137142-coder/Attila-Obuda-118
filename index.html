@@ -1,4 +1,4 @@
-FIX13 – MIN–MAX HELY ÉS IDŐ + DIAGNOSZTIKA_Teljes HTML · az előző időjárási panelre építve_2026.10.16
+FIX14   Adatút-diagnosztika és eltéréskezelés javítása · teljes HTML-fáj   2026.10.16 
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -2494,13 +2494,36 @@ async function attilaLoadActiveSchedule(activeTripIds){
   }catch(e){logLine("ELTÉRÉS menetrendi összevetés hiba: "+(e?.message||e));return fresh ? old.map : null;}
 }
 
-function attilaServiceDateEpoch(startDate, seconds){
+function attilaServiceDateEpoch(startDate, seconds, eventTime){
+  if(!Number.isFinite(Number(seconds))) return null;
+  const sec=Number(seconds);
   const d=String(startDate||"").trim();
-  if(!/^\d{8}$/.test(d) || !Number.isFinite(seconds)) return null;
-  const y=Number(d.slice(0,4)), m=Number(d.slice(4,6)), day=Number(d.slice(6,8));
-  const midnight=new Date(y,m-1,day,0,0,0,0).getTime();
-  if(!Number.isFinite(midnight)) return null;
-  return Math.floor(midnight/1000)+seconds;
+  if(/^\\d{8}$/.test(d)){
+    const y=Number(d.slice(0,4)), m=Number(d.slice(4,6)), day=Number(d.slice(6,8));
+    const midnight=new Date(y,m-1,day,0,0,0,0).getTime();
+    if(!Number.isFinite(midnight)) return null;
+    return Math.floor(midnight/1000)+sec;
+  }
+  /*
+    Egyes GTFS-RT TripUpdate rekordokból hiányzik a trip.start_date.
+    Ilyenkor a stop_times önmagában nem mondja meg a szolgálati napot.
+    Csak valódi event.time mellett próbálunk dátumot illeszteni: a helyi
+    mai nap éjfele körüli +/- 2 napból a legközelebbi menetrendi időt
+    választjuk, és csak 12 órán belüli különbségnél fogadjuk el.
+    Ezzel az éjszakai, 24:00 utáni GTFS-idők is kezelhetők, de nem
+    gyártunk eltérést egy bizonytalan, távoli párosításból.
+  */
+  const actual=Number(eventTime);
+  if(!Number.isFinite(actual)||actual<=0) return null;
+  const now=new Date();
+  const base=Math.floor(new Date(now.getFullYear(),now.getMonth(),now.getDate(),0,0,0,0).getTime()/1000);
+  let best=null, bestDiff=Infinity;
+  for(let offset=-2;offset<=2;offset++){
+    const candidate=base+offset*86400+sec;
+    const diff=Math.abs(actual-candidate);
+    if(diff<bestDiff){best=candidate;bestDiff=diff;}
+  }
+  return bestDiff<=12*3600 ? best : null;
 }
 
 async function fetchTripUpdates(){
@@ -2615,7 +2638,7 @@ async function fetchTripUpdates(){
           const sched=(ev.seq && schedule.get(ev.tripId+"|seq|"+ev.seq)) || (ev.stopId && schedule.get(ev.tripId+"|stop|"+ev.stopId));
           if(!sched) continue;
           const scheduledSeconds=sched[ev.eventKind];
-          const scheduledEpoch=attilaServiceDateEpoch(ev.startDate,scheduledSeconds);
+          const scheduledEpoch=attilaServiceDateEpoch(ev.startDate,scheduledSeconds,ev.eventTime);
           if(scheduledEpoch===null) continue;
           const derived=Math.round(ev.eventTime-scheduledEpoch);
           if(!Number.isFinite(derived)) continue;
@@ -7148,7 +7171,7 @@ async function runFonok(){
     rows.push(fonokRow("🚍 FUTÁR HTTP",0,0,"KÉRÉS KIHAGYVA – API-limit védelem: a FŐNÖK nem küld újabb FUTÁR-kérést.","fwarn"));
   }
 
-  let vpCount=0,tuCount=0,delayCount=0,realEventTimeCount=0,futarCount=0;
+  let vpCount=0,tuCount=0,stopUpdateCount=0,delayCount=0,realEventTimeCount=0,futarCount=0;
   let vpParseReason="";
   if(vp?.ok){
     try{ const parsed=parseVehicleFeed(vp.buffer); vpCount=parsed.length; vpParseReason="protobuf OK"; }catch(e){ vpParseReason="protobuf HIBA: "+(e?.message||e); }
@@ -7165,16 +7188,17 @@ async function runFonok(){
         if(!x?.trip?.tripId) continue;
         tuCount++;
         for(const st of (x.stopTimeUpdate||[])){
+          stopUpdateCount++;
           const parts=[st.departure,st.arrival];
-          if(parts.some(p=>p&&Object.prototype.hasOwnProperty.call(p,"delay")&&Number.isFinite(Number(p.delay)))) delayCount++;
-          if(parts.some(p=>p&&Object.prototype.hasOwnProperty.call(p,"time")&&Number.isFinite(Number(p.time))&&Number(p.time)>0)) realEventTimeCount++;
+          if(parts.some(p=>p&&Object.prototype.hasOwnProperty.call(p,"delay")&&p.delay!==null&&p.delay!==undefined&&Number.isFinite(Number(p.delay)))) delayCount++;
+          if(parts.some(p=>p&&Object.prototype.hasOwnProperty.call(p,"time")&&p.time!==null&&p.time!==undefined&&Number.isFinite(Number(p.time))&&Number(p.time)>0)) realEventTimeCount++;
         }
       }
     }catch(e){ rows.push(fonokRow("⏱️ TripUpdates → protobuf",1,0,"HIBA: "+(e?.message||e),"ferr")); }
   }
   if(tu?.ok) rows.push(fonokRow("⏱️ TripUpdates → trip frissítés",tuCount,tuCount,tuCount?"✓ valódi tripUpdate rekord":"nincs értelmezhető tripUpdate","fok"));
-  if(tu?.ok) rows.push(fonokRow("↔️ TripUpdates → valódi delay mező",tuCount,delayCount,delayCount?"valódi delay mezők":"a feedben nem találtunk delay mezőt",delayCount?"fok":"fwarn"));
-  if(tu?.ok) rows.push(fonokRow("🕒 TripUpdates → valódi arrival/departure.time",tuCount,realEventTimeCount,realEventTimeCount?"valódi előrejelzett időpont van; menetrenddel összevethető":"előrejelzett időpont sincs",realEventTimeCount?"fwarn":"fwarn"));
+  if(tu?.ok) rows.push(fonokRow("↔️ TripUpdates → valódi delay mező",stopUpdateCount,delayCount,delayCount?"delay mezőt tartalmazó stopTimeUpdate rekordok":"a feedben nem találtunk delay mezőt",delayCount?"fok":"fwarn"));
+  if(tu?.ok) rows.push(fonokRow("🕒 TripUpdates → valódi arrival/departure.time",stopUpdateCount,realEventTimeCount,realEventTimeCount?"valódi előrejelzett időponttal rendelkező stopTimeUpdate rekordok; menetrenddel összevethetők":"előrejelzett időpont sincs",realEventTimeCount?"fwarn":"fwarn"));
 
   if(fu?.ok){
     try{ const j=JSON.parse(new TextDecoder().decode(fu.buffer)); const ex=extractFutarVehicles(j); futarCount=ex.length; }catch(e){}
@@ -7182,7 +7206,7 @@ async function runFonok(){
   rows.push(fonokRow("🚍 FUTÁR → jármű rekord",fu?.ok?1:0,futarCount,fu===null?"KÉRÉS KIHAGYVA – API-limit védelem":(fu?.ok?(futarCount?"valódi FUTÁR rekord":"válasz érkezett, de nem találtunk járműt"):"FUTÁR válasz nem érkezett"),fu?.ok&&futarCount?"fok":"fwarn"));
 
   const total=Array.isArray(vehicleData)?vehicleData.length:0;
-  const count=k=>vehicleData.filter(v=>{const x=v?.[k]; return x!==null&&x!==undefined&&String(x).trim()!=="";}).length;
+  const count=k=>vehicleData.filter(v=>{const x=v?.[k]; const t=String(x??"").trim(); return !!t&&!/^NINCS ADAT$/i.test(t);}).length;
   const boolCount=k=>vehicleData.filter(v=>v?.[k]===true||v?.[k]===false).length;
   const finiteCount=k=>vehicleData.filter(v=>{const x=v?.[k]; return x!==null&&x!==undefined&&String(x).trim()!==""&&Number.isFinite(Number(x));}).length;
   rows.push(fonokRow("📦 Jelenlegi járműobjektum",total,total,total?"memóriában lévő valódi járműobjektumok":"nincs járműobjektum",total?"fok":"fwarn"));
@@ -7207,6 +7231,17 @@ async function runFonok(){
   else if(tu&&!tu.ok) first="TripUpdates HTTP "+(tu.status||"hiba")+": "+tu.detail;
   else if(fu&&!fu.ok) first=(fu.status===400 && /limit exceeded/i.test(String(fu.detail||""))) ? "FUTÁR API-LIMIT (HTTP 400): a szerver korlátozta a kéréseket; várni kell, nem szabad újrakérni vagy megkerülni." : "FUTÁR HTTP "+(fu.status||"hiba")+": "+fu.detail;
   else if(total===0) first="Nincs jelenlegi BKK járműobjektum.";
+  else {
+    const delayN=vehicleData.filter(v=>v?.delaySeconds!==null&&v?.delaySeconds!==undefined&&v?.delaySeconds!==""&&Number.isFinite(Number(v.delaySeconds))).length;
+    const typeN=count("vehicleType"), lowN=boolCount("lowFloor"), forgalmiN=count("forgalmi");
+    const routeN=count("routeId"), stopN=count("stopId");
+    if(delayN<total) first="HIÁNYZÓ ADATKITÖLTÉS: ELTÉRÉS "+delayN+"/"+total+" járműhöz rendelve; a valódi event.time és a menetrendi stop_times párosítását kell ellenőrizni.";
+    else if(typeN<total) first="HIÁNYZÓ ADATKITÖLTÉS: JÁRMŰTÍPUS "+typeN+"/"+total+"; explicit forrás/illesztés szükséges.";
+    else if(lowN<total) first="HIÁNYZÓ ADATKITÖLTÉS: ALACSONYPADLÓS "+lowN+"/"+total+"; explicit forrás/illesztés szükséges.";
+    else if(forgalmiN<total) first="HIÁNYZÓ ADATKITÖLTÉS: FORGALMI "+forgalmiN+"/"+total+"; explicit forrás/illesztés szükséges.";
+    else if(routeN<total) first="HIÁNYZÓ ADATKITÖLTÉS: routeId "+routeN+"/"+total+".";
+    else if(stopN<total) first="HIÁNYZÓ ADATKITÖLTÉS: stopId "+stopN+"/"+total+".";
+  }
 
   body.innerHTML=rows.join("");
   renderFonokTop5();
@@ -8154,7 +8189,7 @@ window.extractFutarVehicles = function(json){
          BKK járműállomány sorban megkapja az esélyt, miközben az iPhone-t nem
          terheljük több száz egyidejű kéréssel. */
       if(!window.fix35BatchCursor) window.fix35BatchCursor=0;
-      const batchSize = window.innerWidth <= 700 ? 0 : 4;
+      const batchSize = window.innerWidth <= 700 ? 1 : 4;
       const batch=[];
       for(let k=0;k<rest.length && batch.length<batchSize;k++){
         const idx=(window.fix35BatchCursor+k)%rest.length;
