@@ -1,4 +1,3 @@
-FIX15	Teljes HTML · 22 JavaScript-blokk · 0 szintaktikai hiba
 <!DOCTYPE html>
 <html lang="hu">
 <head>
