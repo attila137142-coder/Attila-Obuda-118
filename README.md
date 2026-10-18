@@ -1,4 +1,4 @@
-FIX15 – adatút-hibajavítás  Javított HTML, 3 közlekedési rendszer adatainak elkülönítésével   2026.10.18_Vas
+FIX16, az 5–6 javítást egyesítő HTML! ❤️🚌🚆   2026.10.18   Vasárnap  13.23
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -11,7 +11,7 @@ FIX15 – adatút-hibajavítás  Javított HTML, 3 közlekedési rendszer adatai
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – FIX15 REGIONÁLIS ADATÚT-JAVÍTÁS (ELLENŐRZÖTT ALAP)</title>
+<title>ATTILA KÖZLEKEDÉS – FIX16 ÖTÖS ADATÚT-JAVÍTÓCSOMAG</title>
 
 <link
   rel="stylesheet"
@@ -2322,6 +2322,25 @@ function findNearestStop(
 }
 
 
+/* FIX16 – szolgáltatóhoz illesztett legközelebbi megálló.
+   Ha a GTFS-útvonal egyértelműen MÁV/VOLÁN, a megfelelő betöltött megállólistát használjuk.
+   Ha nem bizonyítható az ág, a meglévő BKK logikát tartjuk meg; nem találgatunk. */
+function attilaFindNearestStopForVehicle(item, lat, lon){
+  if(!item || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lon))) return null;
+  const route = String(item.routeShortName || (item.routeId && typeof gtfsRoutes !== 'undefined' ? (gtfsRoutes.get(String(item.routeId)) || '') : '') || '').trim();
+  let provider = null;
+  try {
+    if(typeof window.__ATTILA_CLASSIFY_PROVIDER_BY_GTFS === 'function') provider = window.__ATTILA_CLASSIFY_PROVIDER_BY_GTFS(route);
+  } catch(e) {}
+  if((provider === 'MAV' || provider === 'VOLAN') && typeof window.__ATTILA_NEAREST_STOP_FOR_PROVIDER === 'function'){
+    const regional = window.__ATTILA_NEAREST_STOP_FOR_PROVIDER(provider, Number(lat), Number(lon));
+    if(regional) return regional;
+  }
+  const exact = item.stopId ? findStopById(item.stopId) : null;
+  if(exact) return {id:exact.id,name:exact.name,lat:exact.lat,lon:exact.lon,code:exact.code,distanceM:distanceKm({lat:Number(lat),lon:Number(lon)},exact)*1000,provider:'BKK'};
+  return findNearestStop(Number(lat), Number(lon));
+}
+
 function refreshStaticVehicleFields(){
 
   for(
@@ -2390,10 +2409,7 @@ function refreshStaticVehicleFields(){
     ){
 
       item.nearestStop =
-        findNearestStop(
-          item.lat,
-          item.lon
-        );
+        attilaFindNearestStopForVehicle(item, item.lat, item.lon);
 
     }
 
@@ -3036,10 +3052,7 @@ function parseVehicleFeed(buffer){
     }else{
 
       item.nearestStop =
-        findNearestStop(
-          lat,
-          lon
-        );
+        attilaFindNearestStopForVehicle(item, lat, lon);
 
     }
 
@@ -6341,7 +6354,8 @@ async function updateWinRealtime(){
       " | VOLÁN/MÁV: " +
       regionalRealtimeRows.length.toLocaleString("hu-HU") +
       " | GPS-koordinátás: " + regionalRealtimeRows.filter(r=>Number.isFinite(Number(r.lat))&&Number.isFinite(Number(r.lon))).length.toLocaleString("hu-HU") +
-      " | ISMERETLEN szolgáltató: " + unknownProviderRows.toLocaleString("hu-HU");
+      " | ISMERETLEN szolgáltató: " + unknownProviderRows.toLocaleString("hu-HU") +
+      " | GPS-koordinátás regionális jármű: " + regionalRealtimeRows.filter(r=>Number.isFinite(Number(r.lat))&&Number.isFinite(Number(r.lon))&&Math.abs(Number(r.lat))<=90&&Math.abs(Number(r.lon))<=180).length.toLocaleString("hu-HU");
   }
 
   let enriched=0;
