@@ -1,4 +1,4 @@
-FIX18 JAVÍTOTT   2026.10.18   Vasárnap  de
+FIX19 MÁV valós járműpanel + BKK 4 mező javítása   2026.10.19 Hétfö  02.58
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -11,7 +11,7 @@ FIX18 JAVÍTOTT   2026.10.18   Vasárnap  de
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – FIX18 JAVÍTOTT · MÁV MEGÁLLÓK · GPS-CÍM · 4 ADATMEZŐ</title>
+<title>ATTILA KÖZLEKEDÉS – FIX19 · VALÓDI MÁV JÁRMŰPANEL + BKK 4 MEZŐ</title>
 
 <link
   rel="stylesheet"
@@ -7813,12 +7813,23 @@ window.extractFutarVehicles = function(json){
   function normalizeMavVehicle(v){
     const raw=v?.nextStop?.arrivalDelay;
     const delay=raw===null||raw===undefined||raw===""?null:Number(raw);
-    return {provider:"MÁV",routeShortName:v?.trip?.domesticResTrainNumber||v?.label||null,
-      licensePlate:null,label:v?.label||null,vehicleId:v?.vehicleId||null,nearestStop:null,stopName:null,
+    const label=String(v?.label||"").trim()||null;
+    const trip=v?.trip||{};
+    const trainNo=String(trip?.domesticResTrainNumber||"").trim()||null;
+    const tripId=String(trip?.gtfsId||"").trim()||null;
+    const vehicleId=String(v?.vehicleId||"").trim()||null;
+    const lat=Number(v?.lat),lon=Number(v?.lon),speed=Number(v?.speed);
+    const updated=v?.lastUpdated===null||v?.lastUpdated===undefined||v?.lastUpdated===""?null:Number(v.lastUpdated);
+    return {provider:"MÁV",routeShortName:trainNo||label,routeId:null,
+      licensePlate:null,label,vehicleId,nearestStop:null,stopName:null,
       delayText:Number.isFinite(delay)?(delay<0?"SIETÉS "+Math.abs(delay)+" mp":delay>0?"KÉSÉS +"+delay+" mp":"PONTOS 0 mp"):null,
       delaySeconds:Number.isFinite(delay)?delay:null,vehicleType:null,lowFloor:null,forgalmi:null,
-      tripId:v?.trip?.gtfsId||null,lat:Number.isFinite(Number(v?.lat))?Number(v.lat):null,
-      lon:Number.isFinite(Number(v?.lon))?Number(v.lon):null,realtimeSource:"MÁVPlusz / EMMA"};
+      tripId,lat:Number.isFinite(lat)&&lat>=-90&&lat<=90?lat:null,
+      lon:Number.isFinite(lon)&&lon>=-180&&lon<=180?lon:null,
+      speed:Number.isFinite(speed)&&speed>=0?speed:null,
+      heading:Number.isFinite(Number(v?.heading))?Number(v.heading):null,
+      lastUpdated:Number.isFinite(updated)?updated:null,
+      realtimeSource:"MÁVPlusz / EMMA"};
   }
   function matchingVehicles(p,s,dep){
     if(!dep?.tripId)return[];
@@ -8146,17 +8157,17 @@ window.extractFutarVehicles = function(json){
       for(let i=0;i<trs.length;i++){
         const cells=headersFromRow(trs[i]);
         const h=cells.map(headerNorm);
-        const useful=h.some(x=>['forgalmi','forgalmiszam','jarmutipus','viszonylat','jarat','rendszam','jarmu','blockid','blokkazonosito'].includes(x));
+        const useful=h.some(x=>['forgalmi','forgalmiszam','forgalmiazonosito','jarmutipus','jarmutipusmegnevezes','viszonylat','jarat','rendszam','jarmu','blockid','blokkazonosito','alacsonypadlos','lowfloor'].includes(x));
         if(useful){ head=h; headIndex=i; break; }
       }
       if(!head) continue;
       const pi=indexOf(head,['rendszám','jármű','license plate','plate']);
-      const fi=indexOf(head,['forgalmi','forgalmi szám','forgalmi szam']);
-      const ti=indexOf(head,['jármű típus','járműtípus','jarmu tipus','vehicle type','típus','tipus']);
+      const fi=indexOf(head,['forgalmi','forgalmi szám','forgalmi szam','forgalmi azonosító','forgalmi azonosito','forgalmi szám/azonosító','forgalmi number','service number']);
+      const ti=indexOf(head,['jármű típus','járműtípus','jarmu tipus','járműtípus megnevezés','jármű típus megnevezés','vehicle type','vehicle type name','típus','tipus']);
       const ri=indexOf(head,['viszonylat','járat','jarat','route']);
       const bi=indexOf(head,['block id','blokk azonosító','blokk azonosito','block','blokk']);
       const bvi=indexOf(head,['jármű#','jarmu#','vehicle#','vehicle number','jármű szám','jarmu szam']);
-      const li=indexOf(head,['alacsonypadlós','alacsonypadlos','low floor']);
+      const li=indexOf(head,['alacsonypadlós','alacsonypadlos','alacsonypadlós-e','alacsonypadlos-e','low floor','lowfloor','is low floor']);
       for(let i=headIndex+1;i<trs.length;i++){
         const tr=trs[i];
         if(tr.querySelector('th')) continue;
@@ -8173,7 +8184,7 @@ window.extractFutarVehicles = function(json){
           blockVehicleNumber: bvi>=0 ? (c[bvi]||null) : null,
           lowFloor: li>=0 ? (/^(igen|yes|true|1)$/i.test(c[li]) ? true : /^(nem|no|false|0)$/i.test(c[li]) ? false : null) : null
         };
-        if(real(row.forgalmi)||real(row.vehicleType)||real(row.route)||real(row.blockId)||real(row.blockVehicleNumber)) out.push(row);
+        if(real(row.forgalmi)||real(row.vehicleType)||real(row.route)||real(row.blockId)||real(row.blockVehicleNumber)||row.lowFloor===true||row.lowFloor===false) out.push(row);
       }
     }
     return out;
@@ -8213,7 +8224,7 @@ window.extractFutarVehicles = function(json){
       const f=labeled(text,['Forgalmi','Forgalmi szám','Forgalmi szam']);
       if(real(f)) result.forgalmi=f;
     }
-    return (real(result.forgalmi)||real(result.vehicleType)||real(result.blockId)||real(result.blockVehicleNumber)) ? result : null;
+    return (real(result.forgalmi)||real(result.vehicleType)||real(result.blockId)||real(result.blockVehicleNumber)||result.lowFloor===true||result.lowFloor===false) ? result : null;
   }
 
   async function fetchWin(url, tag){
@@ -8447,10 +8458,13 @@ window.extractFutarVehicles = function(json){
       if(st) st.textContent='MÁVPlusz: OK ('+arr.length+' jármű)';
       if(out){
         out.innerHTML=arr.slice(0,80).map(v=>{
-          const delay=Number(v?.nextStop?.arrivalDelay);
-          const d=Number.isFinite(delay)?(delay>0?('+'+delay+' mp'):String(delay)+' mp'):'NINCS ADAT';
+          const raw=v?.nextStop?.arrivalDelay;const delay=raw===null||raw===undefined||raw===''?null:Number(raw);
+          const d=Number.isFinite(delay)?(delay<0?'SIETÉS '+Math.abs(delay)+' mp':delay>0?'KÉSÉS +'+delay+' mp':'PONTOS 0 mp'):'NINCS ADAT';
           const tr=v?.trip?.domesticResTrainNumber||v?.trip?.gtfsId||'NINCS ADAT';
-          return '<div class="atti-mav-row"><b>'+esc(v?.label||v?.vehicleId||'NINCS ADAT')+'</b> · '+esc(tr)+' · '+esc(v?.lat)+' , '+esc(v?.lon)+' · késés: '+esc(d)+'</div>';
+          const speed=Number.isFinite(Number(v?.speed))?Number(v.speed).toFixed(1)+' km/h':'NINCS ADAT';
+          const stamp=v?.lastUpdated===null||v?.lastUpdated===undefined||v?.lastUpdated===''?null:Number(v.lastUpdated);
+          const updated=Number.isFinite(stamp)?new Date(stamp>1e12?stamp:stamp*1000).toLocaleTimeString('hu-HU'):'NINCS ADAT';
+          return '<div class="atti-mav-row"><b>'+esc(v?.label||v?.vehicleId||'NINCS ADAT')+'</b> · járat: '+esc(tr)+' · sebesség: '+esc(speed)+' · késés: '+esc(d)+' · frissítve: '+esc(updated)+' · GPS: '+esc(v?.lat)+' , '+esc(v?.lon)+'</div>';
         }).join('') || '<div>NINCS ADAT</div>';
       }
       window.ATTIlaMavVehicles=arr;
@@ -8470,18 +8484,27 @@ window.extractFutarVehicles = function(json){
     layer.clearLayers();
     (Array.isArray(arr)?arr:[]).forEach(v=>{
       const lat=Number(v?.lat),lon=Number(v?.lon);
-      if(!Number.isFinite(lat)||!Number.isFinite(lon)) return;
+      if(!Number.isFinite(lat)||!Number.isFinite(lon)||lat < -90||lat > 90||lon < -180||lon > 180) return;
       const label=v?.label||v?.vehicleId||"MÁV";
-      const trip=v?.trip?.domesticResTrainNumber||v?.trip?.gtfsId||null;
-      const delayRaw=v?.nextStop?.arrivalDelay;
-      const delay=delayRaw===null||delayRaw===undefined||delayRaw===""?null:Number(delayRaw);
-      const delayText=Number.isFinite(delay)?(delay<0?"SIETÉS "+delay+" mp":delay>0?"KÉSÉS +"+delay+" mp":"PONTOS 0 mp"):"NINCS ADAT";
-      const popup='<div style="min-width:230px;color:#101820"><b>MÁV / VALÓS JÁRMŰ</b>'+
-        '<div>JÁRAT / LABEL: '+esc(label)+'</div>'+
-        '<div>MENET: '+esc(trip||"NINCS ADAT")+'</div>'+
-        '<div>ELTÉRÉS: '+esc(delayText)+'</div>'+
-        '<div>JÁRMŰTÍPUS: NINCS ADAT</div><div>ALACSONYPADLÓS: NINCS ADAT</div>'+
-        '<div>FORGALMI: NINCS ADAT</div>'+
+      const trip=v?.trip?.gtfsId||null;
+      const trainNo=v?.trip?.domesticResTrainNumber||null;
+      const raw=v?.nextStop?.arrivalDelay;
+      const delay=raw===null||raw===undefined||raw===""?null:Number(raw);
+      const delayText=Number.isFinite(delay)?(delay<0?"SIETÉS "+Math.abs(delay)+" mp":delay>0?"KÉSÉS +"+delay+" mp":"PONTOS 0 mp"):"NINCS ADAT";
+      const speed=Number.isFinite(Number(v?.speed))?Number(v.speed):null;
+      const updated=v?.lastUpdated===null||v?.lastUpdated===undefined||v?.lastUpdated===""?null:Number(v.lastUpdated);
+      const updatedText=Number.isFinite(updated)?new Date(updated>1e12?updated:updated*1000).toLocaleString("hu-HU"):"NINCS ADAT";
+      const popup='<div style="min-width:245px;color:#101820"><b>MÁV / VALÓS JÁRMŰ</b>'+ 
+        '<div>JÁRAT: '+esc(trainNo||"NINCS ADAT")+'</div>'+ 
+        '<div>JÁRMŰCÍMKE: '+esc(label)+'</div>'+ 
+        '<div>JÁRMŰ ID: '+esc(v?.vehicleId||"NINCS ADAT")+'</div>'+ 
+        '<div>TRIP: '+esc(trip||"NINCS ADAT")+'</div>'+ 
+        '<div>ELTÉRÉS: '+esc(delayText)+'</div>'+ 
+        '<div>JÁRMŰTÍPUS: '+esc(v?.vehicleType||"NINCS ADAT")+'</div>'+ 
+        '<div>RENDSZÁM: '+esc(v?.licensePlate||"NINCS ADAT")+'</div>'+ 
+        '<div>FORGALMI: '+esc(v?.forgalmi||"NINCS ADAT")+'</div>'+ 
+        '<div>SEBESSÉG: '+esc(speed===null?"NINCS ADAT":speed.toFixed(1)+" km/h")+'</div>'+ 
+        '<div>UTOLSÓ FRISSÍTÉS: '+esc(updatedText)+'</div>'+ 
         '<div>GPS: '+lat.toFixed(6)+", "+lon.toFixed(6)+'</div></div>';
       window.L.circleMarker([lat,lon],{radius:7,color:"#fff",weight:2,fillColor:"#b06cff",fillOpacity:.95})
         .bindPopup(popup,{maxWidth:360}).addTo(layer);
@@ -8493,25 +8516,27 @@ window.extractFutarVehicles = function(json){
     list.querySelectorAll(".attiMavVehicleCard").forEach(e=>e.remove());
     (Array.isArray(arr)?arr:[]).slice(0,100).forEach(v=>{
       const lat=Number(v?.lat),lon=Number(v?.lon);
-      if(!Number.isFinite(lat)||!Number.isFinite(lon))return;
+      if(!Number.isFinite(lat)||!Number.isFinite(lon)||lat < -90||lat > 90||lon < -180||lon > 180)return;
       const label=v?.label||v?.vehicleId||"MÁV";
-      const trip=v?.trip?.domesticResTrainNumber||v?.trip?.gtfsId||null;
+      const trip=v?.trip?.gtfsId||null;
+      const trainNo=v?.trip?.domesticResTrainNumber||null;
       const raw=v?.nextStop?.arrivalDelay;
       const delay=raw===null||raw===undefined||raw===""?null:Number(raw);
-      const delayText=Number.isFinite(delay)?(delay<0?"SIETÉS "+delay+" mp":delay>0?"KÉSÉS +"+delay+" mp":"PONTOS 0 mp"):"NINCS ADAT";
+      const delayText=Number.isFinite(delay)?(delay<0?"SIETÉS "+Math.abs(delay)+" mp":delay>0?"KÉSÉS +"+delay+" mp":"PONTOS 0 mp"):"NINCS ADAT";
+      const speed=Number.isFinite(Number(v?.speed))?Number(v.speed):null;
+      const updated=v?.lastUpdated===null||v?.lastUpdated===undefined||v?.lastUpdated===""?null:Number(v.lastUpdated);
+      const updatedText=Number.isFinite(updated)?new Date(updated>1e12?updated:updated*1000).toLocaleString("hu-HU"):"NINCS ADAT";
+      const vals=[
+        ["JÁRAT",trainNo], ["JÁRMŰCÍMKE",label], ["JÁRMŰ ID",v?.vehicleId], ["TRIP",trip],
+        ["ELTÉRÉS",delayText], ["JÁRMŰTÍPUS",v?.vehicleType], ["ALACSONYPADLÓS",v?.lowFloor===true?"IGEN":v?.lowFloor===false?"NEM":null],
+        ["RENDSZÁM",v?.licensePlate], ["FORGALMI",v?.forgalmi], ["SEBESSÉG",speed===null?null:speed.toFixed(1)+" km/h"],
+        ["UTOLSÓ FRISSÍTÉS",updatedText], ["GPS",lat.toFixed(6)+", "+lon.toFixed(6)], ["FORRÁS","MÁVPlusz / EMMA"]
+      ];
       const card=document.createElement("div");
       card.className="vehicleCard attiMavVehicleCard";
       card.style.borderColor="#8b61b5";
-      card.innerHTML='<div class="vehicleTop"><div class="vehicleTitle">🚆 '+esc(label)+'</div><div class="sourceTag">MÁV REALTIME</div></div>'+
-        '<div class="field"><b>JÁRAT / LABEL</b><span>'+esc(label)+'</span></div>'+
-        '<div class="field"><b>ELTÉRÉS</b><span>'+esc(delayText)+'</span></div>'+
-        '<div class="field"><b>JÁRMŰTÍPUS</b><span>NINCS ADAT</span></div>'+
-        '<div class="field"><b>ALACSONYPADLÓS</b><span>NINCS ADAT</span></div>'+
-        '<div class="field"><b>RENDSZÁM</b><span>NINCS ADAT</span></div>'+
-        '<div class="field"><b>FORGALMI</b><span>NINCS ADAT</span></div>'+
-        '<div class="field"><b>TRIP / MENET</b><span>'+esc(trip||"NINCS ADAT")+'</span></div>'+
-        '<div class="field"><b>GPS</b><span>'+lat.toFixed(6)+", "+lon.toFixed(6)+'</span></div>';
-      card.addEventListener("click",()=>{try{map.setView([lat,lon],Math.max(map.getZoom(),14));if(window.__attilaMavLayer)window.__attilaMavLayer.eachLayer(m=>{if(m.getLatLng&&m.getLatLng().lat===lat&&m.getLatLng().lng===lon)m.openPopup();});}catch(e){}});
+      card.innerHTML='<div class="vehicleTop"><div class="vehicleTitle">🚆 '+esc(label)+'</div><div class="sourceTag">MÁV REALTIME</div></div>'+vals.map(([k,val])=>'<div class="field"><b>'+esc(k)+'</b><span>'+esc(val===undefined||val===null||val===""?"NINCS ADAT":String(val))+'</span></div>').join("");
+      card.addEventListener("click",()=>{try{map.setView([lat,lon],Math.max(map.getZoom(),14));if(window.__attilaMavLayer)window.__attilaMavLayer.eachLayer(m=>{if(m.getLatLng&&Math.abs(m.getLatLng().lat-lat)<1e-7&&Math.abs(m.getLatLng().lng-lon)<1e-7)m.openPopup();});}catch(e){}});
       list.appendChild(card);
     });
   }
@@ -9112,9 +9137,9 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
    const rail=/^(S|Z|G|IC|EC|EN|RJ|RE|IR|R|EX)\s*\d/i.test(route)||/(motorvonat|stadler|kiss|vas[uú]t|railcar|emeletes)/i.test(typeHint);
    if(targetProvider==='BKK'&&((sourceProvider&&!/(^BKK$|^BKV$|FUTAR|FUTÁR|BUDAPEST)/.test(sourceProvider))||rail))return changed;
    const assignText=(targetKey,keys)=>{const v=pick(source,keys);if(!real(v))return;if(!real(target[targetKey])||opts.overwriteReal===true){if(target[targetKey]!==String(v).trim()){target[targetKey]=String(v).trim();changed=true;}}};
-   assignText('forgalmi',['forgalmi','forgalmiSzam','forgalmi_szam','trafficNumber','traffic_number']);
-   assignText('vehicleType',['vehicleType','vehicle_type','vehicleTypeName','vehicle_type_name','jarmutipus','jarmu_tipus']);
-   const low=boolValue(pick(source,['lowFloor','low_floor','lowfloor','alacsonypadlos','alacsonypadlós','isLowFloor','is_low_floor']));
+   assignText('forgalmi',['forgalmi','forgalmiSzam','forgalmi_szam','forgalmiNumber','forgalmi_number','trafficNumber','traffic_number','serviceNumber','service_number']);
+   assignText('vehicleType',['vehicleType','vehicle_type','vehicleTypeName','vehicle_type_name','vehicleTypeDescription','vehicle_type_description','typeName','type_name','jarmutipus','jarmu_tipus']);
+   const low=boolValue(pick(source,['lowFloor','low_floor','lowfloor','lowFloorVehicle','low_floor_vehicle','isLowFloor','is_low_floor','alacsonypadlos','alacsonypadlós']));
    if(low!==null&&(target.lowFloor===null||target.lowFloor===undefined||opts.overwriteReal===true)&&target.lowFloor!==low){target.lowFloor=low;changed=true;}
    const delay=pick(source,['delaySeconds','delay_seconds']);
    if(delay!==undefined&&Number.isFinite(Number(delay))&&(target.delaySeconds===null||target.delaySeconds===undefined||target.delaySeconds===''||opts.overwriteReal===true)){const n=Number(delay);if(target.delaySeconds!==n){target.delaySeconds=n;changed=true;}}
