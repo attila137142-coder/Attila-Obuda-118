@@ -1,3 +1,6 @@
+FIX26    2026.10.20   Kedd  01.00
+PDF + telefonos teljes nézet + vissza gombok + regionális adatfeldolgozás
+JavaScript-szintaktikai ellenőrzés: 25 blokk, 0 hiba.   9358  SOROS   HTLM
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -1542,7 +1545,7 @@ function initMap(){
       11
     );
 
-  // FIX24: a térképet használó régebbi modulok window.map-et olvasnak.
+  // FIX25: a térképet használó régebbi modulok window.map-et olvasnak.
   // Ugyanarra a valódi Leaflet Map példányra mutasson, ne undefined/objektum legyen.
   window.map = map;
 
@@ -6137,6 +6140,7 @@ function parseWinRealtimeHtml(html){
       if(plateIdx<0) continue;
 
       const routeIdx=findHeader(heads,["járat","jarat","route","route short name"]);
+      const providerIdx=findHeader(heads,["szolgáltató","szolgaltato","provider","operator","üzemeltető","uzemelteto","közlekedési társaság","kozlekedesi tarsasag"]);
       const forgalmiIdx=findHeader(heads,["forgalmi","forgalmi szám","forgalmi szam","forgalmi azonosító","forgalmi azonosito","forgalmi number","forgalminumber"]);
       const tripIdx=findHeader(heads,["menet","trip","trip id","tripid"]);
       const labelIdx=findHeader(heads,["viszonylat","label"]);
@@ -6154,9 +6158,11 @@ function parseWinRealtimeHtml(html){
         if(!plate) continue;
         const route=routeIdx>=0?(c[routeIdx]||""):"";
         let provider="BKK";
-        if(/^volan_/i.test(route)) provider="VOLÁN";
+        const providerText=providerIdx>=0?String(c[providerIdx]||"").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""):"";
+        if(/VOLAN|VOLANBUSZ|MAV-START|MAV START|MAV|HEV/.test(providerText)) provider=/HEV/.test(providerText)?"MÁV-HÉV":/VOLAN/.test(providerText)?"VOLÁN":"MÁV";
+        else if(/^volan_/i.test(route)||/^VOL[ÁA]N/i.test(route)) provider="VOLÁN";
         else if(/^H[0-9]/i.test(route)) provider="MÁV-HÉV";
-        else if(/^(S|Z|IR|IC|EX|G)/i.test(route) && !/^\d/.test(route)) provider="MÁV";
+        else if(/^(S|Z|IR|IC|EX|G|RJ|EC|EN|RE|R)\s*\d/i.test(route) && !/^\d/.test(route)) provider="MÁV";
         out.push({
           provider,
           plate,
@@ -6315,7 +6321,7 @@ function renderRegionalRealtime(){
 }
 
 
-/* FIX24 – HIÁNYZÓ FORGALMI/JÁRMŰTÍPUS CÉLZOTT, VALÓDI WINMENETREND-ILLESZTÉS
+/* FIX25 – HIÁNYZÓ FORGALMI/JÁRMŰTÍPUS CÉLZOTT, VALÓDI WINMENETREND-ILLESZTÉS
    Csak akkor kérünk részletes oldalt, ha a rendszám vagy a valódi D... TRIP
    már megvan a GTFS-RT járműnél. Nincs kitalált adat. */
 const winDetailCache = new Map();
@@ -7567,7 +7573,7 @@ document.addEventListener(
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – FIX24 TÉRKÉP/KULCS JAVÍTÁS + MÁV/VOLÁN KÜLÖN JÁRMŰKÁRTYÁK + BKK ADATÚT indul."
+      "ATTILA KÖZLEKEDÉS – FIX25 TÉRKÉP/KULCS JAVÍTÁS + MÁV/VOLÁN KÜLÖN JÁRMŰKÁRTYÁK + BKK ADATÚT indul."
     );
 
 
@@ -8040,10 +8046,12 @@ window.extractFutarVehicles = function(json){
   function openReader(url,name){
     ensureReader();activePdfUrl=url;
     $("githubPdfReaderTitle").textContent=name||"PDF OLVASÓ";
-    $("githubPdfReaderHint").textContent="Ha a beágyazott olvasó nem jeleníti meg a dokumentumot, koppints a KÖZVETLEN PDF gombra. A megjelenítéshez internetkapcsolat kell.";
+    $("githubPdfReaderHint").textContent="Közvetlen PDF-megjelenítés. Ha ezen a készüléken a beágyazott olvasó nem működik, koppints a KÖZVETLEN PDF gombra. A dokumentum internetkapcsolatot igényel.";
     $("githubPdfReaderOpenDirect").onclick=()=>{if(activePdfUrl)window.open(activePdfUrl,"_blank","noopener,noreferrer")};
-    /* Google dokumentumnéző nyilvánosan elérhető PDF-ekhez; a közvetlen link külön megmarad. */
-    $("githubPdfReaderFrame").src="https://docs.google.com/gview?embedded=1&url="+encodeURIComponent(url);
+    /* FIX25: a Google gview iframe gyakran elutasítja a beágyazást. A PDF-et közvetlenül, a GitHub nyers letöltési URL-jéről próbáljuk megjeleníteni. */
+    const frame=$("githubPdfReaderFrame");
+    frame.src="about:blank";
+    frame.src=url;
     $("githubPdfReaderOverlay").style.display="block";
     document.body.style.overflow="hidden";
   }
@@ -9303,5 +9311,48 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else setTimeout(boot,0);
 })();
 </script>
+
+
+<!-- FIX26: telefonos olvashatóság, teljes nézet és állandó visszaút; PDF FIX25 megőrizve -->
+<style id="attila-fix26-mobile-restore">
+@media(max-width:700px){
+ html{font-size:17px!important;-webkit-text-size-adjust:100%!important}
+ body{font-size:17px!important;line-height:1.42!important}
+ #side,#side .panel,#side section,#regionalRealtimeCards,#attiMavRealtimePanel,#githubPdfReaderOverlay{font-size:16px!important}
+ #side .small,.small,#regionalRealtimeStatus,#attiMavRealtimeStatus,#attiMavRealtimeRows,#githubPdfReaderHint{font-size:15px!important;line-height:1.4!important}
+ button,input,select,textarea{font-size:16px!important;min-height:42px;max-width:100%;box-sizing:border-box}
+ .vehicleCard,.vehicle-card{font-size:16px!important;padding:11px!important}
+ .vehicleTitle,.vehicleTop{font-size:17px!important;line-height:1.35!important}
+ .field{gap:8px!important;grid-template-columns:minmax(115px,42%) minmax(0,1fr)!important;font-size:15px!important;line-height:1.35!important}
+ .field b{font-size:14px!important}.field span{font-size:16px!important;overflow-wrap:anywhere}
+ #regionalRealtimeBody td,#regionalRealtimeBody th{font-size:15px!important;padding:8px!important}
+ #githubPdfReaderOverlay{padding:5px!important}
+ #githubPdfReaderOverlay iframe{min-height:0!important}
+ .attila-mobile-panel-fullscreen{padding:10px!important;padding-bottom:calc(18px + env(safe-area-inset-bottom))!important}
+ .attila-panel-fullscreen-toggle{font-size:15px!important;min-height:42px!important;padding:8px 10px!important;white-space:normal!important}
+}
+#attilaFix26GlobalBack{display:none;position:fixed;left:10px;bottom:calc(10px + env(safe-area-inset-bottom));z-index:2147483646;padding:12px 15px;border:2px solid #80d6ff;border-radius:12px;background:#10364a;color:#fff;font-size:16px;font-weight:900;box-shadow:0 3px 16px #0009}
+@media(max-width:700px){#attilaFix26GlobalBack{max-width:calc(100vw - 20px)}}
+</style>
+<script id="attila-fix26-fullscreen-back-repair">
+(function(){
+ 'use strict';
+ function setup(){
+   var back=document.getElementById('attilaFix26GlobalBack');
+   if(!back){back=document.createElement('button');back.id='attilaFix26GlobalBack';back.type='button';back.textContent='↩ VISSZA A TELJES LISTÁHOZ';document.body.appendChild(back);}
+   function refreshBack(){var active=!!document.querySelector('.attila-mobile-panel-fullscreen');back.style.display=active?'block':'none';}
+   function closePanel(){var panels=[...document.querySelectorAll('.attila-mobile-panel-fullscreen')];panels.forEach(function(p){p.classList.remove('attila-mobile-panel-fullscreen');});document.body.style.overflow='';document.querySelectorAll('.attila-panel-fullscreen-toggle').forEach(function(b){b.textContent='⛶ PANEL TELJES KÉPERNYŐ';});refreshBack();}
+   back.onclick=closePanel;
+   document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('.attila-panel-fullscreen-toggle'):null;if(b)setTimeout(refreshBack,0);},true);
+   document.addEventListener('keydown',function(e){if(e.key==='Escape')closePanel();});
+   // Külön teljes nézet gombot minden érdemi panelhez adunk, akkor is, ha a panel nem a régi #side alatt van.
+   var selectors=['#side .panel','#regionalRealtimeStatus','#regionalRealtimeCards','#attiMavRealtimePanel','#fonokPanel','#githubPdfList'];
+   var found=new Set();selectors.forEach(function(sel){document.querySelectorAll(sel).forEach(function(el){var p=el.matches('.panel')?el:el.closest('.panel')||el;if(found.has(p))return;found.add(p);if(p.id==='map'||p.id==='githubPdfReaderOverlay')return;if(p.querySelector('.attila-panel-fullscreen-toggle'))return;var h=p.querySelector('h3,h2,.vehicleTitle')||p.firstElementChild;if(!h)return;var b=document.createElement('button');b.type='button';b.className='attila-panel-fullscreen-toggle';b.textContent='⛶ PANEL TELJES KÉPERNYŐ';b.addEventListener('click',function(){var on=p.classList.toggle('attila-mobile-panel-fullscreen');document.body.style.overflow=on?'hidden':'';b.textContent=on?'✕ VISSZA A TELJES LISTÁHOZ':'⛶ PANEL TELJES KÉPERNYŐ';if(on){p.style.display='block';p.scrollTop=0;}refreshBack();});h.appendChild(b);});});
+   refreshBack();
+ }
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',setup,{once:true});else setup();
+})();
+</script>
+
 </body>
 </html>
