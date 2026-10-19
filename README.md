@@ -1,4 +1,4 @@
-FIX19 MÁV valós járműpanel + BKK 4 mező javítása   2026.10.19 Hétfö  02.58
+FIX 22   MÁV-VOLÁN panelek 2026.10.19   Hétfö   19.40
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -11,7 +11,7 @@ FIX19 MÁV valós járműpanel + BKK 4 mező javítása   2026.10.19 Hétfö  02
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – FIX19 · VALÓDI MÁV JÁRMŰPANEL + BKK 4 MEZŐ</title>
+<title>ATTILA KÖZLEKEDÉS – FIX22 · MÁV/VOLÁN JÁRMŰKÁRTYÁK + BKK ADATÚT</title>
 
 <link
   rel="stylesheet"
@@ -603,7 +603,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 <div id="header">
 
   <div class="title">
-    🚍 ATTILA KÖZLEKEDÉS – FIX13 · III. KERÜLET TÉRSÉGI JÁRMŰKERESÉS / GPS / MÁV / 4 PANEL
+    🚍 ATTILA KÖZLEKEDÉS – FIX22 · MÁV/VOLÁN JÁRMŰKÁRTYÁK + BKK ADATÚT
   </div>
 
   <div id="feedBadge" class="badge warn">
@@ -909,8 +909,28 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
     <h3>📚 KÖZÖS TÁR – FORGALMI / INDÍTÁSI PDF-EK</h3>
     <div class="panelBody">
       <div class="small" style="margin-bottom:7px">
-        A GitHubon lévő PDF-eket automatikusan megkeresi. Windows 10-en a helyi GitHub-mappába bemásolod a PDF-et, GitHub Desktopban feltöltöd, és az iPhone XR-en is ugyaninnen megnyitható.
+        Közös, interneten elérhető PDF-lista: a ténylegesen a GitHub KOZOS_TARHELY mappájába feltöltött PDF-eket keresi, almappákkal együtt. Windows 10-en GitHub Desktopból vagy a GitHub weboldalán tölthetsz fel; iPhone-on a PDF megnyitható és a Fájlok közé menthető.
       </div>
+      <div style="padding:10px;margin:8px 0;border:1px solid #b77924;border-radius:9px;background:rgba(183,121,36,.12)">
+        <b>🔒 ADATVÉDELMI FIGYELMEZTETÉS</b>
+        <div class="small" style="margin-top:5px">Ide kizárólag nyilvánosságra hozható PDF-et (például menetrendet, közlekedési tájékoztatót) tölts fel. Kórházi leletet, egészségügyi dokumentumot, bankszámlakivonatot vagy más személyes iratot ne tegyél nyilvános GitHub-tárba. Ezekhez privát, bejelentkezést igénylő tárhelyet használj.</div>
+      </div>
+      <details style="margin:8px 0">
+        <summary style="cursor:pointer;font-weight:800">📘 RÉSZLETES ÚTMUTATÓ – feltöltés, letöltés, törlés</summary>
+        <div style="padding:8px 2px;line-height:1.55">
+          <b>1. A közös mappa létrehozása (egyszer kell)</b>
+          <ol><li>Nyisd meg a „GITHUB MAPPÁK” gombot, majd a repository főoldalát.</li><li>Válaszd az <b>Add file → Create new file</b> lehetőséget.</li><li>A fájlnév mezőbe írd: <code>KOZOS_TARHELY/MENETRENDEK/README.md</code>.</li><li>A tartalomba írj például ennyit: <code>Nyilvános közlekedési PDF-ek.</code>, majd <b>Commit changes</b>.</li><li>Ha más kategória kell, hozz létre további almappát ugyanígy: <code>TERKEPEK</code>, <code>FORGALMI_MUNKALAPOK</code> vagy <code>BELSO_INDITASI_JEGYZEK</code>.</li></ol>
+          <b>2. Feltöltés Windows 10-en – GitHub Desktop</b>
+          <ol><li>Nyisd meg a helyi repository-mappát a Fájlkezelőben.</li><li>Nyisd meg a <code>KOZOS_TARHELY</code> megfelelő almappáját. Ha még nincs, hozd létre.</li><li>Másold vagy húzd be a PDF-et a mappába.</li><li>GitHub Desktopban ellenőrizd a változásokat, írj rövid üzenetet (például <code>PDF feltöltés</code>), kattints <b>Commit to main</b>, majd <b>Push origin</b>.</li><li>Az alkalmazásban kattints a <b>KÖZÖS TÁR FRISSÍTÉSE</b> gombra.</li></ol>
+          <b>3. Feltöltés a GitHub weboldalán</b>
+          <ol><li>Nyisd meg a repositoryt, majd a <code>KOZOS_TARHELY</code> célmappát.</li><li><b>Add file → Upload files</b>.</li><li>Válaszd ki vagy húzd be a PDF-et, majd kattints <b>Commit changes</b>.</li><li>Frissítsd a PDF-listát az alkalmazásban.</li></ol>
+          <b>4. Megnyitás és letöltés iPhone-on</b>
+          <ol><li>A közös PDF-listában nyomd meg a <b>MEGNYITÁS</b> gombot.</li><li>A megnyílt PDF megosztás menüjében válaszd a <b>Mentés a Fájlokba</b> lehetőséget, ha helyben is szeretnéd tárolni.</li><li>A telefon helyi tárába mentett PDF nem kerül vissza automatikusan a GitHubra.</li></ol>
+          <b>5. Törlés (óvatosan)</b>
+          <ol><li>GitHubon nyisd meg a PDF-et, majd a fájl menüjében válaszd a törlést (Delete file).</li><li>Commitold a törlést; GitHub Desktop esetén a helyi fájl törlése után Commit, majd Push szükséges.</li><li>A listát frissítsd. A GitHub előzményeiből való végleges eltávolítás külön művelet lehet.</li></ol>
+          <div class="small"><b>Fontos:</b> ez a panel nyilvános GitHub-fájlokat listáz és nyit meg. Nem tartalmaz titkos feltöltési tokent, ezért nem tud közvetlenül feltölteni vagy törölni a GitHubon. A GitHub-tárhely méret- és fájlméretkorlátai miatt nagy PDF-gyűjteményhez nem ideális.</div>
+        </div>
+      </details>
       <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
         <button id="loadGithubPdfLibraryBtn" type="button">📚 KÖZÖS TÁR FRISSÍTÉSE</button>
         <a id="openGithubPdfFolderBtn" href="https://github.com/attila137142-coder/Attila-Obuda-118/tree/main/KOZOS_TARHELY" target="_blank" rel="noopener" style="display:inline-flex;align-items:center;justify-content:center;padding:8px 11px;border:1px solid #536b7a;border-radius:8px;background:#18242c;color:#fff;text-decoration:none">GITHUB MAPPÁK</a>
@@ -1048,6 +1068,9 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
         </table>
       </div>
       <div class="small" id="regionalRealtimeStatus" style="margin-top:7px">NINCS ADAT</div>
+      <div id="regionalRealtimeCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px;margin-top:10px">
+        <div class="small">VOLÁN/MÁV járműkártyák: várakozás az ellenőrzött valós adatokra.</div>
+      </div>
     </div>
 
   </section>
@@ -5999,9 +6022,16 @@ function parseWinRealtimeText(text){
     if(c[0].toLowerCase()==="rendszám" || c[0].startsWith("---")) continue;
     const plate=c[0], route=c[1], forgalmi=c[2], trip=c[3], label=c[4], stop=c[5], type=c[6];
     if(!plate || !route || (!type && !label)) continue;
-    let provider="MÁV";
-    if(route.toLowerCase().startsWith("volan_")) provider="VOLÁN";
-    else if(/^H[0-9]/i.test(route)) provider="MÁV-HÉV";
+    /* FIX22: a szöveges fallback eddig minden nem VOLÁN/HÉV sort MÁV-nak
+       címkézett. Emiatt a 243/160 stb. BKK rekordok kikerültek a BKK-cache-ből,
+       a név nélküli regionális panel pedig hibás szolgáltatókat mutathatott.
+       Számjeggyel kezdődő budapesti viszonylat alapértelmezésben BKK; a MÁV-ot
+       csak felismerhető vasúti jelölésnél soroljuk át. */
+    const routeNorm=String(route||"").trim().toUpperCase().replace(/^MÁV\s+/,"").replace(/^MAV\s+/,"");
+    let provider="BKK";
+    if(/^VOLAN[_ -]/i.test(routeNorm) || /^VOLÁN/i.test(routeNorm)) provider="VOLÁN";
+    else if(/^H[0-9]/i.test(routeNorm)) provider="MÁV-HÉV";
+    else if(/^(S|Z|IR|IC|EX|EC|EN|RJ|RE|G|R)\s*\d/i.test(routeNorm)) provider="MÁV";
     const lowFloorRaw=c[7]||"";
     rows.push({provider,plate,route,forgalmi:forgalmi||null,trip:trip||null,label:label||null,stop:stop||null,vehicleType:type||null,lowFloor:rtParseLowFloor(lowFloorRaw)});
   }
@@ -6177,16 +6207,50 @@ async function fetchWinRealtimePage(){
 
 function renderRegionalRealtime(){
   const body=$("regionalRealtimeBody");
-  if(!body) return;
-  if(!regionalRealtimeRows.length){
-    body.innerHTML='<tr><td colspan="7">NINCS ADAT</td></tr>';
-    return;
+  const cards=$("regionalRealtimeCards");
+  const rows=Array.isArray(regionalRealtimeRows)?regionalRealtimeRows.slice(0,250):[];
+  if(body){
+    body.innerHTML=rows.length?rows.map(r=>{
+      const cls=r.provider==="VOLÁN"?"rtVolan":r.provider==="MÁV-HÉV"?"rtHev":"rtMav";
+      return `<tr><td class="rtProvider ${cls}">${escapeHtml(r.provider||"NINCS ADAT")}</td><td>${escapeHtml(r.route||"NINCS ADAT")}</td><td>${escapeHtml(r.plate||r.label||r.vehicleId||"NINCS ADAT")}</td><td>${escapeHtml(r.forgalmi||"NINCS ADAT")}</td><td>${escapeHtml(r.vehicleType||"NINCS ADAT")}</td><td>${escapeHtml(r.trip||"NINCS ADAT")}</td><td>${escapeHtml(r.stop||"NINCS ADAT")}</td></tr>`;
+    }).join(""):'<tr><td colspan="7">NINCS ADAT – az online regionális forrásból jelenleg nincs feldolgozott rekord.</td></tr>';
   }
-  const rows=regionalRealtimeRows.slice(0,250);
-  body.innerHTML=rows.map(r=>{
-    const cls=r.provider==="VOLÁN"?"rtVolan":r.provider==="MÁV-HÉV"?"rtHev":"rtMav";
-    return `<tr><td class="rtProvider ${cls}">${escapeHtml(r.provider)}</td><td>${escapeHtml(r.route||"NINCS ADAT")}</td><td>${escapeHtml(r.plate||"NINCS ADAT")}</td><td>${escapeHtml(r.forgalmi||"NINCS ADAT")}</td><td>${escapeHtml(r.vehicleType||"NINCS ADAT")}</td><td>${escapeHtml(r.trip||"NINCS ADAT")}</td><td>${escapeHtml(r.stop||"NINCS ADAT")}</td></tr>`;
-  }).join("");
+  if(cards){
+    if(!rows.length){
+      cards.innerHTML='<div class="small" style="grid-column:1/-1;padding:10px;border:1px solid #705c27;border-radius:9px">NINCS ADAT. A menetrendi GTFS önmagában nem bizonyít élő járműpozíciót; ellenőrizd a regionális forrás állapotát és a NAPLÓ üzeneteit.</div>';
+    }else{
+      cards.innerHTML=rows.map((r,i)=>{
+        const lat=Number(r.lat),lon=Number(r.lon);
+        const hasGps=Number.isFinite(lat)&&Number.isFinite(lon)&&Math.abs(lat)<=90&&Math.abs(lon)<=180;
+        const provider=String(r.provider||"ISMERETLEN");
+        const border=provider==="VOLÁN"?"#ff8a24":provider==="MÁV-HÉV"?"#33b879":"#a87955";
+        const name=r.plate||r.label||r.vehicleId||r.route||("Jármű "+(i+1));
+        const fields=[['SZOLGÁLTATÓ',provider],['JÁRAT',r.route],['JÁRMŰ / CÍMKE',r.plate||r.label||r.vehicleId],['FORGALMI',r.forgalmi],['JÁRMŰTÍPUS',r.vehicleType],['MENET / TRIP',r.trip],['MEGÁLLÓ',r.stop],['GPS',hasGps?lat.toFixed(6)+', '+lon.toFixed(6):null],['FORRÁS',r.realtimeSource||'WinMenetrend']];
+        const btn=hasGps?`<button type="button" data-regional-locate="${i}" style="margin-top:7px">TÉRKÉPEN MUTAT</button>`:'';
+        return `<article class="vehicleCard" style="border:1px solid ${border};border-left:5px solid ${border};min-width:0"><div class="vehicleTop"><div class="vehicleTitle">${escapeHtml(provider)} · ${escapeHtml(name)}</div><div class="sourceTag">VALÓS FORRÁS</div></div>${fields.map(([k,v])=>`<div class="field"><b>${escapeHtml(k)}</b><span>${escapeHtml(v===null||v===undefined||v===""?'NINCS ADAT':String(v))}</span></div>`).join('')}${btn}</article>`;
+      }).join('');
+      cards.querySelectorAll('[data-regional-locate]').forEach(btn=>btn.addEventListener('click',()=>{
+        const r=rows[Number(btn.dataset.regionalLocate)]; if(!r)return;
+        const lat=Number(r.lat),lon=Number(r.lon);
+        if(Number.isFinite(lat)&&Number.isFinite(lon)&&typeof map!=="undefined"&&map){map.setView([lat,lon],Math.max(map.getZoom(),14));if(window.__attilaRegionalLayer)window.__attilaRegionalLayer.eachLayer(m=>{if(m.getLatLng&&Math.abs(m.getLatLng().lat-lat)<1e-7&&Math.abs(m.getLatLng().lng-lon)<1e-7)m.openPopup();});}
+      }));
+    }
+  }
+  // A térképre kizárólag valódi GPS-koordinátával rendelkező rekord kerülhet.
+  try{
+    if(typeof map==="undefined"||!map||!window.L)return;
+    if(!window.__attilaRegionalLayer)window.__attilaRegionalLayer=window.L.layerGroup().addTo(map);
+    const layer=window.__attilaRegionalLayer;layer.clearLayers();
+    for(const r of rows){
+      const lat=Number(r.lat),lon=Number(r.lon);
+      if(!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)continue;
+      const provider=String(r.provider||"ISMERETLEN");
+      const color=provider==="VOLÁN"?"#ff8a24":provider==="MÁV-HÉV"?"#33b879":"#a87955";
+      const popup='<div style="min-width:220px;color:#101820"><b>'+escapeHtml(provider)+' – VALÓS JÁRMŰ</b><div>JÁRAT: '+escapeHtml(r.route||"NINCS ADAT")+'</div><div>JÁRMŰ: '+escapeHtml(r.plate||r.label||r.vehicleId||"NINCS ADAT")+'</div><div>TRIP: '+escapeHtml(r.trip||"NINCS ADAT")+'</div><div>JÁRMŰTÍPUS: '+escapeHtml(r.vehicleType||"NINCS ADAT")+'</div><div>FORGALMI: '+escapeHtml(r.forgalmi||"NINCS ADAT")+'</div><div>GPS: '+lat.toFixed(6)+', '+lon.toFixed(6)+'</div></div>';
+      window.L.circleMarker([lat,lon],{radius:7,color:"#fff",weight:2,fillColor:color,fillOpacity:.95}).bindPopup(popup,{maxWidth:360}).addTo(layer);
+    }
+  }catch(e){try{logLine("Regionális térképréteg hiba: "+(e?.message||e));}catch(_){}}
+  if(cards){cards.querySelectorAll('article.vehicleCard').forEach(card=>{card.style.color='var(--text)';});}
 }
 
 
@@ -7442,7 +7506,7 @@ document.addEventListener(
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – BKK VADÁSZ WINMENETREND KAPCSOLAT FIX36 MOBIL STABIL indul."
+      "ATTILA KÖZLEKEDÉS – FIX22 MÁV/VOLÁN KÜLÖN JÁRMŰKÁRTYÁK + BKK ADATÚT indul."
     );
 
 
@@ -7869,76 +7933,77 @@ window.extractFutarVehicles = function(json){
 
 
 <script>
-/* FIX38 – GITHUB KÖZÖS PDF-TÁR
-   - Nyilvános GitHub repóból automatikusan listázza a PDF-eket.
-   - Nincs kézi JSON-fájl.
-   - Windows 10 + GitHub Desktop: PDF bemásolás -> Commit -> Push.
-   - iPhone XR: ugyanazok a GitHub PDF-ek megnyithatók.
-   - Csak a ténylegesen GitHubon megtalált PDF-ek jelennek meg.
-*/
+/* FIX41 – IPHONE PDF OLVASÓ + LETÖLTÉS, REKURZÍV GITHUB-LISTA */
 (function(){
   "use strict";
-  const GH_OWNER="attila137142-coder";
-  const GH_REPO="Attila-Obuda-118";
-  const GH_BRANCH="main";
-  const GH_ROOT="KOZOS_TARHELY";
-  const DIRS=[
-    {path:"FORGALMI_MUNKALAPOK",label:"🚍 FORGALMI MUNKALAPOK"},
-    {path:"BELSO_INDITASI_JEGYZEK",label:"📝 BELSŐ INDÍTÁSI JEGYZÉKEK"},
-    {path:"MENETRENDEK",label:"🕐 MENETRENDEK"},
-    {path:"TERKEPEK",label:"🗺️ TÉRKÉPEK"}
-  ];
+  const GH_OWNER="attila137142-coder", GH_REPO="Attila-Obuda-118", GH_BRANCH="main", GH_ROOT="KOZOS_TARHELY";
   const apiBase="https://api.github.com/repos/"+GH_OWNER+"/"+GH_REPO+"/contents/";
   const $=id=>document.getElementById(id);
-  const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[m]));
+  const esc=v=>String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m]));
   function status(t){const e=$("githubPdfStatus");if(e)e.textContent=t;}
   async function listDir(path){
     const u=apiBase+path.split("/").map(encodeURIComponent).join("/")+"?ref="+encodeURIComponent(GH_BRANCH);
     const r=await fetch(u,{cache:"no-store",headers:{"Accept":"application/vnd.github+json"}});
-    if(r.status===404)return [];
+    if(r.status===404)return null;
     if(!r.ok)throw new Error("GitHub HTTP "+r.status);
-    const data=await r.json();
-    return Array.isArray(data)?data:[];
+    const data=await r.json();return Array.isArray(data)?data:[];
+  }
+  async function collect(path,rows,depth){
+    if(depth>8)return;
+    const entries=await listDir(path); if(entries===null)return;
+    for(const x of entries){
+      if(x.type==="file" && /\.pdf$/i.test(x.name)){
+        rows.push({name:x.name,size:x.size||0,url:x.download_url||x.html_url,path:x.path,category:path===GH_ROOT?"KOZOS_TARHELY (gyökér)":path.slice(GH_ROOT.length+1).replace(/\//g," / ")});
+      } else if(x.type==="dir") await collect(x.path,rows,depth+1);
+    }
+  }
+  function ensureReader(){
+    if($("githubPdfReaderOverlay"))return;
+    const wrap=document.createElement("div");
+    wrap.id="githubPdfReaderOverlay";
+    wrap.style.cssText="display:none;position:fixed;inset:0;z-index:2147483000;background:#071018;color:#fff;padding:8px;box-sizing:border-box;";
+    wrap.innerHTML="<div style='height:100%;display:flex;flex-direction:column;gap:7px;max-width:1100px;margin:auto'><div style='display:flex;align-items:center;gap:8px;flex-wrap:wrap'><strong id='githubPdfReaderTitle' style='flex:1;min-width:130px;overflow-wrap:anywhere'>PDF OLVASÓ</strong><button id='githubPdfReaderOpenDirect' type='button' style='padding:9px 12px;font-weight:700'>KÖZVETLEN PDF</button><button id='githubPdfReaderClose' type='button' style='padding:9px 12px;font-weight:800'>✕ BEZÁRÁS</button></div><div id='githubPdfReaderHint' style='font-size:13px;color:#c7d4df'>A PDF betöltése folyamatban… Ha nem jelenik meg, válaszd a KÖZVETLEN PDF lehetőséget.</div><iframe id='githubPdfReaderFrame' title='PDF olvasó' style='flex:1;min-height:0;width:100%;border:1px solid #465867;border-radius:7px;background:#fff' referrerpolicy='no-referrer' allow='fullscreen'></iframe></div>";
+    document.body.appendChild(wrap);
+    $("githubPdfReaderClose").addEventListener("click",closeReader);
+    wrap.addEventListener("click",e=>{if(e.target===wrap)closeReader()});
+    document.addEventListener("keydown",e=>{if(e.key==="Escape")closeReader()});
+  }
+  let activePdfUrl="";
+  function closeReader(){const w=$("githubPdfReaderOverlay");if(w)w.style.display="none";const f=$("githubPdfReaderFrame");if(f)f.src="about:blank";document.body.style.overflow="";}
+  function openReader(url,name){
+    ensureReader();activePdfUrl=url;
+    $("githubPdfReaderTitle").textContent=name||"PDF OLVASÓ";
+    $("githubPdfReaderHint").textContent="Ha a beágyazott olvasó nem jeleníti meg a dokumentumot, koppints a KÖZVETLEN PDF gombra. A megjelenítéshez internetkapcsolat kell.";
+    $("githubPdfReaderOpenDirect").onclick=()=>{if(activePdfUrl)window.open(activePdfUrl,"_blank","noopener,noreferrer")};
+    /* Google dokumentumnéző nyilvánosan elérhető PDF-ekhez; a közvetlen link külön megmarad. */
+    $("githubPdfReaderFrame").src="https://docs.google.com/gview?embedded=1&url="+encodeURIComponent(url);
+    $("githubPdfReaderOverlay").style.display="block";
+    document.body.style.overflow="hidden";
   }
   function render(rows){
-    const el=$("githubPdfList"); if(!el)return;
-    if(!rows.length){el.innerHTML="<div class='small'>NINCS GITHUBON TALÁLHATÓ PDF A KÖZÖS TÁRBAN.</div>";return;}
+    const el=$("githubPdfList");if(!el)return;
+    if(!rows.length){el.innerHTML="<div class='small'>A KOZOS_TARHELY mappában még nem található PDF. Ha a mappa sem létezik, nyisd le a RÉSZLETES ÚTMUTATÓT, és hozd létre a KOZOS_TARHELY/MENETRENDEK/README.md fájlt. Csak nyilvános, nem érzékeny PDF-et helyezz ide.</div>";return;}
     rows.sort((a,b)=>a.category.localeCompare(b.category,"hu")||a.name.localeCompare(b.name,"hu"));
-    let current=""; let html="";
+    let current="",html="";
     for(const x of rows){
       if(x.category!==current){current=x.category;html+="<div style='margin-top:10px;padding:7px 6px;background:#18242c;border-radius:7px;font-weight:800'>"+esc(current)+"</div>";}
-      html+="<div style='padding:7px 6px;border-top:1px solid #263744;display:flex;gap:7px;align-items:center;justify-content:space-between;flex-wrap:wrap'>"
-        +"<span>📄 <b>"+esc(x.name)+"</b> <span class='small'>· "+(Number(x.size||0)/1024/1024).toFixed(2)+" MB</span></span>"
-        +"<a href='"+esc(x.url)+"' target='_blank' rel='noopener' style='display:inline-flex;align-items:center;justify-content:center;padding:7px 10px;border:1px solid #536b7a;border-radius:8px;background:#18242c;color:#fff;text-decoration:none'>MEGNYITÁS</a>"
-        +"</div>";
+      const safeUrl=esc(x.url);
+      html+="<div style='padding:8px 6px;border-top:1px solid #263744;display:flex;gap:7px;align-items:center;justify-content:space-between;flex-wrap:wrap'><span style='flex:1;min-width:180px;overflow-wrap:anywhere'>📄 <b>"+esc(x.name)+"</b> <span class='small'>· "+(Number(x.size||0)/1024/1024).toFixed(2)+" MB</span></span><span style='display:flex;gap:6px;flex-wrap:wrap'><button type='button' data-pdf-read='"+safeUrl+"' data-pdf-name='"+esc(x.name)+"' style='padding:8px 11px;border:1px solid #2c8063;border-radius:8px;background:#14543f;color:#fff;font-weight:800'>📖 OLVASÁS</button><a href='"+safeUrl+"' target='_blank' rel='noopener noreferrer' style='display:inline-flex;align-items:center;justify-content:center;padding:8px 11px;border:1px solid #536b7a;border-radius:8px;background:#18242c;color:#fff;text-decoration:none'>⬇️ LETÖLTÉS</a></span></div>";
     }
     el.innerHTML=html;
+    el.querySelectorAll("[data-pdf-read]").forEach(b=>b.addEventListener("click",()=>openReader(b.getAttribute("data-pdf-read"),b.getAttribute("data-pdf-name"))));
   }
   async function load(){
-    const btn=$("loadGithubPdfLibraryBtn"); if(btn)btn.disabled=true;
-    status("GitHub közös tár keresése...");
+    const btn=$("loadGithubPdfLibraryBtn");if(btn)btn.disabled=true;status("GitHub közös tár keresése…");
     try{
-      // A Contents API könyvtáranként adja vissza a tényleges fájlokat; nincs kézzel karbantartott lista.
-      const all=[];
-      for(const d of DIRS){
-        const entries=await listDir(GH_ROOT+"/"+d.path);
-        for(const x of entries){
-          if(x.type!=="file" || !/\.pdf$/i.test(x.name))continue;
-          all.push({name:x.name,size:x.size||0,url:x.download_url||x.html_url,path:x.path,category:d.label});
-        }
-      }
-      render(all);
-      status("GitHub közös tár: "+all.length+" PDF • "+new Date().toLocaleString("hu-HU"));
-    }catch(e){
-      const el=$("githubPdfList");if(el)el.innerHTML="<div class='small'>KÖZÖS TÁR HIBA: "+esc(e.message||e)+"</div>";
-      status("GitHub közös tár HIBA.");
-      if(typeof logLine==="function")logLine("FIX38 GitHub PDF-tár HIBA: "+(e.message||e));
-    }finally{if(btn)btn.disabled=false;}
+      const root=await listDir(GH_ROOT);
+      if(root===null){render([]);status("A KOZOS_TARHELY mappa még nincs létrehozva a GitHub main ágán.");return;}
+      const all=[];await collect(GH_ROOT,all,0);render(all);
+      status("GitHub közös tár: "+all.length+" PDF · frissítve: "+new Date().toLocaleString("hu-HU"));
+    }catch(e){const el=$("githubPdfList");if(el)el.innerHTML="<div class='small'>KÖZÖS TÁR HIBA: "+esc(e.message||e)+". Ellenőrizd az internetkapcsolatot és a repository láthatóságát.</div>";status("GitHub közös tár hiba.");if(typeof logLine==="function")logLine("FIX40 GitHub PDF-tár HIBA: "+(e.message||e));}
+    finally{if(btn)btn.disabled=false;}
   }
-  document.addEventListener("DOMContentLoaded",()=>{
-    $("loadGithubPdfLibraryBtn")?.addEventListener("click",load);
-    load();
-  });
+  document.addEventListener("DOMContentLoaded",()=>{$("loadGithubPdfLibraryBtn")?.addEventListener("click",load);load();});
   window.refreshGithubPdfLibrary=load;
 })();
 </script>
@@ -8511,12 +8576,14 @@ window.extractFutarVehicles = function(json){
     });
   }
   function renderMavVehicleCards(arr){
-    const list=document.getElementById("vehicleList");
+    const list=document.getElementById("attiMavVehicleCards");
     if(!list)return;
-    list.querySelectorAll(".attiMavVehicleCard").forEach(e=>e.remove());
-    (Array.isArray(arr)?arr:[]).slice(0,100).forEach(v=>{
+    list.innerHTML="";
+    const validRows=(Array.isArray(arr)?arr:[]).slice(0,100);
+    if(!validRows.length){list.innerHTML='<div class="small">NINCS ADAT – a MÁVPlusz / EMMA jelenleg nem adott vissza járművet.</div>';return;}
+    validRows.forEach(v=>{
       const lat=Number(v?.lat),lon=Number(v?.lon);
-      if(!Number.isFinite(lat)||!Number.isFinite(lon)||lat < -90||lat > 90||lon < -180||lon > 180)return;
+      const hasGps=Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=-90&&lat<=90&&lon>=-180&&lon<=180;
       const label=v?.label||v?.vehicleId||"MÁV";
       const trip=v?.trip?.gtfsId||null;
       const trainNo=v?.trip?.domesticResTrainNumber||null;
@@ -8530,13 +8597,13 @@ window.extractFutarVehicles = function(json){
         ["JÁRAT",trainNo], ["JÁRMŰCÍMKE",label], ["JÁRMŰ ID",v?.vehicleId], ["TRIP",trip],
         ["ELTÉRÉS",delayText], ["JÁRMŰTÍPUS",v?.vehicleType], ["ALACSONYPADLÓS",v?.lowFloor===true?"IGEN":v?.lowFloor===false?"NEM":null],
         ["RENDSZÁM",v?.licensePlate], ["FORGALMI",v?.forgalmi], ["SEBESSÉG",speed===null?null:speed.toFixed(1)+" km/h"],
-        ["UTOLSÓ FRISSÍTÉS",updatedText], ["GPS",lat.toFixed(6)+", "+lon.toFixed(6)], ["FORRÁS","MÁVPlusz / EMMA"]
+        ["UTOLSÓ FRISSÍTÉS",updatedText], ["GPS",hasGps?lat.toFixed(6)+", "+lon.toFixed(6):null], ["FORRÁS","MÁVPlusz / EMMA"]
       ];
       const card=document.createElement("div");
       card.className="vehicleCard attiMavVehicleCard";
       card.style.borderColor="#8b61b5";
       card.innerHTML='<div class="vehicleTop"><div class="vehicleTitle">🚆 '+esc(label)+'</div><div class="sourceTag">MÁV REALTIME</div></div>'+vals.map(([k,val])=>'<div class="field"><b>'+esc(k)+'</b><span>'+esc(val===undefined||val===null||val===""?"NINCS ADAT":String(val))+'</span></div>').join("");
-      card.addEventListener("click",()=>{try{map.setView([lat,lon],Math.max(map.getZoom(),14));if(window.__attilaMavLayer)window.__attilaMavLayer.eachLayer(m=>{if(m.getLatLng&&Math.abs(m.getLatLng().lat-lat)<1e-7&&Math.abs(m.getLatLng().lng-lon)<1e-7)m.openPopup();});}catch(e){}});
+      if(hasGps) card.addEventListener("click",()=>{try{if(typeof map!=="undefined"&&map){map.setView([lat,lon],Math.max(map.getZoom(),14));if(window.__attilaMavLayer)window.__attilaMavLayer.eachLayer(m=>{if(m.getLatLng&&Math.abs(m.getLatLng().lat-lat)<1e-7&&Math.abs(m.getLatLng().lng-lon)<1e-7)m.openPopup();});}}catch(e){}});
       list.appendChild(card);
     });
   }
@@ -8546,11 +8613,14 @@ window.extractFutarVehicles = function(json){
     const host=document.createElement('section');
     host.id='attiMavRealtimePanel';
     host.style.cssText='margin:12px 0;padding:12px;border:1px solid rgba(150,150,150,.35);border-radius:12px;background:rgba(20,20,20,.06)';
-    host.innerHTML='<div style="font-weight:800;font-size:18px">🚆 MÁVPlusz / EMMA – VALÓS IDEJŰ JÁRMŰVEK</div><div id="attiMavRealtimeStatus" style="margin:6px 0">MÁVPlusz: várakozás…</div><button id="attiMavRealtimeBtn" type="button" style="padding:7px 12px;border-radius:8px">MÁV FRISSÍTÉS</button><div id="attiMavRealtimeRows" style="margin-top:8px;max-height:360px;overflow:auto;font-size:13px"></div>';
+    host.innerHTML='<div style="font-weight:800;font-size:18px">🚆 MÁVPlusz / EMMA – VALÓS IDEJŰ JÁRMŰVEK</div><div id="attiMavRealtimeStatus" style="margin:6px 0">MÁVPlusz: várakozás…</div><button id="attiMavRealtimeBtn" type="button" style="padding:7px 12px;border-radius:8px">MÁV FRISSÍTÉS</button><div id="attiMavRealtimeRows" style="margin-top:8px;max-height:240px;overflow:auto;font-size:13px"></div><div id="attiMavVehicleCards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:8px;margin-top:10px"></div>';
     const candidates=['regionalRealtimeStatus','vehiclePanel','vehicleCards','map'];
     let target=null;
     for(const id of candidates){const e=document.getElementById(id);if(e){target=e;break;}}
-    (target||document.body).parentNode?.insertBefore(host,target||document.body.firstChild);
+    const regionalPanel=document.getElementById('regionalRealtimeStatus')?.closest('.panel');
+    if(regionalPanel) regionalPanel.insertAdjacentElement('afterend',host);
+    else if(target) target.parentNode?.insertBefore(host,target);
+    else document.body.insertBefore(host,document.body.firstChild);
     document.getElementById('attiMavRealtimeBtn')?.addEventListener('click',loadMav);
     loadMav();
   }
