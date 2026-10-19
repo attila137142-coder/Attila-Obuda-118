@@ -1,5 +1,5 @@
-FIX23
-MÁV–VOLÁN–BKK · Javított HTML · 317 KB  JavaScript-szintaxis ellenőrizve 2026.10.19 Hétfö  20.08
+FIX24  MÁV–VOLÁN–BKK · térkép- és kulcsdiagnosztikai javítás
+318 KB · 24 beágyazott JavaScript-blokk szintaktikai ellenőrzése sikeres
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -1207,6 +1207,8 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
    ============================================================ */
 
 
+const BKK_API_KEY_STORAGE = "attila_bkk_api_key";
+
 const VEHICLE_URL =
 "https://go.bkk.hu/api/query/v1/ws/gtfs-rt/full/VehiclePositions.pb";
 
@@ -1542,6 +1544,9 @@ function initMap(){
       11
     );
 
+  // FIX24: a térképet használó régebbi modulok window.map-et olvasnak.
+  // Ugyanarra a valódi Leaflet Map példányra mutasson, ne undefined/objektum legyen.
+  window.map = map;
 
   const osm=L.tileLayer(
     "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",
@@ -1706,7 +1711,7 @@ function loadSavedKey(){
 
   const key =
     localStorage.getItem(
-      "attila_bkk_api_key"
+      BKK_API_KEY_STORAGE
     ) || "";
 
 
@@ -1735,15 +1740,17 @@ function saveKey(){
   }
 
 
-  localStorage.setItem(
-    "attila_bkk_api_key",
-    key
-  );
-
-
-  logLine(
-    "BKK API-kulcs elmentve."
-  );
+  try{
+    localStorage.setItem(BKK_API_KEY_STORAGE, key);
+    const saved = String(localStorage.getItem(BKK_API_KEY_STORAGE) || "").trim();
+    if(saved === key){
+      logLine("BKK API-kulcs elmentve és visszaellenőrizve.");
+    }else{
+      logLine("BKK API-kulcs csak az aktuális mezőben aktív; a böngésző tárhelye nem igazolta vissza a mentést.");
+    }
+  }catch(e){
+    logLine("BKK API-kulcs mentése nem sikerült (böngésző tárhely tiltva); az aktuális mezőből használható.");
+  }
 
 }
 
@@ -3155,7 +3162,7 @@ function logBkkKeyDiagnostics(){
   const active = getKey();
   logLine(
     "BKK KULCS DIAG: mező=" + (input ? "IGEN ("+input.length+")" : "NEM") +
-    " | localStorage=" + (stored ? "IGEN ("+stored.length+")" : "NEM") +
+    " | localStorage=" + (stored ? "IGEN ("+stored.length+")" : "NEM / NINCS MENTVE") +
     " | azonos=" + (input && stored ? (input === stored ? "IGEN" : "NEM") : "N/A") +
     " | getKey=" + (active ? "IGEN ("+active.length+")" : "NEM")
   );
@@ -7562,7 +7569,7 @@ document.addEventListener(
 
 
     logLine(
-      "ATTILA KÖZLEKEDÉS – FIX23 MOBILJAVÍTÁS + MÁV/VOLÁN KÜLÖN JÁRMŰKÁRTYÁK + BKK ADATÚT indul."
+      "ATTILA KÖZLEKEDÉS – FIX24 TÉRKÉP/KULCS JAVÍTÁS + MÁV/VOLÁN KÜLÖN JÁRMŰKÁRTYÁK + BKK ADATÚT indul."
     );
 
 
@@ -7626,17 +7633,23 @@ document.addEventListener(
 /* A forrásban sérült térképcsempe helyett biztos OSM réteg. */
 function fixMapTiles(){
   try{
-    if(!window.map) return;
+    const m = (typeof map !== "undefined" && map && typeof map.eachLayer === "function")
+      ? map : window.map;
+    if(!m || typeof m.eachLayer !== "function" || !window.L || !window.L.TileLayer){
+      if(typeof logLine==="function") logLine("TÉRKÉP: Leaflet Map még nem áll készen; OSM ellenőrzés későbbre marad.");
+      return;
+    }
+    window.map = m;
     let hasTile=false;
-    window.map.eachLayer(function(layer){
-      if(layer instanceof L.TileLayer) hasTile=true;
+    m.eachLayer(function(layer){
+      if(layer instanceof window.L.TileLayer) hasTile=true;
     });
     if(!hasTile){
-      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
+      window.L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png",{
         maxZoom:19, attribution:"© OpenStreetMap"
-      }).addTo(window.map);
-      if(typeof logLine==="function") logLine("OpenStreetMap térképréteg OK.");
+      }).addTo(m);
     }
+    if(typeof logLine==="function") logLine("OpenStreetMap térképréteg OK.");
   }catch(e){
     try{if(typeof logLine==="function") logLine("OpenStreetMap réteg HIBA: "+(e?.message||e));}catch(x){}
   }
