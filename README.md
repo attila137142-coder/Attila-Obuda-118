@@ -1,4 +1,5 @@
 Javitot GTFS   2026.10.23 Péntek 20.08
+
 <!doctype html>
 <html lang="hu">
 <head>
