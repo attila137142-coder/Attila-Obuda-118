@@ -1,3 +1,4 @@
+ATTILA_KOZLEKEDES_FIX29_VOLAN_MAV_18MEZOS_EGYBEN
 ATTILA_KOZLEKEDES_FIX26R2_BKK_MEGALLO_GTFS_TAVOLSAG   2026.10.26 Hétfö DE_de
 <!DOCTYPE html>
 <html lang="hu">
@@ -11,7 +12,7 @@ ATTILA_KOZLEKEDES_FIX26R2_BKK_MEGALLO_GTFS_TAVOLSAG   2026.10.26 Hétfö DE_de
 
 <meta name="theme-color" content="#071018">
 
-<title>FIX26R2 – ATTILA KÖZLEKEDÉS – FIX23 · MOBILJAVÍTÁS + MÁV/VOLÁN JÁRMŰKÁRTYÁK + BKK ADATÚT</title>
+<title>FIX29 – ATTILA KÖZLEKEDÉS – VOLÁN + MÁV ÉLŐ PANEL + 18 MEZŐ + MEGÁLLÓJAVÍTÁS</title>
 
 <link
   rel="stylesheet"
@@ -658,7 +659,7 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 <div id="header">
 
   <div class="title">
-    🚍 ATTILA KÖZLEKEDÉS – FIX23 · MOBILJAVÍTÁS + MÁV/VOLÁN JÁRMŰKÁRTYÁK + BKK ADATÚT
+    🚍 ATTILA KÖZLEKEDÉS – FIX29 · VOLÁN + MÁV ÉLŐ PANEL + 18 MEZŐ + MEGÁLLÓJAVÍTÁS
   </div>
 
   <div id="feedBadge" class="badge warn">
@@ -5888,39 +5889,18 @@ function routeDisplay(
 }
 
 
-function stopDisplay(
-  item
-){
-
-  if(
-    !item.nearestStop
-  ){
-
-    return "NINCS ADAT";
-
+function stopDisplay(item){
+  // FIX29: a járműhöz/menethez tartozó megálló elsőbbséget élvez.
+  // A GPS alapján legközelebbi megálló nem bizonyítja a menetrendi következő megállót.
+  const tripStop = String(item?.nextStopName || item?.stopName || item?.stop || "").trim();
+  if(tripStop){
+    const sid = item?.nextStopId || item?.stopId || item?.stop_id || null;
+    const seq = item?.nextStopSequence || item?.stopSequence || item?.stop_sequence || null;
+    return tripStop + (sid ? " | GTFS: " + sid : "") + (seq ? " | SORREND: " + seq : "");
   }
-
-
-  return (
-
-    val(
-      item.nearestStop.name
-    ) +
-
-    " | GTFS: " +
-
-    val(
-      item.nearestStop.id
-    ) +
-
-    " | " +
-
-    mText(
-      item.nearestStop.distanceM
-    )
-
-  );
-
+  if(!item?.nearestStop) return "NINCS ADAT";
+  return "KÖZELI MEGÁLLÓ (NEM IGAZOLT KÖVETKEZŐ): " + val(item.nearestStop.name) +
+    " | GTFS: " + val(item.nearestStop.id) + " | " + mText(item.nearestStop.distanceM);
 }
 
 
@@ -6093,7 +6073,7 @@ function parseWinRealtimeText(text){
     let provider="BKK";
     if(/^VOL[ÁA]N(?:BUSZ)?(?:\b|[_ -])/i.test(routeNorm) || /VOLANBUSZ/i.test(routeNorm) || /^VOLAN_/i.test(routeNorm)) provider="VOLÁN";
     else if(/^H[0-9]/i.test(routeNorm)) provider="MÁV-HÉV";
-    else if(/^(S|Z|IR|IC|EX|EC|EN|RJ|RE|G|R)\s*\d/i.test(routeNorm)) provider="MÁV";
+    else if(/^(S|Z|IR|IC|EX|EC|EN|RJ|RE|G|R)(?:\s*\d|$)/i.test(routeNorm)) provider="MÁV";
     const lowFloorRaw=c[7]||"";
     rows.push({provider,plate,route,forgalmi:forgalmi||null,trip:trip||null,label:label||null,stop:stop||null,vehicleType:type||null,lowFloor:rtParseLowFloor(lowFloorRaw)});
   }
@@ -6160,7 +6140,7 @@ function parseWinRealtimeHtml(html){
         if(/VOLAN|VOLANBUSZ|MAV-START|MAV START|MAV|HEV/.test(providerText)) provider=/HEV/.test(providerText)?"MÁV-HÉV":/VOLAN/.test(providerText)?"VOLÁN":"MÁV";
         else if(/^VOL[ÁA]N(?:BUSZ)?(?:\b|[_ -])/i.test(route)||/VOLANBUSZ/i.test(route)||/^VOLAN_/i.test(route)) provider="VOLÁN";
         else if(/^H[0-9]/i.test(route)) provider="MÁV-HÉV";
-        else if(/^(S|Z|IR|IC|EX|G|RJ|EC|EN|RE|R)\s*\d/i.test(route) && !/^\d/.test(route)) provider="MÁV";
+        else if(/^(S|Z|IR|IC|EX|G|RJ|EC|EN|RE|R)(?:\s*\d|$)/i.test(route) && !/^\d/.test(route)) provider="MÁV";
         out.push({
           provider,
           plate,
@@ -9410,7 +9390,7 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
  let provider='BKK', map=null, layer=null, mavCache=[], refreshTimer=null, busy=false;
  const esc26=v=>{if(v===null||v===undefined||v==='')return 'NINCS ADAT';if(typeof esc==='function')return esc(String(v));return String(v).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));};
  const val=(...xs)=>{for(const x of xs){if(x!==null&&x!==undefined&&x!=='')return x;}return null;};
- function coords(v){const p=v?.position||v?.gps||{};let lat=Number(val(v?.lat,v?.latitude,v?.gpsLat,v?.gps_lat,p?.lat,p?.latitude));let lon=Number(val(v?.lon,v?.lng,v?.longitude,v?.gpsLon,v?.gps_lon,p?.lon,p?.lng,p?.longitude));return Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=45&&lat<=49&&lon>=16&&lon<=23?[lat,lon]:null;}
+ function coords(v){const p=v?.position||v?.gps||{};let lat=Number(val(v?.lat,v?.latitude,v?.gpsLat,v?.gps_lat,p?.lat,p?.latitude));let lon=Number(val(v?.lon,v?.lng,v?.longitude,v?.gpsLon,v?.gps_lon,p?.lon,p?.lng,p?.longitude));if(!(Number.isFinite(lat)&&Number.isFinite(lon)&&lat>=45&&lat<=49&&lon>=16&&lon<=23))return null;/* BKK/BKV is Budapest + agglomeration; distant Hungarian outliers are not plotted as BKK. */if(provider==='BKK'&&(lat<46.8||lat>48.0||lon<18.4||lon>20.1))return null;return [lat,lon];}
  function initMap(){if(map||!window.L)return;map=L.map('f26map').setView([47.15,19.45],7);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(map);layer=L.layerGroup().addTo(map);}
  function providerNorm(v){return String(v||'').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^A-Z0-9]+/g,'');}
  function sourceRows(){
@@ -9428,7 +9408,7 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
   const gpsRows=enriched.filter(x=>x.p);
   const names={BKK:'BKK / BKV',VOLÁN:'VOLÁN',MÁV:'MÁV / EMMA'};
   title.textContent='ATTILA KÖZLEKEDÉS – '+names[provider]+' ÉLŐ PANEL';
-  status.textContent=names[provider]+' · forrásrekord: '+rows.length+' · érvényes GPS: '+gpsRows.length+' · frissítve: '+new Date().toLocaleTimeString('hu-HU');
+  status.textContent=names[provider]+' · forrásrekord: '+rows.length+' · térképen ábrázolható GPS: '+gpsRows.length+' · frissítve: '+new Date().toLocaleTimeString('hu-HU');
   if(provider==='VOLÁN')status.textContent+=' · GPS nélküli rekord is megjelenik a listában, térképpontként nem.';
   cards.innerHTML='';
   if(!rows.length){cards.innerHTML='<div class="f26card"><b>NINCS ADAT</b><p>A kiválasztott szolgáltatóhoz jelenleg nem érkezett feldolgozható rekord a meglévő forrásból. Ez nem helyettesíthető menetrendi vagy kitalált járműadattal.</p></div>';return;}
@@ -9442,7 +9422,26 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
     marker.bindPopup('<b>'+esc26(provider)+' – JÁRMŰ</b><br>JÁRAT: '+esc26(route)+'<br>AZONOSÍTÓ: '+esc26(label)+'<br>GPS: '+p[0].toFixed(6)+', '+p[1].toFixed(6));
    }
    const d=document.createElement('div');d.className='f26card';
-   const fieldRows=[['SZOLGÁLTATÓ',provider],['JÁRAT',route],['LABEL / AZONOSÍTÓ',label],['JÁRMŰ ID',val(v.vehicleId,v.vehicle_id,v.id,v.vehicle?.id)],['RENDSZÁM',val(v.licensePlate,v.license_plate,v.plate)],['MEGÁLLÓ',val(v.stopName,v.stop_name,v.stop)],['ELTÉRÉS',val(v.delay,v.delaySeconds,v.nextStop?.arrivalDelay)],['JÁRMŰTÍPUS',val(v.vehicleType,v.vehicle_type,v.type)],['ALACSONYPADLÓS',val(v.lowFloor,v.low_floor)],['FORGALMI',val(v.forgalmi)],['SEBESSÉG',val(v.speed,v.speedKmh)],['TRIP',val(v.tripId,v.trip_id,v.trip?.gtfsId)],['GPS',p?p[0].toFixed(6)+', '+p[1].toFixed(6):null],['FRISSÍTVE',val(v.lastUpdated,v.timestamp,v.updated_at)],['FORRÁS',val(v.realtimeSource,'WinMenetrend')]];
+   const fieldRows=[
+    ['SZOLGÁLTATÓ',provider],
+    ['JÁRAT',route],
+    ['LABEL / AZONOSÍTÓ',label],
+    ['JÁRMŰ ID',val(v.vehicleId,v.vehicle_id,v.id,v.vehicle?.id)],
+    ['RENDSZÁM',val(v.licensePlate,v.license_plate,v.plate)],
+    ['MEGÁLLÓ / KÖVETKEZŐ MEGÁLLÓ',val(v.nextStopName,v.stopName,v.stop_name,v.stop)],
+    ['STOP ID',val(v.nextStopId,v.stopId,v.stop_id)],
+    ['STOP SORREND',val(v.nextStopSequence,v.stopSequence,v.stop_sequence)],
+    ['ELTÉRÉS',val(v.delay,v.delaySeconds,v.nextStop?.arrivalDelay)],
+    ['JÁRMŰTÍPUS',val(v.vehicleType,v.vehicle_type,v.type)],
+    ['ALACSONYPADLÓS',val(v.lowFloor,v.low_floor)],
+    ['FORGALMI',val(v.forgalmi,v.vehicle?.forgalmi)],
+    ['SEBESSÉG',val(v.speed,v.speedKmh)],
+    ['SAJÁT GPS-TÁVOLSÁG',val(v.gpsDistanceKm,v.distanceKm)],
+    ['TRIP / MENET',val(v.tripId,v.trip_id,v.trip?.gtfsId)],
+    ['BLOKK / FORDA',val(v.blockId,v.block_id,v.block,v.forda)],
+    ['GPS',p?p[0].toFixed(6)+', '+p[1].toFixed(6):null],
+    ['FRISSÍTVE / FORRÁS',val(v.lastUpdated,v.timestamp,v.updated_at,v.realtimeSource,'WinMenetrend')]
+   ];
    d.innerHTML='<b>FORRÁSREKORD '+(i+1)+(p?' · GPS-SEL':' · GPS NÉLKÜL')+'</b><table>'+fieldRows.map(r=>'<tr><th>'+esc26(r[0])+'</th><td>'+esc26(r[1])+'</td></tr>').join('')+'</table>';
    cards.appendChild(d);
   });
@@ -9463,7 +9462,8 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
 
 
 <script>
-/* FIX28 – ÖNÁLLÓ VOLÁN/REGIONÁLIS ÉLŐ ADATFRISSÍTÉS
+/* FIX29 – ÖSSZEVONT JAVÍTÁS: ÖNÁLLÓ VOLÁN, MÁV-PANEL, 18 MEZŐ, MEGÁLLÓ- ÉS TÉRKÉP-SZŰRÉS
+   FIX28 – ÖNÁLLÓ VOLÁN/REGIONÁLIS ÉLŐ ADATFRISSÍTÉS
    Nem vár a BKK VehiclePositions sikerére. Kizárólag a WinMenetrend tényleges rekordjait használja. */
 (function(){
   let busy=false;
