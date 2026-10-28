@@ -1,4 +1,5 @@
-ATTILA_KOZLEKEDES_FIX26R2_BKK_MEGALLO_GTFS_TAVOLSAG   
+ATTILA_KOZLEKEDES_FIX28_VOLAN_ONALLO_ADATUT
+ATTILA_KOZLEKEDES_FIX26R2_BKK_MEGALLO_GTFS_TAVOLSAG   2026.10.26 Hétfö DE_de
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -6091,7 +6092,7 @@ function parseWinRealtimeText(text){
        csak felismerhető vasúti jelölésnél soroljuk át. */
     const routeNorm=String(route||"").trim().toUpperCase().replace(/^MÁV\s+/,"").replace(/^MAV\s+/,"");
     let provider="BKK";
-    if(/^VOL[ÁA]N(?:BUSZ)?(?:\b|[_ -])/i.test(routeNorm) || /VOLANBUSZ/i.test(routeNorm)) provider="VOLÁN";
+    if(/^VOL[ÁA]N(?:BUSZ)?(?:\b|[_ -])/i.test(routeNorm) || /VOLANBUSZ/i.test(routeNorm) || /^VOLAN_/i.test(routeNorm)) provider="VOLÁN";
     else if(/^H[0-9]/i.test(routeNorm)) provider="MÁV-HÉV";
     else if(/^(S|Z|IR|IC|EX|EC|EN|RJ|RE|G|R)\s*\d/i.test(routeNorm)) provider="MÁV";
     const lowFloorRaw=c[7]||"";
@@ -6158,7 +6159,7 @@ function parseWinRealtimeHtml(html){
         let provider="BKK";
         const providerText=providerIdx>=0?String(c[providerIdx]||"").toUpperCase().normalize("NFD").replace(/[\u0300-\u036f]/g,""):"";
         if(/VOLAN|VOLANBUSZ|MAV-START|MAV START|MAV|HEV/.test(providerText)) provider=/HEV/.test(providerText)?"MÁV-HÉV":/VOLAN/.test(providerText)?"VOLÁN":"MÁV";
-        else if(/^VOL[ÁA]N(?:BUSZ)?(?:\b|[_ -])/i.test(route)||/VOLANBUSZ/i.test(route)) provider="VOLÁN";
+        else if(/^VOL[ÁA]N(?:BUSZ)?(?:\b|[_ -])/i.test(route)||/VOLANBUSZ/i.test(route)||/^VOLAN_/i.test(route)) provider="VOLÁN";
         else if(/^H[0-9]/i.test(route)) provider="MÁV-HÉV";
         else if(/^(S|Z|IR|IC|EX|G|RJ|EC|EN|RE|R)\s*\d/i.test(route) && !/^\d/.test(route)) provider="MÁV";
         out.push({
@@ -6246,12 +6247,30 @@ async function fetchWinRouteHistory(routeCode, plate){
 
 async function fetchWinRealtimePage(){
   const direct="https://online.winmenetrend.hu/futar/vehicles?more_info=1";
+  // FIX28: az elsődleges adatút az azonos Vercel-domainen futó proxy.
+  // Ez megkerüli a böngésző CORS-korlátját, de a járműadatot továbbra is a WinMenetrend adja.
+  try{
+    const local=await fetch("/api/winmenetrend-realtime",{cache:"no-store",headers:{"Accept":"application/json"}});
+    if(local.ok){
+      const payload=await local.json();
+      if(payload && typeof payload.html==="string"){
+        const parsed=parseWinRealtimeHtml(payload.html);
+        if(parsed.length) return parsed;
+        const parsedText=parseWinRealtimeText(payload.text||payload.html.replace(/<[^>]+>/g,"\n"));
+        if(parsedText.length) return parsedText;
+      }
+      if(payload && Array.isArray(payload.rows) && payload.rows.length) return payload.rows;
+    }
+  }catch(e){ try{logLine("VOLÁN proxy: "+(e?.message||e));}catch(_){} }
+  // Helyi HTML-fájlban vagy proxyhiba esetén marad a közvetlen/fallback út.
   try{
     const r=await fetch(direct,{cache:"no-store"});
     if(r.ok){
       const text=await r.text();
       const parsed=parseWinRealtimeHtml(text);
       if(parsed.length) return parsed;
+      const parsedText=parseWinRealtimeText(text.replace(/<[^>]+>/g,"\n"));
+      if(parsedText.length) return parsedText;
     }
   }catch(e){}
   try{
@@ -6259,8 +6278,6 @@ async function fetchWinRealtimePage(){
     const r=await fetch(proxy,{cache:"no-store"});
     if(r.ok){
       const text=await r.text();
-      /* Jina HTML-t is visszaadhat: előbb HTML-táblából olvassunk,
-         csak utána próbáljuk a pipe-os szöveges formátumot. */
       const parsedHtml=parseWinRealtimeHtml(text);
       if(parsedHtml.length) return parsedHtml;
       const parsed=parseWinRealtimeText(text);
@@ -9445,5 +9462,25 @@ body.attila-map-fullscreen-on #attilaMapFullscreenBtn{z-index:2100!important;top
 })();
 </script>
 
+
+<script>
+/* FIX28 – ÖNÁLLÓ VOLÁN/REGIONÁLIS ÉLŐ ADATFRISSÍTÉS
+   Nem vár a BKK VehiclePositions sikerére. Kizárólag a WinMenetrend tényleges rekordjait használja. */
+(function(){
+  let busy=false;
+  async function refreshRegionalIndependent(){
+    if(busy || typeof window.updateWinRealtime!=="function") return;
+    busy=true;
+    try{ await window.updateWinRealtime(); }
+    catch(e){ try{const el=document.getElementById("regionalRealtimeStatus");if(el)el.textContent="VOLÁN élő adat: lekérési hiba – "+(e?.message||e);}catch(_){} }
+    finally{busy=false;}
+  }
+  window.refreshVolanRealtime=refreshRegionalIndependent;
+  document.addEventListener("DOMContentLoaded",()=>{
+    setTimeout(refreshRegionalIndependent,4500);
+    setInterval(refreshRegionalIndependent,60000);
+  },{once:true});
+})();
+</script>
 </body>
 </html>
