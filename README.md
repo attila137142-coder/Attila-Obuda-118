@@ -10,7 +10,7 @@
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – FIX23 · MOBILJAVÍTÁS + MÁV/VOLÁN JÁRMŰKÁRTYÁK + BKK ADATÚT</title>
+<title>ATTILA KÖZLEKEDÉS – FIX40 · WINDOWS 10 OLVASHATÓSÁG + MÁV/VOLÁN</title>
 
 <link
   rel="stylesheet"
@@ -1329,16 +1329,6 @@ body.attila-matrix-eco #attilaMatrixBar,body.attila-matrix-full #attilaMatrixBar
       </div>
       <div id="commonStopStatus" class="small" style="margin-top:8px">BKV/BKK: betöltés alatt • VOLÁN: nincs betöltött GTFS • MÁV: nincs betöltött GTFS</div>
       <div id="gtfsImportProgress" aria-live="polite"></div>
-      <div id="fix41GtfsTransfer" class="fix41-transfer">
-        <b>📦 GTFS ÁTVITEL WINDOWS 10 ↔ iPHONE XR</b>
-        <div class="fix41-transfer-actions">
-          <button type="button" id="fix41ExportGtfs">⬇ GTFS-CSOMAG EXPORTÁLÁSA</button>
-          <label class="fix41-file-label">⬆ GTFS-CSOMAG BETÖLTÉSE
-            <input id="fix41ImportGtfs" type="file" accept=".zip,application/zip">
-          </label>
-        </div>
-        <div id="fix41TransferStatus" role="status">A csomag a ténylegesen elmentett BKK, VOLÁN és MÁV GTFS ZIP-eket tartalmazza. A készülékek között felhőn vagy fájlmegosztással vihető át.</div>
-      </div>
       <div id="nearestCommonStops" style="margin-top:10px"></div>
       <div id="commonStopResults" style="margin-top:10px"></div>
       <div id="commonStopDepartures" style="margin-top:12px"></div>
@@ -8381,7 +8371,7 @@ window.extractFutarVehicles = function(json){
   async function showDepartures(key,stopId){const p=commonProviders[key],box=document.getElementById("commonStopDepartures");if(!p||!box)return;const s=p.stops.find(x=>String(x.id)===String(stopId));if(!s)return;p.key=key;box.innerHTML='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><div class="small" style="margin-top:6px">GTFS: '+escapeHtml(s.id)+' • Menetrendi indulások betöltése…</div></section>';try{if(!p.zip&&key==="BKV")p.zip=window.__ATTILA_BKK_GTFS_ZIP__||null;if(!p.zip&&!p.blob)throw new Error("Ehhez a szolgáltatóhoz nincs betöltött GTFS ZIP.");const deps=await getDepartures(p,s);if(key==="MAV"&&typeof window.loadMavRealtime==="function"){try{await window.loadMavRealtime();}catch(e){if(typeof logLine==="function")logLine("MÁV élő adat frissítése nem sikerült: "+(e?.message||e));}}if(!deps.length){box.innerHTML='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><p class="small">NINCS MEGJELENÍTHETŐ INDULÁS. A keresés megállót talált, de ez még nem bizonyítja, hogy az indulási fájl és a mai közlekedési naptár is megfelelő. Ellenőrizendő: stop_times.txt, trips.txt, routes.txt, calendar.txt / calendar_dates.txt, stop_id egyezés és mai service_id.</p><p class="small">GTFS stop_id: '+escapeHtml(s.id)+' · szolgáltató: '+escapeHtml(p.name)+' · dátum: '+new Date().toLocaleDateString('hu-HU')+'. A program nem helyettesíti ezt kitalált indulással.</p><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></section>';return;}const now=new Date(),date=now.toLocaleDateString("hu-HU");let html='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></div><div class="small" style="margin:5px 0 8px">GTFS stop_id: '+escapeHtml(s.id)+' • '+date+' • MENETRENDI időpontok (nem automatikusan élő adatok)</div>';for(const d of deps){const route=d.routeShort||d.routeLong||d.routeId||"JÁRATAZONOSÍTÓ NINCS ADAT";const live=matchingVehicles(p,s,d);html+='<div style="border-top:1px solid rgba(128,128,128,.25);padding:8px 0"><div style="font-size:1.05em;font-weight:900">'+timeLabel(d.departure)+' — '+escapeHtml(route)+'</div><div class="small">Célállomás: '+escapeHtml(d.headsign||"NINCS ADAT")+' • trip_id: '+escapeHtml(d.tripId||"NINCS ADAT")+'</div>';if(live.length){html+='<div style="margin-top:5px;font-weight:800;color:#39b7ff">EGYEZŐ ÉLŐ JÁRMŰADAT – szolgáltató szerint ellenőrizve</div>'+live.map(vehicleHtml).join("");}else if(p===commonProviders.BKV){html+='<div class="small" style="margin-top:4px">Ehhez az induláshoz nem találtam biztosan illeszthető élő járműadatot; a megjelenített időpont menetrendi adat.</div>';}else if(p===commonProviders.MAV){const st=document.getElementById("attiMavRealtimeStatus")?.textContent||"MÁVPlusz állapot: NINCS ADAT";html+='<div class="small" style="margin-top:4px">MÁV élő forrás ellenőrzése: '+escapeHtml(st)+'. Ehhez a GTFS trip_id-hoz nem találtam teljes azonosítóval igazolható élő egyezést; az időpont továbbra is menetrendi adat.</div>';}else{const liveCount=(Array.isArray(winRealtimeRows)?winRealtimeRows:[]).filter(r=>r.provider==="VOLÁN").length;html+='<div class="small" style="margin-top:4px">VOLÁN valós idejű rekordok a WinMenetrendből: '+liveCount+'. Ehhez a teljes GTFS trip_id-hoz nincs megbízható élő egyezés; a fenti időpont menetrendi adat.</div>';}html+='</div>';}html+='<div class="small" style="margin-top:8px">Legfeljebb 30 következő menetrendi indulás. A késés/valós indulás csak megbízható realtime egyezés esetén jelezhető.</div></section>';box.innerHTML=html;}catch(e){box.innerHTML='<section style="border:1px solid #9b6438;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><p class="small">MENETREND NEM ELÉRHETŐ: '+escapeHtml(e.message||e)+'</p><p class="small">Ellenőrizd, hogy a feltöltött GTFS ZIP tartalmazza-e a stops.txt, trips.txt, routes.txt és stop_times.txt fájlokat.</p><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></section>';}}
   window.__ATTILA_COMMON_PROVIDERS=commonProviders;window.__ATTILA_COMMON_API={providers:commonProviders,readText:async function(key,name){const p=commonProviders[key];if(!p)return null;if(key==="BKV"&&window.__ATTILA_BKK_GTFS_BLOB__)p.blob=window.__ATTILA_BKK_GTFS_BLOB__;return await zipText(p,name);},findStop:function(key,q){const p=commonProviders[key],raw=String(q||"").trim();if(!p||!raw)return null;const low=raw.toLowerCase();let found=p.stops.find(x=>String(x.id||"").toLowerCase()===low||String(x.code||"").toLowerCase()===low);if(found)return found;if(key==="VOLAN"){const noPrefix=low.replace(/^volan[_:-]?/,"");const candidates=p.stops.filter(x=>{const id=String(x.id||"").toLowerCase();return id===("volan_"+noPrefix)||id.endsWith("_"+noPrefix)||String(x.code||"").toLowerCase()===noPrefix;});if(candidates.length===1)return candidates[0];}return null;},getDepartures:async function(key,stop){const p=commonProviders[key];if(!p||!p.loaded)throw new Error("A szolgáltató GTFS-e nincs betöltve.");if(key==="BKV"&&window.__ATTILA_BKK_GTFS_BLOB__)p.blob=window.__ATTILA_BKK_GTFS_BLOB__;return await getDepartures(p,stop);}};window.loadCommonTransitProvider=loadProvider;window.commonTransitStopSearch=runSearch;window.commonTransitNearest=renderNearest;
   document.addEventListener("click",e=>{const b=e.target.closest?.(".commonStopDepartBtn");if(b){e.preventDefault();e.stopPropagation();showDepartures(b.dataset.provider,b.dataset.stop);return;}if(e.target.id==="closeCommonDepartures"){const box=document.getElementById("commonStopDepartures");if(box)box.innerHTML="";}});
-  document.addEventListener("DOMContentLoaded",()=>{document.getElementById("commonStopSearchBtn")?.addEventListener("click",runSearch);document.getElementById("commonStopSearch")?.addEventListener("input",()=>{clearTimeout(window.__commonStopTimer);window.__commonStopTimer=setTimeout(runSearch,180);});syncBkk();setInterval(syncBkk,3000);});
+  document.addEventListener("DOMContentLoaded",()=>{const vf=document.getElementById("volanGtfsFile"),mf=document.getElementById("mavGtfsFile");vf?.addEventListener("change",e=>loadProvider(e.target.files?.[0],"VOLAN"));mf?.addEventListener("change",e=>loadProvider(e.target.files?.[0],"MAV"));document.getElementById("commonStopSearchBtn")?.addEventListener("click",runSearch);document.getElementById("commonStopSearch")?.addEventListener("input",()=>{clearTimeout(window.__commonStopTimer);window.__commonStopTimer=setTimeout(runSearch,180);});syncBkk();setInterval(syncBkk,3000);});
 })();
 </script>
 
@@ -8542,7 +8532,7 @@ window.extractFutarVehicles = function(json){
     try{
       const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);const data=await r.json();
       if(Array.isArray(data.pdfs)){for(const x of data.pdfs.slice(0,30)){if(!x?.data)continue;const b64=String(x.data);const blob=await (await fetch(b64)).blob();const f=new File([blob],x.name||"ismeretlen.pdf",{type:x.type||"application/pdf"});await savePdfs([f]);}}
-      if(Array.isArray(data.gtfs)){for(const x of data.gtfs){if(!x?.data||!/^BKK$|^VOLAN$|^MAV$/.test(String(x.provider||"")))continue;const blob=await (await fetch(x.data)).blob();const f=new File([blob],x.name||String(x.provider)+".zip",{type:"application/zip"});await saveGtfs(f,String(x.provider));if(x.provider==="BKK"&&typeof window.loadBkkGtfs==="function")await window.loadBkkGtfs(f);else if(typeof window.loadCommonTransitProvider==="function")await window.loadCommonTransitProvider(f,String(x.provider));}}
+      if(Array.isArray(data.gtfs)){for(const x of data.gtfs){if(!x?.data||!/^VOLAN$|^MAV$/.test(String(x.provider||"")))continue;const blob=await (await fetch(x.data)).blob();const f=new File([blob],x.name||String(x.provider)+".zip",{type:"application/zip"});await saveGtfs(f,String(x.provider));if(typeof window.loadCommonTransitProvider==="function")await window.loadCommonTransitProvider(f,String(x.provider));}}
       await renderSavedPdfs();status("Közös tár betöltve.");if(typeof logLine==="function")logLine("FIX27: közös tár betöltve több készülékhez használható módon.");
     }catch(e){status("Közös tár HIBA: "+e.message);if(typeof logLine==="function")logLine("FIX27 közös tár HIBA: "+e.message)}
   }
@@ -8556,22 +8546,9 @@ window.extractFutarVehicles = function(json){
       $id("exportLibraryBtn")?.addEventListener("click",exportLibrary);
       $id("clearLibraryBtn")?.addEventListener("click",clearLibrary);
       const bf=$id("bkkGtfsLocalFile"),vf=$id("volanGtfsFile"),mf=$id("mavGtfsFile");
-      async function importOneGtfs(input,provider){
-        const f=input?.files?.[0]; if(!f)return;
-        status(provider+" GTFS: "+f.name+" betöltése és mentése…");
-        try{
-          let ok=false;
-          if(provider==="BKK") ok=await window.loadBkkGtfs(f);
-          else ok=await window.loadCommonTransitProvider(f,provider);
-          if(!ok) throw new Error(provider+" GTFS feldolgozása nem sikerült. Nézd meg a GTFS import állapotüzenetét.");
-          await saveGtfs(f,provider);
-          status(provider+" GTFS SIKERES: "+f.name+" · mentve ezen az eszközön.");
-        }catch(err){status(provider+" GTFS HIBA: "+(err?.message||err));if(typeof logLine==="function")logLine(provider+" GTFS import hiba: "+(err?.message||err));}
-        finally{input.value="";}
-      }
-      bf?.addEventListener("change",e=>importOneGtfs(e.currentTarget,"BKK"));
-      vf?.addEventListener("change",e=>importOneGtfs(e.currentTarget,"VOLAN"));
-      mf?.addEventListener("change",e=>importOneGtfs(e.currentTarget,"MAV"));
+      bf?.addEventListener("change",async e=>{const f=e.target.files?.[0];if(f){try{await window.loadBkkGtfs(f);await saveGtfs(f,"BKK");}catch(err){status("BKK GTFS helyi betöltési hiba: "+(err?.message||err));}}});
+      vf?.addEventListener("change",e=>{const f=e.target.files?.[0];if(f)saveGtfs(f,"VOLAN")});
+      mf?.addEventListener("change",e=>{const f=e.target.files?.[0];if(f)saveGtfs(f,"MAV")});
       await renderSavedPdfs();await restoreGtfs();
       logLine("FIX27: PDF + VOLÁN/MÁV tartós tár inicializálva.");
     }catch(e){status("Tartós tár HIBA: "+e.message);if(typeof logLine==="function")logLine("FIX27 tár HIBA: "+e.message)}
@@ -10535,192 +10512,34 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 </script>
 
 
-<style id="attila-fix40-matrix-color-css">
-#fix40Studio{position:relative;z-index:9500;margin:12px;padding:14px;border:2px solid #21c875;border-radius:16px;background:#07120d;color:#eafff1;font:600 15px/1.4 system-ui,sans-serif;box-shadow:0 0 16px #00ff5530}
-#fix40Studio h2{margin:0 0 10px;color:#76ffae;font-size:clamp(21px,5vw,28px)}
-#fix40Studio .f40group{margin-top:14px;padding-top:12px;border-top:1px solid #28543b}
-#fix40Studio .f40label{display:block;font-weight:900;margin-bottom:8px;font-size:17px}
-#fix40Studio .f40grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
-#fix40Studio button,#fix40Studio select{min-height:52px;border:2px solid #527564;border-radius:11px;background:#10251a;color:#fff;padding:10px;font-size:16px;font-weight:800;touch-action:manipulation}
-#fix40Studio button[aria-pressed=true]{border-color:#fff;outline:2px solid #35e887;box-shadow:0 0 12px currentColor}
-#fix40Studio .f40swatch{display:flex;align-items:center;gap:9px;text-align:left}
-#fix40Studio .f40dot{width:19px;height:19px;border-radius:50%;flex:none;background:var(--sw)}
-#fix40Studio input[type=range]{width:100%;min-height:34px;accent-color:#24df79}
-#fix40Studio .f40actions{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-top:12px}
-#fix40Studio .f40status{font-size:13px;color:#b8d9c5;margin-top:9px}
-body.fix40-glow-on:before,body.fix40-glow-on:after{content:"";position:fixed;z-index:8990;top:0;bottom:0;width:var(--fix40-width,7px);pointer-events:none;opacity:var(--fix40-opacity,.8);background:var(--fix40-color,#00e65b);box-shadow:0 0 12px 3px var(--fix40-color),0 0 28px 8px var(--fix40-color)}
-body.fix40-glow-on:before{left:0}body.fix40-glow-on:after{right:0}
-body.fix40-text-green{--fix40-text:#00ff63}body.fix40-text-blue{--fix40-text:#00cfff}body.fix40-text-infra{--fix40-text:#ff641e}body.fix40-text-ultra{--fix40-text:#d000ff}body.fix40-text-yellow{--fix40-text:#ffe600}
-body[class*="fix40-text-"] .matrix,body[class*="fix40-text-"] .matrix-text,body[class*="fix40-text-"] .matrix-clock,body[class*="fix40-text-"] .matrix-output,body[class*="fix40-text-"] #clock,body[class*="fix40-text-"] #matrixClock{color:var(--fix40-text)!important;text-shadow:0 0 5px var(--fix40-text),0 0 12px color-mix(in srgb,var(--fix40-text),transparent 45%)!important}
-@media(max-width:600px){#fix40Studio{margin:8px;padding:12px}#fix40Studio .f40grid{grid-template-columns:repeat(2,minmax(0,1fr))}#fix40Studio button,#fix40Studio select{min-height:56px;font-size:16px}}
-@media(prefers-reduced-motion:no-preference){body.fix40-glow-on:before,body.fix40-glow-on:after{transition:opacity .2s,background .2s,box-shadow .2s}}
+
+<style id="attila-fix40-windows-desktop-readability">
+/* FIX40 – Windows 10: nagyobb, olvasható oldalpanelek.
+   A mobilnézetet szándékosan nem módosítja. */
+@media (min-width: 1100px){
+  #side{font-size:15px!important;line-height:1.42!important}
+  #side .panel,#side section{padding:12px!important}
+  #side .panel h3,#side section h3{font-size:18px!important;line-height:1.3!important}
+  #side h4{font-size:16px!important;line-height:1.3!important}
+  #side .small,#side .hint,.fix35Panel .small{font-size:13px!important;line-height:1.45!important}
+  #side label,.fix35Panel label{font-size:13px!important}
+  #side input,#side select,#side button{font-size:14px!important;min-height:38px}
+  .fix35GpsGrid b{font-size:12px!important}
+  .fix35GpsGrid span{font-size:15px!important;line-height:1.35!important}
+  .fix35GpsGrid>div{padding:11px!important}
+  .fonokTable{font-size:14px!important}
+  .fonokTable th,.fonokTable td{padding:8px 7px!important}
+  .balheIntro,.balheEvent,.balheState{font-size:14px!important;line-height:1.45!important}
+  .regionalTable{font-size:14px!important}
+  .regionalTable th,.regionalTable td{padding:8px 7px!important}
+  .fix33LedMeta,.fix33LedDest{font-size:13px!important}
+  .fix33LedRow{font-size:16px!important}
+  .fix33LedTime{font-size:25px!important}
+  .fix33LedMinutes{font-size:15px!important}
+  .fix31StopLink strong{font-size:15px!important}
+  .fix31StopLink span,.fix31StopLink em{font-size:13px!important}
+}
 </style>
-
-
-<section id="fix40Studio" aria-label="Matrix Color Studio">
- <h2>🌈 MATRIX COLOR STUDIO</h2>
- <div class="f40group">
-  <span class="f40label">Oldalvilágítás – külön BE/KI</span>
-  <div class="f40grid" id="fix40GlowChoices">
-   <button type="button" class="f40swatch" data-glow="#168cff"><i class="f40dot" style="--sw:#168cff"></i>🔵 Kék</button>
-   <button type="button" class="f40swatch" data-glow="#00e65b"><i class="f40dot" style="--sw:#00e65b"></i>🟢 Zöld</button>
-   <button type="button" class="f40swatch" data-glow="#ff3030"><i class="f40dot" style="--sw:#ff3030"></i>🔴 Piros</button>
-   <button type="button" class="f40swatch" data-glow="#ffe600"><i class="f40dot" style="--sw:#ffe600"></i>🟡 Sárga</button>
-   <button type="button" class="f40swatch" data-glow="#c000ff"><i class="f40dot" style="--sw:#c000ff"></i>🟣 Élénk lila</button>
-   <button type="button" id="fix40GlowPower" aria-pressed="false">Oldalfény: KI</button>
-  </div>
-  <label class="f40label" for="fix40GlowBrightness" style="margin-top:10px">Oldalfény erőssége</label>
-  <input id="fix40GlowBrightness" type="range" min="10" max="100" value="75">
- </div>
- <div class="f40group">
-  <span class="f40label">Mátrix betűszínek – külön BE/KI</span>
-  <div class="f40grid" id="fix40TextChoices">
-   <button type="button" data-text="green">🟢 Mátrixzöld</button>
-   <button type="button" data-text="blue">🔵 Mátrixkék</button>
-   <button type="button" data-text="infra">🔴 Infra-hatás</button>
-   <button type="button" data-text="ultra">🟣 Ultra-hatás</button>
-   <button type="button" data-text="yellow">🟡 Sárga</button>
-   <button type="button" id="fix40TextPower" aria-pressed="false">Betűszín: KI</button>
-  </div>
- </div>
- <div class="f40actions">
-  <button type="button" id="fix40AllOff">⏻ MINDEN VILÁGÍTÁS KI</button>
-  <button type="button" id="fix40Reset">↺ EREDETI SZÍNEK</button>
- </div>
- <div class="f40status" id="fix40Status" aria-live="polite">Normál megjelenítés.</div>
- <div class="f40status">Az INFRA és ULTRA képernyős színhatás, nem valódi infravörös vagy ultraibolya fény. A közlekedési adatokat és a térképet nem módosítja.</div>
-</section>
-<script id="attila-fix40-matrix-color-js">
-(function(){'use strict';
-const $=id=>document.getElementById(id),KEY='attilaMatrixColorStudio40';
-const state={glowOn:false,glow:'#00e65b',brightness:75,textOn:false,text:'green'};
-const textClasses=['green','blue','infra','ultra','yellow'].map(x=>'fix40-text-'+x);
-function save(){try{localStorage.setItem(KEY,JSON.stringify(state));}catch(e){}}
-function apply(){document.body.classList.toggle('fix40-glow-on',state.glowOn);document.body.style.setProperty('--fix40-color',state.glow);document.body.style.setProperty('--fix40-opacity',String(state.brightness/100));document.body.style.setProperty('--fix40-width',Math.max(3,Math.round(3+state.brightness/25))+'px');document.body.classList.remove(...textClasses);if(state.textOn)document.body.classList.add('fix40-text-'+state.text);
-$('fix40GlowPower').textContent='Oldalfény: '+(state.glowOn?'BE':'KI');$('fix40GlowPower').setAttribute('aria-pressed',String(state.glowOn));$('fix40TextPower').textContent='Betűszín: '+(state.textOn?'BE':'KI');$('fix40TextPower').setAttribute('aria-pressed',String(state.textOn));$('fix40GlowBrightness').value=state.brightness;
-document.querySelectorAll('#fix40GlowChoices [data-glow]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.glow===state.glow&&state.glowOn)));document.querySelectorAll('#fix40TextChoices [data-text]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.text===state.text&&state.textOn)));
-$('fix40Status').textContent=(state.glowOn?'Oldalfény BE · ':'Oldalfény KI · ')+(state.textOn?'Betűszín BE: '+state.text:'Betűszín KI');save();}
-try{const old=JSON.parse(localStorage.getItem(KEY)||'null');if(old&&typeof old==='object')Object.assign(state,old);}catch(e){}
-$('fix40GlowChoices').addEventListener('click',e=>{const b=e.target.closest('[data-glow]');if(b){state.glow=b.dataset.glow;state.glowOn=true;apply();}});
-$('fix40TextChoices').addEventListener('click',e=>{const b=e.target.closest('[data-text]');if(b){state.text=b.dataset.text;state.textOn=true;apply();}});
-$('fix40GlowPower').addEventListener('click',()=>{state.glowOn=!state.glowOn;apply();});$('fix40TextPower').addEventListener('click',()=>{state.textOn=!state.textOn;apply();});
-$('fix40GlowBrightness').addEventListener('input',e=>{state.brightness=Number(e.target.value);apply();});
-$('fix40AllOff').addEventListener('click',()=>{state.glowOn=false;state.textOn=false;apply();});$('fix40Reset').addEventListener('click',()=>{state.glowOn=false;state.textOn=false;state.glow='#00e65b';state.text='green';state.brightness=75;apply();});apply();
-})();
-</script>
 
 </body>
 </html>
-
-<style id="fix41-desktop-scroll-and-gtfs-transfer-css">
-.fix41-transfer{margin:12px 0;padding:13px;border:2px solid #397b59;border-radius:12px;background:#0b1b13;color:#eaffef}
-.fix41-transfer>b{display:block;margin-bottom:9px;color:#8cffb5;font-size:16px}
-.fix41-transfer-actions{display:flex;flex-wrap:wrap;gap:9px;margin-bottom:8px}
-.fix41-transfer-actions button,.fix41-file-label{display:inline-flex;align-items:center;justify-content:center;min-height:46px;padding:10px 14px;border:2px solid #4d9970;border-radius:10px;background:#123a25;color:#fff;font-size:14px;font-weight:900;cursor:pointer}
-.fix41-file-label input{display:block;max-width:220px;margin-left:8px;color:#fff}
-#fix41TransferStatus{font-size:13px;line-height:1.5;color:#c9e7d3;overflow-wrap:anywhere}
-@media(min-width:761px){
- html,body{min-height:100%!important;height:auto!important;overflow-x:hidden!important}
- #side{height:calc(100dvh - var(--fix32-content-top,190px))!important;min-height:0!important;overflow-y:scroll!important;overflow-x:hidden!important;overscroll-behavior:contain!important;scrollbar-gutter:stable; padding-bottom:30px!important}
- #side .panel,#side .panelBody{font-size:15px!important;line-height:1.45}
- #side button,#side input,#side select{font-size:15px!important;min-height:40px}
- #side h2,#side h3{font-size:20px!important}
- #map{min-height:0!important}
-}
-@media(max-width:760px){.fix41-transfer{font-size:14px}.fix41-transfer-actions{display:grid;grid-template-columns:1fr}.fix41-transfer-actions button,.fix41-file-label{width:100%;box-sizing:border-box;flex-wrap:wrap}.fix41-file-label input{max-width:100%;width:100%;margin:6px 0 0}}
-</style>
-<script id="fix41-gtfs-transfer-js">
-(function(){'use strict';
- const $=id=>document.getElementById(id);
- function msg(t){const e=$('fix41TransferStatus');if(e)e.textContent=t;}
- async function openStore(){return new Promise((resolve,reject)=>{const r=indexedDB.open('attila_kozlekedes_library_v1',1);r.onupgradeneeded=()=>{const d=r.result;if(!d.objectStoreNames.contains('gtfs'))d.createObjectStore('gtfs',{keyPath:'provider'});if(!d.objectStoreNames.contains('pdfs'))d.createObjectStore('pdfs',{keyPath:'id'});if(!d.objectStoreNames.contains('meta'))d.createObjectStore('meta',{keyPath:'key'});};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error||new Error('IndexedDB nem nyitható meg'));});}
- async function allGtfs(){const db=await openStore();return new Promise((resolve,reject)=>{const r=db.transaction('gtfs','readonly').objectStore('gtfs').getAll();r.onsuccess=()=>resolve(r.result||[]);r.onerror=()=>reject(r.error);});}
- async function saveOne(db,provider,file){return new Promise((resolve,reject)=>{const r=db.transaction('gtfs','readwrite').objectStore('gtfs').put({provider,name:file.name,size:file.size,lastModified:file.lastModified||0,blob:file});r.onsuccess=resolve;r.onerror=()=>reject(r.error);});}
- async function exportBundle(){
-   const btn=$('fix41ExportGtfs');btn.disabled=true;
-   try{
-     if(!window.JSZip)throw new Error('A ZIP-motor nem érhető el.');
-     const rows=await allGtfs();if(!rows.length)throw new Error('Még nincs elmentett GTFS. Előbb töltsd be a három szolgáltató ZIP-fájlját.');
-     const zip=new JSZip();const folder=zip.folder('ATTILA_GTFS');
-     for(const x of rows){if(!['BKK','VOLAN','MAV'].includes(x.provider)||!x.blob)continue;folder.file(x.provider+'_GTFS.zip',x.blob);}
-     folder.file('OLVASD_EL.txt','ATTILA KÖZLEKEDÉS – GTFS átvitel\nTöltsd be ezt a csomagot a másik készüléken a GTFS-CSOMAG BETÖLTÉSE gombbal.\nCsak a ténylegesen elmentett GTFS ZIP-ek szerepelnek benne.');
-     const blob=await zip.generateAsync({type:'blob',compression:'STORE'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='ATTILA_KOZLEKEDES_GTFS_ATVITEL.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);
-     msg('GTFS-csomag elkészült: '+rows.filter(x=>['BKK','VOLAN','MAV'].includes(x.provider)&&x.blob).map(x=>x.provider).join(' + ')+'. Másold át iCloud Drive / OneDrive / Google Drive segítségével, majd a telefonon töltsd be.');
-   }catch(e){msg('EXPORT HIBA: '+(e.message||e));}finally{btn.disabled=false;}
- }
- async function importBundle(file){
-   if(!file)return;const input=$('fix41ImportGtfs');
-   try{
-     if(!window.JSZip)throw new Error('A ZIP-motor nem érhető el.');
-     msg('GTFS-csomag vizsgálata: '+file.name+'…');const z=await JSZip.loadAsync(file);const db=await openStore();let count=0;
-     for(const provider of ['BKK','VOLAN','MAV']){
-       const entry=z.file('ATTILA_GTFS/'+provider+'_GTFS.zip')||z.file(provider+'_GTFS.zip');if(!entry)continue;
-       const blob=await entry.async('blob');const f=new File([blob],provider+'_GTFS.zip',{type:'application/zip'});
-       if(provider==='BKK'){if(typeof window.loadBkkGtfs!=='function')throw new Error('BKK betöltő nem érhető el.');const ok=await window.loadBkkGtfs(f);if(!ok)throw new Error('BKK GTFS feldolgozása nem sikerült.');}
-       else {if(typeof window.loadCommonTransitProvider!=='function')throw new Error(provider+' betöltő nem érhető el.');const ok=await window.loadCommonTransitProvider(f,provider);if(!ok)throw new Error(provider+' GTFS feldolgozása nem sikerült.');}
-       await saveOne(db,provider,f);count++;
-     }
-     if(!count)throw new Error('A csomagban nem található BKK_GTFS.zip, VOLAN_GTFS.zip vagy MAV_GTFS.zip.');
-     msg('SIKERES ÁTVITEL: '+count+' szolgáltató GTFS-e betöltve és elmentve ezen a készüléken.');
-   }catch(e){msg('BETÖLTÉSI HIBA: '+(e.message||e));}finally{if(input)input.value='';}
- }
- document.addEventListener('DOMContentLoaded',()=>{$('fix41ExportGtfs')?.addEventListener('click',exportBundle);$('fix41ImportGtfs')?.addEventListener('change',e=>importBundle(e.target.files?.[0]));});
-})();
-</script>
-
-<!-- FIX42: Windows desktop non-overlap + GTFS panel always near top -->
-<style id="fix42-desktop-layout-gtfs-visibility">
-@media(min-width:761px){
- html,body{height:auto!important;min-height:100%!important;overflow-x:hidden!important;overflow-y:auto!important}
- #header{z-index:30000!important}
- #attilaMatrixBar{z-index:29000!important}
- #attilaExternalQuickLinks{z-index:28000!important}
- #map{position:fixed!important;left:0!important;right:390px!important;top:var(--fix32-content-top,190px)!important;bottom:0!important;width:auto!important;max-width:none!important;height:auto!important;z-index:1!important}
- #side{position:fixed!important;top:var(--fix32-content-top,190px)!important;right:0!important;bottom:0!important;left:auto!important;width:390px!important;max-width:390px!important;height:auto!important;min-height:0!important;overflow-y:auto!important;overflow-x:hidden!important;overscroll-behavior:contain!important;box-sizing:border-box!important;padding:10px 12px 36px!important;z-index:20!important;background:var(--panel,#101a22)!important}
- #side>*{max-width:100%!important;box-sizing:border-box!important}
- #side .panel,#side section{margin-bottom:12px!important}
- #side .panel h3,#side section h3{font-size:18px!important;line-height:1.3!important}
- #side button,#side input,#side select,#side textarea{max-width:100%!important;box-sizing:border-box!important}
- #commonStopPanel{order:-999!important;border:2px solid #3b9b65!important;}
- #commonStopPanel .searchGrid{display:grid!important;grid-template-columns:minmax(0,1fr)!important;gap:8px!important}
- #commonStopPanel .searchGrid label{display:flex!important;flex-wrap:wrap!important;align-items:center!important;gap:6px!important;padding:7px!important;background:#10251a!important;border-radius:8px!important}
- #commonStopPanel input[type=file]{display:block!important;width:100%!important;max-width:100%!important;min-height:42px!important;font-size:13px!important}
- #fix41GtfsTransfer{display:block!important;visibility:visible!important;max-height:none!important;overflow:visible!important}
- #fix41GtfsTransfer button,#fix41GtfsTransfer .fix41-file-label{width:100%!important;min-height:44px!important;box-sizing:border-box!important}
-}
-@media(max-width:760px){
- #commonStopPanel{display:block!important;visibility:visible!important}
- #fix41GtfsTransfer{display:block!important;visibility:visible!important}
-}
-</style>
-<script id="fix42-gtfs-panel-priority">
-(function(){'use strict';function place(){const side=document.getElementById('side'),panel=document.getElementById('commonStopPanel');if(side&&panel&&panel.parentElement!==side)side.insertBefore(panel,side.firstElementChild);else if(side&&panel&&side.firstElementChild!==panel)side.insertBefore(panel,side.firstElementChild);}
- if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',place,{once:true});else place();
-})();
-</script>
-
-<!-- FIX43: restore large desktop map, page scrolling, and map zoom controls -->
-<style id="fix43-desktop-map-scroll-zoom">
-@media (min-width:761px){
- html,body{height:auto!important;min-height:100vh!important;overflow-x:auto!important;overflow-y:auto!important;scrollbar-width:auto!important}
- body{min-height:100vh!important}
- #map{position:fixed!important;left:0!important;top:135px!important;right:clamp(340px,29vw,460px)!important;bottom:0!important;width:auto!important;height:auto!important;min-height:calc(100vh - 135px)!important;max-height:none!important;z-index:2!important}
- #side{position:absolute!important;top:135px!important;right:0!important;bottom:auto!important;left:auto!important;width:clamp(340px,29vw,460px)!important;max-width:none!important;height:auto!important;min-height:calc(100vh - 135px)!important;max-height:none!important;overflow:visible!important;overflow-y:visible!important;overflow-x:visible!important;z-index:20!important}
- #side{padding-bottom:40px!important}
- #side>*{min-width:0!important}
- #commonStopPanel,#fix41GtfsTransfer{display:block!important;visibility:visible!important;opacity:1!important;max-height:none!important;overflow:visible!important}
- #map .leaflet-control-zoom{display:block!important;visibility:visible!important;opacity:1!important;z-index:10000!important}
- #map .leaflet-control-zoom a{width:38px!important;height:38px!important;line-height:38px!important;font-size:24px!important}
- #map .leaflet-container{width:100%!important;height:100%!important;min-height:calc(100vh - 135px)!important;touch-action: pan-x pan-y!important}
-}
-@media (max-width:760px){
- #map{min-height:45vh!important}
- #map .leaflet-control-zoom{display:block!important;visibility:visible!important}
-}
-</style>
-<script id="fix43-leaflet-zoom-repair">
-(function(){'use strict';function repair(){try{if(!window.L)return;document.querySelectorAll('#map').forEach(function(el){var map=el._leaflet_map;if(map&&typeof map.invalidateSize==='function'){map.invalidateSize({pan:false});}});document.querySelectorAll('.leaflet-control-zoom').forEach(function(z){z.style.display='';z.style.visibility='visible';z.style.opacity='1';});}catch(e){}}
- if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',function(){setTimeout(repair,250);setTimeout(repair,1000);});else{setTimeout(repair,250);setTimeout(repair,1000);}
- window.addEventListener('resize',repair);})();
-</script>
-
