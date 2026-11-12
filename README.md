@@ -1,3 +1,4 @@
+KOZLEKEDES_FIX41_JARMUPANEL_VALODI_NAGYITAS_TELJESKEPERNYO   2026.11.12  Cs
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -10566,7 +10567,7 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
  }
  function initDirectory(){['attilaGtfsDirectorySearch','attilaGtfsDirectoryShowAll'].forEach(id=>$(id)?.addEventListener('click',renderDirectory));$('attilaGtfsDirectoryQuery')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();renderDirectory();}});$('attilaGtfsDirectoryProvider')?.addEventListener('change',renderDirectory);document.addEventListener('click',e=>{const b=e.target.closest?.('.attilaGtfsOpenStop');if(!b)return;const target=$('commonStopDepartures');if(target)target.scrollIntoView({behavior:'smooth',block:'center'});const p=b.dataset.provider,stop=b.dataset.stop;if(typeof window.loadCommonTransitProvider==='function'&&p!=='BKV'){}const api=window.__ATTILA_COMMON_API;if(api?.findStop){const found=api.findStop(p,stop);if(found&&typeof window.commonTransitStopSearch==='function'){const input=$('commonStopSearch');if(input){input.value=stop;input.dispatchEvent(new Event('input',{bubbles:true}));}window.commonTransitStopSearch();}const trigger=document.createElement('button');trigger.type='button';trigger.className='commonStopDepartBtn';trigger.dataset.provider=p;trigger.dataset.stop=stop;trigger.style.display='none';document.body.appendChild(trigger);trigger.click();trigger.remove();}else{const result=$('attilaGtfsDirectoryStatus');if(result)result.textContent='A GTFS-megálló megvan, de a közös menetrendi modul még nem érhető el: NINCS ADAT.';}});window.addEventListener('attila:gtfs-updated',()=>setTimeout(renderDirectory,50));window.addEventListener('load',()=>setTimeout(renderDirectory,500));setTimeout(renderDirectory,1000);}
  let zoom=1;
- function setZoom(){const panel=$('fix32VehicleFocusPanel');if(!panel)return;panel.style.setProperty('--attila-vehicle-zoom',String(zoom));panel.style.fontSize=(16*zoom)+'px';const grid=$('fix32SelectedVehicle');if(grid)grid.style.gridTemplateColumns='repeat(auto-fit,minmax('+Math.round(220*zoom)+'px,1fr))';}
+ function setZoom(){const panel=$('fix32VehicleFocusPanel');if(!panel)return;panel.style.setProperty('--attila-vehicle-zoom',String(zoom));panel.style.fontSize=(18*zoom)+'px';const grid=$('fix32SelectedVehicle');if(grid)grid.style.gridTemplateColumns='repeat(auto-fit,minmax('+Math.round(300*zoom)+'px,1fr))';panel.querySelectorAll('.fix32VehicleField b').forEach(x=>x.style.fontSize=(16*zoom)+'px');panel.querySelectorAll('.fix32VehicleField span').forEach(x=>x.style.fontSize=(24*zoom)+'px');}
  function enterVehicleFullscreen(){const panel=$('fix32VehicleFocusPanel');if(!panel)return;panel.classList.add('attila-vehicle-fullscreen');document.body.classList.add('attila-vehicle-view-open');$('attilaVehicleFullscreenExit')?.removeAttribute('hidden');panel.scrollTop=0;try{if(panel.requestFullscreen)panel.requestFullscreen().catch(()=>{});}catch(e){}}
  function exitVehicleFullscreen(){const panel=$('fix32VehicleFocusPanel');panel?.classList.remove('attila-vehicle-fullscreen');document.body.classList.remove('attila-vehicle-view-open');$('attilaVehicleFullscreenExit')?.setAttribute('hidden','');try{if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});}catch(e){}}
  function initVehicleView(){$('attilaVehicleFullscreen')?.addEventListener('click',enterVehicleFullscreen);$('attilaVehicleFullscreenExit')?.addEventListener('click',exitVehicleFullscreen);$('attilaVehicleZoomIn')?.addEventListener('click',()=>{zoom=Math.min(1.8,zoom+.1);setZoom();});$('attilaVehicleZoomOut')?.addEventListener('click',()=>{zoom=Math.max(.7,zoom-.1);setZoom();});$('attilaVehicleZoomReset')?.addEventListener('click',()=>{zoom=1;setZoom();});document.addEventListener('keydown',e=>{if(e.key==='Escape')exitVehicleFullscreen();});document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&$('fix32VehicleFocusPanel')?.classList.contains('attila-vehicle-fullscreen'))exitVehicleFullscreen();});setZoom();}
@@ -10592,6 +10593,33 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
 #fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleField span{font-size:20px}
 #attilaVehicleFullscreenExit[hidden]{display:none!important}
 @media(max-width:760px){#fix32VehicleFocusPanel .fix32VehicleFields{grid-template-columns:repeat(2,minmax(0,1fr))}#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleFields{grid-template-columns:1fr}}
+</style>
+
+
+<style id="attila-fix41-large-vehicle-panel">
+/* FIX41: a járműpanel valódi, jól olvasható méretezése */
+#fix32VehicleFocusPanel{display:block!important;visibility:visible!important;opacity:1!important;width:100%!important;max-width:none!important;min-height:360px!important;padding:18px!important;border:2px solid #36b86a!important;background:#06130b!important;box-sizing:border-box!important;font-size:18px!important;}
+#fix32VehicleFocusPanel>h3{font-size:clamp(20px,2vw,28px)!important;line-height:1.25!important;padding:12px!important;}
+#fix32VehicleFocusPanel>.row button{font-size:17px!important;min-height:50px!important;padding:12px 16px!important;font-weight:900!important;}
+#fix32VehicleFocusPanel .panelBody{width:100%!important;max-width:none!important;font-size:18px!important;}
+#fix32ProviderCounts{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:12px!important;}
+#fix32ProviderCounts>div{min-height:82px!important;padding:14px!important;font-size:17px!important;}
+#fix32ProviderCounts strong{font-size:22px!important;}
+#fix32SelectedVehicle.fix32VehicleFields{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important;}
+#fix32VehicleFocusPanel .fix32VehicleField{min-height:100px!important;padding:16px!important;border:1px solid #368b58!important;border-radius:9px!important;background:#0b2014!important;box-sizing:border-box!important;}
+#fix32VehicleFocusPanel .fix32VehicleField b{display:block!important;font-size:16px!important;line-height:1.3!important;margin-bottom:8px!important;}
+#fix32VehicleFocusPanel .fix32VehicleField span{display:block!important;font-size:24px!important;line-height:1.3!important;overflow-wrap:anywhere!important;}
+#fix32ProviderVehicleLists{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:14px!important;}
+#fix32ProviderVehicleLists>div{padding:14px!important;border:1px solid #34744c!important;border-radius:9px!important;font-size:17px!important;}
+#fix32ProviderVehicleLists h4{font-size:18px!important;}
+#fix32VehicleFocusPanel.attila-vehicle-fullscreen{position:fixed!important;inset:0!important;z-index:2147483647!important;width:100vw!important;height:100vh!important;height:100dvh!important;max-width:none!important;max-height:none!important;min-height:100vh!important;margin:0!important;padding:clamp(18px,2vw,36px)!important;overflow:auto!important;background:#020a05!important;border:4px solid #42e88a!important;border-radius:0!important;box-sizing:border-box!important;}
+#fix32VehicleFocusPanel.attila-vehicle-fullscreen .panelBody{max-width:1800px!important;margin:0 auto!important;}
+#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleField{min-height:120px!important;padding:20px!important;}
+#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleField b{font-size:calc(18px * var(--attila-vehicle-zoom,1))!important;}
+#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleField span{font-size:calc(28px * var(--attila-vehicle-zoom,1))!important;}
+body.attila-vehicle-view-open{overflow:hidden!important;}
+#fix32VehicleFocusPanel.attila-vehicle-fullscreen{visibility:visible!important;}
+@media(max-width:900px){#fix32ProviderCounts{grid-template-columns:repeat(2,minmax(0,1fr))!important;}#fix32SelectedVehicle.fix32VehicleFields{grid-template-columns:1fr!important;}#fix32ProviderVehicleLists{grid-template-columns:1fr!important;}#fix32VehicleFocusPanel{padding:12px!important;}#fix32VehicleFocusPanel .fix32VehicleField span{font-size:21px!important;}}
 </style>
 
 </body>
