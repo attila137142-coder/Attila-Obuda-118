@@ -1,5 +1,3 @@
-KÖZLEKEDÉS_FIX41_VALODI_VERZIOSZÁM_JAVITOTT   2026.11.13   Péntek
-10 628   soros
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -12,7 +10,7 @@ KÖZLEKEDÉS_FIX41_VALODI_VERZIOSZÁM_JAVITOTT   2026.11.13   Péntek
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – FIX41 · TELJES JÁRMŰPANEL + DÁTUMVÁLASZTÁS</title>
+<title>ATTILA KÖZLEKEDÉS – FIX41 · SZOLGÁLTATÓNKÉNTI GTFS + HIVATALOS GYV ID + ADATMEGŐRZÉS</title>
 
 <link
   rel="stylesheet"
@@ -600,6 +598,16 @@ body.night-mode .regionalTable .rtVolan{color:#d8b875}
 /* A saját, DOM-alapú MÁV km/szelvény feliratok vastagabbak és kontrasztosabbak. */
 .mavRailLabel,.mavRailKm{font-weight:900!important;-webkit-text-stroke:.35px currentColor!important;text-shadow:0 0 3px #fff,0 0 5px #fff,1px 1px 0 #fff,-1px -1px 0 #fff!important;}
 </style>
+<style id="fix41-readable-controls">
+@media(max-width:700px){
+  html,body{font-size:16px!important;-webkit-text-size-adjust:100%!important;touch-action:pan-y pinch-zoom!important}
+  button,input,select,textarea{font-size:16px!important;min-height:44px}
+  .panel h3,.panel h2{font-size:18px!important;line-height:1.3}
+  .small{font-size:14px!important;line-height:1.45}
+  #commonStopPanel input[type=file]{max-width:100%;font-size:14px!important}
+  #commonStopResults,#nearestCommonStops,#commonStopDepartures{overflow-x:auto;-webkit-overflow-scrolling:touch}
+}
+</style>
 <style id="attila-weather-and-performance-css">
 #attilaWeatherPanel[hidden]{display:none!important}
 #attilaWeatherPanel{position:fixed;z-index:20000;top:88px;right:12px;width:min(440px,calc(100vw - 24px));max-height:calc(100dvh - 105px);overflow:auto;padding:15px;border:2px solid #4c93b4;border-radius:15px;background:#0b1721;color:#eef7fb;box-shadow:0 12px 40px #000b;-webkit-overflow-scrolling:touch}
@@ -813,7 +821,7 @@ body.attila-matrix-eco #attilaMatrixBar,body.attila-matrix-full #attilaMatrixBar
 
 </head>
 
-<body>
+<body data-attila-version="FIX41-GTFS-PROVIDER-SEPARATION-GYV">
 <!-- ATTILA KÖZLEKEDÉS – külön gombos időjárás és számolási kisokos -->
 <style>
 #attilaUtilityBar{position:sticky;top:0;z-index:9998;display:flex;gap:8px;flex-wrap:wrap;padding:9px;background:#071018;border-bottom:2px solid #2c5268;box-shadow:0 3px 12px #0008}
@@ -859,7 +867,7 @@ body.attila-matrix-eco #attilaMatrixBar,body.attila-matrix-full #attilaMatrixBar
 <div id="header">
 
   <div class="title">
-    🚍 ATTILA KÖZLEKEDÉS – FIX41 · MÁTRIX + BALHÉ + FŐNÖK + IPHONE GTFS + PDF TÁR
+    🚍 ATTILA KÖZLEKEDÉS – FIX30 · MÁTRIX + BALHÉ + FŐNÖK + IPHONE GTFS + PDF TÁR
   </div>
 
   <div id="feedBadge" class="badge warn">
@@ -1314,7 +1322,7 @@ body.attila-matrix-eco #attilaMatrixBar,body.attila-matrix-full #attilaMatrixBar
     </h3>
     <div class="panelBody">
       <div class="small" style="margin-bottom:8px">
-        BKV/BKK + VOLÁN + MÁV megállók keresése. A találatok csak a ténylegesen betöltött GTFS-adatokból jelennek meg.
+        BKV/BKK + VOLÁN + MÁV + GYERMEKVASÚT megállók keresése. A találatok csak a ténylegesen betöltött GTFS-adatokból jelennek meg.
       </div>
       <div class="searchGrid">
         <input id="commonStopSearch" class="wide" placeholder="Megálló név / GTFS stop_id / stop_code">
@@ -1328,23 +1336,16 @@ body.attila-matrix-eco #attilaMatrixBar,body.attila-matrix-full #attilaMatrixBar
         <label class="small" style="display:flex;align-items:center;gap:6px">
           MÁV GTFS ZIP <input id="mavGtfsFile" type="file" accept=".zip">
         </label>
+        <label class="small" style="display:flex;align-items:center;gap:6px">
+          GYERMEKVASÚT GTFS ZIP <input id="gyvGtfsFile" type="file" accept=".zip,application/zip,application/x-zip-compressed">
+        </label>
       </div>
-      <div id="commonStopStatus" class="small" style="margin-top:8px">BKV/BKK: betöltés alatt • VOLÁN: nincs betöltött GTFS • MÁV: nincs betöltött GTFS</div>
+      <div id="commonStopStatus" class="small" style="margin-top:8px">BKV/BKK: betöltés alatt • VOLÁN: nincs betöltött GTFS • MÁV: nincs betöltött GTFS • GYERMEKVASÚT: nincs betöltött GTFS</div>
       <div id="gtfsImportProgress" aria-live="polite"></div>
+      <div id="gyvStopCoverage" class="small" style="margin-top:8px;padding:8px;border:1px solid #315b46;border-radius:8px">GYERMEKVASÚT GTFS: NINCS ADAT – a hivatalos nyolc stop_id ellenőrzéséhez töltsd be a GYV ZIP-et.</div>
       <div id="nearestCommonStops" style="margin-top:10px"></div>
       <div id="commonStopResults" style="margin-top:10px"></div>
       <div id="commonStopDepartures" style="margin-top:12px"></div>
-    </div>
-  </section>
-
-  <section class="panel" id="attilaGtfsStopDirectory" aria-label="Betöltött GTFS megállók listája">
-    <h3>🧭 ÚJ GTFS-MEGÁLLÓK · KÜLÖN, LÁTHATÓ MEGÁLLÓLISTA</h3>
-    <div class="panelBody">
-      <p class="small">Ez a lista a készüléken ténylegesen betöltött BKV/BKK, VOLÁN és MÁV GTFS stops.txt állományokból épül fel. A régi 24 gyors URL külön változatlanul megmarad. A kereső név, stop_id és stop_code szerint is működik, szolgáltatói előtaggal vagy anélkül.</p>
-      <div class="fix32IdRow"><input id="attilaGtfsDirectoryQuery" type="search" placeholder="Új megálló neve / stop_id / stop_code – előtaggal vagy anélkül"><button id="attilaGtfsDirectorySearch" type="button">GTFS MEGÁLLÓK KERESÉSE</button></div>
-      <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0"><label>Szolgáltató <select id="attilaGtfsDirectoryProvider"><option value="ALL">Mindhárom szolgáltató</option><option value="BKV">BKV / BKK</option><option value="VOLAN">VOLÁN</option><option value="MAV">MÁV</option></select></label><button id="attilaGtfsDirectoryShowAll" type="button">BETÖLTÖTT MEGÁLLÓK LISTÁZÁSA</button></div>
-      <div id="attilaGtfsDirectoryStatus" class="fix32SearchResult" aria-live="polite">GTFS-lista: betöltött szolgáltatói megállóadatokra vár. A lista nem mutat kitalált megállót.</div>
-      <div id="attilaGtfsDirectoryResults" class="fix32SearchResult" aria-live="polite"><div class="fix32VehicleEmpty">A GTFS-megállók a ZIP betöltése után itt jelennek meg.</div></div>
     </div>
   </section>
 
@@ -1358,7 +1359,7 @@ body.attila-matrix-eco #attilaMatrixBar,body.attila-matrix-full #attilaMatrixBar
       <article class="fix32SearchBox"><h4>2. GPS-KÖZELI JÁRMŰKERESŐ</h4><select id="fix32NearRadius"><option value="200">200 m</option><option value="500">500 m</option><option value="1000">1 km</option><option value="2000" selected>2 km</option><option value="5000">5 km</option><option value="10000">10 km</option><option value="all">ÖSSZES</option></select><button id="fix32NearSearch" type="button">KÖZELI JÁRMŰVEK</button><div id="fix32NearResult" class="fix32SearchResult">GPS-helyzet és valódi élő járműpozíció szükséges.</div></article>
       <article class="fix32SearchBox"><h4>3. JÁRAT / ROUTE ID KERESŐ</h4><input id="fix32RouteQuery" type="search" placeholder="Járatszám vagy route_id"><button id="fix32RouteSearch" type="button">JÁRAT KERESÉSE</button><div id="fix32RouteResult" class="fix32SearchResult">A betöltött BKK / VOLÁN / MÁV routes.txt állományokból keres.</div></article>
       <article class="fix32SearchBox"><h4>4. GTFS STOP ID KERESŐ</h4><input id="fix32StopIdQuery" type="search" placeholder="Csak GTFS ID, pl. F00457 / CS008438"><button id="fix32StopIdSearch" type="button">STOP ID KERESÉSE</button><div id="fix32StopIdResult" class="fix32SearchResult">A teljes stop_id azonosítót pontosan kezeli.</div></article>
-      <article class="fix32SearchBox"><h4>5. MEGÁLLÓNÉV-KERESŐ</h4><input id="fix32StopNameQuery" type="search" placeholder="Megálló vagy állomás neve"><button id="fix32StopNameSearch" type="button">MEGÁLLÓNÉV KERESÉSE</button><div id="fix32StopNameResult" class="fix32SearchResult">Keresés mindhárom betöltött GTFS-megállóállományban.</div></article>
+      <article class="fix32SearchBox"><h4>5. MEGÁLLÓNÉV-KERESŐ</h4><input id="fix32StopNameQuery" type="search" placeholder="Megálló vagy állomás neve"><button id="fix32StopNameSearch" type="button">MEGÁLLÓNÉV KERESÉSE</button><div id="fix32StopNameResult" class="fix32SearchResult">Keresés mind a négy betöltött GTFS-megállóállományban.</div></article>
       <article class="fix32SearchBox"><h4>6. RENDSZÁM / JÁRMŰAZONOSÍTÓ</h4><input id="fix32PlateQuery" type="search" placeholder="Rendszám vagy járműazonosító"><button id="fix32PlateSearch" type="button">RENDSZÁM KERESÉSE</button><div id="fix32PlateResult" class="fix32SearchResult">Csak tényleges realtime járműrekordban keres; nincs kitalált találat.</div></article>
     </div>
   </div>
@@ -1405,14 +1406,7 @@ body.attila-matrix-eco #attilaMatrixBar,body.attila-matrix-full #attilaMatrixBar
 </section>
 
 <section class="panel fix32Panel" id="fix32VehicleFocusPanel">
-  <h3>🚍 BKV 18 SOROS JÁRMŰPANEL · TELJES KÉPERNYŐ / NAGYÍTÁS</h3>
-  <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin:8px 0">
-    <button type="button" id="attilaVehicleFullscreen">⛶ TELJES KÉPERNYŐ</button>
-    <button type="button" id="attilaVehicleZoomIn">A+ NAGYÍTÁS</button>
-    <button type="button" id="attilaVehicleZoomOut">A− KICSINYÍTÉS</button>
-    <button type="button" id="attilaVehicleZoomReset">100% ALAPMÉRET</button>
-    <button type="button" id="attilaVehicleFullscreenExit" hidden>↩ VISSZA</button>
-  </div>
+  <h3>🚍 JÁRMŰPANELEK · BKK / VOLÁN / MÁV / GYERMEKVASÚT</h3>
   <div class="panelBody">
     <div id="fix32ProviderCounts" class="fix32ProviderCounts">
       <div><b>🔵 BKK / BKV</b><strong id="fix32BkkCount">NINCS ADAT</strong></div>
@@ -2561,6 +2555,7 @@ function attilaReadBlobArrayBuffer(blob){
 }
 
 async function loadBkkGtfs(localFile=null){
+  const wasLoaded=gtfsLoaded;
   const statusEl=$('gtfsStatus');
   const progress=document.getElementById('gtfsImportProgress');
   try{
@@ -2609,8 +2604,8 @@ async function loadBkkGtfs(localFile=null){
     try{if(typeof window.commonTransitStopSearch==='function')window.commonTransitStopSearch();}catch(e){}
     return true;
   }catch(err){
-    gtfsLoaded=false;
-    if(statusEl)statusEl.textContent='HIBA – '+(err?.message||String(err));
+    gtfsLoaded=wasLoaded;
+    if(statusEl)statusEl.textContent='HIBA – '+(err?.message||String(err))+(wasLoaded?' · A korábbi sikeres BKK GTFS-adat megmaradt.':'');
     logLine('BKK GTFS HIBA: '+(err?.message||err));
     if(progress){progress.classList.add('active');progress.textContent='BKK GTFS HIBA: '+(err?.message||String(err));}
     return false;
@@ -8194,7 +8189,8 @@ window.extractFutarVehicles = function(json){
   const commonProviders = {
     BKV: {name:"BKV/BKK", icon:"🔵", stops:[], loaded:true, zip:null, blob:null, zipPromise:null, scheduleCache:new Map(), tripMap:null, routeMap:null, stopTimesText:null, stopTimesPromise:null},
     VOLAN: {name:"VOLÁN", icon:"🟠", stops:[], loaded:false, zip:null, blob:null, zipPromise:null, scheduleCache:new Map(), tripMap:null, routeMap:null, stopTimesText:null, stopTimesPromise:null},
-    MAV: {name:"MÁV", icon:"🟤", stops:[], loaded:false, zip:null, blob:null, zipPromise:null, scheduleCache:new Map(), tripMap:null, routeMap:null, stopTimesText:null, stopTimesPromise:null}
+    MAV: {name:"MÁV", icon:"🟤", stops:[], loaded:false, zip:null, blob:null, zipPromise:null, scheduleCache:new Map(), tripMap:null, routeMap:null, stopTimesText:null, stopTimesPromise:null},
+    GYERMEKVASUT: {name:"GYERMEKVASÚT", icon:"🟢", stops:[], loaded:false, zip:null, blob:null, zipPromise:null, scheduleCache:new Map(), tripMap:null, routeMap:null, stopTimesText:null, stopTimesPromise:null}
   };
   function norm(v){return String(v||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[-–—_.,;:/()]/g," ").replace(/\s+/g," ").trim();}
   function haversineM(a,b,c,d){const R=6371000,p1=a*Math.PI/180,p2=c*Math.PI/180,dp=(c-a)*Math.PI/180,dl=(d-b)*Math.PI/180;const x=Math.sin(dp/2)**2+Math.cos(p1)*Math.cos(p2)*Math.sin(dl/2)**2;return R*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));}
@@ -8211,12 +8207,15 @@ window.extractFutarVehicles = function(json){
     const pick=(...keys)=>{for(const k of keys){const v=normalized[k];if(v!==undefined&&v!==null&&String(v).trim()!=="")return v;}return "";};
     const id=String(pick("stop_id","stopid")).trim();
     const name=String(pick("stop_name","stopname","name")).trim();
-    const lat=Number(String(pick("stop_lat","stop_latitude","latitude")).trim());
-    const lon=Number(String(pick("stop_lon","stop_lng","stop_longitude","longitude")).trim());
-    if(!id||!name||!Number.isFinite(lat)||!Number.isFinite(lon)||Math.abs(lat)>90||Math.abs(lon)>180)return null;
+    const latRaw=String(pick("stop_lat","stop_latitude","latitude")).trim();
+    const lonRaw=String(pick("stop_lon","stop_lng","stop_longitude","longitude")).trim();
+    const lat=latRaw===""?null:Number(latRaw),lon=lonRaw===""?null:Number(lonRaw);
+    if(!id||!name||(lat!==null&&(!Number.isFinite(lat)||Math.abs(lat)>90))||(lon!==null&&(!Number.isFinite(lon)||Math.abs(lon)>180)))return null;
     return{id,name,code:String(pick("stop_code","stopcode")).trim(),parentId:String(pick("parent_station","parentstation")).trim(),locationType:String(pick("location_type","locationtype")).trim(),lat,lon,gtfsField:"stops.txt:stop_id"};
   }
-  function updateStatus(){const e=document.getElementById("commonStopStatus");if(!e)return;e.textContent="BKV/BKK: "+(commonProviders.BKV.stops.length?commonProviders.BKV.stops.length.toLocaleString("hu-HU")+" megálló":"nincs")+" • VOLÁN: "+(commonProviders.VOLAN.loaded?commonProviders.VOLAN.stops.length.toLocaleString("hu-HU")+" megálló":"nincs betöltött GTFS")+" • MÁV: "+(commonProviders.MAV.loaded?commonProviders.MAV.stops.length.toLocaleString("hu-HU")+" megálló":"nincs betöltött GTFS");}
+  function updateStatus(){const e=document.getElementById("commonStopStatus");if(!e)return;e.textContent="BKV/BKK: "+(commonProviders.BKV.stops.length?commonProviders.BKV.stops.length.toLocaleString("hu-HU")+" megálló":"nincs")+" • VOLÁN: "+(commonProviders.VOLAN.loaded?commonProviders.VOLAN.stops.length.toLocaleString("hu-HU")+" megálló":"nincs betöltött GTFS")+" • MÁV: "+(commonProviders.MAV.loaded?commonProviders.MAV.stops.length.toLocaleString("hu-HU")+" megálló":"nincs betöltött GTFS")+" • GYERMEKVASÚT: "+(commonProviders.GYERMEKVASUT.loaded?commonProviders.GYERMEKVASUT.stops.length.toLocaleString("hu-HU")+" megálló":"nincs betöltött GTFS");}
+  const GYV_EXPECTED_STOPS=[['Hűvösvölgy','005546847'],['Hárs-hegy','005546854'],['Szépjuhászné','005546862'],['Jánoshegy','005546870'],['Virágvölgy','005546888'],['Csillebérc','005546896'],['Normafa','005546904'],['Széchenyi-hegy','005546912']];
+  function updateGyvCoverage(){const p=commonProviders.GYERMEKVASUT,el=document.getElementById('gyvStopCoverage');if(!el)return;if(!p.loaded){el.textContent='GYERMEKVASÚT GTFS: NINCS ADAT – töltsd be a hivatalos GYV ZIP-et; a nyolc állomás ellenőrzése csak abból történik.';return;}const rows=GYV_EXPECTED_STOPS.map(([name,id])=>{const found=p.stops.find(x=>String(x.id)===id);return '<div style="padding:3px 0;border-top:1px solid #294554">'+(found?'✅':'⚠️')+' '+escapeHtml(name)+' · '+id+' · '+(found?'GTFS-név: '+escapeHtml(found.name):'NINCS A BETÖLTÖTT GTFS-BEN')+'</div>';});const count=GYV_EXPECTED_STOPS.filter(x=>p.stops.some(s=>String(s.id)===x[1])).length;el.innerHTML='<b>GYERMEKVASÚT HIVATALOS STOP ID ELLENŐRZÉS: '+count+'/8</b>'+rows.join('');}
   let lastBkkSource=null,lastBkkLength=-1,lastNearestGpsKey="";
   function syncBkk(){let changed=false;try{const src=Array.isArray(gtfsStops)?gtfsStops:null;const len=src?src.length:0;if(src&&(src!==lastBkkSource||len!==lastBkkLength)){commonProviders.BKV.stops=src.map(s=>({id:String(s.id||""),name:String(s.name||""),code:String(s.code||""),parentId:String(s.parentId||""),locationType:String(s.locationType||""),lat:+s.lat,lon:+s.lon})).filter(s=>Number.isFinite(s.lat)&&Number.isFinite(s.lon));lastBkkSource=src;lastBkkLength=len;changed=true;}const z=window.__ATTILA_BKK_GTFS_ZIP__;if(window.__ATTILA_BKK_GTFS_BLOB__)commonProviders.BKV.blob=window.__ATTILA_BKK_GTFS_BLOB__;if(z&&commonProviders.BKV.zip!==z){commonProviders.BKV.zip=z;commonProviders.BKV.scheduleCache.clear();commonProviders.BKV.tripMap=null;commonProviders.BKV.routeMap=null;changed=true;}}catch(e){}const g=gps(),gk=g?(g.lat.toFixed(4)+","+g.lon.toFixed(4)):"NO_GPS";if(changed||gk!==lastNearestGpsKey){lastNearestGpsKey=gk;updateStatus();renderNearest();}}
   function readZipBlob(blob){
@@ -8230,7 +8229,7 @@ window.extractFutarVehicles = function(json){
     if(p.zipPromise)return p.zipPromise;
     p.zipPromise=(async()=>{
       // Egyszerre egy nagy VOLÁN/MÁV archívumot bontunk ki; a másik szolgáltató ZIP-objektumát elengedjük.
-      for(const key of ["VOLAN","MAV"]){const other=commonProviders[key];if(other!==p)other.zip=null;}
+      /* A szolgáltatók külön Blob-ot és külön GTFS-állapotot tartanak; másik szolgáltató ZIP-jét nem ürítjük. */
       await yieldForPaint();
       const bytes=await readZipBlob(p.blob);
       if(!bytes||bytes.byteLength<22)throw new Error("Üres vagy sérült ZIP-fájl.");
@@ -8261,13 +8260,13 @@ window.extractFutarVehicles = function(json){
       if(typeof logLine==="function")logLine(p.name+" GTFS OK: "+stops.length.toLocaleString("hu-HU")+" megálló. Teljes ZIP nincs kibontva a RAM-ban.");
       try{window.dispatchEvent(new CustomEvent("attila:gtfs-updated",{detail:{provider:key,count:stops.length}}));}catch(e){}
       return true;
-    }catch(e){p.loaded=false;p.stops=[];p.zip=null;updateStatus();if(progress){progress.classList.add("active");progress.textContent=p.name+" GTFS HIBA: "+(e?.message||String(e));}if(typeof logLine==="function")logLine(p.name+" GTFS HIBA: "+(e?.message||e));return false;}
+    }catch(e){/* Hibás/hiányos új fájl esetén a korábban sikeresen betöltött szolgáltatói adat maradjon használható. */updateStatus();if(progress){progress.classList.add("active");progress.textContent=p.name+" GTFS HIBA: "+(e?.message||String(e))+" · A korábbi sikeres adatállományt nem töröltem.";}if(typeof logLine==="function")logLine(p.name+" GTFS HIBA: "+(e?.message||e)+" · korábbi adat megőrizve");return false;}
   }
   function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;", "'":"&#39;"}[m]));}
   function fmtDist(d){return Number.isFinite(d)?(d>=1000?(d/1000).toLocaleString("hu-HU",{minimumFractionDigits:2,maximumFractionDigits:2})+" km":Math.round(d).toLocaleString("hu-HU")+" m"):"NINCS ADAT";}
   function rowHTML(p,s,dist,rank){const n=Number.isFinite(rank)?'<span style="display:inline-flex;align-items:center;justify-content:center;min-width:23px;height:23px;border-radius:50%;background:#263d4c;color:#fff;font-weight:900;margin-right:5px">'+rank+'</span>':'';if(p===commonProviders.MAV){return '<div style="padding:7px 5px;border-top:1px solid rgba(128,128,128,.25)">'+n+'<b>'+escapeHtml(s.name||"NINCS ADAT")+'</b><br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+' · <b>'+fmtDist(dist)+'</b> légvonalban</span><br><button type="button" class="commonStopDepartBtn" data-provider="'+p.key+'" data-stop="'+escapeHtml(s.id)+'" style="margin-top:5px;padding:6px 9px">MENETREND / ÉLŐ ADAT</button></div>';}const code=s.code?" | stop_code: "+escapeHtml(s.code):"";return '<div style="padding:8px 6px;border-top:1px solid rgba(128,128,128,.25)">'+n+p.icon+' <b>'+escapeHtml(p.name)+" — "+escapeHtml(s.name||"NINCS ADAT")+'</b><br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+code+' • <b>'+fmtDist(dist)+'</b> légvonalban</span><br><button type="button" class="commonStopDepartBtn" data-provider="'+p.key+'" data-stop="'+escapeHtml(s.id)+'" style="margin-top:6px;padding:7px 10px">INDULÁSOK + JÁRMŰADATOK</button></div>';}
-  function renderNearest(){const el=document.getElementById("userNearestStops");if(!el)return;const g=gps();if(!g){el.textContent="GPS-helyzet szükséges.";return;}const out=[];for(const key of ["BKV","VOLAN","MAV"]){const p=commonProviders[key];p.key=key;if(!p.loaded||!p.stops.length){out.push('<section style="padding:9px 0;border-top:1px solid rgba(128,128,128,.25)"><b>'+p.icon+' '+p.name+' — NINCS ADAT</b><div class="small">Ehhez a szolgáltatóhoz még nincs betöltve használható, koordinátás megállólista.</div></section>');continue;}const seen=new Set();const ranked=p.stops.map(s=>({s,d:haversineM(g.lat,g.lon,s.lat,s.lon)})).filter(x=>Number.isFinite(x.d)&&Number.isFinite(x.s.lat)&&Number.isFinite(x.s.lon)&&Math.abs(x.s.lat)<=90&&Math.abs(x.s.lon)<=180).sort((a,b)=>a.d-b.d).filter(x=>{const k=String(x.s.id||"")+"|"+x.s.lat+"|"+x.s.lon;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,key==="MAV"?5:10);out.push('<section style="margin-top:9px;border:1px solid rgba(128,128,128,.28);border-radius:9px;padding:7px"><div style="font-weight:900;padding:3px 0 6px">'+p.icon+' '+p.name+' — '+(key==="MAV"?"5":"10")+' LEGKÖZELEBBI MEGÁLLÓ</div>'+(ranked.length?ranked.map((x,i)=>rowHTML(p,x.s,x.d,i+1)).join(''):'<div class="small">NINCS ADAT – nincs koordinátás megálló.</div>')+'</section>');}el.innerHTML=out.join("");}
-  function runSearch(){const q=norm(document.getElementById("commonStopSearch")?.value),el=document.getElementById("commonStopResults");if(!el)return;if(!q){el.innerHTML='<div class="small">Írj be megállónevet, GTFS stop_id-t vagy stop_code-ot.</div>';return;}const terms=q.split(" ").filter(Boolean),g=gps(),hits=[];for(const key of ["BKV","VOLAN","MAV"]){const p=commonProviders[key];p.key=key;if(!p.loaded)continue;for(const s of p.stops){const hay=norm(s.name+" "+s.id+" "+s.code);if(terms.every(t=>hay.includes(t))){const d=g?haversineM(g.lat,g.lon,s.lat,s.lon):NaN;hits.push({p,s,d});}}}hits.sort((a,b)=>(Number.isFinite(a.d)?a.d:Infinity)-(Number.isFinite(b.d)?b.d:Infinity));const shown=hits.slice(0,50);if(!shown.length){el.innerHTML='<div class="small">NINCS ADAT – nincs ilyen találat a jelenleg betöltött GTFS-adatokban. Ellenőrizd, hogy mindhárom GTFS be van-e töltve.</div>';return;}el.innerHTML='<div class="small" style="margin-bottom:5px">Találatok: '+hits.length.toLocaleString("hu-HU")+' (első 50)</div>'+shown.map(x=>rowHTML(x.p,x.s,x.d)).join("");}
+  function renderNearest(){const el=document.getElementById("userNearestStops");if(!el)return;const g=gps();if(!g){el.textContent="GPS-helyzet szükséges.";return;}const out=[];for(const key of ["BKV","VOLAN","MAV","GYERMEKVASUT"]){const p=commonProviders[key];p.key=key;if(!p.loaded||!p.stops.length){out.push('<section style="padding:9px 0;border-top:1px solid rgba(128,128,128,.25)"><b>'+p.icon+' '+p.name+' — NINCS ADAT</b><div class="small">Ehhez a szolgáltatóhoz még nincs betöltve használható, koordinátás megállólista.</div></section>');continue;}const seen=new Set();const ranked=p.stops.map(s=>({s,d:haversineM(g.lat,g.lon,s.lat,s.lon)})).filter(x=>Number.isFinite(x.d)&&Number.isFinite(x.s.lat)&&Number.isFinite(x.s.lon)&&Math.abs(x.s.lat)<=90&&Math.abs(x.s.lon)<=180).sort((a,b)=>a.d-b.d).filter(x=>{const k=String(x.s.id||"")+"|"+x.s.lat+"|"+x.s.lon;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,key==="MAV"?5:10);out.push('<section style="margin-top:9px;border:1px solid rgba(128,128,128,.28);border-radius:9px;padding:7px"><div style="font-weight:900;padding:3px 0 6px">'+p.icon+' '+p.name+' — '+(key==="MAV"?"5":"10")+' LEGKÖZELEBBI MEGÁLLÓ</div>'+(ranked.length?ranked.map((x,i)=>rowHTML(p,x.s,x.d,i+1)).join(''):'<div class="small">NINCS ADAT – nincs koordinátás megálló.</div>')+'</section>');}el.innerHTML=out.join("");}
+  function runSearch(){const q=norm(document.getElementById("commonStopSearch")?.value),el=document.getElementById("commonStopResults");if(!el)return;if(!q){el.innerHTML='<div class="small">Írj be megállónevet, GTFS stop_id-t vagy stop_code-ot.</div>';return;}const terms=q.split(" ").filter(Boolean),g=gps(),hits=[];for(const key of ["BKV","VOLAN","MAV","GYERMEKVASUT"]){const p=commonProviders[key];p.key=key;if(!p.loaded)continue;for(const s of p.stops){const hay=norm(s.name+" "+s.id+" "+s.code);if(terms.every(t=>hay.includes(t))){const d=g?haversineM(g.lat,g.lon,s.lat,s.lon):NaN;hits.push({p,s,d});}}}hits.sort((a,b)=>(Number.isFinite(a.d)?a.d:Infinity)-(Number.isFinite(b.d)?b.d:Infinity));const shown=hits.slice(0,50);if(!shown.length){el.innerHTML='<div class="small">NINCS ADAT – nincs ilyen találat a jelenleg betöltött GTFS-adatokban. Ellenőrizd, hogy a keresett szolgáltató GTFS-e be van-e töltve.</div>';return;}el.innerHTML='<div class="small" style="margin-bottom:5px">Találatok: '+hits.length.toLocaleString("hu-HU")+' (első 50)</div>'+shown.map(x=>rowHTML(x.p,x.s,x.d)).join("");}
   function timeSeconds(t){const m=String(t||"").match(/^(\d+):(\d{2}):(\d{2})$/);return m?Number(m[1])*3600+Number(m[2])*60+Number(m[3]):NaN;}
   function timeLabel(t){const n=timeSeconds(t);if(!Number.isFinite(n))return escapeHtml(t||"NINCS ADAT");return String(Math.floor(n/3600)%24).padStart(2,"0")+":"+String(Math.floor(n%3600/60)).padStart(2,"0");}
   async function zipText(providerOrZip,name){
@@ -8285,12 +8284,11 @@ window.extractFutarVehicles = function(json){
   function csvLine(line){const out=[];let v="",q=false;for(let i=0;i<line.length;i++){const c=line[i];if(c==='"'){if(q&&line[i+1]==='"'){v+='"';i++;}else q=!q;}else if(c===","&&!q){out.push(v);v="";}else v+=c;}out.push(v);return out;}
   function csvHeaders(line){return csvLine(String(line||"").replace(/^\uFEFF/,"")).map(x=>x.trim());}
   async function loadTripAndRouteMaps(p,wantedTrips){const [tr,rr]=await Promise.all([zipText(p,"trips.txt"),p.routeMap?Promise.resolve(null):zipText(p,"routes.txt")]);if(!tr)throw new Error("A GTFS ZIP-ből hiányzik a trips.txt; menetrendi járatazonosító nem oldható fel.");if(!p.tripMap)p.tripMap=new Map();const thEnd=tr.indexOf("\n"),th=csvHeaders(thEnd>=0?tr.slice(0,thEnd):tr),ti={trip:th.indexOf("trip_id"),route:th.indexOf("route_id"),head:th.indexOf("trip_headsign"),service:th.indexOf("service_id")};if(ti.trip<0||ti.route<0)throw new Error("A trips.txt szükséges oszlopai hiányoznak.");const wanted=new Set(wantedTrips);let pos=thEnd+1,scanned=0;while(pos>0&&pos<tr.length){const e=tr.indexOf("\n",pos),line=tr.slice(pos,e<0?tr.length:e).replace(/\r$/,"");if(line){const c=csvLine(line),id=c[ti.trip];if(wanted.has(id))p.tripMap.set(id,{routeId:c[ti.route]||"",headsign:ti.head>=0?(c[ti.head]||""):"",serviceId:ti.service>=0?(c[ti.service]||""):""});}scanned++;if(scanned%12000===0)await new Promise(resolve=>setTimeout(resolve,0));if(e<0)break;pos=e+1;}if(rr){const re=rr.indexOf("\n"),rh=csvHeaders(re>=0?rr.slice(0,re):rr),ri={id:rh.indexOf("route_id"),short:rh.indexOf("route_short_name"),long:rh.indexOf("route_long_name"),type:rh.indexOf("route_type")};const routes=new Map();let rp=re+1;while(rp>0&&rp<rr.length){const e=rr.indexOf("\n",rp),line=rr.slice(rp,e<0?rr.length:e).replace(/\r$/,"");if(line){const c=csvLine(line),id=c[ri.id];if(id)routes.set(id,{short:ri.short>=0?(c[ri.short]||""):"",long:ri.long>=0?(c[ri.long]||""):"",type:ri.type>=0?(c[ri.type]||""):""});}if(e<0)break;rp=e+1;}p.routeMap=routes;}return p.tripMap;}
-  function localDateISO(value){if(value&&/^\d{4}-\d{2}-\d{2}$/.test(String(value))){const [y,m,d]=String(value).split("-").map(Number),check=new Date(y,m-1,d);if(check.getFullYear()===y&&check.getMonth()===m-1&&check.getDate()===d)return String(value);}const n=new Date();return String(n.getFullYear())+"-"+String(n.getMonth()+1).padStart(2,"0")+"-"+String(n.getDate()).padStart(2,"0");}
-  async function activeServiceIds(p,selectedDate){const [calText,excText]=await Promise.all([zipText(p,"calendar.txt"),zipText(p,"calendar_dates.txt")]);if(!calText&&!excText)throw new Error("A GTFS-ből hiányzik a calendar.txt és a calendar_dates.txt is; nem ellenőrizhető a kiválasztott nap közlekedési rendje.");const iso=localDateISO(selectedDate),[yy,mm,dd]=iso.split("-"),d=new Date(Number(yy),Number(mm)-1,Number(dd)),date=yy+mm+dd,weekday=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][d.getDay()],active=new Set();if(calText){for(const r of parseCsv(calText)){const start=String(r.start_date||""),end=String(r.end_date||"");if(start<=date&&date<=end&&String(r[weekday]||"")==="1"&&r.service_id)active.add(String(r.service_id));}}if(excText){for(const r of parseCsv(excText)){if(String(r.date||"")!==date||!r.service_id)continue;if(String(r.exception_type)==="1")active.add(String(r.service_id));else if(String(r.exception_type)==="2")active.delete(String(r.service_id));}}return active;}
-  async function getDepartures(p,s,selectedDate){
-    const serviceDate=localDateISO(selectedDate),today=localDateISO(),isToday=serviceDate===today,nowMs=Date.now(),now=new Date(),nowSec=now.getHours()*3600+now.getMinutes()*60,cacheKey=String(s.id)+"|"+serviceDate;
-    const cached=p.scheduleCache.get(cacheKey);
-    if(cached&&nowMs-cached.at<60000)return (isToday?cached.rows.filter(d=>timeSeconds(d.departure)>=nowSec-60):cached.rows).slice(0,30);
+  async function activeServiceIds(p){const [calText,excText]=await Promise.all([zipText(p,"calendar.txt"),zipText(p,"calendar_dates.txt")]);if(!calText&&!excText)throw new Error("A GTFS-ből hiányzik a calendar.txt és a calendar_dates.txt is; nem ellenőrizhető, hogy a járat ma közlekedik-e.");const d=new Date(),date=String(d.getFullYear())+String(d.getMonth()+1).padStart(2,"0")+String(d.getDate()).padStart(2,"0"),weekday=["sunday","monday","tuesday","wednesday","thursday","friday","saturday"][d.getDay()],active=new Set();if(calText){for(const r of parseCsv(calText)){const start=String(r.start_date||""),end=String(r.end_date||"");if(start<=date&&date<=end&&String(r[weekday]||"")==="1"&&r.service_id)active.add(String(r.service_id));}}if(excText){for(const r of parseCsv(excText)){if(String(r.date||"")!==date||!r.service_id)continue;if(String(r.exception_type)==="1")active.add(String(r.service_id));else if(String(r.exception_type)==="2")active.delete(String(r.service_id));}}return active;}
+  async function getDepartures(p,s){
+    const nowMs=Date.now(),now=new Date(),nowSec=now.getHours()*3600+now.getMinutes()*60;
+    const cached=p.scheduleCache.get(String(s.id));
+    if(cached&&nowMs-cached.at<60000)return cached.rows.filter(d=>timeSeconds(d.departure)>=nowSec-60).slice(0,30);
     const targetIds=new Set([String(s.id)]);
     if(s.parentId)for(const x of p.stops)if(String(x.parentId||"")===String(s.parentId))targetIds.add(String(x.id));
     for(const x of p.stops)if(String(x.parentId||"")===String(s.id))targetIds.add(String(x.id));
@@ -8307,14 +8305,14 @@ window.extractFutarVehicles = function(json){
       let pos=firstEnd+1,scanned=0;while(pos>0&&pos<stopTimes.length){const e=stopTimes.indexOf("\n",pos),line=stopTimes.slice(pos,e<0?stopTimes.length:e).replace(/\r$/,"" );if(line){const c=csvLine(line),sid=String(c[idx.stop]||"");if(targetIds.has(sid)){const dep=String(c[idx.dep]||((idx.arr>=0)?c[idx.arr]:"")||"");if(Number.isFinite(timeSeconds(dep)))matched.push({tripId:String(c[idx.trip]||""),seq:idx.seq>=0?String(c[idx.seq]||""):"",departure:dep,arrival:idx.arr>=0?String(c[idx.arr]||""):"",boardingStopId:sid,boardingStopName:stopNames.get(sid)||s.name||""});}}scanned++;if(scanned%8000===0)await new Promise(resolve=>setTimeout(resolve,0));if(e<0)break;pos=e+1;}
     }
     const wanted=new Set(matched.map(x=>x.tripId).filter(Boolean));
-    if(!matched.length){p.scheduleCache.set(cacheKey,{at:nowMs,rows:[]});return[];}
-    await loadTripAndRouteMaps(p,wanted);const active=await activeServiceIds(p,serviceDate);
+    if(!matched.length){p.scheduleCache.set(String(s.id),{at:nowMs,rows:[]});return[];}
+    await loadTripAndRouteMaps(p,wanted);const active=await activeServiceIds(p);
     const expanded=matched.map(x=>{const trip=p.tripMap.get(x.tripId)||{},route=(p.routeMap||new Map()).get(String(trip.routeId||""))||{};return{...x,routeId:String(trip.routeId||""),serviceId:String(trip.serviceId||""),headsign:trip.headsign||"",routeShort:route.short||"",routeLong:route.long||""};});
-    const dateCandidates=isToday?expanded.filter(x=>timeSeconds(x.departure)>=nowSec-60):expanded;
-    const activeOnDate=dateCandidates.filter(x=>active.has(x.serviceId));
-    if(dateCandidates.length&&!activeOnDate.length){const shownDate=new Date(Number(serviceDate.slice(0,4)),Number(serviceDate.slice(5,7))-1,Number(serviceDate.slice(8,10))).toLocaleDateString("hu-HU");throw new Error("A stop_times.txt tartalmaz ehhez a megállóhoz indulási időket, de a GTFS naptára szerint a kiválasztott napon ("+shownDate+") nincs aktív járat. Nem jelenítek meg nem igazolt indulást.");}
-    const result=activeOnDate.sort((a,b)=>timeSeconds(a.departure)-timeSeconds(b.departure));
-    p.scheduleCache.set(cacheKey,{at:nowMs,rows:result});return result.slice(0,30);
+    const nowAndLater=expanded.filter(x=>timeSeconds(x.departure)>=nowSec-60);
+    const activeToday=nowAndLater.filter(x=>active.has(x.serviceId));
+    if(nowAndLater.length&&!activeToday.length){const today=new Date().toLocaleDateString("hu-HU");throw new Error("A stop_times.txt tartalmaz ehhez a megállóhoz indulási időket, de a GTFS naptára szerint ezekhez ma ("+today+") nincs aktív járat. Ez lehet lejárt/eltérő dátumú GTFS vagy eltérő service_id; nem jelölöm ezeket mai indulásként.");}
+    const result=activeToday.sort((a,b)=>timeSeconds(a.departure)-timeSeconds(b.departure));
+    p.scheduleCache.set(String(s.id),{at:nowMs,rows:result});return result.slice(0,30);
   }
   function canonicalTripId(value){
     const raw=String(value??"").trim();
@@ -8361,7 +8359,7 @@ window.extractFutarVehicles = function(json){
       realtimeSource:"MÁVPlusz / EMMA"};
   }
   function matchingVehicles(p,s,dep){
-    if(!dep?.tripId)return[];
+    if(!dep?.tripId||p===commonProviders.GYERMEKVASUT)return[];
     if(p===commonProviders.BKV){
       const vs=Array.isArray(vehicleData)?vehicleData:[];
       return vs.filter(v=>{
@@ -8389,11 +8387,10 @@ window.extractFutarVehicles = function(json){
     return winMatches.slice(0,8);
   }
   function vehicleHtml(v){const vals=[['JÁRAT',v.routeShortName||v.routeId],['JÁRMŰ',v.licensePlate||v.label||v.vehicleId],['MEGÁLLÓ',v.nearestStop?.name||v.stopName],['ELTÉRÉS',v.delayText||v.delaySeconds],['JÁRMŰTÍPUS',v.vehicleType],['ALACSONYPADLÓS',v.lowFloor===true?'IGEN':v.lowFloor===false?'NEM':v.lowFloor],['FORGALMI',v.forgalmi],['TRIP',v.tripId],['GPS',Number.isFinite(v.lat)&&Number.isFinite(v.lon)?v.lat.toFixed(6)+', '+v.lon.toFixed(6):null],['ÉLŐ FORRÁS',v.realtimeSource]];return '<div style="margin:6px 0;padding:8px;border-left:3px solid #2787b9;background:rgba(90,140,170,.10)">'+vals.map(([k,val])=>'<div><b>'+escapeHtml(k)+':</b> '+escapeHtml(val===undefined||val===null||val===""?"NINCS ADAT":String(val))+'</div>').join('')+'</div>';}
-  async function showDepartures(key,stopId,selectedDate){const p=commonProviders[key],box=document.getElementById("commonStopDepartures");if(!p||!box)return;const s=p.stops.find(x=>String(x.id)===String(stopId));if(!s)return;p.key=key;const serviceDate=localDateISO(selectedDate),dateParts=serviceDate.split("-"),dateLabel=new Date(Number(dateParts[0]),Number(dateParts[1])-1,Number(dateParts[2])).toLocaleDateString("hu-HU"),dateControl='<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:9px 0;padding:9px;border:1px solid #426070;border-radius:8px"><label for="commonStopServiceDate" style="font-weight:800">MENETREND DÁTUMA:</label><input id="commonStopServiceDate" type="date" value="'+serviceDate+'" data-provider="'+escapeHtml(key)+'" data-stop="'+escapeHtml(s.id)+'" style="min-height:42px;background:#fff;color:#111;padding:7px;border-radius:6px"><span class="small">A GTFS calendar.txt és calendar_dates.txt alapján.</span></div>';box.innerHTML='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b>'+dateControl+'<div class="small" style="margin-top:6px">GTFS: '+escapeHtml(s.id)+' • Menetrendi indulások betöltése…</div></section>';try{if(!p.zip&&key==="BKV")p.zip=window.__ATTILA_BKK_GTFS_ZIP__||null;if(!p.zip&&!p.blob)throw new Error("Ehhez a szolgáltatóhoz nincs betöltött GTFS ZIP.");const deps=await getDepartures(p,s,serviceDate);if(key==="MAV"&&typeof window.loadMavRealtime==="function"){try{await window.loadMavRealtime();}catch(e){if(typeof logLine==="function")logLine("MÁV élő adat frissítése nem sikerült: "+(e?.message||e));}}if(!deps.length){box.innerHTML='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b>'+dateControl+'<p class="small">NINCS MEGJELENÍTHETŐ INDULÁS. A kiválasztott nap GTFS-naptára és kivételei alapján nem igazolható indulás. Ellenőrizendő: stop_times.txt, trips.txt, routes.txt, calendar.txt / calendar_dates.txt és a service_id egyezése.</p><p class="small">GTFS stop_id: '+escapeHtml(s.id)+' · szolgáltató: '+escapeHtml(p.name)+' · kiválasztott dátum: '+dateLabel+'. A program nem helyettesíti ezt kitalált indulással.</p><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></section>';return;}let html='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></div>'+dateControl+'<div class="small" style="margin:5px 0 8px">GTFS stop_id: '+escapeHtml(s.id)+' • '+dateLabel+' • MENETRENDI időpontok (nem automatikusan élő adatok)</div>';for(const d of deps){const route=d.routeShort||d.routeLong||d.routeId||"JÁRATAZONOSÍTÓ NINCS ADAT";const live=matchingVehicles(p,s,d);html+='<div style="border-top:1px solid rgba(128,128,128,.25);padding:8px 0"><div style="font-size:1.05em;font-weight:900">'+timeLabel(d.departure)+' — '+escapeHtml(route)+'</div><div class="small">Célállomás: '+escapeHtml(d.headsign||"NINCS ADAT")+' • trip_id: '+escapeHtml(d.tripId||"NINCS ADAT")+'</div>';if(live.length){html+='<div style="margin-top:5px;font-weight:800;color:#39b7ff">EGYEZŐ ÉLŐ JÁRMŰADAT – szolgáltató szerint ellenőrizve</div>'+live.map(vehicleHtml).join("");}else if(p===commonProviders.BKV){html+='<div class="small" style="margin-top:4px">Ehhez az induláshoz nem találtam biztosan illeszthető élő járműadatot; a megjelenített időpont menetrendi adat.</div>';}else if(p===commonProviders.MAV){const st=document.getElementById("attiMavRealtimeStatus")?.textContent||"MÁVPlusz állapot: NINCS ADAT";html+='<div class="small" style="margin-top:4px">MÁV élő forrás ellenőrzése: '+escapeHtml(st)+'. Ehhez a GTFS trip_id-hoz nem találtam teljes azonosítóval igazolható élő egyezést; az időpont továbbra is menetrendi adat.</div>';}else{const liveCount=(Array.isArray(winRealtimeRows)?winRealtimeRows:[]).filter(r=>r.provider==="VOLÁN").length;html+='<div class="small" style="margin-top:4px">VOLÁN valós idejű rekordok a WinMenetrendből: '+liveCount+'. Ehhez a teljes GTFS trip_id-hoz nincs megbízható élő egyezés; a fenti időpont menetrendi adat.</div>';}html+='</div>';}html+='<div class="small" style="margin-top:8px">Legfeljebb 30 menetrendi indulás a kiválasztott napra. A késés/valós indulás csak megbízható realtime egyezés esetén jelezhető.</div></section>';box.innerHTML=html;}catch(e){box.innerHTML='<section style="border:1px solid #9b6438;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b>'+dateControl+'<p class="small">MENETREND NEM ELÉRHETŐ: '+escapeHtml(e.message||e)+'</p><p class="small">Ellenőrizd, hogy a feltöltött GTFS ZIP tartalmazza-e a stops.txt, trips.txt, routes.txt és stop_times.txt fájlokat.</p><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></section>';}}
-  window.__ATTILA_COMMON_PROVIDERS=commonProviders;window.__ATTILA_COMMON_API={providers:commonProviders,readText:async function(key,name){const p=commonProviders[key];if(!p)return null;if(key==="BKV"&&window.__ATTILA_BKK_GTFS_BLOB__)p.blob=window.__ATTILA_BKK_GTFS_BLOB__;return await zipText(p,name);},findStop:function(key,q){const p=commonProviders[key],raw=String(q||"").trim();if(!p||!raw)return null;const low=raw.toLowerCase();let found=p.stops.find(x=>String(x.id||"").toLowerCase()===low||String(x.code||"").toLowerCase()===low);if(found)return found;if(key==="VOLAN"){const noPrefix=low.replace(/^volan[_:-]?/,"");const candidates=p.stops.filter(x=>{const id=String(x.id||"").toLowerCase();return id===("volan_"+noPrefix)||id.endsWith("_"+noPrefix)||String(x.code||"").toLowerCase()===noPrefix;});if(candidates.length===1)return candidates[0];}return null;},getDepartures:async function(key,stop,serviceDate){const p=commonProviders[key];if(!p||!p.loaded)throw new Error("A szolgáltató GTFS-e nincs betöltve.");if(key==="BKV"&&window.__ATTILA_BKK_GTFS_BLOB__)p.blob=window.__ATTILA_BKK_GTFS_BLOB__;return await getDepartures(p,stop,serviceDate);}};window.loadCommonTransitProvider=loadProvider;window.commonTransitStopSearch=runSearch;window.commonTransitNearest=renderNearest;
+  async function showDepartures(key,stopId){const p=commonProviders[key],box=document.getElementById("commonStopDepartures");if(!p||!box)return;const s=p.stops.find(x=>String(x.id)===String(stopId));if(!s)return;p.key=key;box.innerHTML='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><div class="small" style="margin-top:6px">GTFS: '+escapeHtml(s.id)+' • Menetrendi indulások betöltése…</div></section>';try{if(!p.zip&&key==="BKV")p.zip=window.__ATTILA_BKK_GTFS_ZIP__||null;if(!p.zip&&!p.blob)throw new Error("Ehhez a szolgáltatóhoz nincs betöltött GTFS ZIP.");const deps=await getDepartures(p,s);if(key==="MAV"&&typeof window.loadMavRealtime==="function"){try{await window.loadMavRealtime();}catch(e){if(typeof logLine==="function")logLine("MÁV élő adat frissítése nem sikerült: "+(e?.message||e));}}if(!deps.length){box.innerHTML='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><p class="small">NINCS MEGJELENÍTHETŐ INDULÁS. A keresés megállót talált, de ez még nem bizonyítja, hogy az indulási fájl és a mai közlekedési naptár is megfelelő. Ellenőrizendő: stop_times.txt, trips.txt, routes.txt, calendar.txt / calendar_dates.txt, stop_id egyezés és mai service_id.</p><p class="small">GTFS stop_id: '+escapeHtml(s.id)+' · szolgáltató: '+escapeHtml(p.name)+' · dátum: '+new Date().toLocaleDateString('hu-HU')+'. A program nem helyettesíti ezt kitalált indulással.</p><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></section>';return;}const now=new Date(),date=now.toLocaleDateString("hu-HU");let html='<section style="border:1px solid #426070;border-radius:10px;padding:12px"><div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></div><div class="small" style="margin:5px 0 8px">GTFS stop_id: '+escapeHtml(s.id)+' • '+date+' • MENETRENDI időpontok (nem automatikusan élő adatok)</div>';for(const d of deps){const route=d.routeShort||d.routeLong||d.routeId||"JÁRATAZONOSÍTÓ NINCS ADAT";const live=matchingVehicles(p,s,d);html+='<div style="border-top:1px solid rgba(128,128,128,.25);padding:8px 0"><div style="font-size:1.05em;font-weight:900">'+timeLabel(d.departure)+' — '+escapeHtml(route)+'</div><div class="small">Célállomás: '+escapeHtml(d.headsign||"NINCS ADAT")+' • trip_id: '+escapeHtml(d.tripId||"NINCS ADAT")+'</div>';if(live.length){html+='<div style="margin-top:5px;font-weight:800;color:#39b7ff">EGYEZŐ ÉLŐ JÁRMŰADAT – szolgáltató szerint ellenőrizve</div>'+live.map(vehicleHtml).join("");}else if(p===commonProviders.BKV){html+='<div class="small" style="margin-top:4px">Ehhez az induláshoz nem találtam biztosan illeszthető élő járműadatot; a megjelenített időpont menetrendi adat.</div>';}else if(p===commonProviders.MAV){const st=document.getElementById("attiMavRealtimeStatus")?.textContent||"MÁVPlusz állapot: NINCS ADAT";html+='<div class="small" style="margin-top:4px">MÁV élő forrás ellenőrzése: '+escapeHtml(st)+'. Ehhez a GTFS trip_id-hoz nem találtam teljes azonosítóval igazolható élő egyezést; az időpont továbbra is menetrendi adat.</div>';}else if(p===commonProviders.GYERMEKVASUT){html+='<div class="small" style="margin-top:4px">GYERMEKVASÚT: a betöltött GTFS menetrendi indulása. Nincs csatlakoztatott, ellenőrzött élő járműfeed; járműadat: NINCS ADAT.</div>';}else{const liveCount=(Array.isArray(winRealtimeRows)?winRealtimeRows:[]).filter(r=>r.provider==="VOLÁN").length;html+='<div class="small" style="margin-top:4px">VOLÁN valós idejű rekordok a WinMenetrendből: '+liveCount+'. Ehhez a teljes GTFS trip_id-hoz nincs megbízható élő egyezés; a fenti időpont menetrendi adat.</div>';}html+='</div>';}html+='<div class="small" style="margin-top:8px">Legfeljebb 30 következő menetrendi indulás. A késés/valós indulás csak megbízható realtime egyezés esetén jelezhető.</div></section>';box.innerHTML=html;}catch(e){box.innerHTML='<section style="border:1px solid #9b6438;border-radius:10px;padding:12px"><b>'+p.icon+' '+escapeHtml(p.name)+' — '+escapeHtml(s.name)+'</b><p class="small">MENETREND NEM ELÉRHETŐ: '+escapeHtml(e.message||e)+'</p><p class="small">Ellenőrizd, hogy a feltöltött GTFS ZIP tartalmazza-e a stops.txt, trips.txt, routes.txt és stop_times.txt fájlokat.</p><button type="button" id="closeCommonDepartures">BEZÁRÁS</button></section>';}}
+  window.__ATTILA_COMMON_PROVIDERS=commonProviders;window.__ATTILA_COMMON_API={providers:commonProviders,readText:async function(key,name){const p=commonProviders[key];if(!p)return null;if(key==="BKV"&&window.__ATTILA_BKK_GTFS_BLOB__)p.blob=window.__ATTILA_BKK_GTFS_BLOB__;return await zipText(p,name);},findStop:function(key,q){const p=commonProviders[key],raw=String(q||"").trim();if(!p||!raw)return null;const low=raw.toLowerCase();let found=p.stops.find(x=>String(x.id||"").toLowerCase()===low||String(x.code||"").toLowerCase()===low);if(found)return found;if(key==="VOLAN"){const noPrefix=low.replace(/^volan[_:-]?/,"");const candidates=p.stops.filter(x=>{const id=String(x.id||"").toLowerCase();return id===("volan_"+noPrefix)||id.endsWith("_"+noPrefix)||String(x.code||"").toLowerCase()===noPrefix;});if(candidates.length===1)return candidates[0];}return null;},getDepartures:async function(key,stop){const p=commonProviders[key];if(!p||!p.loaded)throw new Error("A szolgáltató GTFS-e nincs betöltve.");if(key==="BKV"&&window.__ATTILA_BKK_GTFS_BLOB__)p.blob=window.__ATTILA_BKK_GTFS_BLOB__;return await getDepartures(p,stop);}};window.loadCommonTransitProvider=loadProvider;window.commonTransitStopSearch=runSearch;window.commonTransitNearest=renderNearest;
   document.addEventListener("click",e=>{const b=e.target.closest?.(".commonStopDepartBtn");if(b){e.preventDefault();e.stopPropagation();showDepartures(b.dataset.provider,b.dataset.stop);return;}if(e.target.id==="closeCommonDepartures"){const box=document.getElementById("commonStopDepartures");if(box)box.innerHTML="";}});
-    document.addEventListener("change",e=>{const d=e.target;if(d&&d.id==="commonStopServiceDate"){const key=d.dataset.provider,stopId=d.dataset.stop,date=d.value;if(key&&stopId&&date)showDepartures(key,stopId,date);}});
-  document.addEventListener("DOMContentLoaded",()=>{const vf=document.getElementById("volanGtfsFile"),mf=document.getElementById("mavGtfsFile");vf?.addEventListener("change",e=>loadProvider(e.target.files?.[0],"VOLAN"));mf?.addEventListener("change",e=>loadProvider(e.target.files?.[0],"MAV"));document.getElementById("commonStopSearchBtn")?.addEventListener("click",runSearch);document.getElementById("commonStopSearch")?.addEventListener("input",()=>{clearTimeout(window.__commonStopTimer);window.__commonStopTimer=setTimeout(runSearch,180);});syncBkk();setInterval(syncBkk,3000);});
+  document.addEventListener("DOMContentLoaded",()=>{document.getElementById("commonStopSearchBtn")?.addEventListener("click",runSearch);document.getElementById("commonStopSearch")?.addEventListener("input",()=>{clearTimeout(window.__commonStopTimer);window.__commonStopTimer=setTimeout(runSearch,180);});syncBkk();updateGyvCoverage();setInterval(()=>{syncBkk();updateGyvCoverage();},3000);});
 })();
 </script>
 
@@ -8537,7 +8534,7 @@ window.extractFutarVehicles = function(json){
         else if(typeof window.loadCommonTransitProvider==="function") await window.loadCommonTransitProvider(x.blob,x.provider);
       }catch(e){if(typeof logLine==="function")logLine(x.provider+" mentett GTFS visszatöltési HIBA: "+e.message)}
     }
-    if(all.length)status("Mentett VOLÁN/MÁV GTFS visszatöltve: "+all.map(x=>x.provider).join(" + "));
+    if(all.length)status("Mentett szolgáltatói GTFS visszatöltve: "+all.map(x=>x.provider).join(" + "));
   }
   async function blobToDataUrl(blob){return await new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(r.result);r.onerror=()=>rej(r.error);r.readAsDataURL(blob)})}
   async function exportLibrary(){
@@ -8554,11 +8551,11 @@ window.extractFutarVehicles = function(json){
     try{
       const r=await fetch(url,{cache:"no-store"});if(!r.ok)throw new Error("HTTP "+r.status);const data=await r.json();
       if(Array.isArray(data.pdfs)){for(const x of data.pdfs.slice(0,30)){if(!x?.data)continue;const b64=String(x.data);const blob=await (await fetch(b64)).blob();const f=new File([blob],x.name||"ismeretlen.pdf",{type:x.type||"application/pdf"});await savePdfs([f]);}}
-      if(Array.isArray(data.gtfs)){for(const x of data.gtfs){if(!x?.data||!/^VOLAN$|^MAV$/.test(String(x.provider||"")))continue;const blob=await (await fetch(x.data)).blob();const f=new File([blob],x.name||String(x.provider)+".zip",{type:"application/zip"});await saveGtfs(f,String(x.provider));if(typeof window.loadCommonTransitProvider==="function")await window.loadCommonTransitProvider(f,String(x.provider));}}
+      if(Array.isArray(data.gtfs)){for(const x of data.gtfs){if(!x?.data||!/^BKK$|^VOLAN$|^MAV$|^GYERMEKVASUT$/.test(String(x.provider||"")))continue;const blob=await (await fetch(x.data)).blob();const f=new File([blob],x.name||String(x.provider)+".zip",{type:"application/zip"});let ok=false;if(x.provider==="BKK"&&typeof window.loadBkkGtfs==="function")ok=await window.loadBkkGtfs(f);else if(typeof window.loadCommonTransitProvider==="function")ok=await window.loadCommonTransitProvider(f,String(x.provider));if(ok)await saveGtfs(f,String(x.provider));}}
       await renderSavedPdfs();status("Közös tár betöltve.");if(typeof logLine==="function")logLine("FIX27: közös tár betöltve több készülékhez használható módon.");
     }catch(e){status("Közös tár HIBA: "+e.message);if(typeof logLine==="function")logLine("FIX27 közös tár HIBA: "+e.message)}
   }
-  async function clearLibrary(){if(!confirm("A helyi PDF- és VOLÁN/MÁV GTFS-tár törlődjön erről a készülékről?"))return;await clearStore("pdfs");await clearStore("gtfs");await renderSavedPdfs();status("Helyi tár törölve.")}
+  async function clearLibrary(){if(!confirm("A helyi PDF- és BKK/VOLÁN/MÁV/GYERMEKVASÚT GTFS-tár törlődjön erről a készülékről?"))return;await clearStore("pdfs");await clearStore("gtfs");await renderSavedPdfs();status("Helyi tár törölve.")}
   document.addEventListener("DOMContentLoaded",async()=>{
     try{
       await openDb();
@@ -8567,12 +8564,13 @@ window.extractFutarVehicles = function(json){
       $id("loadSharedLibraryBtn")?.addEventListener("click",loadShared);
       $id("exportLibraryBtn")?.addEventListener("click",exportLibrary);
       $id("clearLibraryBtn")?.addEventListener("click",clearLibrary);
-      const bf=$id("bkkGtfsLocalFile"),vf=$id("volanGtfsFile"),mf=$id("mavGtfsFile");
-      bf?.addEventListener("change",async e=>{const f=e.target.files?.[0];if(f){try{await window.loadBkkGtfs(f);await saveGtfs(f,"BKK");}catch(err){status("BKK GTFS helyi betöltési hiba: "+(err?.message||err));}}});
-      vf?.addEventListener("change",e=>{const f=e.target.files?.[0];if(f)saveGtfs(f,"VOLAN")});
-      mf?.addEventListener("change",e=>{const f=e.target.files?.[0];if(f)saveGtfs(f,"MAV")});
+      const bf=$id("bkkGtfsLocalFile"),vf=$id("volanGtfsFile"),mf=$id("mavGtfsFile"),gf=$id("gyvGtfsFile");
+      bf?.addEventListener("change",async e=>{const f=e.target.files?.[0];if(f){try{const ok=await window.loadBkkGtfs(f);if(ok)await saveGtfs(f,"BKK");else status("BKK GTFS nem került a tartós tárba: az új ZIP nem töltődött be; a korábbi adat megmaradt.");}catch(err){status("BKK GTFS helyi betöltési hiba: "+(err?.message||err));}}});
+      vf?.addEventListener("change",async e=>{const f=e.target.files?.[0];if(f){const ok=await window.loadCommonTransitProvider?.(f,"VOLAN");if(ok)await saveGtfs(f,"VOLAN");else status("VOLÁN GTFS nem került a tartós tárba: hibás új ZIP, a korábbi mentés megmaradt.");}});
+      mf?.addEventListener("change",async e=>{const f=e.target.files?.[0];if(f){const ok=await window.loadCommonTransitProvider?.(f,"MAV");if(ok)await saveGtfs(f,"MAV");else status("MÁV GTFS nem került a tartós tárba: hibás új ZIP, a korábbi mentés megmaradt.");}});
+      gf?.addEventListener("change",async e=>{const f=e.target.files?.[0];if(f){const ok=await window.loadCommonTransitProvider?.(f,"GYERMEKVASUT");if(ok)await saveGtfs(f,"GYERMEKVASUT");else status("GYERMEKVASÚT GTFS nem került a tartós tárba: hibás új ZIP, a korábbi mentés megmaradt.");}});
       await renderSavedPdfs();await restoreGtfs();
-      logLine("FIX27: PDF + VOLÁN/MÁV tartós tár inicializálva.");
+      logLine("FIX41: PDF + szolgáltatónként elkülönített BKK/VOLÁN/MÁV/GYERMEKVASÚT GTFS-tár inicializálva.");
     }catch(e){status("Tartós tár HIBA: "+e.message);if(typeof logLine==="function")logLine("FIX27 tár HIBA: "+e.message)}
   });
 })();
@@ -10170,12 +10168,12 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
   const escape=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('hu-HU').trim();
   function providers(){return window.__ATTILA_COMMON_PROVIDERS||{};}
-  function providerEntries(){const p=providers();return [['BKV','🔵 BKK / BKV',p.BKV],['VOLAN','🟠 VOLÁN',p.VOLAN],['MAV','🟤 MÁV',p.MAV]].filter(x=>x[2]&&x[2].loaded);}
+  function providerEntries(){const p=providers();return [['BKV','🔵 BKK / BKV',p.BKV],['VOLAN','🟠 VOLÁN',p.VOLAN],['MAV','🟤 MÁV',p.MAV],['GYERMEKVASUT','🟢 GYERMEKVASÚT',p.GYERMEKVASUT]].filter(x=>x[2]&&x[2].loaded);}
   function showResult(id,html){const el=$(id);if(el)el.innerHTML=html;}
-  function hitButton(key,label,s){return `<button type="button" class="fix32Hit commonStopDepartBtn" data-provider="${escape(key)}" data-stop="${escape(s.id)}">${escape(label)} · ${escape(s.name)} · GTFS: ${escape(s.id)}${s.code?' · kód: '+escape(s.code):''}</button>`;}
-  function findStopsById(q){const hits=[];const clean=v=>String(v??'').trim().toLocaleLowerCase('hu-HU').replace(/^(bkv|bkk|volan|volán|mav|máv)[_:\- ]+/,'');const needle=clean(q);for(const [key,label,p] of providerEntries()){for(const st of p.stops||[]){const id=String(st.id??''),code=String(st.code??''),vals=[id,code,clean(id),clean(code)];const exact=vals.some(v=>v.toLocaleLowerCase('hu-HU')===needle);const partial=vals.some(v=>v.toLocaleLowerCase('hu-HU').includes(needle));if(exact||partial)hits.push({key,label,p,st,exact});}}return hits.sort((a,b)=>Number(b.exact)-Number(a.exact));}
+  function hitButton(p,s){return `<button type="button" class="fix32Hit commonStopDepartBtn" data-provider="${escape(p)}" data-stop="${escape(s.id)}">${escape(p)} · ${escape(s.name)} · GTFS: ${escape(s.id)}${s.code?' · kód: '+escape(s.code):''}</button>`;}
+  function findStopsById(q){const hits=[];for(const [key,label,p] of providerEntries()){for(const st of p.stops||[]){if(String(st.id)===q||String(st.code||'')===q)hits.push({key,label,p,st,exact:true});else if(String(st.id).toLowerCase().includes(q.toLowerCase()))hits.push({key,label,p,st,exact:false});}}return hits.sort((a,b)=>Number(b.exact)-Number(a.exact));}
   function openStopSearchResult(q){const field=$('commonStopSearch');if(field){field.value=q;field.dispatchEvent(new Event('input',{bubbles:true}));}if(typeof window.commonTransitStopSearch==='function')window.commonTransitStopSearch();const panel=$('commonStopPanel');if(panel)panel.scrollIntoView({behavior:'smooth',block:'start'});}
-  function doStopIdSearch(inputId,resultId){const q=String($(inputId)?.value||'').trim();if(!q){showResult(resultId,'Írd be a teljes GTFS stop_id azonosítót.');return;}const hits=findStopsById(q).slice(0,30);if(!hits.length){showResult(resultId,'NINCS TALÁLAT: '+escape(q)+'. Ellenőrizd, hogy a megfelelő szolgáltató GTFS-e be van-e töltve.');return;}showResult(resultId,`<b>${hits.length} találat</b><br>`+hits.map(h=>hitButton(h.key,h.label,h.st)).join(''));}
+  function doStopIdSearch(inputId,resultId){const q=String($(inputId)?.value||'').trim();if(!q){showResult(resultId,'Írd be a teljes GTFS stop_id azonosítót.');return;}const hits=findStopsById(q).slice(0,30);if(!hits.length){showResult(resultId,'NINCS TALÁLAT: '+escape(q)+'. Ellenőrizd, hogy a megfelelő szolgáltató GTFS-e be van-e töltve.');return;}showResult(resultId,`<b>${hits.length} találat</b><br>`+hits.map(h=>hitButton(h.label,h.st)).join(''));}
   function liveRows(){const rows=[];const b=Array.isArray(window.vehicleData)?window.vehicleData:[];b.forEach(v=>rows.push({provider:'BKK / BKV',raw:v,route:v.routeShortName||v.routeId,plate:v.licensePlate||v.label||v.vehicleId,type:v.vehicleType,lat:Number(v.lat),lon:Number(v.lon),id:v.vehicleId||v.id}));const r=Array.isArray(window.regionalRealtimeRows)?window.regionalRealtimeRows:[];r.forEach(v=>rows.push({provider:v.provider||'VOLÁN / MÁV',raw:v,route:v.routeShortName||v.route||v.routeId,plate:v.plate||v.licensePlate||v.vehicleId,type:v.vehicleType,lat:Number(v.lat),lon:Number(v.lon),id:v.vehicleId||v.id}));const mav=Array.isArray(window.ATTIlaMavVehicles)?window.ATTIlaMavVehicles:[];mav.forEach(v=>rows.push({provider:'MÁV',raw:v,route:v.trip?.domesticResTrainNumber||v.trip?.gtfsId,plate:v.label||v.vehicleId,type:v.vehicleType,lat:Number(v.lat),lon:Number(v.lon),id:v.vehicleId||v.id,speed:v.speed}));return rows;}
   function coordinates(){const lat=Number.parseFloat($('gpsLat')?.textContent||''),lon=Number.parseFloat($('gpsLon')?.textContent||'');if(Number.isFinite(lat)&&Number.isFinite(lon))return{lat,lon};const a=Number.parseFloat($('attiGpsLat')?.textContent||''),b=Number.parseFloat($('attiGpsLon')?.textContent||'');return Number.isFinite(a)&&Number.isFinite(b)?{lat:a,lon:b}:null;}
   function distance(a,b){const rad=x=>x*Math.PI/180,R=6371000,dLat=rad(b.lat-a.lat),dLon=rad(b.lon-a.lon),q=Math.sin(dLat/2)**2+Math.cos(rad(a.lat))*Math.cos(rad(b.lat))*Math.sin(dLon/2)**2;return 2*R*Math.asin(Math.sqrt(q));}
@@ -10186,33 +10184,10 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
   function nameSearch(){const q=norm($('fix32StopNameQuery')?.value);if(!q){showResult('fix32StopNameResult','Írj be megálló- vagy állomásnevet.');return;}const hits=[];for(const [key,label,p] of providerEntries())for(const st of p.stops||[])if(norm(st.name).includes(q))hits.push({key,label,st});showResult('fix32StopNameResult',hits.length?hits.slice(0,40).map(h=>hitButton(h.label,h.st)).join(''):'NINCS TALÁLAT a betöltött GTFS-megállók között.');}
   function plateSearch(){const q=norm($('fix32PlateQuery')?.value);if(!q){showResult('fix32PlateResult','Írj be rendszámot vagy járműazonosítót.');return;}const hits=liveRows().filter(v=>[v.plate,v.id,v.raw?.licensePlate,v.raw?.label].some(x=>norm(x).includes(q)));showResult('fix32PlateResult',hits.length?hits.slice(0,40).map(v=>`<div class="fix32ProviderLine"><b>${escape(v.provider)}</b> · ${escape(v.route||'NINCS ADAT')} · ${escape(v.plate||v.id)} · típus: ${escape(v.type||'NINCS ADAT')}</div>`).join(''):'NINCS ADAT – nincs ilyen azonosító a jelenleg betöltött élő járműrekordokban.');}
   function renderFix32Vehicle(item,provider='BKK / BKV'){
-    const v=item||{};
-    const delay=Number(v.delaySeconds);
-    const delayText=Number.isFinite(delay)?(delay<0?'SIETÉS '+Math.abs(delay)+' mp':delay>0?'KÉSÉS +'+delay+' mp':'PONTOS 0 mp'):'NINCS ADAT';
+    const v=item||{};const delay=Number(v.delaySeconds);const delayText=Number.isFinite(delay)?(delay<0?'SIETÉS '+Math.abs(delay)+' mp':delay>0?'KÉSÉS +'+delay+' mp':'PONTOS 0 mp'):'NINCS ADAT';
     const low=v.lowFloor===true||String(v.lowFloor).toLowerCase()==='true'||String(v.lowFloor)==='1'?'IGEN':v.lowFloor===false||String(v.lowFloor).toLowerCase()==='false'||String(v.lowFloor)==='0'?'NEM':'NINCS ADAT';
-    const fmtDistance=x=>Number.isFinite(Number(x))?Number(x).toFixed(2)+' km':'NINCS ADAT';
-    const vals=[
-      ['JÁRAT',v.routeShortName||v.routeId||v.route],
-      ['LABEL',v.label],
-      ['INDULÁSI VALÓS IDŐ',v.actualDeparture||v.departureTime||v.startTime],
-      ['KÉSÉS',delayText],
-      ['MENETRENDI SZÁM',v.scheduleNumber||v.trip?.scheduleNumber||v.tripId||v.trip?.gtfsId],
-      ['FORGALMI SZÁM',v.forgalmi],
-      ['VÉGCÉL',v.headsign||v.destination||v.trip?.headsign],
-      ['MEGÁLLÓ',v.nearestStop?.name||v.stopName],
-      ['STOP ID',v.stopId||v.stop_id],
-      ['STOP SORREND',v.stopSequence||v.stop_sequence],
-      ['VONALI TÁVOLSÁG',fmtDistance(v.routeDistanceKm)],
-      ['LÉGVONAL TÁVOLSÁG',fmtDistance(v.gpsDistanceKm)],
-      ['ÚTVONAL',v.routeDescription||v.shapeName||v.trip?.headsign],
-      ['JÁRMŰTÍPUS',v.vehicleType||v.type],
-      ['ALACSONYPADLÓS',low],
-      ['RENDSZÁM',v.licensePlate||v.plate],
-      ['SEBESSÉG',Number.isFinite(Number(v.speedKmh))?Number(v.speedKmh).toFixed(1)+' km/h':Number.isFinite(Number(v.speed))?Number(v.speed).toFixed(1)+' km/h':null],
-      ['SAJÁT GPS',Number.isFinite(Number(v.lat))&&Number.isFinite(Number(v.lon))?Number(v.lat).toFixed(5)+', '+Number(v.lon).toFixed(5):null]
-    ];
-    const box=$('fix32SelectedVehicle');
-    if(box)box.innerHTML=vals.map(([k,val])=>`<div class="fix32VehicleField"><b>${escape(k)}</b><span>${escape(val===null||val===undefined||val===''?'NINCS ADAT':String(val))}</span></div>`).join('');
+    const vals=[['JÁRAT',v.routeShortName||v.routeId||v.route],['LABEL',v.label],['MEGÁLLÓ',v.nearestStop?.name||v.stopName],['STOP ID',v.stopId||v.stop_id],['STOP SORREND',v.stopSequence||v.stop_sequence],['ELTÉRÉS',delayText],['JÁRMŰTÍPUS',v.vehicleType||v.type],['ALACSONYPADLÓS',low],['RENDSZÁM',v.licensePlate||v.plate],['FORGALMI',v.forgalmi],['SEBESSÉG',Number.isFinite(Number(v.speedKmh))?Number(v.speedKmh).toFixed(1)+' km/h':Number.isFinite(Number(v.speed))?Number(v.speed).toFixed(1)+' km/h':null],['SAJÁT GPS',Number.isFinite(Number(v.gpsDistanceKm))?Number(v.gpsDistanceKm).toFixed(2)+' km':null],['TRIP',v.tripId||v.trip?.gtfsId],['BLOKK AZONOSÍTÓ',v.blockId],['FORDA',v.forda],['JÁRMŰ#',v.blockVehicleNumber],['JÁRMŰ ID',v.vehicleId||v.id],['ADATFORRÁS',v.source||v.realtimeSource||provider],['ADATFRISSÍTÉS',v.lastUpdated?new Date(Number(v.lastUpdated)>1e12?Number(v.lastUpdated):Number(v.lastUpdated)*1000).toLocaleTimeString('hu-HU'):'NINCS ADAT'],['ADATÁLLAPOT','VALÓS JÁRMŰREKORD – megjelenített mezők a forrásból']];
+    const box=$('fix32SelectedVehicle');if(box)box.innerHTML=vals.map(([k,val])=>`<div class="fix32VehicleField"><b>${escape(k)}</b><span>${escape(val===null||val===undefined||val===''?'NINCS ADAT':String(val))}</span></div>`).join('');
   }
   window.fix32ShowVehicle=renderFix32Vehicle;
   function countProviderPanels(){
@@ -10555,75 +10530,6 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
  back.addEventListener('click',close);document.addEventListener('keydown',e=>{if(e.key==='Escape')close();});
  }if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();})();
 </script>
-
-
-<script id="attila-fix40-gtfs-directory-and-vehicle-view">
-(function(){
- 'use strict';
- const $=id=>document.getElementById(id);
- const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
- const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLocaleLowerCase('hu-HU').trim();
- const providerNames={BKV:'🔵 BKV / BKK',VOLAN:'🟠 VOLÁN',MAV:'🟤 MÁV'};
- function getProviders(){return window.__ATTILA_COMMON_PROVIDERS||window.__ATTILA_COMMON_API?.providers||{};}
- function allStops(){const p=getProviders(),out=[];for(const key of ['BKV','VOLAN','MAV']){const src=p[key];if(!src||!src.loaded||!Array.isArray(src.stops))continue;for(const st of src.stops)out.push({key,name:st.name||'NINCS ADAT',id:st.id||'',code:st.code||'',raw:st});}return out;}
- function renderDirectory(){const status=$('attilaGtfsDirectoryStatus'),host=$('attilaGtfsDirectoryResults');if(!status||!host)return;const all=allStops(),q=norm($('attilaGtfsDirectoryQuery')?.value),filter=$('attilaGtfsDirectoryProvider')?.value||'ALL';let rows=all.filter(x=>(filter==='ALL'||x.key===filter)&&(!q||[x.name,x.id,x.code].some(v=>norm(v).includes(q))));rows.sort((a,b)=>a.name.localeCompare(b.name,'hu'));const total=rows.length,shown=rows.slice(0,120);status.textContent='Betöltött GTFS-megállók: '+all.length.toLocaleString('hu-HU')+' · találat: '+total.toLocaleString('hu-HU')+' · megjelenítve: '+shown.length+' · csak valódi betöltött adat.';host.innerHTML=shown.length?shown.map(x=>`<div class="fix32ProviderLine"><b>${providerNames[x.key]}</b> · ${esc(x.name)}<br><span>stop_id: ${esc(x.id||'NINCS ADAT')} · stop_code: ${esc(x.code||'NINCS ADAT')}</span><br><button type="button" class="attilaGtfsOpenStop" data-provider="${x.key}" data-stop="${esc(x.id)}">MEGÁLLÓ MEGNYITÁSA · MENETREND / JÁRMŰADAT</button></div>`).join(''):'<div class="fix32VehicleEmpty">'+(all.length?'NINCS TALÁLAT a betöltött GTFS-megállók között.':'NINCS ADAT – még nincs betöltött GTFS ZIP. Válaszd ki a BKK, VOLÁN vagy MÁV GTFS-fájlt a fenti betöltőnél.')+'</div>';
- }
- function initDirectory(){['attilaGtfsDirectorySearch','attilaGtfsDirectoryShowAll'].forEach(id=>$(id)?.addEventListener('click',renderDirectory));$('attilaGtfsDirectoryQuery')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();renderDirectory();}});$('attilaGtfsDirectoryProvider')?.addEventListener('change',renderDirectory);document.addEventListener('click',e=>{const b=e.target.closest?.('.attilaGtfsOpenStop');if(!b)return;const target=$('commonStopDepartures');if(target)target.scrollIntoView({behavior:'smooth',block:'center'});const p=b.dataset.provider,stop=b.dataset.stop;if(typeof window.loadCommonTransitProvider==='function'&&p!=='BKV'){}const api=window.__ATTILA_COMMON_API;if(api?.findStop){const found=api.findStop(p,stop);if(found&&typeof window.commonTransitStopSearch==='function'){const input=$('commonStopSearch');if(input){input.value=stop;input.dispatchEvent(new Event('input',{bubbles:true}));}window.commonTransitStopSearch();}const trigger=document.createElement('button');trigger.type='button';trigger.className='commonStopDepartBtn';trigger.dataset.provider=p;trigger.dataset.stop=stop;trigger.style.display='none';document.body.appendChild(trigger);trigger.click();trigger.remove();}else{const result=$('attilaGtfsDirectoryStatus');if(result)result.textContent='A GTFS-megálló megvan, de a közös menetrendi modul még nem érhető el: NINCS ADAT.';}});window.addEventListener('attila:gtfs-updated',()=>setTimeout(renderDirectory,50));window.addEventListener('load',()=>setTimeout(renderDirectory,500));setTimeout(renderDirectory,1000);}
- let zoom=1;
- function setZoom(){const panel=$('fix32VehicleFocusPanel');if(!panel)return;panel.style.setProperty('--attila-vehicle-zoom',String(zoom));panel.style.fontSize=(18*zoom)+'px';const grid=$('fix32SelectedVehicle');if(grid)grid.style.gridTemplateColumns='repeat(auto-fit,minmax('+Math.round(300*zoom)+'px,1fr))';panel.querySelectorAll('.fix32VehicleField b').forEach(x=>x.style.fontSize=(16*zoom)+'px');panel.querySelectorAll('.fix32VehicleField span').forEach(x=>x.style.fontSize=(24*zoom)+'px');}
- function enterVehicleFullscreen(){const panel=$('fix32VehicleFocusPanel');if(!panel)return;panel.classList.add('attila-vehicle-fullscreen');document.body.classList.add('attila-vehicle-view-open');$('attilaVehicleFullscreenExit')?.removeAttribute('hidden');panel.scrollTop=0;try{if(panel.requestFullscreen)panel.requestFullscreen().catch(()=>{});}catch(e){}}
- function exitVehicleFullscreen(){const panel=$('fix32VehicleFocusPanel');panel?.classList.remove('attila-vehicle-fullscreen');document.body.classList.remove('attila-vehicle-view-open');$('attilaVehicleFullscreenExit')?.setAttribute('hidden','');try{if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});}catch(e){}}
- function initVehicleView(){$('attilaVehicleFullscreen')?.addEventListener('click',enterVehicleFullscreen);$('attilaVehicleFullscreenExit')?.addEventListener('click',exitVehicleFullscreen);$('attilaVehicleZoomIn')?.addEventListener('click',()=>{zoom=Math.min(1.8,zoom+.1);setZoom();});$('attilaVehicleZoomOut')?.addEventListener('click',()=>{zoom=Math.max(.7,zoom-.1);setZoom();});$('attilaVehicleZoomReset')?.addEventListener('click',()=>{zoom=1;setZoom();});document.addEventListener('keydown',e=>{if(e.key==='Escape')exitVehicleFullscreen();});document.addEventListener('fullscreenchange',()=>{if(!document.fullscreenElement&&$('fix32VehicleFocusPanel')?.classList.contains('attila-vehicle-fullscreen'))exitVehicleFullscreen();});setZoom();}
- function init(){initDirectory();initVehicleView();const panel=$('fix32VehicleFocusPanel'),directory=$('attilaGtfsStopDirectory');if(panel&&directory&&panel.previousElementSibling!==directory)directory.insertAdjacentElement('afterend',panel);}
- if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
-})();
-</script>
-<style id="attila-fix40-visible-gtfs-and-vehicle-fullscreen">
-#attilaGtfsStopDirectory{display:block!important;visibility:visible!important;opacity:1!important;position:relative!important;z-index:20!important;width:100%!important;max-width:100%!important;margin:12px 0!important;clear:both!important;border:2px solid #36b86a!important;background:#03140b!important}
-#attilaGtfsDirectoryResults{max-height:560px;overflow:auto;border:1px solid #28633f;border-radius:8px;padding:8px;background:#020b06}
-#attilaGtfsDirectoryResults .fix32ProviderLine{padding:9px;border-bottom:1px solid #28543a}
-#attilaGtfsDirectoryResults button{display:inline-block!important;margin-top:6px!important;min-height:38px!important}
-#fix32VehicleFocusPanel{display:block!important;visibility:visible!important;opacity:1!important;width:100%!important;max-width:100%!important;clear:both!important}
-#fix32VehicleFocusPanel .fix32VehicleFields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
-#fix32VehicleFocusPanel .fix32VehicleField{min-height:64px;padding:10px}
-#fix32VehicleFocusPanel .fix32VehicleField b{font-size:12px}
-#fix32VehicleFocusPanel .fix32VehicleField span{font-size:15px}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen{position:fixed!important;inset:0!important;z-index:2147483000!important;width:100vw!important;height:100vh!important;height:100dvh!important;max-width:none!important;max-height:none!important;margin:0!important;padding:18px!important;overflow:auto!important;background:#020a05!important;border:3px solid #42e88a!important;border-radius:0!important;box-sizing:border-box!important}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen .panelBody{max-width:1600px;margin:0 auto;overflow:visible!important}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleFields{grid-template-columns:repeat(auto-fit,minmax(260px,1fr))}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleField{min-height:86px}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleField b{font-size:15px}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleField span{font-size:20px}
-#attilaVehicleFullscreenExit[hidden]{display:none!important}
-@media(max-width:760px){#fix32VehicleFocusPanel .fix32VehicleFields{grid-template-columns:repeat(2,minmax(0,1fr))}#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleFields{grid-template-columns:1fr}}
-</style>
-
-
-<style id="attila-fix41-large-vehicle-panel">
-/* FIX41: a járműpanel valódi, jól olvasható méretezése */
-#fix32VehicleFocusPanel{display:block!important;visibility:visible!important;opacity:1!important;width:100%!important;max-width:none!important;min-height:360px!important;padding:18px!important;border:2px solid #36b86a!important;background:#06130b!important;box-sizing:border-box!important;font-size:18px!important;}
-#fix32VehicleFocusPanel>h3{font-size:clamp(20px,2vw,28px)!important;line-height:1.25!important;padding:12px!important;}
-#fix32VehicleFocusPanel>.row button{font-size:17px!important;min-height:50px!important;padding:12px 16px!important;font-weight:900!important;}
-#fix32VehicleFocusPanel .panelBody{width:100%!important;max-width:none!important;font-size:18px!important;}
-#fix32ProviderCounts{display:grid!important;grid-template-columns:repeat(4,minmax(0,1fr))!important;gap:12px!important;}
-#fix32ProviderCounts>div{min-height:82px!important;padding:14px!important;font-size:17px!important;}
-#fix32ProviderCounts strong{font-size:22px!important;}
-#fix32SelectedVehicle.fix32VehicleFields{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:12px!important;}
-#fix32VehicleFocusPanel .fix32VehicleField{min-height:100px!important;padding:16px!important;border:1px solid #368b58!important;border-radius:9px!important;background:#0b2014!important;box-sizing:border-box!important;}
-#fix32VehicleFocusPanel .fix32VehicleField b{display:block!important;font-size:16px!important;line-height:1.3!important;margin-bottom:8px!important;}
-#fix32VehicleFocusPanel .fix32VehicleField span{display:block!important;font-size:24px!important;line-height:1.3!important;overflow-wrap:anywhere!important;}
-#fix32ProviderVehicleLists{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:14px!important;}
-#fix32ProviderVehicleLists>div{padding:14px!important;border:1px solid #34744c!important;border-radius:9px!important;font-size:17px!important;}
-#fix32ProviderVehicleLists h4{font-size:18px!important;}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen{position:fixed!important;inset:0!important;z-index:2147483647!important;width:100vw!important;height:100vh!important;height:100dvh!important;max-width:none!important;max-height:none!important;min-height:100vh!important;margin:0!important;padding:clamp(18px,2vw,36px)!important;overflow:auto!important;background:#020a05!important;border:4px solid #42e88a!important;border-radius:0!important;box-sizing:border-box!important;}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen .panelBody{max-width:1800px!important;margin:0 auto!important;}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleField{min-height:120px!important;padding:20px!important;}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleField b{font-size:calc(18px * var(--attila-vehicle-zoom,1))!important;}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen .fix32VehicleField span{font-size:calc(28px * var(--attila-vehicle-zoom,1))!important;}
-body.attila-vehicle-view-open{overflow:hidden!important;}
-#fix32VehicleFocusPanel.attila-vehicle-fullscreen{visibility:visible!important;}
-@media(max-width:900px){#fix32ProviderCounts{grid-template-columns:repeat(2,minmax(0,1fr))!important;}#fix32SelectedVehicle.fix32VehicleFields{grid-template-columns:1fr!important;}#fix32ProviderVehicleLists{grid-template-columns:1fr!important;}#fix32VehicleFocusPanel{padding:12px!important;}#fix32VehicleFocusPanel .fix32VehicleField span{font-size:21px!important;}}
-</style>
 
 </body>
 </html>
