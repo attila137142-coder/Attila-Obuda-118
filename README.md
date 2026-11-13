@@ -1,3 +1,5 @@
+KÖZLEKEDÉS_FIX41_VALODI_VERZIOSZÁM_JAVITOTT   2026.11.13   Péntek
+10 628   soros
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -857,7 +859,7 @@ body.attila-matrix-eco #attilaMatrixBar,body.attila-matrix-full #attilaMatrixBar
 <div id="header">
 
   <div class="title">
-    🚍 ATTILA KÖZLEKEDÉS – FIX30 · MÁTRIX + BALHÉ + FŐNÖK + IPHONE GTFS + PDF TÁR
+    🚍 ATTILA KÖZLEKEDÉS – FIX41 · MÁTRIX + BALHÉ + FŐNÖK + IPHONE GTFS + PDF TÁR
   </div>
 
   <div id="feedBadge" class="badge warn">
