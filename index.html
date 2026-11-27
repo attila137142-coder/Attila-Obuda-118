@@ -1,4 +1,3 @@
-ATTILA_KOZPONT_OSSZESITETT_FIX37_IDOJARAS_24_MATRIX 2026.11.25 Szerda
 <!DOCTYPE html>
 <html lang="hu">
 <head>
@@ -11,7 +10,7 @@ ATTILA_KOZPONT_OSSZESITETT_FIX37_IDOJARAS_24_MATRIX 2026.11.25 Szerda
 
 <meta name="theme-color" content="#071018">
 
-<title>ATTILA KÖZLEKEDÉS – FIX23 · MOBILJAVÍTÁS + MÁV/VOLÁN JÁRMŰKÁRTYÁK + BKK ADATÚT</title>
+<title>ATTILA KÖZPONT – TURMIX V1 · FIX37 ALAP · WIN10 / IPHONE XR</title>
 
 <link
   rel="stylesheet"
@@ -1316,7 +1315,7 @@ body.attila-matrix-eco #attilaMatrixBar,body.attila-matrix-full #attilaMatrixBar
         BKV/BKK + VOLÁN + MÁV megállók keresése. A találatok csak a ténylegesen betöltött GTFS-adatokból jelennek meg.
       </div>
       <div class="searchGrid">
-        <input id="commonStopSearch" class="wide" placeholder="Megálló név / GTFS stop_id / stop_code">
+        <input id="commonStopSearch" class="wide" placeholder="Megálló név / GTFS stop_id / stop_code"><div class="small wide">Prefix-azonosítás: F · FCS · CS · CSF. Azonos számsor esetén több szolgáltatói találatot mutat, nem választ találomra.</div>
         <button id="commonStopSearchBtn" type="button">KERESÉS</button>
         <label class="small" style="display:flex;align-items:center;gap:6px">
           BKK GTFS ZIP (helyi) <input id="bkkGtfsLocalFile" type="file" accept=".zip,application/zip,application/x-zip-compressed">
@@ -1401,7 +1400,7 @@ body.attila-matrix-eco #attilaMatrixBar,body.attila-matrix-full #attilaMatrixBar
       <div><b>🟤 MÁV</b><strong id="fix32MavCount">NINCS ADAT</strong></div>
       <div><b>🟢 GYERMEKVASÚT</b><strong id="fix32GyermekCount">NINCS ADAT</strong></div>
     </div>
-    <p class="small">A járműlistából kiválasztott jármű részletes adatlapja itt jelenik meg. Az ismeretlen mezők értéke NINCS ADAT marad.</p>
+    <p class="small">BKK/BKV · 18 MEZŐS JÁRMŰADATLAP. A hiányzó forrásérték NINCS ADAT marad; a négy kiemelt mező sorrendje: FORGALMI → ALACSONYPADLÓS → JÁRMŰTÍPUS → ELTÉRÉS.</p>
     <div id="fix32SelectedVehicle" class="fix32VehicleFields"><div class="fix32VehicleEmpty">Válassz ki egy valódi járműkártyát a járműlistából.</div></div>
     <div id="fix32ProviderVehicleLists" class="fix32ProviderLists">
       <div><h4>🔵 BKK / BKV · VALÓS JÁRMŰVEK</h4><div id="fix32BkkVehicles">NINCS ADAT</div></div>
@@ -1518,38 +1517,14 @@ body.attila-matrix-eco #attilaMatrixBar,body.attila-matrix-full #attilaMatrixBar
       </div>
 
       <div class="radiusGrid">
-
-        <button data-radius="0.1">
-          100 m
-        </button>
-
-        <button data-radius="0.2">
-          200 m
-        </button>
-
-        <button data-radius="1">
-          1 km
-        </button>
-
-        <button data-radius="2.5">
-          2,5 km
-        </button>
-
-        <button data-radius="5">
-          5,0 km
-        </button>
-
-        <button data-radius="10">
-          10,0 km
-        </button>
-
-        <button
-          data-radius="all"
-          class="active"
-        >
-          ÖSSZES
-        </button>
-
+        <button data-radius="0.2">200 m</button>
+        <button data-radius="0.5">500 m</button>
+        <button data-radius="1">1 km</button>
+        <button data-radius="2">2 km</button>
+        <button data-radius="5">5 km</button>
+        <button data-radius="10">10 km</button>
+        <button data-radius="over11">11 km FELETT</button>
+        <button data-radius="all" class="active">ÖSSZES</button>
       </div>
 
       <div class="small" style="margin-top:12px;font-weight:800">KÜLÖN TERÜLETI KERESÉS</div>
@@ -6014,33 +5989,12 @@ function matchesFilters(
     if(!Number.isFinite(d) || d > OBUDA_COVERAGE_RADIUS_KM) return false;
   }
 
-  if(
-    regionMode !== "obuda" &&
-    Number.isFinite(
-      radiusMode
-    )
-  ){
-
-    if(
-      !Number.isFinite(
-        item.gpsDistanceKm
-      )
-    ){
-
-      return false;
-
+  if(regionMode !== "obuda") {
+    if(radiusMode === "over11") {
+      if(!Number.isFinite(item.gpsDistanceKm) || item.gpsDistanceKm <= 11) return false;
+    } else if(Number.isFinite(radiusMode)) {
+      if(!Number.isFinite(item.gpsDistanceKm) || item.gpsDistanceKm > radiusMode) return false;
     }
-
-
-    if(
-      item.gpsDistanceKm >
-      radiusMode
-    ){
-
-      return false;
-
-    }
-
   }
 
 
@@ -6116,12 +6070,7 @@ function setRadius(
           btn.dataset.radius;
 
 
-        const active =
-          (
-            v === "all" &&
-            mode === Infinity
-          ) ||
-          Number(v) === mode;
+        const active = v === "all" ? mode === Infinity : v === "over11" ? mode === "over11" : Number(v) === mode;
 
 
         btn.classList.toggle(
@@ -7825,15 +7774,7 @@ function bindButtons(){
               btn.dataset.radius;
 
 
-            setRadius(
-
-              value === "all"
-                ?
-                Infinity
-                :
-                Number(value)
-
-            );
+            setRadius(value === "all" ? Infinity : value === "over11" ? "over11" : Number(value));
 
           }
         );
@@ -8248,7 +8189,7 @@ window.extractFutarVehicles = function(json){
   function fmtDist(d){return Number.isFinite(d)?(d>=1000?(d/1000).toLocaleString("hu-HU",{minimumFractionDigits:2,maximumFractionDigits:2})+" km":Math.round(d).toLocaleString("hu-HU")+" m"):"NINCS ADAT";}
   function rowHTML(p,s,dist,rank){const n=Number.isFinite(rank)?'<span style="display:inline-flex;align-items:center;justify-content:center;min-width:23px;height:23px;border-radius:50%;background:#263d4c;color:#fff;font-weight:900;margin-right:5px">'+rank+'</span>':'';if(p===commonProviders.MAV){return '<div style="padding:7px 5px;border-top:1px solid rgba(128,128,128,.25)">'+n+'<b>'+escapeHtml(s.name||"NINCS ADAT")+'</b><br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+' · <b>'+fmtDist(dist)+'</b> légvonalban</span><br><button type="button" class="commonStopDepartBtn" data-provider="'+p.key+'" data-stop="'+escapeHtml(s.id)+'" style="margin-top:5px;padding:6px 9px">MENETREND / ÉLŐ ADAT</button></div>';}const code=s.code?" | stop_code: "+escapeHtml(s.code):"";return '<div style="padding:8px 6px;border-top:1px solid rgba(128,128,128,.25)">'+n+p.icon+' <b>'+escapeHtml(p.name)+" — "+escapeHtml(s.name||"NINCS ADAT")+'</b><br><span class="small">GTFS: '+escapeHtml(s.id||"NINCS ADAT")+code+' • <b>'+fmtDist(dist)+'</b> légvonalban</span><br><button type="button" class="commonStopDepartBtn" data-provider="'+p.key+'" data-stop="'+escapeHtml(s.id)+'" style="margin-top:6px;padding:7px 10px">INDULÁSOK + JÁRMŰADATOK</button></div>';}
   function renderNearest(){const el=document.getElementById("userNearestStops");if(!el)return;const g=gps();if(!g){el.textContent="GPS-helyzet szükséges.";return;}const out=[];for(const key of ["BKV","VOLAN","MAV"]){const p=commonProviders[key];p.key=key;if(!p.loaded||!p.stops.length){out.push('<section style="padding:9px 0;border-top:1px solid rgba(128,128,128,.25)"><b>'+p.icon+' '+p.name+' — NINCS ADAT</b><div class="small">Ehhez a szolgáltatóhoz még nincs betöltve használható, koordinátás megállólista.</div></section>');continue;}const seen=new Set();const ranked=p.stops.map(s=>({s,d:haversineM(g.lat,g.lon,s.lat,s.lon)})).filter(x=>Number.isFinite(x.d)&&Number.isFinite(x.s.lat)&&Number.isFinite(x.s.lon)&&Math.abs(x.s.lat)<=90&&Math.abs(x.s.lon)<=180).sort((a,b)=>a.d-b.d).filter(x=>{const k=String(x.s.id||"")+"|"+x.s.lat+"|"+x.s.lon;if(seen.has(k))return false;seen.add(k);return true;}).slice(0,key==="MAV"?5:10);out.push('<section style="margin-top:9px;border:1px solid rgba(128,128,128,.28);border-radius:9px;padding:7px"><div style="font-weight:900;padding:3px 0 6px">'+p.icon+' '+p.name+' — '+(key==="MAV"?"5":"10")+' LEGKÖZELEBBI MEGÁLLÓ</div>'+(ranked.length?ranked.map((x,i)=>rowHTML(p,x.s,x.d,i+1)).join(''):'<div class="small">NINCS ADAT – nincs koordinátás megálló.</div>')+'</section>');}el.innerHTML=out.join("");}
-  function runSearch(){const q=norm(document.getElementById("commonStopSearch")?.value),el=document.getElementById("commonStopResults");if(!el)return;if(!q){el.innerHTML='<div class="small">Írj be megállónevet, GTFS stop_id-t vagy stop_code-ot.</div>';return;}const terms=q.split(" ").filter(Boolean),g=gps(),hits=[];for(const key of ["BKV","VOLAN","MAV"]){const p=commonProviders[key];p.key=key;if(!p.loaded)continue;for(const s of p.stops){const hay=norm(s.name+" "+s.id+" "+s.code);if(terms.every(t=>hay.includes(t))){const d=g?haversineM(g.lat,g.lon,s.lat,s.lon):NaN;hits.push({p,s,d});}}}hits.sort((a,b)=>(Number.isFinite(a.d)?a.d:Infinity)-(Number.isFinite(b.d)?b.d:Infinity));const shown=hits.slice(0,50);if(!shown.length){el.innerHTML='<div class="small">NINCS ADAT – nincs ilyen találat a jelenleg betöltött GTFS-adatokban. Ellenőrizd, hogy mindhárom GTFS be van-e töltve.</div>';return;}el.innerHTML='<div class="small" style="margin-bottom:5px">Találatok: '+hits.length.toLocaleString("hu-HU")+' (első 50)</div>'+shown.map(x=>rowHTML(x.p,x.s,x.d)).join("");}
+  function runSearch(){const input=String(document.getElementById("commonStopSearch")?.value||"").trim().toUpperCase(),q=norm(input),el=document.getElementById("commonStopResults");if(!el)return;if(!q){el.innerHTML='<div class="small">Írj be megállónevet, GTFS stop_id-t vagy stop_code-ot.</div>';return;}const prefixMatch=input.replace(/\s+/g,"").match(/^(?:FCS|CSF|F|CS)(\d+)$/),aliasDigits=prefixMatch?prefixMatch[1]:"",terms=q.split(" ").filter(Boolean),g=gps(),hits=[];for(const key of ["BKV","VOLAN","MAV"]){const p=commonProviders[key];p.key=key;if(!p.loaded)continue;for(const s of p.stops){const base=String(s.name||"")+" "+String(s.id||"")+" "+String(s.code||""),hay=norm(base);let aliasHay="";if(aliasDigits){const idCode=String(s.id||"")+" "+String(s.code||""),digits=idCode.replace(/\D/g,"");if(digits.endsWith(aliasDigits))aliasHay=" f"+aliasDigits+" fcs"+aliasDigits+" cs"+aliasDigits+" csf"+aliasDigits+" "+aliasDigits;}if(terms.every(t=>(hay+aliasHay).includes(t))){const d=g?haversineM(g.lat,g.lon,s.lat,s.lon):NaN;hits.push({p,s,d});}}}hits.sort((a,b)=>(Number.isFinite(a.d)?a.d:Infinity)-(Number.isFinite(b.d)?b.d:Infinity));const shown=hits.slice(0,50);if(!shown.length){el.innerHTML='<div class="small">NINCS ADAT – nincs ilyen találat a jelenleg betöltött GTFS-adatokban. Ellenőrizd, hogy mindhárom GTFS be van-e töltve.</div>';return;}el.innerHTML='<div class="small" style="margin-bottom:5px">Találatok: '+hits.length.toLocaleString("hu-HU")+' (első 50) · prefixek: F / FCS / CS / CSF; azonos számsor több szolgáltatónál is megjelenhet</div>'+shown.map(x=>rowHTML(x.p,x.s,x.d)).join("");}
   function timeSeconds(t){const m=String(t||"").match(/^(\d+):(\d{2}):(\d{2})$/);return m?Number(m[1])*3600+Number(m[2])*60+Number(m[3]):NaN;}
   function timeLabel(t){const n=timeSeconds(t);if(!Number.isFinite(n))return escapeHtml(t||"NINCS ADAT");return String(Math.floor(n/3600)%24).padStart(2,"0")+":"+String(Math.floor(n%3600/60)).padStart(2,"0");}
   async function zipText(providerOrZip,name){
@@ -10167,7 +10108,7 @@ if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",
   function renderFix32Vehicle(item,provider='BKK / BKV'){
     const v=item||{};const delay=Number(v.delaySeconds);const delayText=Number.isFinite(delay)?(delay<0?'SIETÉS '+Math.abs(delay)+' mp':delay>0?'KÉSÉS +'+delay+' mp':'PONTOS 0 mp'):'NINCS ADAT';
     const low=v.lowFloor===true||String(v.lowFloor).toLowerCase()==='true'||String(v.lowFloor)==='1'?'IGEN':v.lowFloor===false||String(v.lowFloor).toLowerCase()==='false'||String(v.lowFloor)==='0'?'NEM':'NINCS ADAT';
-    const vals=[['JÁRAT',v.routeShortName||v.routeId||v.route],['LABEL',v.label],['MEGÁLLÓ',v.nearestStop?.name||v.stopName],['STOP ID',v.stopId||v.stop_id],['STOP SORREND',v.stopSequence||v.stop_sequence],['ELTÉRÉS',delayText],['JÁRMŰTÍPUS',v.vehicleType||v.type],['ALACSONYPADLÓS',low],['RENDSZÁM',v.licensePlate||v.plate],['FORGALMI',v.forgalmi],['SEBESSÉG',Number.isFinite(Number(v.speedKmh))?Number(v.speedKmh).toFixed(1)+' km/h':Number.isFinite(Number(v.speed))?Number(v.speed).toFixed(1)+' km/h':null],['SAJÁT GPS',Number.isFinite(Number(v.gpsDistanceKm))?Number(v.gpsDistanceKm).toFixed(2)+' km':null],['TRIP',v.tripId||v.trip?.gtfsId],['BLOKK AZONOSÍTÓ',v.blockId],['FORDA',v.forda],['JÁRMŰ#',v.blockVehicleNumber],['JÁRMŰ ID',v.vehicleId||v.id],['ADATFORRÁS',v.source||v.realtimeSource||provider],['ADATFRISSÍTÉS',v.lastUpdated?new Date(Number(v.lastUpdated)>1e12?Number(v.lastUpdated):Number(v.lastUpdated)*1000).toLocaleTimeString('hu-HU'):'NINCS ADAT'],['ADATÁLLAPOT','VALÓS JÁRMŰREKORD – megjelenített mezők a forrásból']];
+    const vals=[['JÁRAT',v.routeShortName||v.routeId||v.route],['LABEL',v.label],['MEGÁLLÓ',v.nearestStop?.name||v.stopName],['STOP ID',v.stopId||v.stop_id],['STOP SORREND',v.stopSequence||v.stop_sequence],['FORGALMI',v.forgalmi],['ALACSONYPADLÓS',low],['JÁRMŰTÍPUS',v.vehicleType||v.type],['ELTÉRÉS',delayText],['RENDSZÁM',v.licensePlate||v.plate],['SEBESSÉG',Number.isFinite(Number(v.speedKmh))?Number(v.speedKmh).toFixed(1)+' km/h':Number.isFinite(Number(v.speed))?Number(v.speed).toFixed(1)+' km/h':null],['SAJÁT GPS',Number.isFinite(Number(v.gpsDistanceKm))?Number(v.gpsDistanceKm).toFixed(2)+' km':null],['TRIP',v.tripId||v.trip?.gtfsId],['BLOKK AZONOSÍTÓ',v.blockId],['JÁRMŰ ID',v.vehicleId||v.id],['ADATFORRÁS',v.source||v.realtimeSource||provider],['ADATFRISSÍTÉS',v.lastUpdated?new Date(Number(v.lastUpdated)>1e12?Number(v.lastUpdated):Number(v.lastUpdated)*1000).toLocaleTimeString('hu-HU'):'NINCS ADAT'],['ADATÁLLAPOT','VALÓS JÁRMŰREKORD – megjelenített mezők a forrásból']];
     const box=$('fix32SelectedVehicle');if(box)box.innerHTML=vals.map(([k,val])=>`<div class="fix32VehicleField"><b>${escape(k)}</b><span>${escape(val===null||val===undefined||val===''?'NINCS ADAT':String(val))}</span></div>`).join('');
   }
   window.fix32ShowVehicle=renderFix32Vehicle;
@@ -10531,20 +10472,21 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
   <section class="acPanel"><h3>🇭🇺 MAGYARORSZÁG · MÉRT ÁLLOMÁSOK / MINIMUM–MAXIMUM</h3>
    <div class="acStatus">Az alábbi külső állomáslistán a mérőhelyek tényleges mért értékei láthatók. A forrásoldal saját frissítési ideje érvényes; a HTML nem számol ki és nem talál ki országos szélsőértéket.</div>
    <div class="acRow" style="margin-top:8px"><a class="acButton" href="https://metora.hu/mert-adatok/" target="_blank" rel="noopener noreferrer">MÉRT ADATOK MEGNYITÁSA ↗</a><a class="acButton" href="https://www.met.hu/idojaras/aktualis_idojaras/csapadek/" target="_blank" rel="noopener noreferrer">HUNGAROMET TÉRKÉPEK ↗</a></div>
-   <iframe class="acStationFrame" title="Metora magyarországi meteorológiai állomások mért adatai" src="https://metora.hu/mert-adatok/" loading="lazy" referrerpolicy="no-referrer"></iframe>
+   <iframe id="acStationFrame" class="acStationFrame" title="Metora magyarországi meteorológiai állomások mért adatai" src="https://metora.hu/mert-adatok/" loading="lazy" referrerpolicy="no-referrer"></iframe>
   </section>
   <section class="acPanel"><h3>🟨 24 MEGÁLLÓ · SÁRGA MÁTRIX INDULÁSI KIJELZŐ</h3>
-   <div class="acRow"><label for="acStopSelect">MEGÁLLÓ</label><select class="acSelect" id="acStopSelect"></select><button class="acButton" id="acOpenSchedule" type="button">VALÓDI MENETREND MEGNYITÁSA ↗</button></div>
+   <div class="acRow"><label for="acStopSelect">MEGÁLLÓ</label><select class="acSelect" id="acStopSelect"></select><button class="acButton" id="acLoadGtfsMatrix" type="button">GTFS INDULÁSOK BETÖLTÉSE</button><button class="acButton" id="acOpenSchedule" type="button">VALÓDI MENETREND MEGNYITÁSA ↗</button></div>
+   <div class="acStatus" id="acGtfsMatrixStatus">A BKK/BKV GTFS betöltése után a kiválasztott megállóhoz valódi, mai menetrendi indulásokat keres. Nem élő indulás, hacsak nincs igazolt realtime egyezés.</div><div id="acGtfsMatrixCandidates"></div>
    <div class="acStatus" id="acStopStatus">A korábbi 24 megállólink megőrizve. A külső menetrendből érkező indulások közvetlen beolvasása nincs igazolva, ezért a sorokban csak NINCS ADAT szerepel, amíg valós adatkapcsolat nem áll rendelkezésre.</div>
    <div class="acMatrixWrap" style="margin-top:10px"><table class="acMatrix"><thead><tr><th>#</th><th>INDULÁS</th><th>JÁRAT</th><th>CÉL</th><th>MEGÁLLÓ</th></tr></thead><tbody id="acDepartures"></tbody></table></div>
    <div class="acStatus">12 soros kijelzőkeret. A NINCS ADAT nem indulási idő: nincs kitalált jármű vagy menetrendi érték.</div>
   </section>
-  <footer class="acStatus" style="padding:10px">ATTILA KÖZPONT · FIX37 alapú összesítés · Windows 10 / iPhone XR · az eredeti app kódja változatlanul megőrizve.</footer>
+  <footer class="acStatus" style="padding:10px">ATTILA KÖZPONT · TURMIX V1 · FIX37 alap + megálló GTFS induláskapcsolat · Windows 10 / iPhone XR · az eredeti app kódja változatlanul megőrizve.</footer>
  </div>
 </section>
 <script id="attila-center-addon-js">
 (()=>{
- const stops=[{"url": "https://realtimenext.hu/embed/bkv/stops/F00680/schedule", "name": "Vörösvári út és Bécsi út sarok", "direction": "Kifelé"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00680/schedule", "name": "Vörösvári út és Bécsi út sarok", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/F00457/schedule", "name": "BM – Nád utca", "direction": "243-as busz"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00457/schedule", "name": "BM – Nád utca", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS008940/schedule", "name": "BM – Csobánka tér (HÉV-állomás)", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00438/schedule", "name": "BM – Gulácsy Lajos utca", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS008438/schedule", "name": "Szentendre, Egyetem", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS008436/schedule", "name": "Szentendre, Papírgyár", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00667/schedule", "name": "Aquincum", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS008434/schedule", "name": "Pomáz (HÉV-állomás)", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS009170/schedule", "name": "Pomáz, Dózsa György utca", "direction": "Menetrend"}, {"url": "https://realtimenext.hu/embed/bkv/stops/005510033/schedule", "name": "Nyugati pályaudvar", "direction": "MÁV-vonatok · minden irányban"}, {"url": "https://realtimenext.hu/embed/bkv/stops/123833/schedule", "name": "Bécsi út (Bojtár utca) – CNG-kút", "direction": "Megálló / helyszín"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00520/schedule", "name": "Bécsi út (Bojtár utca)", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/009630/schedule", "name": "Budakalász, Auchan áruház", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/040591/schedule", "name": "FESTO (Óbuda, Csillaghegyi út)", "direction": "Menetrend"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF01830/schedule", "name": "Kőbánya, Kocka utca", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00584/schedule", "name": "Óbuda, Rendelőintézet (SZTK)", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00621/schedule", "name": "Szentlélek tér", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00137/schedule", "name": "Kolosy tér", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS007976/schedule", "name": "Hűvösvölgy", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF01841/schedule", "name": "Kőbánya, Újhegyi sétány", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00611/schedule", "name": "Flórián tér", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/09142223/schedule", "name": "Szentendre, HÉV-állomás", "direction": "Menetrend"}];
+ const stops=window.__ATTILA_MATRIX_STOPS=[{"url": "https://realtimenext.hu/embed/bkv/stops/F00680/schedule", "name": "Vörösvári út és Bécsi út sarok", "direction": "Kifelé"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00680/schedule", "name": "Vörösvári út és Bécsi út sarok", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/F00457/schedule", "name": "BM – Nád utca", "direction": "243-as busz"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00457/schedule", "name": "BM – Nád utca", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS008940/schedule", "name": "BM – Csobánka tér (HÉV-állomás)", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00438/schedule", "name": "BM – Gulácsy Lajos utca", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS008438/schedule", "name": "Szentendre, Egyetem", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS008436/schedule", "name": "Szentendre, Papírgyár", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00667/schedule", "name": "Aquincum", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS008434/schedule", "name": "Pomáz (HÉV-állomás)", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS009170/schedule", "name": "Pomáz, Dózsa György utca", "direction": "Menetrend"}, {"url": "https://realtimenext.hu/embed/bkv/stops/005510033/schedule", "name": "Nyugati pályaudvar", "direction": "MÁV-vonatok · minden irányban"}, {"url": "https://realtimenext.hu/embed/bkv/stops/123833/schedule", "name": "Bécsi út (Bojtár utca) – CNG-kút", "direction": "Megálló / helyszín"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00520/schedule", "name": "Bécsi út (Bojtár utca)", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/009630/schedule", "name": "Budakalász, Auchan áruház", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/040591/schedule", "name": "FESTO (Óbuda, Csillaghegyi út)", "direction": "Menetrend"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF01830/schedule", "name": "Kőbánya, Kocka utca", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00584/schedule", "name": "Óbuda, Rendelőintézet (SZTK)", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00621/schedule", "name": "Szentlélek tér", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00137/schedule", "name": "Kolosy tér", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CS007976/schedule", "name": "Hűvösvölgy", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF01841/schedule", "name": "Kőbánya, Újhegyi sétány", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/CSF00611/schedule", "name": "Flórián tér", "direction": "Minden irányba"}, {"url": "https://realtimenext.hu/embed/bkv/stops/09142223/schedule", "name": "Szentendre, HÉV-állomás", "direction": "Menetrend"}];
  const $=id=>document.getElementById(id);
  const overlay=$('attilaCenterOverlay');
  $('attilaCenterLauncher').addEventListener('click',()=>{overlay.hidden=false;document.body.style.overflow='hidden'});
@@ -10558,10 +10500,36 @@ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',
  async function fetchWeather(){if(!coords)return;const url='https://api.open-meteo.com/v1/forecast?latitude='+encodeURIComponent(coords.latitude)+'&longitude='+encodeURIComponent(coords.longitude)+'&current=temperature_2m,apparent_temperature,wind_speed_10m&timezone=auto';try{const r=await fetch(url,{cache:'no-store'});if(!r.ok)throw new Error('HTTP '+r.status);const d=await r.json(),c=d.current||{};$('acTemp').textContent=fmt(c.temperature_2m);$('acFeels').textContent=fmt(c.apparent_temperature);$('acWind').textContent=Number.isFinite(c.wind_speed_10m)?c.wind_speed_10m.toLocaleString('hu-HU',{maximumFractionDigits:1})+' km/h':'NINCS ADAT';$('acWeatherUpdated').textContent='Mérés: '+(c.time||'NINCS ADAT')+' · '+(d.timezone||'helyi idő');}catch(e){$('acWeatherUpdated').textContent='Időjárás lekérés sikertelen: '+(e.message||e)+' · NINCS ADAT';}}
  function startRefresh(){if(timer)clearInterval(timer);fetchWeather();timer=setInterval(fetchWeather,600000)}
  $('acGps').addEventListener('click',()=>{if(!navigator.geolocation){$('acPlace').textContent='GPS NEM TÁMOGATOTT';return}$('acPlace').textContent='Helymeghatározás…';navigator.geolocation.getCurrentPosition(p=>{coords={latitude:p.coords.latitude,longitude:p.coords.longitude};$('acPlace').textContent='Saját GPS-hely';$('acCoords').textContent=coords.latitude.toFixed(5)+', '+coords.longitude.toFixed(5);startRefresh()},e=>{$('acPlace').textContent='NINCS ADAT';$('acWeatherUpdated').textContent='GPS hiba: '+e.message+' · Engedélyezd a helymeghatározást, és HTTPS-en nyisd meg.'},{enableHighAccuracy:true,timeout:20000,maximumAge:300000})});
- window.addEventListener('pagehide',()=>{if(timer)clearInterval(timer)});
+ // Automatikus hely- és időjárás-frissítési kísérlet az ATTILA KÖZPONT megnyitásakor; a GPS engedélyezését a böngésző kezeli.
+ document.addEventListener('DOMContentLoaded',()=>{setTimeout(()=>{try{$('acGps')?.click();}catch(e){}},900);});
+ // A mért magyarországi állomáslista külső forrás; újratöltési kísérlet 10 percenként, a forrás saját frissítési rendjétől függően.
+ const stationTimer=setInterval(()=>{const f=$('acStationFrame');if(f&&f.isConnected){try{f.src=f.src;}catch(e){}}},600000);
+ window.addEventListener('pagehide',()=>{if(timer)clearInterval(timer);clearInterval(stationTimer)});
 })();
 </script>
 <!-- /ATTILA KÖZPONT KIEGÉSZÍTÉS -->
+
+<script id="attila-turmix-matrix-gtfs-addon">
+(()=>{
+ const $=id=>document.getElementById(id);
+ const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+ const norm=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,' ').trim();
+ const status=t=>{const e=$('acGtfsMatrixStatus');if(e)e.textContent=t;};
+ const time=t=>{const m=String(t||'').match(/^(\d+):(\d{2}):(\d{2})$/);return m?String(Math.floor(Number(m[1]))%24).padStart(2,'0')+':'+m[2]:'NINCS ADAT';};
+ function currentStop(){const arr=window.__ATTILA_MATRIX_STOPS||[],i=Number($('acStopSelect')?.value||0);return arr[i]||arr[0]||null;}
+ function candidateBox(rows){const box=$('acGtfsMatrixCandidates');if(!box)return;box.innerHTML='';if(!rows.length)return;const sel=document.createElement('select');sel.id='acGtfsMatrixCandidate';sel.className='acSelect';sel.style.width='100%';rows.forEach((s,i)=>{const o=document.createElement('option');o.value=String(i);o.textContent=(s.name||'Megálló')+' · '+(s.id||'GTFS ID NINCS ADAT')+' · '+(s.code||'code NINCS ADAT');sel.appendChild(o);});const btn=document.createElement('button');btn.type='button';btn.className='acButton';btn.textContent='KIVÁLASZTOTT MEGÁLLÓ INDULÁSAI';btn.addEventListener('click',()=>load(rows[Number(sel.value)||0]));box.append(sel,btn);}
+ function renderRows(stop,rows){const body=$('acDepartures');if(!body)return;body.innerHTML='';const shown=(rows||[]).slice(0,12);for(let i=0;i<12;i++){const d=shown[i],tr=document.createElement('tr');const vals=d?[String(i+1),time(d.departure),d.routeShort||d.routeId||d.routeLong||'NINCS ADAT',d.headsign||'NINCS ADAT',d.boardingStopName||stop.name||'NINCS ADAT']:[String(i+1),'NINCS ADAT','NINCS ADAT','NINCS ADAT',stop.name||'NINCS ADAT'];vals.forEach((v,j)=>{const td=document.createElement('td');td.textContent=v;if(!d)td.className='acNA';tr.appendChild(td);});body.appendChild(tr);}status('GTFS menetrendi indulások: '+shown.length+' valódi mai adat · megálló: '+(stop.name||'NINCS ADAT')+' · stop_id: '+(stop.id||'NINCS ADAT')+'. A hiányzó sorok NINCS ADAT; nem kitalált indulások.');}
+ async function load(stop){const api=window.__ATTILA_COMMON_API,p=window.__ATTILA_COMMON_PROVIDERS?.BKV;if(!stop){status('NINCS ADAT – nincs kiválasztott megálló.');return;}if(!api||!p||!p.loaded){status('NINCS ADAT – előbb töltsd be a BKK/BKV GTFS ZIP-et a közös megállókeresőben.');return;}try{status('GTFS indulások lekérése folyamatban…');const rows=await api.getDepartures('BKV',stop);renderRows(stop,rows);}catch(e){status('MENETREND NEM ELÉRHETŐ: '+(e?.message||String(e)));renderRows(stop,[]);}}
+ async function run(){const selected=currentStop(),api=window.__ATTILA_COMMON_API,p=window.__ATTILA_COMMON_PROVIDERS?.BKV,box=$('acGtfsMatrixCandidates');if(box)box.innerHTML='';if(!selected){status('NINCS ADAT – nincs megálló a listában.');return;}if(!api||!p||!p.loaded){status('NINCS ADAT – töltsd be előbb a BKK/BKV GTFS ZIP-et a közös megállókeresőben. A 24 megálló eredeti külső menetrendlinkje továbbra is megnyitható.');return;}
+  const urlId=(String(selected.url||'').match(/\/stops\/([^/]+)\/schedule/i)||[])[1]||'',raw=urlId.toUpperCase(),m=raw.match(/^(FCS|CSF|F|CS)(\d+)$/),digits=m?m[2]:raw.replace(/\D/g,''),aliases=[raw,'F'+digits,'FCS'+digits,'CS'+digits,'CSF'+digits].filter(Boolean),found=[];
+  for(const q of aliases){const x=api.findStop('BKV',q);if(x&&!found.some(y=>String(y.id)===String(x.id)))found.push(x);}
+  if(!found.length){const target=norm(selected.name).replace(/^bm /,'');const exact=p.stops.filter(x=>norm(x.name).replace(/^bm /,'')===target);const fuzzy=exact.length?exact:p.stops.filter(x=>{const n=norm(x.name).replace(/^bm /,'');return target&&n.includes(target);});found=fuzzy.slice(0,15);}
+  if(found.length===1){await load(found[0]);return;}if(found.length>1){status('Több lehetséges GTFS-megálló található. Válassz az azonosítók alapján; nem választok találomra.');candidateBox(found);return;}status('NINCS ADAT – a 24-es külső megállólinkhez nem találtam biztos GTFS stop_id-egyezést. A külső menetrend megnyitása továbbra is működik.');renderRows({name:selected.name},[]);
+ }
+ function bind(){const b=$('acLoadGtfsMatrix');if(b&&!b.dataset.turmixBound){b.dataset.turmixBound='1';b.addEventListener('click',run);}const sel=$('acStopSelect');if(sel&&!sel.dataset.turmixBound){sel.dataset.turmixBound='1';sel.addEventListener('change',()=>{const box=$('acGtfsMatrixCandidates');if(box)box.innerHTML='';status('Kiválasztott megálló: '+(currentStop()?.name||'NINCS ADAT')+'. A GTFS indulásokhoz nyomd meg a GTFS INDULÁSOK BETÖLTÉSE gombot.');});}}
+ if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bind,{once:true});else bind();
+})();
+</script>
 
 </body>
 </html>
